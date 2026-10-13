@@ -1,0 +1,257 @@
+// The ⌘K command bar: verbs first, then records.
+//
+// It replaces the old search palette only. Quick Add, the header's product
+// links and the Tools menu, and People's own search box all stay; the bar adds
+// verbs on top of them ("new lead" opens the same create dialog as Quick Add).
+//
+// What is typed, the second list (Tab's "more actions", a rep to assign, a
+// stage) and the picked row live here, so a keystroke re-renders the bar and
+// not the app. The rows come from command-rows.ts (pure) over the view-model's
+// cmdData; running one goes back through V.runCommand, or, for the two
+// hand-offs to the seller record, through V.openRecordComposer and
+// V.openOfferSheet, which the record reads.
+//
+// Details that matter in something used hundreds of times a day: no open or
+// close animation (it is there in the frame it was asked for); the input keeps
+// focus; the picked row stays scrolled into view; the mouse only takes the
+// selection when it actually moves; ⏎ never fires mid-IME composition; Tab
+// stays inside; Escape backs out of a second list, then closes and gives focus
+// back to where it was.
+'use client';
+
+import React, { useLayoutEffect, useEffect, useMemo, useRef, useState } from 'react';
+import type { ClozrView } from './view';
+import type { Mark } from '@/lib/command';
+import { Mark as Glyph } from '@/components/ds/mark';
+import { ComprIcon } from '@/components/ds/ComprIcon';
+import { buildCommandRows, rowText, type CmdRow } from './command-rows';
+import { BUYR, COMPR, DEAL_MACHINE, LANE, TALKR } from './brand';
+import './command-bar.css';
+
+/** The row's dot: whose product does the work. */
+const MARK: Record<Mark, string> = {
+  talkr: TALKR,
+  compr: COMPR,
+  lane: LANE,
+  genius: 'var(--c-genius)',
+  dealMachine: DEAL_MACHINE,
+  buyr: BUYR,
+  clozr: 'var(--c-accent)',
+  neutral: '#a1a1aa',
+};
+
+const isMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
+
+export function CommandBar({ V }: { V: ClozrView }) {
+  const data = V.cmdData;
+  const [q, setQ] = useState(V.searchQ);
+  const [step, setStep] = useState<string | null>(null);
+  /** What was typed before a second list opened, to put back when it closes. */
+  const [before, setBefore] = useState('');
+  const [sel, setSel] = useState(0);
+  const [mod] = useState(() => (isMac() ? '⌘' : 'Ctrl'));
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  /** A row ran: whatever it opened takes focus, so it is not handed back. */
+  const ran = useRef(false);
+  /** Where the pointer was last seen; a mousemove that did not move is the list scrolling under it. */
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+
+  const result = useMemo(() => (data ? buildCommandRows(data, q, step) : null), [data, q, step]);
+  const rows = useMemo(() => result?.groups.flatMap((g) => g.rows) ?? [], [result]);
+  const at = Math.min(sel, Math.max(0, rows.length - 1));
+  const current: CmdRow | undefined = rows[at];
+
+  // Focus moves in before the first paint, and goes back on a dismissal.
+  useLayoutEffect(() => {
+    const before = document.activeElement as HTMLElement | null;
+    inputRef.current?.focus({ preventScroll: true });
+    return () => {
+      if (ran.current) return;
+      if (before && before !== document.body && before.isConnected) before.focus({ preventScroll: true });
+    };
+  }, []);
+
+  // The picked row stays in view; the first one brings its group label with it.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list || !current) return;
+    if (at === 0) { list.scrollTop = 0; return; }
+    document.getElementById(current.id)?.scrollIntoView({ block: 'nearest' });
+  }, [current, at]);
+
+  if (!result) return null;
+
+  const type = (text: string) => { setQ(text); setSel(0); };
+  /** Into a second list (the query starts empty), or back out of it (the query comes back). */
+  const enter = (next: string | null) => {
+    if (next && !step) setBefore(q);
+    setStep(next);
+    setQ(next ? '' : before);
+    setSel(0);
+  };
+  const close = () => V.closeSearch();
+
+  const run = (row: CmdRow | undefined, alt: boolean) => {
+    const a = alt ? row?.alt?.action : row?.action;
+    if (!a) return;
+    if (a.t === 'step') return enter(a.step);
+    if (a.t === 'type') return type(a.text);
+    ran.current = true;
+    // The seller record reads these two: the composer on that channel, focused; the Make offer sheet.
+    if (a.t === 'compose') { close(); V.openRecordComposer(a.pid, a.channel); return; }
+    if (a.t === 'offer') { close(); V.openOfferSheet(a.pid); return; }
+    V.runCommand(a);
+  };
+
+  /** Tab: every action for the picked row's record (else the top one). */
+  const more = () => {
+    const key = current?.more ?? rows.find((r) => r.more)?.more;
+    if (key && step !== 'more:' + key) enter('more:' + key);
+  };
+
+  const onInputKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // An IME is still composing: its Enter picks a candidate, not a row.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    const n = rows.length;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (n) setSel((at + (e.key === 'ArrowDown' ? 1 : n - 1)) % n);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      run(current, e.metaKey || e.ctrlKey);
+    } else if (e.key === 'Backspace' && !q && step) {
+      e.preventDefault();
+      enter(null);
+    }
+  };
+
+  // Escape and Tab are read on the whole dialog, so they work wherever focus is inside it.
+  const onPanelKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (step) enter(null);
+      else close();
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      if (e.target !== inputRef.current) inputRef.current?.focus();
+      else if (e.shiftKey) { if (step) enter(null); } else more();
+    }
+  };
+
+  const mobile = V.isMobile;
+  const title = result.title;
+  let gi = 0;
+
+  return (
+    <div
+      className="clozr-cmd-backdrop"
+      data-mobile={mobile || undefined}
+      // A click outside closes it; the press itself keeps the caret in the input.
+      onMouseDown={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
+      onClick={(e) => { if (e.target === e.currentTarget) close(); }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command bar"
+        data-screen-label="Command bar"
+        className="clozr-cmd"
+        data-mobile={mobile || undefined}
+        onKeyDown={onPanelKey}
+        // Clicks inside keep the caret in the input.
+        onMouseDown={(e) => { if (e.target !== inputRef.current) e.preventDefault(); }}
+      >
+        <div className="clozr-cmd-field">
+          <label htmlFor="clozr-cmd-input" className="clozr-cmd-label">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <span className="clozr-cmd-sr">{title ?? 'Search or type a command'}</span>
+          </label>
+          {title ? <span className="clozr-cmd-chip" aria-hidden>{title}</span> : null}
+          <input
+            id="clozr-cmd-input"
+            ref={inputRef}
+            className="clozr-cmd-input"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="clozr-cmd-list"
+            aria-autocomplete="list"
+            aria-activedescendant={current?.id}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            enterKeyHint="go"
+            value={q}
+            placeholder={result.placeholder}
+            onChange={(e) => type(e.target.value)}
+            onKeyDown={onInputKey}
+          />
+          {mobile ? (
+            <button type="button" className="clozr-cmd-cancel" onClick={close}>Cancel</button>
+          ) : (
+            <button type="button" className="clozr-cmd-esc" onClick={close} aria-label="Close" tabIndex={-1}>esc</button>
+          )}
+        </div>
+        <div id="clozr-cmd-list" ref={listRef} role="listbox" aria-label={title ? 'Actions' : 'Commands and records'} className="clozr-cmd-list">
+          {result.groups.map((g) => {
+            const gid = 'clozr-cmd-g' + gi++;
+            return (
+              <div key={gid} role="group" aria-labelledby={gid}>
+                <div id={gid} role="presentation" className="clozr-cmd-group">{g.label}</div>
+                {g.rows.map((r) => {
+                  const selected = r.id === current?.id;
+                  return (
+                    <div
+                      key={r.id}
+                      id={r.id}
+                      role="option"
+                      aria-selected={selected}
+                      aria-label={rowText(r)}
+                      aria-describedby={r.sub ? r.id + '-sub' : undefined}
+                      className="clozr-cmd-row"
+                      onMouseMove={(e) => {
+                        const p = pointer.current;
+                        pointer.current = { x: e.screenX, y: e.screenY };
+                        if (!p || (p.x === e.screenX && p.y === e.screenY)) return;
+                        const i = rows.indexOf(r);
+                        if (i !== at) setSel(i);
+                      }}
+                      onClick={(e) => run(r, e.metaKey || e.ctrlKey)}
+                    >
+                      {r.mark === 'compr'
+                        ? <span style={{ display: 'inline-flex', flex: 'none' }}><ComprIcon size={14} /></span>
+                        : <span style={{ color: r.dot ?? MARK[r.mark], display: 'inline-flex', flex: 'none' }}><Glyph label={r.label} /></span>}
+                      <span className="clozr-cmd-text">
+                        <span className="clozr-cmd-title">
+                          {r.verb ? <span className="clozr-cmd-verb">{r.verb} </span> : null}
+                          {r.label}
+                        </span>
+                        {r.sub ? <span id={r.id + '-sub'} className={'clozr-cmd-sub' + (r.num ? ' clozr-cmd-num' : '')}>{r.sub}</span> : null}
+                      </span>
+                      {selected && !mobile ? <span className="clozr-cmd-enter" aria-hidden>↵</span> : null}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+          {!rows.length ? <div className="clozr-cmd-empty">{result.empty}</div> : null}
+        </div>
+        {!mobile ? (
+          <div className="clozr-cmd-foot" aria-hidden>
+            <span><kbd className="clozr-cmd-kbd">↑↓</kbd>move</span>
+            <span><kbd className="clozr-cmd-kbd">↵</kbd>{current?.action.t === 'step' || current?.action.t === 'type' ? 'next' : 'run'}</span>
+            {current?.alt ? <span><kbd className="clozr-cmd-kbd">{mod}↵</kbd>{current.alt.label}</span> : null}
+            {step ? <span><kbd className="clozr-cmd-kbd">esc</kbd>back</span> : <span><kbd className="clozr-cmd-kbd">tab</kbd>more actions</span>}
+            <span className="clozr-cmd-foot-note">Verbs first, then records</span>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # Production + dev npm deps. Security updates always come through regardless;
+  # this also keeps the tree fresh so the next manual bump is small. Grouped so
+  # we get a few PRs a week, not dozens.
+  - package-ecosystem: npm
+    directory: /app
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:13"
+    open-pull-requests-limit: 5
+    groups:
+      production-deps:
+        dependency-type: production
+      dev-deps:
+        dependency-type: development
+    labels:
+      - dependencies
+
+  # Keep the GitHub Actions used by our workflows patched too (a compromised
+  # action is a real supply-chain vector).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:13"
+    labels:
+      - dependencies
+      - github-actions

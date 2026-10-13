@@ -1,0 +1,87 @@
+name: CI
+
+# Quality + security gate. Make these required status checks on `main`
+# (Settings → Branches → Branch protection) so nothing reaches the Vercel
+# auto-deploy without passing: lint, type-check, the production build, and a
+# production-dependency audit.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    # The app and its package.json live in app/, not the repo root.
+    working-directory: app
+
+jobs:
+  build:
+    name: lint + type-check + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+
+      - name: Install (lockfile-pinned)
+        run: pnpm install --frozen-lockfile
+
+      # One ESLint process type-checks the whole app, and on main it already
+      # peaks close to Node's default ~2 GB heap on the runner; a few thousand
+      # more lines tip it into "JavaScript heap out of memory". 4 GB ran out
+      # too once useClozr.ts passed 11,000 lines; a full lint peaks near 6 GB,
+      # which a 7 GB runner still holds.
+      - name: Lint
+        run: pnpm lint
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+
+      - name: Type-check
+        run: pnpm typecheck
+
+      - name: Build (static export)
+        run: pnpm build
+
+  audit:
+    name: production dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+
+      - name: Install (lockfile-pinned)
+        run: pnpm install --frozen-lockfile
+
+      # Fail on a HIGH/CRITICAL advisory in the PRODUCTION tree only. The
+      # browser bundle is what ships; build tooling advisories are tracked but
+      # must not block a fix from going out.
+      - name: Audit (production deps)
+        run: pnpm audit --prod --audit-level=high

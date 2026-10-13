@@ -1,0 +1,136 @@
+/* Generated hover/focus styles for the CLOZR prototype port. */
+.dc1:hover{border-color:#c7c7cc !important}
+.dc2:hover{background:var(--c-btn-hover) !important}
+.dc3:hover{background:#08694C !important}
+.dc4:hover{background:#fafafa !important}
+.dc5:hover{color:#0A8560 !important}
+/* Hover-capable pointers only: a tap on iOS leaves :hover stuck on, which left the dialer launcher black. */
+@media (hover: hover){.dc6:hover{background:#18181b !important;color:#fff !important;border-color:#18181b !important}}
+.dc7:hover{background:#dcfce7 !important}
+.dc8:hover{background:rgba(255,255,255,.08) !important}
+.dc9:hover{border-color:var(--c-accent) !important;background:var(--c-btn-hover) !important}
+.dc10:hover{background:var(--c-primary-hover) !important;border-color:var(--c-primary-hover) !important}
+.dc11:hover{background:#0A8560 !important;color:#fff !important}
+.dc12:hover{color:#18181b !important}
+.dc13:hover{background:#f4f4f5 !important;color:#18181b !important}
+.dc14:hover{color:#0A8560 !important;border-color:#0A8560 !important}
+.dc15:hover{background:#f4f4f5 !important}
+.dc15:focus-within{background:var(--c-accent-soft) !important;box-shadow:inset 0 0 0 1px var(--c-accent) !important}
+.dc15:focus{background:var(--c-accent-soft) !important;box-shadow:inset 0 0 0 1px var(--c-accent) !important}
+.dc16:hover{background:#0A8560 !important}
+.dc17:focus-within{border-color:var(--c-accent) !important;background:#fff !important;box-shadow:0 0 0 3px color-mix(in srgb, var(--c-accent) 12%, transparent) !important}
+.dc17:focus{border-color:var(--c-accent) !important;background:#fff !important;box-shadow:0 0 0 3px color-mix(in srgb, var(--c-accent) 12%, transparent) !important}
+.dc18:hover{background:#E7F8F1 !important}
+.dc19:hover{box-shadow:var(--elev-2) !important}
+.dc20:focus-within{background:var(--c-accent-soft) !important;box-shadow:inset 0 0 0 1px var(--c-accent) !important}
+.dc20:focus{background:var(--c-accent-soft) !important;box-shadow:inset 0 0 0 1px var(--c-accent) !important}
+.dc21:focus-within{border-color:var(--c-accent) !important;background:#fff !important}
+.dc21:focus{border-color:var(--c-accent) !important;background:#fff !important}
+.dc22:hover{box-shadow:var(--elev-2) !important}
+@media (prefers-reduced-motion:no-preference){.dc22:hover{transform:translateY(-1px) !important}}
+.dc23:hover{border-color:#0A8560 !important;color:#0A8560 !important;background:#E7F8F1 !important}
+.dc24:focus-within{background:var(--c-accent-soft) !important;box-shadow:0 0 0 1px var(--c-accent) !important}
+.dc24:focus{background:var(--c-accent-soft) !important;box-shadow:0 0 0 1px var(--c-accent) !important}
+.dc25:hover{border-color:#0A8560 !important}
+.dc26:hover{border-color:#0A8560 !important;color:#0A8560 !important}
+.dc27:hover{border-color:#9b9e96 !important;color:#1c1d1f !important}
+.dc28:hover{border-color:#9b9e96 !important}
+.dc29:hover{background:#efece4 !important}
+@media (prefers-reduced-motion:no-preference){.dc30:hover{transform:translateY(-2px) !important}}
+.dc31:hover{background:#f6f4ee !important}
+.dc32:hover{border-color:#c7c7cc !important;background:#fff !important}
+.dc33:focus-within{border-color:var(--c-accent) !important;box-shadow:0 0 0 3px color-mix(in srgb, var(--c-accent) 12%, transparent) !important}
+.dc33:focus{border-color:var(--c-accent) !important;box-shadow:0 0 0 3px color-mix(in srgb, var(--c-accent) 12%, transparent) !important}
+.dc34:hover{background:#1f7a4d !important}
+.dc35:hover{background:#16a34a !important;color:#fff !important;border-color:#16a34a !important}
+.dc36:hover{background:#b91c1c !important}
+.dc37:hover{box-shadow:var(--elev-2) !important;border-color:#A8ECD2 !important}
+.dc38:hover{background:#E7F8F1 !important;border-color:#A8ECD2 !important;color:#0A8560 !important}
+.clozr-tl-pin{opacity:0;transition:opacity .12s}.clozr-tl:hover .clozr-tl-pin,.clozr-tl-pin:focus-visible,.clozr-tl-pin[aria-pressed="true"]{opacity:1}
+@media (hover:none){.clozr-tl-pin{opacity:1}}
+
+/* Lane's buttons: pink, darker on hover. */
+.clozr-lane-btn:hover{background:var(--c-lane-2) !important;border-color:var(--c-lane-2) !important;color:#fff !important}
+.clozr-lane-ghost:hover{background:var(--c-lane-soft) !important}
+.clozr-lane-chip:hover{background:var(--c-lane-line) !important}
+
+/* Phone numbers and email addresses. */
+.clozr-contact{color:var(--c-contact) !important}
+a.clozr-contact{text-decoration:none}
+a.clozr-contact:hover{text-decoration:underline}
+
+/* A scroll area with a visible, coloured well (the deals table). */
+.clozr-scroll-well{scrollbar-color:var(--c-well-thumb) var(--c-well);scrollbar-width:auto}
+.clozr-scroll-well::-webkit-scrollbar{width:14px;height:14px}
+.clozr-scroll-well::-webkit-scrollbar-track{background:var(--c-well);border-radius:0}
+.clozr-scroll-well::-webkit-scrollbar-thumb{background:var(--c-well-thumb);border:3px solid var(--c-well);border-radius:10px}
+.clozr-scroll-well::-webkit-scrollbar-thumb:hover{background:#0A8560}
+.clozr-scroll-well::-webkit-scrollbar-corner{background:var(--c-well)}
+@keyframes clozrPulseLane{0%,100%{box-shadow:0 0 0 0 rgba(219,39,119,.45)}50%{box-shadow:0 0 0 5px rgba(219,39,119,0)}}
+
+/* Notification rows collapse and slide away when marked read. */
+.notif-row{display:grid;grid-template-rows:1fr;opacity:1;transform:translateX(0);transition:grid-template-rows .4s cubic-bezier(.22,1,.36,1),opacity .28s ease,transform .4s cubic-bezier(.22,1,.36,1)}
+.notif-row.is-out{grid-template-rows:0fr;opacity:0;transform:translateX(42px)}
+.notif-row-clip{overflow:hidden;min-height:0}
+.notif-row-card{transition:background .2s ease}
+.notif-row-card.is-link{cursor:pointer}
+.notif-row-card.is-link:hover{background:#fafafa!important}
+.notif-row-actions{transition:opacity .16s ease}
+.notif-check{width:8px;height:8px;margin-top:6px;border-radius:2px;display:grid;place-items:center;transition:width .2s ease,height .2s ease,border-radius .2s ease,margin .2s ease,background .2s ease}
+.notif-check.is-on{width:16px;height:16px;margin-top:1px;border-radius:50%;animation:notifCheck .34s cubic-bezier(.22,1,.36,1)}
+@keyframes notifCheck{0%{transform:scale(.25)}55%{transform:scale(1.14)}100%{transform:scale(1)}}
+
+/* Product-coloured buttons: COMPR blue, Talkr red, Genius / buyer purple. */
+.clozr-compr-btn:hover{background:var(--c-compr-2) !important;border-color:var(--c-compr-2) !important}
+.clozr-talkr-btn:hover{background:var(--c-talkr-2) !important;border-color:var(--c-talkr-2) !important}
+.clozr-genius-btn:hover{background:var(--c-genius-2) !important;border-color:var(--c-genius-2) !important}
+.clozr-talkr-ghost:hover{background:var(--c-talkr-soft) !important;border-color:var(--c-talkr) !important}
+
+/* Workspace and list placeholders. The chrome is already there; the rows
+   that have not arrived shimmer instead of holding a blank page. */
+.clozr-skel{min-height:100dvh;display:flex;flex-direction:column;background:#fafafa}
+.clozr-skel-head{height:56px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;background:#fff;border-bottom:1px solid #e4e4e7}
+.clozr-skel-gap{flex:1}
+.clozr-skel-icon{width:34px;height:34px;border-radius:9px}
+.clozr-skel-icon-fill{background:#d7efe4}
+.clozr-skel-mark{width:18px;height:18px;border-radius:4px}
+.clozr-skel-body{flex:1;min-height:0;padding:16px 16px 24px;display:flex;flex-direction:column;gap:14px}
+.clozr-skel-rows{display:flex;flex-direction:column}
+.clozr-skel-row{display:flex;align-items:center;gap:12px;padding:10px 4px}
+.clozr-skel-avatar{width:36px;height:36px;border-radius:10px;flex:none}
+.clozr-skel-lines{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+.clozr-skel-line{display:block;height:10px;border-radius:5px;width:72%}
+.clozr-skel-line-sm{width:46%;height:8px}
+.clozr-skel-line-lg{width:38%;height:16px;border-radius:6px}
+.clozr-skel-tabs{height:calc(58px + env(safe-area-inset-bottom, 0px));display:flex;align-items:center;border-top:1px solid #e4e4e7;background:#fff}
+.clozr-skel-tab{flex:1;height:28px;margin:0 14px;border-radius:8px}
+.clozr-skel-mark,.clozr-skel-icon:not(.clozr-skel-icon-fill),.clozr-skel-avatar,.clozr-skel-line,.clozr-skel-tab{
+  background:linear-gradient(90deg,#ececee 0%,#f7f7f8 45%,#ececee 100%);
+  background-size:200% 100%;
+  animation:clozrSkel 1.1s ease-in-out infinite;
+}
+@media (min-width:800px){.clozr-skel-tabs{display:none}}
+@media (prefers-reduced-motion:reduce){
+  .clozr-skel-mark,.clozr-skel-icon:not(.clozr-skel-icon-fill),.clozr-skel-avatar,.clozr-skel-line,.clozr-skel-tab{animation:none;background:#ececee}
+}
+@keyframes clozrSkel{0%{background-position:100% 0}100%{background-position:-100% 0}}
+/* Lead memory card's Refresh (LeadMemoryCard.tsx): DESIGN.md focus, hover and press. */
+.lm-btn{transition:transform .14s cubic-bezier(.23,1,.32,1)}
+.lm-btn:focus-visible{outline:2px solid #0A8560;outline-offset:2px}
+@media (hover:hover) and (pointer:fine){.lm-btn:hover:not(:disabled){filter:brightness(.97)}}
+.lm-btn:active:not(:disabled){transform:scale(.97)}
+@media (prefers-reduced-motion:reduce){.lm-btn{transition:none}.lm-btn:active:not(:disabled){transform:none}}
+
+/* Deals board: Archive is always on the card, quieter until the pointer is over it. */
+.deal-card-archive { opacity: .78; transition: opacity .12s; }
+.dc22:hover .deal-card-archive, .deal-card-archive:focus-visible { opacity: 1; }
+
+/* Email threads on the Activity feed (EmailThread.tsx): Reply, the earlier-messages fold, and its reveal. */
+.clozr-reply,.clozr-thread-fold{transition:filter .12s ease,background-color .12s ease}
+.clozr-reply:focus-visible,.clozr-thread-fold:focus-visible{outline:2px solid #0A8560;outline-offset:2px}
+@media (hover:hover) and (pointer:fine){.clozr-reply:hover{filter:brightness(.97)}.clozr-thread-fold:hover{background:#f4f4f5 !important}}
+.clozr-thread-earlier{animation:clozrThreadIn .2s cubic-bezier(.23,1,.32,1)}
+@keyframes clozrThreadIn{from{opacity:0;translate:0 -4px}to{opacity:1;translate:0 0}}
+@media (prefers-reduced-motion:reduce){.clozr-thread-earlier{animation:none}}
+/* A phone keeps the fold to one line; the first message's time shows when it opens. */
+@media (max-width:480px){.clozr-thread-since{display:none}}

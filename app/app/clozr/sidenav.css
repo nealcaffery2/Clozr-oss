@@ -1,0 +1,272 @@
+/* The desk side menu (SideNav.tsx). Hover and press follow DESIGN.md §6:
+   a brightness shift only where a pointer can hover, press scales to .97. */
+
+.cz-side {
+  flex: none;
+  width: 236px;
+  box-sizing: border-box;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 12px 8px;
+  background: #fcfcfc;
+  border-right: 1px solid #e4e4e7;
+  position: relative;
+  z-index: 41;
+}
+.cz-side.is-folded {
+  width: 64px;
+  padding: 12px 10px 8px;
+  align-items: center;
+}
+
+.cz-side-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+}
+.cz-side-logo {
+  display: flex;
+  align-items: center;
+  margin-right: auto;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+  color: #18181b;
+}
+.is-folded .cz-side-logo { margin: 0; padding: 0; }
+
+.cz-side-actions { display: flex; gap: 6px; }
+.is-folded .cz-side-actions { flex-direction: column; }
+
+.cz-side-search,
+.cz-side-add {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cz-side-search {
+  flex: 1;
+  min-width: 0;
+  padding: 0 10px;
+  background: #fff;
+  color: #71717a;
+  box-shadow: 0 0 0 1px rgba(24, 24, 27, .08), 0 1px 2px -1px rgba(24, 24, 27, .08);
+}
+.cz-side-search kbd {
+  font: 600 11px/1 var(--font-sans);
+  color: #71717a;
+  border: 1px solid #e4e4e7;
+  border-radius: 5px;
+  padding: 2px 5px;
+  background: #fff;
+}
+.cz-side-add {
+  padding: 0 11px;
+  background: #18181b;
+  color: #fff;
+  font-weight: 600;
+}
+.is-folded .cz-side-search,
+.is-folded .cz-side-add { width: 40px; flex: none; padding: 0; justify-content: center; }
+
+.cz-side-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.cz-side-group.has-rule {
+  border-top: 1px solid #ececee;
+  padding-top: 10px;
+}
+.is-folded .cz-side-group { align-items: center; width: 100%; }
+.cz-side-label {
+  padding: 0 10px 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #71717a;
+}
+
+.cz-side-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: #3f3f46;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  position: relative;
+}
+.cz-side-link.is-tool { height: 28px; font-size: 13px; }
+.cz-side-link[aria-current='page'] {
+  background: #fff;
+  color: #18181b;
+  font-weight: 600;
+  box-shadow: 0 0 0 1px rgba(24, 24, 27, .07), 0 1px 2px rgba(24, 24, 27, .05);
+}
+.cz-side-link[aria-current='page'] > svg { color: var(--c-accent, #0A8560); }
+.is-folded .cz-side-link { width: 40px; height: 36px; padding: 0; justify-content: center; }
+.is-folded .cz-side-link[aria-current='page'] { background: var(--c-accent-soft, #E7F8F1); box-shadow: none; }
+
+/* The selected pill is one element that glides between sections (SideNav.tsx,
+   motion.ts placePill). The link keeps its own fill until the pill is placed,
+   so the menu still reads correctly before script runs. */
+.cz-side-pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(24, 24, 27, .07), 0 1px 2px rgba(24, 24, 27, .05);
+  pointer-events: none;
+  /* Under every label and link it passes on the way (the nav is its own stacking context). */
+  z-index: -1;
+}
+.is-folded .cz-side-pill { background: var(--c-accent-soft, #E7F8F1); box-shadow: none; }
+.cz-side[data-pill='on'] .cz-side-link[aria-current='page'] { background: transparent; box-shadow: none; }
+
+.cz-side-tool {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: #f4f4f5;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.cz-side-grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+
+.cz-side-icon {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: #52525b;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+}
+.cz-side-badge {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  border: 2px solid #fcfcfc;
+  background: var(--c-accent, #0A8560);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  display: grid;
+  place-items: center;
+}
+.cz-side-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: var(--c-accent, #0A8560);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  display: grid;
+  place-items: center;
+}
+.cz-side-badge.is-lane,
+.cz-side-count.is-lane { background: var(--c-lane, #db2777); }
+
+.cz-side-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+}
+.is-folded .cz-side-foot { align-items: center; width: 100%; }
+.cz-side-me {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  margin-top: 4px;
+  border: 0;
+  border-top: 1px solid #ececee;
+  border-radius: 0;
+  background: none;
+  color: #71717a;
+  text-align: left;
+  cursor: pointer;
+}
+.is-folded .cz-side-me { width: auto; padding: 8px 0 4px; justify-content: center; }
+.cz-side-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.cz-side-name { font-size: 13px; font-weight: 600; color: #18181b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cz-side-role { font-size: 11.5px; color: #71717a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cz-side-fold {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: #71717a;
+  font-size: 12px;
+  cursor: pointer;
+}
+.is-folded .cz-side-fold { width: 40px; padding: 0; justify-content: center; }
+
+.cz-side :is(button):focus-visible {
+  outline: 2px solid var(--c-accent, #0A8560);
+  outline-offset: 2px;
+}
+.cz-side :is(.cz-side-link, .cz-side-search, .cz-side-add, .cz-side-icon, .cz-side-me, .cz-side-fold, .cz-side-logo) {
+  transition: background-color 120ms ease, transform 140ms cubic-bezier(.23, 1, .32, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .cz-side :is(.cz-side-link:not([aria-current='page']), .cz-side-icon, .cz-side-fold, .cz-side-logo):hover { background: #f1f1f2; }
+  .cz-side .cz-side-me:hover { background: #f4f4f5; }
+  .cz-side .cz-side-search:hover { background: #fafafa; }
+  .cz-side .cz-side-add:hover { background: #27272a; }
+}
+.cz-side :is(button):active { transform: scale(.97); }
+@media (prefers-reduced-motion: reduce) {
+  .cz-side :is(button) { transition: none; }
+  .cz-side :is(button):active { transform: none; }
+}

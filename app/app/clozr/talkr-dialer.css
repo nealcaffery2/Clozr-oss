@@ -1,0 +1,941 @@
+/*
+ * The Talkr dialer inside CLOZR (the full Dialer screen, the slide-out quick
+ * dialer and the incoming-call card).
+ *
+ * Same re-keying as talkr-inbox.css: Talkr's tokens with the accent on CLOZR
+ * mint and the font on CLOZR's system sans; error red stays red. Scoped to
+ * `.talkr-dialer` so it never leaks into the rest of the shell.
+ */
+
+/* The two tinted tokens are read by inline styles all over the Talkr parts, so
+   retuning them here moves every card, hairline and shadow at once. */
+.talkr-dialer {
+  /* Grouped background: the shared cool page, so white panels read as raised. */
+  --bg: var(--page, #f2f4f8);
+  --panel: #ffffff;
+  --panel-2: #e8ecf3;
+  --line: var(--edge, #dde2ea);
+  --line-soft: var(--band-line, #e3e8ef);
+  --line-hover: var(--edge-hover, #c9d1dd);
+
+  --text: #18181b;
+  /* Both muted steps hold 4.5:1 on white and on the rail, band and inset tints. */
+  --muted: #52525b;
+  --muted-2: #62626c;
+  --ink: #111111;
+
+  /* Talkr red: calling, the dialer and texts are Talkr's (tokens.css --c-talkr). */
+  --accent: #e6142e;
+  --accent-hover: #c20f26;
+  --accent-soft: #ffe9ec;
+  --accent-light: #fda4af;
+  --orange: #ff7a45;
+
+  /* Status colours stepped down to 4.5:1 as text on white (#16a34a and
+     #d97706 were 3.3:1 and 3.2:1). */
+  --green: #15803d;
+  --green-hover: #166534;
+  --red: #dc2626;
+  --red-hover: #b91c1c;
+  --amber: #b45309;
+
+  --dark-1: #18181b;
+  --dark-2: #27272a;
+  --dark-3: #3f3f46;
+
+  --r-btn: 10px;
+  --r-md: 12px;
+  --r-card: 12px;
+  --r-lg: 18px;
+
+  --shadow-rest: var(--elev-1);
+  --shadow-lift: var(--elev-2);
+  --shadow-pop: 0 0 0 3px rgba(10, 133, 96, 0.12);
+
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  color: var(--text);
+  font-family: var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.talkr-dialer a,
+.talkr-dialer a:hover {
+  color: inherit;
+}
+
+.talkr-dialer .display {
+  letter-spacing: -0.03em;
+}
+
+.talkr-dialer .eyebrow {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted-2);
+}
+
+@keyframes ringpulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  70%,
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes bluepulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.talkr-dialer .lift-row {
+  transition:
+    border-color 0.13s ease,
+    background-color 0.13s ease;
+  --lift-bg: var(--panel-2);
+  --lift-line: var(--line-hover);
+}
+.talkr-dialer .lift-row.on-dark {
+  --lift-bg: rgba(255, 255, 255, 0.06);
+  --lift-line: var(--dark-3);
+}
+@media (hover: hover) and (pointer: fine) {
+  .talkr-dialer .lift-row:hover {
+    background-color: var(--lift-bg) !important;
+    border-color: var(--lift-line) !important;
+  }
+  .talkr-dialer .copy-affordance {
+    opacity: 0.5;
+  }
+  .talkr-dialer .copy-host:hover .copy-affordance,
+  .talkr-dialer .copy-affordance:hover,
+  .talkr-dialer .copy-affordance:focus-visible,
+  .talkr-dialer .copy-affordance[data-state='copied'],
+  .talkr-dialer .copy-affordance[data-state='failed'] {
+    opacity: 1;
+  }
+}
+.talkr-dialer .lift-row:focus-visible,
+.talkr-dialer .copy-affordance:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-pop);
+}
+
+/* The Talkr mark (public/talkr/talkr-mark.svg, inlined) as a mask, so it takes a
+   brand colour (red, charcoal, grey, white — brand/README.md). Inlined because
+   the production build rewrites a root-relative url() to /_next/static/…, which 404s. */
+.talkr-mark {
+  display: inline-block;
+  flex: none;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill-rule='evenodd'%3E%3Cpath d='M29 5h42a24 24 0 0 1 24 24v37a24 24 0 0 1-24 24H30L5 100V29A24 24 0 0 1 29 5ZM50 22a6 6 0 0 0-6 6v44a6 6 0 0 0 12 0V28a6 6 0 0 0-6-6ZM33 36a6 6 0 0 0-6 6v16a6 6 0 0 0 12 0V42a6 6 0 0 0-6-6ZM67 36a6 6 0 0 0-6 6v16a6 6 0 0 0 12 0V42a6 6 0 0 0-6-6Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill-rule='evenodd'%3E%3Cpath d='M29 5h42a24 24 0 0 1 24 24v37a24 24 0 0 1-24 24H30L5 100V29A24 24 0 0 1 29 5ZM50 22a6 6 0 0 0-6 6v44a6 6 0 0 0 12 0V28a6 6 0 0 0-6-6ZM33 36a6 6 0 0 0-6 6v16a6 6 0 0 0 12 0V42a6 6 0 0 0-6-6ZM67 36a6 6 0 0 0-6 6v16a6 6 0 0 0 12 0V42a6 6 0 0 0-6-6Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* ── iPhone Phone app (iOS 26 "Liquid Glass") ────────────────────────────
+   Same glass as the inbox's iMessage bars (talkr-inbox.css). */
+.talkr-dialer .glass-bar {
+  background: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .talkr-dialer .glass-bar {
+    background: #fff;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* Round keys: digit over letters on the soft system grey. */
+.talkr-dialer .ios-key {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  border: 1px solid var(--edge);
+  background: linear-gradient(180deg, #ffffff 0%, #f0f3f8 100%);
+  box-shadow: var(--elev-key);
+  color: var(--text);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .talkr-dialer .ios-key:hover {
+    border-color: var(--edge-hover);
+    box-shadow: var(--elev-key), 0 6px 14px -6px rgba(20, 30, 55, 0.22);
+  }
+}
+/* Pressed: the key sinks into the rail and darkens, it does not just shrink. */
+.talkr-dialer .ios-key:active {
+  background: linear-gradient(180deg, #dfe4ec 0%, #e8ecf3 100%);
+  box-shadow: var(--elev-press);
+  transform: scale(0.97);
+}
+
+/* The call and end buttons: round, filled, white glyph. */
+.talkr-dialer .ios-round {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  border: none;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 2px 4px rgba(20, 30, 55, 0.22), 0 8px 18px -6px rgba(20, 30, 55, 0.4);
+  transition: transform 0.12s ease, opacity 0.12s ease, box-shadow 0.12s ease;
+}
+.talkr-dialer .ios-round:active {
+  transform: scale(0.95);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+.talkr-dialer .ios-round:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* In-call controls: grey circle, label under it; on = filled ink. */
+.talkr-dialer .ios-ctl {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text);
+  font: 500 11.5px/1.1 var(--sans);
+}
+.talkr-dialer .ios-ctl > span:first-child {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #ffffff 0%, #f0f3f8 100%);
+  border: 1px solid var(--edge);
+  box-shadow: var(--elev-key);
+  transition: background-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+}
+.talkr-dialer .ios-ctl:not(:disabled):active > span:first-child {
+  background: linear-gradient(180deg, #dfe4ec 0%, #e8ecf3 100%);
+  box-shadow: var(--elev-press);
+  transform: scale(0.97);
+}
+/* On: filled ink and sunk, so it is a state and not only a colour. */
+.talkr-dialer .ios-ctl[aria-pressed='true'] > span:first-child {
+  background: var(--text);
+  border-color: var(--text);
+  color: #fff;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.45);
+}
+.talkr-dialer .ios-ctl:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+.talkr-dialer .ios-key:focus-visible,
+.talkr-dialer .ios-round:focus-visible,
+.talkr-dialer .ios-ctl:focus-visible > span:first-child {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .talkr-dialer *,
+  .talkr-launcher-ring {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* The live call's recording dot. It breathes rather than blinks: a hard blink
+   pulls the eye off the seller, and the point is only that the rep can see the
+   line is recorded without going to look for it. */
+.talkr-rec-dot {
+  animation: talkrRecPulse 2s ease-in-out infinite;
+}
+
+@keyframes talkrRecPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .talkr-rec-dot { animation: none; }
+}
+
+/* ── Talkr Phone: the full-screen iPhone phone (PhoneScreen.tsx) ─────────
+   Phones only. Everything below is scoped under .clozr-phone (or the pill),
+   which only mounts when V.isMobile, so the desk dialer above is untouched.
+   The iOS dark palette so the page can sit under a black-translucent status
+   bar: black ground, #333 keys that press to #737373 at once, white digits.
+   CLOZR mint is the primary action (Call, Accept); red is only End/Decline. */
+.clozr-phone {
+  --phone-bg: #000;
+  --phone-key: #333;
+  --phone-key-down: #737373;
+  --phone-mint: #0a8560;
+  --phone-mint-down: #08694c;
+  --phone-mint-ink: #3ddc97;
+  --phone-red: #ff3b30;
+  --phone-red-down: #d70015;
+  --phone-sheet: #1c1c1e;
+  /* Mint, not Talkr red, for every accent inside the phone (toggles, Save). */
+  --accent: #0a8560;
+  --accent-hover: #08694c;
+  --accent-soft: #e7f8f1;
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  display: flex;
+  flex-direction: column;
+  /* clip, not just hidden: nothing (a focus, a scroll-into-view) can nudge the phone itself. */
+  overflow: hidden;
+  overflow: clip;
+  overscroll-behavior: none;
+  background: var(--phone-bg);
+  color: #fff;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Dark tokens for the stock Talkr parts (lists, sheets) shown on the phone's black. */
+.clozr-phone .phone-dark {
+  --bg: #000;
+  --panel: #1c1c1e;
+  --panel-2: rgba(255, 255, 255, 0.08);
+  --line: rgba(255, 255, 255, 0.14);
+  --line-soft: rgba(255, 255, 255, 0.08);
+  --line-hover: rgba(255, 255, 255, 0.24);
+  --text: #fff;
+  --muted: rgba(235, 235, 245, 0.62);
+  --muted-2: rgba(235, 235, 245, 0.42);
+  --ink: #000;
+  --dark-1: #3a3a3c;
+  --dark-2: #2c2c2e;
+  --dark-3: #48484a;
+  --green: #0a8560;
+  --red: #ff453a;
+  --amber: #ffb340;
+  --accent-soft: rgba(10, 133, 96, 0.28);
+  color: var(--text);
+}
+/* Light tokens again, for forms that read better on white (wrap-up, context). */
+.clozr-phone .phone-light {
+  --bg: #f2f2f7;
+  --panel: #ffffff;
+  --panel-2: #f4f4f5;
+  --line: #e4e4e7;
+  --line-soft: #f0f0f1;
+  --line-hover: #d4d4d8;
+  --text: #18181b;
+  --muted: #52525b;
+  --muted-2: #62626c;
+  --ink: #111111;
+  --green: #15803d;
+  --red: #dc2626;
+  --amber: #b45309;
+  --accent-soft: #e7f8f1;
+  color: var(--text);
+}
+
+/* Every control on the phone: no grey tap flash, no text selection or callout
+   on a long press, and no 300ms double-tap-zoom wait. */
+.clozr-phone button,
+.clozr-phone [role='button'],
+.clozr-phone-pill {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+.clozr-phone button {
+  cursor: pointer;
+}
+.clozr-phone button:focus-visible {
+  outline: 2px solid var(--phone-mint-ink);
+  outline-offset: 2px;
+}
+
+/* A top bar: Done / Minimise on the left, a title or chip in the middle. */
+.clozr-phone .phone-head {
+  flex: none;
+  height: 44px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 0 8px;
+}
+.clozr-phone .phone-textbtn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  color: #fff;
+  font: 400 17px/1 var(--sans);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.clozr-phone .phone-textbtn.mint {
+  color: var(--phone-mint-ink);
+}
+.clozr-phone .phone-textbtn:active {
+  opacity: 0.5;
+}
+.clozr-phone .phone-iconbtn {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.clozr-phone .phone-iconbtn:active {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* The keypad. Sizes come from --key so it fits any phone without scrolling:
+   78px at 390×844, smaller on an SE or with Safari's toolbar up. */
+.clozr-phone .phone-pad {
+  --key: clamp(60px, min(20vw, calc((100dvh - 250px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) / 5.5)), 78px);
+  display: grid;
+  grid-template-columns: repeat(3, var(--key));
+  column-gap: min(26px, calc((100vw - 3 * var(--key) - 48px) / 2));
+  row-gap: calc(var(--key) * 0.22);
+  justify-content: center;
+  touch-action: none;
+  flex: none;
+}
+.clozr-phone .phone-pad.tones {
+  --key: clamp(56px, calc((100dvh - 330px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) / 4.6), 76px);
+  --key-bg: rgba(255, 255, 255, 0.16);
+  --key-bg-down: rgba(255, 255, 255, 0.34);
+}
+.clozr-phone .phone-key {
+  width: var(--key);
+  height: var(--key);
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  background: var(--key-bg, var(--phone-key));
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: none;
+}
+.clozr-phone .phone-key[data-down],
+.clozr-phone .phone-key:active {
+  background: var(--key-bg-down, var(--phone-key-down));
+}
+.clozr-phone .phone-key .phone-key-d {
+  font: 400 calc(var(--key) * 0.46) / 1 var(--sans);
+  color: #fff;
+}
+.clozr-phone .phone-key .phone-key-l {
+  font: 700 10px/1 var(--sans);
+  letter-spacing: 2px;
+  color: #fff;
+  margin-top: 2px;
+  min-height: 10px;
+  padding-left: 2px;
+}
+.clozr-phone .phone-key.glyph .phone-key-d {
+  font-size: 36px;
+  transform: translateY(4px);
+}
+.clozr-phone .phone-key.glyph[data-key='*'] .phone-key-d {
+  font-size: 44px;
+  transform: translateY(10px);
+}
+.clozr-phone .phone-call,
+.clozr-phone .phone-end,
+.clozr-phone .phone-accept,
+.clozr-phone .phone-decline {
+  border: 0;
+  padding: 0;
+  border-radius: 50%;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: none;
+}
+.clozr-phone .phone-call {
+  width: var(--key);
+  height: var(--key);
+  background: var(--phone-mint);
+}
+.clozr-phone .phone-call:active,
+.clozr-phone .phone-accept:active {
+  background: var(--phone-mint-down);
+}
+.clozr-phone .phone-call[aria-disabled='true'] {
+  opacity: 0.4;
+}
+.clozr-phone .phone-del {
+  width: var(--key);
+  height: var(--key);
+  border: 0;
+  padding: 0;
+  background: none;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.clozr-phone .phone-del:active {
+  opacity: 0.5;
+}
+.clozr-phone .phone-pill {
+  height: 36px;
+  min-width: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font: 500 15px/1 var(--sans);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.clozr-phone .phone-pill:active {
+  background: rgba(255, 255, 255, 0.24);
+}
+/* The quick actions under the number give way first on a short screen. */
+@media (max-height: 700px) {
+  .clozr-phone .phone-actions {
+    display: none !important;
+  }
+}
+
+/* In-call controls: six round buttons, label under each. */
+.clozr-phone .phone-ctls,
+.clozr-phone .phone-endrow {
+  --ctl: clamp(64px, 20vw, 78px);
+}
+.clozr-phone .phone-ctls {
+  display: grid;
+  grid-template-columns: repeat(3, var(--ctl));
+  column-gap: min(36px, calc((100vw - 3 * var(--ctl) - 40px) / 2));
+  row-gap: 20px;
+  justify-content: center;
+  flex: none;
+}
+.clozr-phone .phone-ctl {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: #fff;
+  font: 500 14px/1.1 var(--sans);
+}
+.clozr-phone .phone-ctl > span:first-child {
+  width: var(--ctl);
+  height: var(--ctl);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  transition: none;
+}
+.clozr-phone .phone-ctl[aria-pressed='true'] > span:first-child {
+  background: #fff;
+  color: #000;
+}
+.clozr-phone .phone-ctl:active > span:first-child {
+  background: rgba(255, 255, 255, 0.34);
+}
+.clozr-phone .phone-ctl[aria-disabled='true'] {
+  opacity: 0.38;
+}
+.clozr-phone .phone-end {
+  width: var(--ctl);
+  height: var(--ctl);
+  background: var(--phone-red);
+}
+.clozr-phone .phone-end:active,
+.clozr-phone .phone-decline:active {
+  background: var(--phone-red-down);
+}
+.clozr-phone .phone-accept,
+.clozr-phone .phone-decline {
+  width: 78px;
+  height: 78px;
+}
+.clozr-phone .phone-accept {
+  background: var(--phone-mint);
+}
+.clozr-phone .phone-decline {
+  background: var(--phone-red);
+}
+.clozr-phone .phone-glass {
+  width: 56px;
+  height: 56px;
+  border: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.clozr-phone .phone-glass:active {
+  background: rgba(255, 255, 255, 0.34);
+}
+.clozr-phone.phone-callbg {
+  background: radial-gradient(120% 80% at 50% 0%, #17362d 0%, #0b1512 55%, #000 100%);
+}
+@media (max-height: 739px) {
+  .clozr-phone .phone-tall-only {
+    display: none !important;
+  }
+}
+
+/* The phone's own tab bar: Recents, Queue, Keypad, Voicemail, RVM, Live. */
+.clozr-phone .phone-tabbar {
+  flex: none;
+  display: flex;
+  height: calc(49px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: rgba(22, 22, 24, 0.92);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-top: 0.5px solid rgba(255, 255, 255, 0.12);
+}
+.clozr-phone .phone-tab {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 49px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: rgba(255, 255, 255, 0.55);
+  font: 500 10px/1 var(--sans);
+}
+.clozr-phone .phone-tab[aria-selected='true'] {
+  color: var(--phone-mint-ink);
+}
+.clozr-phone .phone-badge {
+  position: absolute;
+  top: 3px;
+  left: calc(50% + 6px);
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--phone-red);
+  color: #fff;
+  font: 600 11px/18px var(--sans);
+  text-align: center;
+}
+
+/* The one scroller in an idle phone. */
+.clozr-phone .phone-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Bottom sheets: over the phone, under nothing else. */
+.clozr-phone .phone-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: rgba(0, 0, 0, 0.4);
+}
+.clozr-phone .phone-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  max-height: 88%;
+  background: var(--phone-sheet);
+  color: var(--text);
+  border-radius: 14px 14px 0 0;
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
+  animation: phoneSheetIn 0.2s ease-out;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.35);
+}
+.clozr-phone .phone-sheet.phone-light {
+  background: #f2f2f7;
+}
+.clozr-phone .phone-sheet-grab {
+  flex: none;
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  margin: 6px auto 0;
+  background: rgba(127, 127, 127, 0.4);
+}
+.clozr-phone .phone-sheet-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 8px 0 16px;
+  font: 600 17px/1.2 var(--sans);
+}
+.clozr-phone .phone-sheet-head .phone-textbtn {
+  color: inherit;
+  font-weight: 600;
+}
+.clozr-phone .phone-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 16px 8px;
+}
+@keyframes phoneSheetIn {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .clozr-phone .phone-sheet {
+    animation: none;
+  }
+}
+/* A list row in a sheet: 56px, full width. */
+.clozr-phone .phone-row {
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 4px;
+  border: 0;
+  border-bottom: 0.5px solid var(--line);
+  background: none;
+  color: inherit;
+  font: 400 17px/1.25 var(--sans);
+  text-align: left;
+}
+.clozr-phone .phone-row:active {
+  background: rgba(127, 127, 127, 0.16);
+}
+.clozr-phone .phone-row[aria-disabled='true'] {
+  opacity: 0.4;
+}
+/* A segmented header that is a flex row, never a grid, so no reflow rule can fold it. */
+.clozr-phone .phone-seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  background: rgba(118, 118, 128, 0.2);
+}
+.clozr-phone .phone-seg > button {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: inherit;
+  font: 500 12.5px/1.1 var(--sans);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 2px;
+}
+.clozr-phone .phone-seg > button[aria-selected='true'] {
+  background: #fff;
+  color: #18181b;
+  font-weight: 600;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
+}
+/* Dark list rows: 60px, a comfortable thumb. */
+.clozr-phone .phone-dark .lift-row {
+  min-height: 60px;
+}
+
+/* The minimised call: a pill above the CRM's tab bar. */
+.clozr-phone-pill {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 8px);
+  height: 44px;
+  z-index: 47;
+  border: 0;
+  border-radius: 22px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  color: #fff;
+  font: 600 15px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+
+
+/* ============================================================
+   Depth: rails, the number well, raised cards, banded lists.
+   Tokens are tokens.css (--rail, --band, --inset, --edge, --elev-*).
+   ============================================================ */
+
+/* Dial and team columns are tinted rails; cards on them are white. */
+.talkr-dialer .dial-rail {
+  border-color: var(--rail-line) !important;
+  box-shadow: var(--elev-rail);
+}
+.talkr-dialer .dial-rail-r {
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.75);
+}
+.talkr-dialer .glass-bar {
+  background: var(--band);
+  border-bottom-color: var(--edge) !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 2px 6px -2px rgba(20, 30, 55, 0.1);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* The number being dialed is a recessed display, not text on the rail. */
+.talkr-dialer .dial-display {
+  background: var(--inset);
+  border: 1px solid var(--inset-line);
+  border-radius: 14px;
+  box-shadow: var(--elev-inset);
+}
+.talkr-dialer .dial-display:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.talkr-dialer .dial-display input {
+  color: var(--text);
+}
+.talkr-dialer .dial-display input::placeholder {
+  color: var(--muted-2);
+}
+.talkr-dialer .dial-note {
+  border-style: solid !important;
+  border-color: var(--inset-line) !important;
+  background: var(--inset);
+  box-shadow: var(--elev-inset);
+}
+
+/* Segmented controls: a recessed track, the open segment a raised chip. */
+.talkr-dialer [data-seg],
+.talkr-inbox [data-seg] {
+  background: var(--inset) !important;
+  box-shadow: var(--elev-inset);
+}
+.talkr-dialer [data-seg] > [aria-selected='true'],
+.talkr-inbox [data-seg] > [aria-selected='true'] {
+  box-shadow: 0 0 0 1px var(--edge), var(--elev-1) !important;
+}
+
+/* Lists inside a card: zebra rows, a hover wash, a visible focus ring. */
+.talkr-dialer .dial-row:nth-child(odd) {
+  background-color: var(--band);
+}
+@media (hover: hover) and (pointer: fine) {
+  .talkr-dialer .dial-row:hover {
+    background-color: #e9f6f0 !important;
+  }
+}
+.talkr-dialer .dial-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.talkr-dialer .lift-row .inline-flex[style*='--panel-2'] {
+  box-shadow: inset 0 0 0 1px var(--edge);
+}
+
+/* Call notes and other free text: a recessed field. */
+.talkr-dialer textarea {
+  background: var(--inset);
+  border-color: var(--inset-line) !important;
+  box-shadow: var(--elev-inset);
+}
+.talkr-dialer textarea::placeholder {
+  color: var(--muted-2);
+}
+.talkr-dialer textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The live call is a raised card on the rail, like the wrap-up beside it. */
+.talkr-dialer .dial-rail section[aria-label='Active call'] {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 14px;
+  box-shadow: var(--elev-1);
+}
+
+/* Eyebrows on a dark surface keep a light grey; the muted-2 above is for light ones. */
+.talkr-dialer :is([style*='background: var(--ink)'], [style*='background:var(--ink)']) .eyebrow {
+  color: #c4c4cc;
+}
+
+/* Settings → Numbers (NumbersPage): pressable chips and flow buttons. Press
+   feedback is a quick scale (Emil: 100–160 ms, strong ease-out); keyboard focus
+   gets a visible ring; touch gets no double-tap zoom or grey flash. */
+.talkr-dialer .num-press {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms ease, border-color 150ms ease;
+}
+.talkr-dialer .num-press:active { transform: scale(0.97); }
+.talkr-dialer .num-press:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) {
+  .talkr-dialer .num-flow:hover { border-color: var(--muted-2); background: var(--bg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .talkr-dialer .num-press { transition: background-color 150ms ease, border-color 150ms ease; }
+  .talkr-dialer .num-press:active { transform: none; }
+}
+.num-section { border-top: 1px solid var(--line-soft); }
+.num-section:first-child { border-top: 0; padding-top: 0; }

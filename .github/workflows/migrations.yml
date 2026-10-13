@@ -1,0 +1,92 @@
+name: Apply database migrations
+
+# Why this exists. A migration file merged into supabase/migrations/ did
+# nothing until somebody opened the SQL editor and pasted it in, so #177 and
+# #178 each shipped with "apply by hand" in the commit message and the
+# database drifted behind the code until someone remembered. Now every push
+# to main that touches the folder applies whatever is new, in order, once,
+# through app/scripts/migrate.mjs, which keeps its own ledger
+# (public.applied_migrations) of what has run.
+#
+# Run it by hand from Actions → "Apply database migrations" → Run workflow:
+# "status" shows what is applied and what is pending, "dry-run" lists what a
+# run would apply, "apply" applies it.
+#
+# Credentials (Settings → Secrets and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN  the same personal access token the edge-function
+#                          deploy uses; SQL goes through the Management API.
+#                          Enough for schema migrations. These tokens expire
+#                          after 90 days, and this job fails loudly when it has.
+#   SUPABASE_DB_URL        optional, preferred when set: the project's Postgres
+#                          connection string (Dashboard → Connect → Session
+#                          pooler, with the database password). Runs through
+#                          psql, so a long data backfill is not cut off at the
+#                          Management API's one-minute limit.
+#   SUPABASE_PROJECT_REF   the project ref (the 20 letters in the project URL).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/supabase/migrations/**'
+      - 'app/scripts/migrate.mjs'
+      - '.github/workflows/migrations.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'apply pending migrations, list them (dry-run), or show the ledger (status)'
+        type: choice
+        default: apply
+        options: [apply, dry-run, status]
+
+# One at a time, never cancelled: two runs applying the same files would race.
+concurrency:
+  group: database-migrations
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    name: ${{ github.event.inputs.mode || 'apply' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check credentials
+        env:
+          TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$TOKEN" ] && [ -z "$DB_URL" ]; then
+            echo "::error title=Migrations not applied::Neither SUPABASE_DB_URL nor SUPABASE_ACCESS_TOKEN is set as a repository secret. Add one under Settings → Secrets and variables → Actions (a personal access token from supabase.com/dashboard/account/tokens, or the Session pooler connection string from the project's Connect dialog), then re-run this workflow. Files in supabase/migrations/ are now ahead of production."
+            echo "### Migrations were NOT applied" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "No credentials: set \`SUPABASE_DB_URL\` (preferred) or \`SUPABASE_ACCESS_TOKEN\` under **Settings → Secrets and variables → Actions**, then re-run." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [ -n "$DB_URL" ]; then echo "Using SUPABASE_DB_URL (psql)."; else echo "Using SUPABASE_ACCESS_TOKEN (Management API)."; fi
+
+      - name: ${{ github.event.inputs.mode || 'apply' }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          MODE: ${{ github.event.inputs.mode || 'apply' }}
+        run: |
+          echo "### Database migrations · $MODE" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          case "$MODE" in
+            status)  node scripts/migrate.mjs --status ;;
+            dry-run) node scripts/migrate.mjs --dry-run ;;
+            *)       node scripts/migrate.mjs ;;
+          esac

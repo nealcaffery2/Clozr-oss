@@ -1,0 +1,49 @@
+name: Semgrep
+
+# Static application security testing. Runs the curated Semgrep security
+# rulesets inside the job, so it works on a private repo without GitHub
+# Advanced Security. Fails the build on any ERROR-level finding in the code
+# that runs with credentials (edge functions) or handles auth (lib/).
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 4 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: semgrep-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semgrep:
+    name: static analysis (semgrep)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Semgrep
+        run: pip install --quiet semgrep
+
+      - name: Semgrep scan
+        run: |
+          semgrep scan \
+            --config p/security-audit \
+            --config p/secrets \
+            --config p/typescript \
+            --severity ERROR \
+            --error \
+            --metrics off \
+            app/supabase/functions \
+            app/lib \
+            app/app

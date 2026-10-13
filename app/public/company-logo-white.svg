@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 132 32" role="img" aria-label="Acme Homes">
+  <!-- Placeholder wordmark. Replace with your own logo. -->
+  <path d="M2 17 14 6l12 11v11h-8v-7h-8v7H2z" fill="#ffffff"/>
+  <text x="32" y="22" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="15" font-weight="700" fill="#ffffff">Acme Homes</text>
+</svg>

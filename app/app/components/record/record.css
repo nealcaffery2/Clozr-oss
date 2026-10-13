@@ -1,0 +1,268 @@
+/* The seller record's motion and press feedback.
+   Frequency decides motion: channel switches, chips, shortcut keys and the
+   composer focus are instant. Only the occasional surfaces move: the offer
+   sheet (a centred modal), the record details sheet (from the right) and the
+   Reschedule popover (from its trigger). Exits are faster than entries.
+   Nothing here uses ease-in, scale(0) or `transition: all`. */
+
+:root {
+  --rec-ease: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Every pressable on the record: a short, honest press. */
+.rec-press {
+  transition: transform 160ms ease-out;
+}
+.rec-press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.rec-press:disabled {
+  cursor: not-allowed !important;
+}
+
+/* The left rail starts in the top row, under the logo. The address sits in
+   the middle column and shrinks (then ellipsizes) before it hits the tools. */
+.rec-frame {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(248px, 320px) 6px minmax(0, 1fr) 6px minmax(200px, 300px);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.rec-frame.rec-left-collapsed {
+  grid-template-columns: 36px 6px minmax(0, 1fr) 6px minmax(200px, 300px);
+}
+.rec-frame.rec-right-collapsed {
+  grid-template-columns: minmax(248px, 320px) 6px minmax(0, 1fr) 6px 36px;
+}
+.rec-frame.rec-left-collapsed.rec-right-collapsed {
+  grid-template-columns: 36px 6px minmax(0, 1fr) 6px 36px;
+}
+.rec-frame.rec-left-wide {
+  grid-template-columns: minmax(320px, 1fr) 6px minmax(0, 1.2fr) 6px minmax(180px, 260px);
+}
+.rec-frame.rec-right-wide {
+  grid-template-columns: minmax(200px, 260px) 6px minmax(0, 1.2fr) 6px minmax(280px, 1fr);
+}
+/* Stretching one side never reopens a side that is folded. */
+.rec-frame.rec-left-wide.rec-right-collapsed {
+  grid-template-columns: minmax(320px, 1fr) 6px minmax(0, 1.2fr) 6px 36px;
+}
+.rec-frame.rec-right-wide.rec-left-collapsed {
+  grid-template-columns: 36px 6px minmax(0, 1.2fr) 6px minmax(280px, 1fr);
+}
+.rec-split {
+  grid-row: 1 / -1;
+  width: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  position: relative;
+  z-index: 2;
+}
+.rec-split::after {
+  content: '';
+  position: absolute;
+  inset: 0 2px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.rec-split:hover::after,
+.rec-split:focus-visible::after {
+  background: #93c5fd;
+}
+/* At the top of each rail, straddling the line it folds, so the floating
+   dialer buttons in the bottom corner never sit on top of it. A grid item of
+   the frame, not of the rail, so the rail scrolling never moves it. */
+.rec-rail-toggle {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 28px;
+  margin: 12px 0 0;
+  padding: 0;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  background: #fff;
+  color: #52525b;
+  cursor: pointer;
+  flex: none;
+  grid-row: -2 / -1;
+  align-self: start;
+  position: relative;
+  z-index: 3;
+  box-shadow: 0 1px 3px rgba(20, 30, 55, .08);
+}
+.rec-rail-toggle-left {
+  grid-column: 1;
+  justify-self: end;
+  translate: 12px 0;
+}
+.rec-rail-toggle-right {
+  grid-column: 5;
+  justify-self: start;
+  translate: -12px 0;
+}
+.rec-rail-toggle:focus-visible {
+  outline: 2px solid #0A8560;
+  outline-offset: 2px;
+}
+.rec-rail-toggle:hover {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+.rec-head-back {
+  display: block;
+  margin: 0 0 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: #08694C;
+  text-align: left;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rec-head-addr {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+  align-self: center;
+  text-align: center;
+  padding: 8px 8px;
+  font-size: clamp(13px, 1.8vw, 22px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--band);
+  border-bottom: 1px solid var(--edge);
+  box-shadow: 0 2px 6px -3px rgba(20, 30, 55, .12);
+  position: relative;
+  z-index: 1;
+}
+.rec-head-tools {
+  grid-column: 5;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 8px 16px 8px 8px;
+  background: var(--band);
+  border-bottom: 1px solid var(--edge);
+  box-shadow: 0 2px 6px -3px rgba(20, 30, 55, .12);
+  position: relative;
+  z-index: 1;
+}
+.rec-main {
+  grid-column: 3;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--page);
+}
+.rec-rail {
+  min-width: 0;
+  min-height: 0;
+  contain: layout style;
+}
+.rec-rail-left {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  border-right: 1px solid var(--rail-line);
+  background: var(--rail);
+  box-shadow: var(--elev-rail);
+  overflow: auto;
+  padding: 10px 14px 16px 16px;
+}
+.rec-rail-right {
+  grid-column: 5;
+  grid-row: 2;
+  border-left: 1px solid var(--rail-line);
+  background: var(--rail);
+  overflow: auto;
+  padding: 14px 14px 96px;
+}
+.rec-split-left { grid-column: 2; }
+.rec-split-right { grid-column: 4; }
+.rec-rail-collapsed {
+  overflow: hidden;
+  padding: 8px 4px !important;
+}
+.rec-rail-collapsed > * {
+  display: none !important;
+}
+/* A big screen gives the right rail room, so what we know reads in lines,
+   not one word at a time. */
+@media (min-width: 1500px) {
+  .rec-frame { grid-template-columns: minmax(260px, 340px) 6px minmax(0, 1fr) 6px minmax(260px, 380px); }
+  .rec-frame.rec-left-collapsed { grid-template-columns: 36px 6px minmax(0, 1fr) 6px minmax(260px, 380px); }
+  .rec-frame.rec-right-collapsed { grid-template-columns: minmax(260px, 340px) 6px minmax(0, 1fr) 6px 36px; }
+}
+@media (max-width: 1180px) {
+  .rec-frame { grid-template-columns: minmax(220px, 272px) 6px minmax(0, 1fr) 6px minmax(180px, 240px); }
+  .rec-frame.rec-left-collapsed { grid-template-columns: 36px 6px minmax(0, 1fr) 6px minmax(180px, 240px); }
+  .rec-frame.rec-right-collapsed { grid-template-columns: minmax(220px, 272px) 6px minmax(0, 1fr) 6px 36px; }
+  .rec-frame.rec-left-collapsed.rec-right-collapsed { grid-template-columns: 36px 6px minmax(0, 1fr) 6px 36px; }
+}
+
+.clozr-tl { content-visibility: auto; contain-intrinsic-size: auto 88px; }
+
+/* Hover only where there is a real pointer to hover with. */
+@media (hover: hover) and (pointer: fine) {
+  .rec-ghost:hover:not(:disabled) { background: var(--c-btn-hover) !important; }
+  .rec-talkr-ghost:hover:not(:disabled) { background: var(--c-talkr-soft) !important; border-color: var(--c-talkr) !important; }
+  .rec-primary:hover:not(:disabled) { background: #08694C !important; border-color: #08694C !important; }
+  .rec-compr:hover:not(:disabled) { background: var(--c-compr-2) !important; border-color: var(--c-compr-2) !important; }
+  .rec-dark:hover:not(:disabled) { background: #27272a !important; }
+  .rec-chip:hover:not([aria-pressed='true']) { color: #18181b !important; }
+  .rec-item:hover { background: var(--c-btn-hover) !important; }
+}
+
+/* The offer sheet: centred, scales up from 0.95 with the opacity. */
+.rec-backdrop { animation: recFade 200ms var(--rec-ease); }
+.rec-backdrop[data-closing] { animation: recFadeOut 140ms var(--rec-ease) forwards; }
+.rec-modal { animation: recModalIn 220ms var(--rec-ease); transform-origin: center; }
+.rec-modal[data-closing] { animation: recModalOut 150ms var(--rec-ease) forwards; }
+
+/* The record details sheet: in from the right edge. */
+.rec-sheet { animation: recSheetIn 240ms var(--rec-ease); }
+.rec-sheet[data-closing] { animation: recSheetOut 170ms var(--rec-ease) forwards; }
+
+/* The Reschedule menu grows out of its button (top right). */
+.rec-pop { animation: recPop 200ms var(--rec-ease); transform-origin: top right; }
+
+@keyframes recFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes recFadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes recModalIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: none; } }
+@keyframes recModalOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(0.97); } }
+@keyframes recSheetIn { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes recSheetOut { from { transform: none; } to { transform: translateX(100%); } }
+@keyframes recPop { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+
+/* Modal, sheet and popover sit on tier 3. */
+.rec-modal, .rec-sheet, .rec-pop { box-shadow: var(--elev-3); }
+
+/* Money reads in tabular figures. */
+.rec-money { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rec-backdrop, .rec-modal, .rec-sheet, .rec-pop,
+  .rec-backdrop[data-closing], .rec-modal[data-closing], .rec-sheet[data-closing] { animation: none !important; }
+  .rec-press { transition: none; }
+  .rec-press:active:not(:disabled) { transform: none; }
+}

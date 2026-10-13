@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+<defs><clipPath id="c"><circle cx="128" cy="128" r="104"/></clipPath></defs>
+<circle cx="128" cy="128" r="122" fill="#3b86c6" stroke="#2b2622" stroke-width="5"/>
+<circle cx="128" cy="128" r="106" fill="#cfeefc" stroke="#2b2622" stroke-width="4"/>
+<g clip-path="url(#c)"><path d="M60 61 L63 67 L69 70 L63 73 L60 79 L57 73 L51 70 L57 67 Z" fill="#ffffff" stroke="none"/><path d="M200 71 L203 77 L209 80 L203 83 L200 89 L197 83 L191 80 L197 77 Z" fill="#ffffff" stroke="none"/><path d="M70 181 L73 187 L79 190 L73 193 L70 199 L67 193 L61 190 L67 187 Z" fill="#ffffff" stroke="none"/><path d="M196 187 L199 193 L205 196 L199 199 L196 205 L193 199 L187 196 L193 193 Z" fill="#ffffff" stroke="none"/></g>
+<g stroke="#2b2622" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="128" cy="150" rx="50" ry="62" fill="#2f3542"/><ellipse cx="128" cy="160" rx="32" ry="46" fill="#fff"/><path d="M88 104 Q128 70 168 104 L160 118 H96 Z" fill="#2f3542"/><rect x="98" y="104" width="26" height="14" rx="5" fill="#111"/><rect x="132" y="104" width="26" height="14" rx="5" fill="#111"/><path d="M124 110 H132" fill="none"/><path d="M120 126 L136 126 L128 136 Z" fill="#f5a623"/><path d="M126 148 Q134 152 140 146" fill="none" stroke-width="3.5"/><path d="M170 150 L196 120" fill="none" stroke-width="5"/><rect x="176" y="92" width="52" height="30" rx="4" fill="#e5483d"/><text x="202" y="113" font-family="Arial Black,Arial,sans-serif" font-size="15" font-weight="900" fill="#fff" stroke="none" text-anchor="middle">SOLD</text><path d="M108 208 L100 218 H122 Z M148 208 L156 218 H134 Z" fill="#f5a623"/></g>
+<circle cx="128" cy="128" r="106" fill="none" stroke="#2b2622" stroke-width="4"/>
+
+</svg>

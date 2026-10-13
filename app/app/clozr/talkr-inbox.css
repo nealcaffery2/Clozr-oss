@@ -1,0 +1,907 @@
+/*
+ * The Talkr inbox inside CLOZR.
+ *
+ * Talkr's components speak the Compr design-system tokens re-keyed to Talkr
+ * red (A:\talkr\apps\web\app\globals.css). The accent stays Talkr red here
+ * too, since calls, the dialer and texts are Talkr's; the Email tab re-keys
+ * it back to CLOZR's mint (gmail-inbox.css). The font is CLOZR's system sans
+ * (globals.css); everything is scoped to `.talkr-inbox`, not :root.
+ */
+
+.talkr-inbox {
+  /* Surfaces */
+  --bg: var(--page, #f2f4f8);
+  --panel: #ffffff;
+  --panel-2: #e8ecf3;
+  --line: var(--edge, #dde2ea);
+  --line-soft: var(--band-line, #e3e8ef);
+  --line-hover: var(--edge-hover, #c9d1dd);
+
+  /* Ink. Both muted steps hold 4.5:1 on white and on every tint below
+     (#71717a and #a1a1aa did not, and the tints made it worse). */
+  --text: #18181b;
+  --muted: #52525b;
+  --muted-2: #62626c;
+  --ink: #111111;
+
+    /* Talkr red: calling, the dialer and texts are Talkr's (tokens.css --c-talkr). */
+  --accent: #e6142e;
+  --accent-hover: #c20f26;
+  --accent-soft: #ffe9ec;
+  --accent-light: #fda4af;
+  --orange: #ff7a45;
+
+  /* Semantic */
+  --green: #15803d;
+  --green-hover: #166534;
+  --red: #dc2626;
+  --red-hover: #b91c1c;
+  --amber: #b45309;
+
+  /* Dark surfaces */
+  --dark-1: #18181b;
+  --dark-2: #27272a;
+  --dark-3: #3f3f46;
+
+  /* Radii — 10 / 12 / 14 / 18 / 20 */
+  --r-btn: 10px;
+  --r-md: 12px;
+  --r-card: 14px;
+  --r-lg: 18px;
+
+  /* Shadows */
+  --shadow-rest: var(--elev-1, 0 1px 2px rgba(24, 24, 27, 0.04), 0 1px 3px rgba(24, 24, 27, 0.06));
+  --shadow-lift: var(--elev-2, 0 8px 24px rgba(24, 24, 27, 0.1));
+  --shadow-pop: 0 0 0 3px rgba(10, 133, 96, 0.12);
+
+  background: var(--bg);
+  color: var(--text);
+  /* CLOZR's system sans (globals.css); every inline `font:` shorthand names var(--sans). */
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  font-family: var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+
+/* CLOZR's base sheet paints every anchor green; inside the inbox anchors
+   inherit, the way they do on talkrdialer.com, and the inline colours win. */
+.talkr-inbox a,
+.talkr-inbox a:hover {
+  color: inherit;
+}
+
+/* Talkr's thin, hover-revealed scrollbars on the inbox's own scroll panes. */
+.talkr-inbox [class~='overflow-auto'],
+.talkr-inbox [class~='overflow-y-auto'],
+.talkr-inbox [class~='overflow-x-auto'] {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.16s ease;
+}
+.talkr-inbox [class~='overflow-auto']:hover,
+.talkr-inbox [class~='overflow-y-auto']:hover,
+.talkr-inbox [class~='overflow-x-auto']:hover,
+.talkr-inbox [class~='overflow-auto']:focus-within,
+.talkr-inbox [class~='overflow-y-auto']:focus-within,
+.talkr-inbox [class~='overflow-x-auto']:focus-within {
+  scrollbar-color: rgba(113, 113, 122, 0.35) transparent;
+}
+.talkr-inbox [class~='overflow-auto']::-webkit-scrollbar,
+.talkr-inbox [class~='overflow-y-auto']::-webkit-scrollbar,
+.talkr-inbox [class~='overflow-x-auto']::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+.talkr-inbox [class~='overflow-auto']::-webkit-scrollbar-track,
+.talkr-inbox [class~='overflow-y-auto']::-webkit-scrollbar-track,
+.talkr-inbox [class~='overflow-x-auto']::-webkit-scrollbar-track {
+  background: transparent;
+}
+.talkr-inbox [class~='overflow-auto']::-webkit-scrollbar-button,
+.talkr-inbox [class~='overflow-y-auto']::-webkit-scrollbar-button,
+.talkr-inbox [class~='overflow-x-auto']::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.talkr-inbox [class~='overflow-auto']::-webkit-scrollbar-thumb,
+.talkr-inbox [class~='overflow-y-auto']::-webkit-scrollbar-thumb,
+.talkr-inbox [class~='overflow-x-auto']::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 9px;
+  transition: background-color 0.16s ease;
+}
+.talkr-inbox [class~='overflow-auto']:hover::-webkit-scrollbar-thumb,
+.talkr-inbox [class~='overflow-y-auto']:hover::-webkit-scrollbar-thumb,
+.talkr-inbox [class~='overflow-x-auto']:hover::-webkit-scrollbar-thumb,
+.talkr-inbox [class~='overflow-auto']:focus-within::-webkit-scrollbar-thumb,
+.talkr-inbox [class~='overflow-y-auto']:focus-within::-webkit-scrollbar-thumb,
+.talkr-inbox [class~='overflow-x-auto']:focus-within::-webkit-scrollbar-thumb {
+  background-color: rgba(113, 113, 122, 0.3);
+}
+.talkr-inbox [class~='overflow-auto']::-webkit-scrollbar-thumb:hover,
+.talkr-inbox [class~='overflow-y-auto']::-webkit-scrollbar-thumb:hover,
+.talkr-inbox [class~='overflow-x-auto']::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(113, 113, 122, 0.55);
+}
+
+/* Eyebrow / KPI caption: the only uppercase in the system. */
+.talkr-inbox .eyebrow {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted-2);
+}
+
+/* Motion — Talkr's typing dots (Bubble.tsx). */
+@keyframes typingdot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 0.9;
+  }
+}
+
+/* Hover lift — the one interactive-surface treatment (ui.tsx, EmojiPicker,
+   MergeField). Same rules as Talkr's globals.css, scoped. */
+.talkr-inbox .lift,
+.talkr-inbox .lift-row {
+  transition:
+    transform 0.13s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.13s ease,
+    border-color 0.13s ease,
+    background-color 0.13s ease;
+}
+.talkr-inbox .lift-row {
+  --lift-bg: var(--panel-2);
+  --lift-line: var(--line-hover);
+}
+.talkr-inbox .lift-row.on-dark {
+  --lift-bg: rgba(255, 255, 255, 0.06);
+  --lift-line: var(--dark-3);
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .talkr-inbox .lift:hover {
+    transform: translateY(-1px);
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .talkr-inbox .lift:hover {
+    box-shadow: var(--shadow-lift);
+    border-color: var(--line-hover) !important;
+  }
+  .talkr-inbox .lift-row:hover {
+    background-color: var(--lift-bg) !important;
+    border-color: var(--lift-line) !important;
+  }
+}
+.talkr-inbox .lift:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-rest);
+}
+.talkr-inbox .lift:focus-visible,
+.talkr-inbox .lift-row:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-pop);
+  border-color: var(--accent);
+}
+
+/* ── iOS Messages ("Liquid Glass") ─────────────────────────────────────────
+   Glass bars float over the scrolling thread; the list reads like Messages.
+   Reduced transparency gets solid white and the same contrast. */
+.talkr-inbox .glass-bar {
+  background: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+.talkr-inbox .sticky.glass-bar.top-0 {
+  border-bottom: 0.5px solid rgba(60, 60, 67, 0.18);
+}
+.talkr-inbox .sticky.glass-bar.bottom-0 {
+  border-top: 0.5px solid rgba(60, 60, 67, 0.18);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .talkr-inbox .glass-bar {
+    background: #fff;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+.talkr-inbox .search-pill {
+  background: rgba(118, 118, 128, 0.12);
+  border-radius: 10px;
+  padding: 0 10px;
+}
+
+/* Hairline separators inset past the dot and the 44px avatar. */
+.talkr-inbox .ios-row {
+  position: relative;
+}
+.talkr-inbox .ios-row::after {
+  content: '';
+  position: absolute;
+  left: 76px; /* 6 pad + 10 dot + 8 gap + 44 avatar + 8 gap */
+  right: 0;
+  bottom: 0;
+  height: 0.5px;
+  background: rgba(60, 60, 67, 0.2);
+  pointer-events: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .talkr-inbox .ios-row:hover {
+    background-color: var(--panel-2) !important;
+  }
+}
+
+.talkr-inbox .composer-pill {
+  min-height: 36px;
+  padding: 2px 3px 2px 14px;
+  border: 1px solid rgba(60, 60, 67, 0.22);
+  border-radius: 22px;
+  background: #fff;
+}
+.talkr-inbox .plus-btn {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(118, 118, 128, 0.12);
+  color: #3c3c43;
+  cursor: pointer;
+}
+.talkr-inbox .send-btn {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  margin-bottom: 1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.talkr-inbox .send-btn:disabled {
+  background: #c7c7cc;
+  cursor: default;
+}
+.talkr-inbox .tray-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border-radius: 16px;
+  background: rgba(118, 118, 128, 0.12);
+  font: 600 12px/1 var(--sans);
+  color: var(--text);
+  cursor: pointer;
+}
+.talkr-inbox .tray-btn[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.talkr-inbox .plus-btn:focus-visible,
+.talkr-inbox .send-btn:focus-visible,
+.talkr-inbox .tray-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * The All tab (screens/Inbox.tsx AllList). A desk list, not a phone list: one
+ * dense row per conversation, read left to right as who, what, when, so the
+ * name and the time are not a screen width apart. It stacks to two lines only
+ * when its own box is narrow, which is a container query because the inbox
+ * also sits in split panes that are narrow on a wide screen.
+ */
+.talkr-inbox .ax {
+  container: ax / inline-size;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--page, var(--bg));
+}
+.talkr-inbox .ax-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--edge, var(--line));
+  background: var(--band, var(--panel-2));
+  box-shadow: 0 1px 2px rgba(20, 30, 55, 0.05);
+}
+.talkr-inbox .ax-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 340px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--muted);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.08), 0 2px 4px 0 rgba(0, 0, 0, 0.04);
+  cursor: text;
+}
+.talkr-inbox .ax-search:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The input inside draws no ring of its own; the search box carries it. */
+.talkr-inbox .ax-search:focus-within { outline: 2px solid var(--c-focus, #0A8560); outline-offset: 1px; }
+.talkr-inbox .ax-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: 500 13px/1 var(--sans);
+}
+.talkr-inbox .ax-search input::placeholder {
+  color: var(--muted-2);
+}
+.talkr-inbox .ax-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--panel);
+  color: #3f3f46;
+  font: 500 12.5px/1 var(--sans);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.08), 0 2px 4px 0 rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.talkr-inbox .ax-chip:active {
+  transform: scale(0.97);
+}
+.talkr-inbox .ax-chip[aria-pressed='true'] {
+  background: var(--text);
+  color: #fff;
+  box-shadow: none;
+}
+.talkr-inbox .ax-chip-n {
+  font: 600 11px/1 var(--sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.talkr-inbox .ax-chip[aria-pressed='true'] .ax-chip-n {
+  color: #fff;
+  opacity: 0.75;
+}
+.talkr-inbox .ax-count {
+  margin-left: auto;
+  white-space: nowrap;
+  color: var(--muted);
+  font: 500 11.5px/1 var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+.talkr-inbox .ax-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.talkr-inbox .ax-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 16px 4px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--info-bg, var(--panel-2));
+  box-shadow: inset 0 0 0 1px var(--info-line, transparent);
+  color: #3f3f46;
+  font: 500 12px/1.4 var(--sans);
+}
+.talkr-inbox .ax-note svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+/* Day headings stay pinned while their rows scroll under them. */
+.talkr-inbox .ax-day {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 14px 16px 6px;
+  background: var(--page, var(--bg));
+  color: var(--muted);
+  font: 500 11.5px/1 var(--sans);
+}
+/* Each day's rows are one raised card, so the list reads as rows on a page. */
+.talkr-inbox .ax-list {
+  margin: 0 16px 8px;
+  padding: 0;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--edge, var(--line));
+  border-radius: 12px;
+  box-shadow: var(--elev-1, var(--shadow-rest));
+  overflow: hidden;
+}
+.talkr-inbox .ax-list li:nth-child(even) .ax-row {
+  background: var(--band, var(--panel-2));
+}
+.talkr-inbox .ax-row {
+  display: grid;
+  grid-template-columns: 6px 32px minmax(150px, 240px) minmax(0, 1fr) 64px;
+  grid-template-areas: 'dot av who body time';
+  align-items: center;
+  column-gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 16px 8px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.talkr-inbox .ax-list li:last-child .ax-row {
+  border-bottom: 0;
+}
+@media (hover: hover) and (pointer: fine) {
+  .talkr-inbox .ax-row {
+    transition: background-color 120ms ease;
+  }
+  .talkr-inbox .ax-row:hover {
+    background: #e9f6f0;
+  }
+}
+.talkr-inbox .ax-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+.talkr-inbox .ax-dot {
+  grid-area: dot;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.talkr-inbox .ax-row[data-unread] .ax-dot {
+  background: var(--accent);
+}
+.talkr-inbox .ax-av {
+  grid-area: av;
+  position: relative;
+  display: inline-flex;
+}
+/* The channel sits on the avatar so the eye gets it without reading a word. */
+.talkr-inbox .ax-ch {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #3f3f46;
+  color: #fff;
+  box-shadow: 0 0 0 2px var(--panel);
+}
+.talkr-inbox .ax-anon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+.talkr-inbox .ax-ch[data-alert] {
+  background: var(--red);
+}
+.talkr-inbox .ax-who {
+  grid-area: who;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.talkr-inbox .ax-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+  font: 500 13.5px/1.2 var(--sans);
+}
+.talkr-inbox .ax-row[data-unread] .ax-name {
+  font-weight: 650;
+}
+.talkr-inbox .ax-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.talkr-inbox .ax-badge {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font: 600 11px/1.2 var(--sans);
+}
+.talkr-inbox .ax-badge-seller {
+  background: #e7f6ee;
+  color: #15803d;
+}
+.talkr-inbox .ax-badge-buyer {
+  background: #e8effd;
+  color: #1d4ed8;
+}
+.talkr-inbox .ax-addr {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font: 500 11.5px/1.2 var(--sans);
+}
+.talkr-inbox .ax-body {
+  grid-area: body;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font: 400 13px/1.35 var(--sans);
+}
+.talkr-inbox .ax-kind {
+  flex-shrink: 0;
+  color: var(--muted);
+  font: 500 11.5px/1 var(--sans);
+}
+.talkr-inbox .ax-kind[data-alert] {
+  color: var(--red-hover);
+}
+.talkr-inbox .ax-title {
+  flex-shrink: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  font-weight: 500;
+}
+.talkr-inbox .ax-preview {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+.talkr-inbox .ax-row[data-unread] .ax-preview {
+  color: #3f3f46;
+}
+.talkr-inbox .ax-time {
+  grid-area: time;
+  justify-self: end;
+  white-space: nowrap;
+  color: var(--muted);
+  font: 500 11.5px/1 var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+.talkr-inbox .ax-row[data-unread] .ax-time {
+  color: var(--text);
+}
+.talkr-inbox .ax-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 56px 16px;
+  text-align: center;
+}
+.talkr-inbox .ax-empty-t {
+  color: var(--text);
+  font: 600 13.5px/1.3 var(--sans);
+}
+.talkr-inbox .ax-empty-h {
+  max-width: 320px;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font: 500 12.5px/1.45 var(--sans);
+}
+
+/* Narrow boxes: who and when on the first line, the message under them. */
+@container ax (max-width: 680px) {
+  .talkr-inbox .ax-bar {
+    padding: 10px 12px;
+  }
+  .talkr-inbox .ax-search {
+    flex: 1 1 auto;
+  }
+  .talkr-inbox .ax-search input {
+    font-size: 16px;
+  }
+  .talkr-inbox .ax-count {
+    display: none;
+  }
+  .talkr-inbox .ax-row {
+    grid-template-columns: 6px 32px minmax(0, 1fr) auto;
+    grid-template-areas: 'dot av who time' '. . body body';
+    row-gap: 4px;
+    padding: 10px 12px 10px 6px;
+    align-items: start;
+  }
+  .talkr-inbox .ax-dot,
+  .talkr-inbox .ax-av {
+    align-self: center;
+  }
+  .talkr-inbox .ax-time {
+    padding-top: 2px;
+  }
+  .talkr-inbox .ax-title {
+    max-width: 55%;
+  }
+  .talkr-inbox .ax-day {
+    padding: 12px 12px 6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .talkr-inbox .ax-chip,
+  .talkr-inbox .ax-row {
+    transition: none;
+  }
+}
+
+/* ============================================================
+   Depth: rail, thread canvas, bubbles, sticky bars.
+   Tokens are tokens.css (--rail, --band, --edge, --elev-*).
+   ============================================================ */
+
+/* Thread list: a tinted rail with a banded header and white rows that
+   alternate with the band, so a row is a row and the open one is a shape. */
+.talkr-inbox .msg-list {
+  background: var(--rail) !important;
+  border-color: var(--rail-line) !important;
+  box-shadow: var(--elev-rail);
+}
+.talkr-inbox .msg-list > :first-child {
+  background: var(--band);
+  border-bottom-color: var(--band-line) !important;
+  box-shadow: 0 1px 2px rgba(20, 30, 55, 0.05);
+}
+.talkr-inbox .msg-list .ios-row:not([data-active]) {
+  background-color: var(--panel) !important;
+}
+.talkr-inbox .msg-list .ios-row:not([data-active]):nth-child(even) {
+  background-color: var(--band) !important;
+}
+.talkr-inbox .msg-list .ios-row[data-active] {
+  background-color: color-mix(in srgb, var(--accent-soft) 55%, #fff) !important;
+  box-shadow: inset 3px 0 0 var(--accent), 0 1px 0 var(--rail-line), 0 -1px 0 var(--rail-line);
+  z-index: 1;
+}
+@media (hover: hover) and (pointer: fine) {
+  .talkr-inbox .msg-list .ios-row:not([data-active]):hover {
+    background-color: #e9f6f0 !important;
+  }
+}
+.talkr-inbox .msg-list .ios-row:has(:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.talkr-inbox .search-pill {
+  background: var(--inset);
+  box-shadow: var(--elev-inset);
+}
+.talkr-inbox .search-pill:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The thread is a canvas one step darker than the page, so an inbound bubble
+   (white, lifted) and an outbound one (Talkr red, lifted) both read as objects. */
+.talkr-inbox .msg-thread {
+  --thread: #e2e7ef;
+  --bubble-in: #ffffff;
+  background: var(--thread) !important;
+}
+.talkr-inbox .msg-thread .bubble {
+  box-shadow: 0 1px 1px rgba(20, 30, 55, 0.14), 0 2px 5px -1px rgba(20, 30, 55, 0.12);
+}
+.talkr-inbox .msg-thread .bubble-in {
+  color: var(--text);
+}
+.talkr-inbox .msg-thread .bubble-out {
+  box-shadow: 0 1px 1px rgba(120, 8, 24, 0.3), 0 3px 7px -2px rgba(120, 8, 24, 0.32);
+}
+
+/* Sticky header and composer are tier-3 bars over the canvas. */
+.talkr-inbox .msg-thread .glass-bar {
+  background: rgba(246, 248, 251, 0.86);
+}
+.talkr-inbox .msg-thread .sticky.glass-bar.top-0 {
+  border-bottom: 1px solid var(--edge);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 8px 18px -10px rgba(20, 30, 55, 0.3);
+}
+.talkr-inbox .msg-thread .sticky.glass-bar.bottom-0 {
+  border-top: 1px solid var(--edge);
+  box-shadow: var(--elev-3-up);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .talkr-inbox .msg-thread .glass-bar {
+    background: var(--band);
+  }
+}
+.talkr-inbox .composer-pill {
+  border-color: var(--edge-hover);
+  box-shadow: var(--elev-inset);
+}
+.talkr-inbox .composer-pill:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--elev-inset), 0 0 0 3px rgba(230, 20, 46, 0.14);
+}
+.talkr-inbox .plus-btn {
+  background: #fff;
+  box-shadow: var(--elev-key);
+}
+.talkr-inbox .plus-btn:active {
+  box-shadow: var(--elev-press);
+}
+.talkr-inbox .send-btn:not(:disabled) {
+  box-shadow: 0 1px 2px rgba(120, 8, 24, 0.35), 0 3px 8px -2px rgba(230, 20, 46, 0.45);
+}
+.talkr-inbox .send-btn:disabled {
+  background: #a1a1aa;
+}
+.talkr-inbox .tray-btn {
+  background: #fff;
+  box-shadow: var(--elev-1);
+}
+.talkr-inbox .tray-btn[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  box-shadow: inset 0 0 0 1px var(--accent-light);
+}
+
+/* Right column: a rail like the left, with the template cards raised on it. */
+.talkr-inbox .msg-side {
+  background: var(--rail) !important;
+  border-color: var(--rail-line) !important;
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.75);
+}
+
+/* Header controls that were flat on the band. */
+.talkr-inbox .glass-bar:not(.sticky) {
+  background: var(--band);
+  border-bottom-color: var(--edge) !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 2px 6px -2px rgba(20, 30, 55, 0.1);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Sub-AA text the tints would have made worse: the ios greys and the
+   uppercase eyebrow, which was #a1a1aa (2.5:1). */
+.talkr-inbox .eyebrow {
+  color: var(--muted-2);
+}
+
+/* Eyebrows on a dark surface keep a light grey; the muted-2 above is for light ones. */
+.talkr-inbox :is([style*='background: var(--ink)'], [style*='background:var(--ink)']) .eyebrow {
+  color: #c4c4cc;
+}
+
+/* All: the list and the open conversation side by side. The list pane is
+   narrow, so its rows take the two-line layout from the container query. */
+.talkr-inbox .ax-desk {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(320px, 440px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.talkr-inbox .ax-desk[data-one] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.talkr-inbox .ax-desk > .ax {
+  border-right: 1px solid var(--edge, var(--line));
+}
+.talkr-inbox .ax-list li .ax-row[aria-current='true'] {
+  background: #e9f6f0;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.talkr-inbox .ax-read {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--page, var(--bg));
+}
+.talkr-inbox .ax-read-blank {
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+  color: var(--muted);
+  font: 500 13px/1.5 var(--sans);
+}
+.talkr-inbox .ax-read-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--edge, var(--line));
+  background: var(--band, var(--panel-2));
+}
+.talkr-inbox .ax-read-who {
+  display: flex;
+  flex: 1 1 160px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.talkr-inbox .ax-read-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.talkr-inbox .ax-read-title {
+  margin: 0;
+  padding: 12px 16px 0;
+  color: var(--text);
+  font: 600 14px/1.35 var(--sans);
+}
+.talkr-inbox .ax-read-msgs {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+.talkr-inbox .ax-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: min(78%, 640px);
+  align-self: flex-start;
+}
+.talkr-inbox .ax-msg[data-out] {
+  align-self: flex-end;
+  text-align: right;
+}
+.talkr-inbox .ax-msg p {
+  margin: 0;
+  padding: 9px 13px;
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 0 0 1px var(--edge, var(--line));
+  color: var(--text);
+  font: 400 13.5px/1.45 var(--sans);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.talkr-inbox .ax-msg[data-out] p {
+  background: var(--text);
+  box-shadow: none;
+  color: #fff;
+}
+.talkr-inbox .ax-msg time {
+  color: var(--muted);
+  font: 500 11px/1 var(--sans);
+  font-variant-numeric: tabular-nums;
+}

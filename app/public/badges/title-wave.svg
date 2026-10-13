@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+<defs><clipPath id="c"><circle cx="128" cy="128" r="104"/></clipPath></defs>
+<circle cx="128" cy="128" r="122" fill="#3b86c6" stroke="#2b2622" stroke-width="5"/>
+<circle cx="128" cy="128" r="106" fill="#cfeefc" stroke="#2b2622" stroke-width="4"/>
+<g clip-path="url(#c)"><g stroke="#2b2622" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"><path d="M20 196 Q70 120 132 132 Q176 140 168 104 Q210 120 236 196 Z" fill="#3b86c6"/><path d="M40 196 Q84 150 132 160 Q176 168 196 150" fill="none" stroke="#fff" stroke-width="4"/></g></g>
+<g stroke="#2b2622" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><g transform="rotate(-12 120 112)"><rect x="94" y="70" width="44" height="56" rx="3" fill="#fff"/><path d="M102 84 H130 M102 96 H130 M102 108 H122" fill="none" stroke-width="3"/></g><g transform="rotate(10 150 92)"><rect x="134" y="62" width="40" height="50" rx="3" fill="#fff7a8"/><path d="M142 76 H166 M142 88 H160" fill="none" stroke-width="3"/></g><rect x="72" y="200" width="112" height="24" rx="6" fill="#f5a623"/><text x="128" y="218" font-family="Arial Black,Arial,sans-serif" font-size="14" font-weight="900" fill="#fff" stroke="none" text-anchor="middle">CLOSED x4</text></g>
+<circle cx="128" cy="128" r="106" fill="none" stroke="#2b2622" stroke-width="4"/>
+</svg>

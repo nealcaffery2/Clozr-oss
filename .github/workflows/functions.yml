@@ -1,0 +1,106 @@
+name: Deploy edge functions
+
+# Why this exists. CLOZR's whole server surface is supabase/functions/*, and
+# nothing deployed them: a function could be written, reviewed, merged and
+# still answer 404 in production because someone had to remember to run
+# `supabase functions deploy` by hand. `lane` sat undeployed that way, so Ask
+# Lane failed on every question with a transport error.
+#
+# Every function in supabase/functions/ is deployed on every push to main.
+# `supabase functions deploy` with no name takes them all, and verify_jwt
+# comes from supabase/config.toml, so the JWT-less webhooks stay JWT-less and
+# everything else keeps the default.
+#
+# Repository secrets this needs (Settings → Secrets and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN  a personal access token from
+#                          supabase.com/dashboard/account/tokens. These expire
+#                          after 90 days, so this WILL need replacing; the job
+#                          fails loudly when it goes, which is the only reason
+#                          anyone would notice.
+#   SUPABASE_PROJECT_REF   the project ref (the 20 letters in the project URL).
+# Function secrets (ANTHROPIC_API_KEY and the rest) are set on the project
+# with `supabase secrets set` and are not touched here.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/supabase/functions/**'
+      - 'app/supabase/config.toml'
+      - '.github/workflows/functions.yml'
+  # Deploying by hand stays possible — for a rollback, or after adding the
+  # secrets above for the first time.
+  workflow_dispatch:
+
+concurrency:
+  group: functions-deploy
+  cancel-in-progress: false
+
+env:
+  # Bump deliberately. `latest` is what got us rate limited.
+  SUPABASE_CLI_VERSION: 2.117.0
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: supabase functions deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      # Not supabase/setup-cli: that action asks the GitHub releases API which
+      # version is newest, unauthenticated, and that call is rate limited per
+      # runner IP — shared IPs meant it failed with "Failed to resolve latest
+      # Supabase CLI release: rate limit exceeded" on a deploy that had nothing
+      # wrong with it. npm serves the same binary from a registry that does not
+      # rate limit us, and pinning the version means a deploy is reproducible
+      # rather than whatever shipped this morning.
+      - name: Install the Supabase CLI
+        run: npm install -g supabase@${{ env.SUPABASE_CLI_VERSION }}
+
+      # The two secrets are set, so a run that cannot see them means the access
+      # token expired (they last 90 days) or somebody removed one. That is a
+      # broken deploy, and it fails. Until they were first added this step
+      # warned and passed instead — a red tick nobody could act on is a red
+      # tick everybody learns to scroll past — but the cost of that kindness
+      # was every deploy since silently doing nothing while reporting success.
+      - name: Check credentials
+        env:
+          TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          # Plain ifs, not `[ ... ] && x=y`: the runner uses `set -e`, and such
+          # a list exits non-zero when the test is false, which would fail the
+          # job in exactly the case where the secret is present.
+          missing=
+          if [ -z "$TOKEN" ]; then missing="$missing SUPABASE_ACCESS_TOKEN"; fi
+          if [ -n "$missing" ]; then
+            echo "::error title=Edge functions not deployed::Missing repository secret(s):$missing — a personal access token expires after 90 days. Mint a new one at supabase.com/dashboard/account/tokens and set it under Settings → Secrets and variables → Actions. Functions in supabase/functions/ are now stale in production."
+            echo "### Edge functions were NOT deployed" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Missing repository secret(s):\`$missing\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Supabase personal access tokens expire after 90 days. Mint a new one at <https://supabase.com/dashboard/account/tokens> and set it under **Settings → Secrets and variables → Actions**, then re-run this workflow." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          # A ref pasted as the dashboard URL, with quotes or a trailing space
+          # reached the CLI as "Invalid project ref format" and nothing more.
+          # Take the 20-letter ref out of whatever was pasted (a bare ref, the
+          # project URL, the dashboard URL) and hand the deploy only that.
+          ref=$(printf '%s' "$REF" | grep -Eo '(^|[^a-z])[a-z]{20}([^a-z]|$)' | grep -Eo '[a-z]{20}' | head -n 1 || true)
+          if [ -z "$ref" ]; then
+            echo "::error title=SUPABASE_PROJECT_REF has no project ref in it::Set the secret to your project's 20-letter ref."
+            exit 1
+          fi
+          echo "PROJECT_REF=$ref" >> "$GITHUB_ENV"
+
+      - name: Deploy every function
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy --project-ref "$PROJECT_REF"

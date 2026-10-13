@@ -1,0 +1,116 @@
+# Only what `supabase functions deploy` needs. Functions not listed keep the
+# default (verify_jwt = true). These check their own caller — a webhook
+# signature, an ingest API key, an OAuth redirect, an unsubscribe token — and
+# match what is live today.
+project_id = "your-project-ref"
+
+[functions.ingest]
+verify_jwt = false
+
+[functions.talkr-webhook]
+verify_jwt = false
+
+[functions.pandadoc-webhook]
+verify_jwt = false
+
+# iVueit's VueCompleted webhook: the workspace's ivueit_hook_token in the URL.
+[functions.ivueit-webhook]
+verify_jwt = false
+
+[functions.calendar-feed]
+verify_jwt = false
+
+[functions.esign]
+verify_jwt = false
+
+[functions.google-oauth]
+verify_jwt = false
+
+[functions.deliverability]
+verify_jwt = false
+
+# Cold-pool OAuth callbacks have no Supabase JWT. Member actions check the
+# caller inside the function. cold-campaign-tick stays on the default
+# (verify_jwt true): the minute cron sends the service-role JWT.
+[functions.cold-pool]
+verify_jwt = false
+
+# The buyer-facing listing page. Buyers have no CLOZR login; a signed HMAC
+# token in the URL identifies them instead, and /links checks the rep's JWT
+# itself.
+[functions.listing]
+verify_jwt = false
+
+# Telnyx's 10DLC brand, campaign and phone-number webhooks. Signed with
+# Ed25519 over `${telnyx-timestamp}|${body}` and checked against
+# TELNYX_PUBLIC_KEY, so the signature is the credential.
+[functions.ten-dlc-events]
+verify_jwt = false
+
+# Read receipts: the open pixel and click redirects in tracked Gmail sends.
+# A recipient's mail client has no CLOZR login; the random 48-hex token is
+# the credential, and all it can do is count (migration 82).
+[functions.email-track]
+verify_jwt = false
+
+# Deal Machine's control channel: settings, groups and commands out, heartbeat,
+# runs, log and opt-ins in. Authenticated by the same Deal Machine ingest key
+# as /ingest, because a Chrome extension has no Supabase session.
+[functions.deal-machine]
+verify_jwt = false
+
+# Buyr's sniping queue: aged Deal Machine deals and wholesaler opt-ins.
+# Authenticated by the buyr ingest key.
+[functions.buyr]
+verify_jwt = false
+
+# The TV board's feed. Read-only, authenticated by a `dashboard` ingest key
+# (or a member's JWT); the Acme Homes dashboard's cron pulls it every 3 minutes.
+[functions.leaderboard]
+verify_jwt = false
+
+# Ringless voicemail. The minute kick sends the service-role key and the
+# function checks it. Telnyx posts call events to the same URL with the drop
+# id and a random token stored on the row, so there is no Supabase JWT.
+[functions.rvm-tick]
+verify_jwt = false
+
+# ElevenLabs Agents: the conversation initiation webhook, the mid-call
+# lead-context tool and the post-call webhook. ElevenLabs has no Supabase
+# JWT; /personalize and /tool/lead-context check a shared header secret and
+# /post-call the ElevenLabs-Signature HMAC (docs/voice-agent.md).
+[functions.voice-agent]
+verify_jwt = false
+
+# Clozr Docs AI extraction. Needs a JWT: the service key when completion asks
+# for it, a member's session for Re-run, Apply and Dismiss (checked inside).
+[functions.docs-extract]
+verify_jwt = true
+
+# Clozr Docs public extras: form links, adopt-once signature, uploads,
+# comments, verify. No CLOZR login; each action checks its own credential
+# (form slug, signing token + access code) and is rate limited inside.
+[functions.docs-public]
+verify_jwt = false
+
+# Clozr Docs sender actions (void with notice, extend, correct and resend,
+# bulk send, tracker timeline). A member's session, or the service key for
+# the bulk-send cron (checked inside).
+[functions.docs-plus]
+verify_jwt = true
+
+# Operational tools that spend ATTOM, BatchData and DispoGenius calls and write
+# across every workspace. They lived only in the dashboard (verify_jwt off,
+# one static token in the source). Now the gateway checks the JWT and each
+# function accepts exactly the service key or the cron's vault key
+# (_shared/security.ts isServiceCaller). dispogenius-sync is the nightly
+# dispogenius_sync_kick; the other two are run by hand.
+[functions.geocode-properties]
+verify_jwt = true
+
+[functions.provider-check]
+verify_jwt = true
+
+[functions.dispogenius-sync]
+verify_jwt = true
+

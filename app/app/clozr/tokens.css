@@ -1,0 +1,227 @@
+/* ============================================================
+   Compr Design System tokens, as used by the CLOZR prototype.
+
+   Colours / spacing / type scale come from the design system the
+   design was authored against. The font stack deliberately does NOT
+   load Inter: the prototype was switched to the system sans so figures
+   render without slashed zeros.
+   ============================================================ */
+:root {
+  /* ---- Brand ---------------------------------------------- */
+  --mint:        #0A8560;
+  --mint-2:      #08694C;
+  --mint-light:  #5FD9B0;
+  --mint-dim:    #E7F8F1;
+  --mint-soft:   rgba(10, 133, 96, 0.10);
+
+  --orange:      #ff7a45;
+  --orange-2:    #ff5a2a;
+  --orange-soft: #fff1ea;
+
+  --ink-hero:    #141419;
+  --black:       #0c0d10;
+
+  --cream:       #fafaf7;
+  --sun:         #ffd84d;
+  --sky:         #ccf3e3;
+
+  /* ---- Neutral scale (zinc) ------------------------------- */
+  --bg:          var(--page);
+  --surface:     #ffffff;
+  --surface-2:   #f4f4f5;
+  --surface-3:   #e4e4e7;
+  --ink:         #18181b;
+  --ink-2:       #27272a;
+  --muted:       #52525b;
+  --muted-2:     #62626c;   /* 5.1:1 on the tinted surfaces below; #71717a fell under AA on them */
+  --subtle:      #a1a1aa;
+  --divider:     #e4e4e7;
+  --divider-2:   #f0f0f1;
+
+  /* ---- Semantic ------------------------------------------- */
+  --positive:      #16a34a;
+  --positive-soft: #dcfce7;
+  --positive-deep: #1f7a4d;
+  --negative:      #dc2626;
+  --negative-soft: #fee2e2;
+  --caution:       #d97706;
+  --caution-soft:  #fef3c7;
+
+  --accent:         var(--c-accent);
+  --accent-hover:   var(--c-accent-2);
+  --text-body:      var(--ink);
+  --text-muted:     var(--muted);
+  --text-subtle:    var(--muted-2);
+  --surface-card:   var(--surface);
+  --surface-sunken: var(--surface-2);
+  --border-card:    var(--divider);
+  --offer-surface:  var(--ink-hero);
+
+  /* UAD condition ramp (C1 good -> C6 uninhabitable) */
+  --cond-1: #1f7a4d;
+  --cond-2: #5aa63c;
+  --cond-3: #c79111;
+  --cond-4: #db6b33;
+  --cond-5: #c0392b;
+  --cond-6: #8f2018;
+
+  /* ---- Chrome colour ----------------------------------------
+     Every colour has one job, so colour means something:
+       green   CLOZR green: what you can press and what is selected
+               (primary buttons, active filters, the open view, links, focus)
+       slate   the quiet chrome (secondary buttons, menus, table heads)
+       teal    texts / SMS
+       sky     phone numbers and email addresses, and new leads
+       pink    Lane
+     Product marks (COMPR blue, Talkr red, Deal Machine orange) stay their
+     own; Genius uses CLOZR green. Retune the whole chrome from here. */
+  /* The action accent is CLOZR green (DESIGN.md §2: one accent for actions,
+     focus and the selected state). It was purple for a while in 2026-10;
+     it moved back to green. */
+  --c-action:        #0A8560;
+  --c-action-2:      #08694C;
+  --c-action-soft:   #E7F5EF;
+  --c-action-line:   #A7DCC5;
+  --c-accent:        var(--c-action);
+  --c-accent-2:      var(--c-action-2);
+  --c-accent-soft:   var(--c-action-soft);
+  --c-accent-line:   var(--c-action-line);
+  --c-primary:       var(--c-action);
+  --c-primary-hover: var(--c-action-2);
+  /* Status, per DESIGN.md §2: toasts, inline errors, success marks. */
+  --c-ok:            #0A8560;
+  --c-err:           #b91c1c;
+  --c-warn:          #b45309;
+  /* Focus rings everywhere (the global :focus-visible below). */
+  --c-focus:         var(--c-action);
+  --c-btn-bg:        #f8fafc;
+  --c-btn-line:      #cbd5e1;
+  --c-btn-hover:     var(--c-action-soft);
+  --c-menu-bg:       #ffffff;
+  --c-menu-line:     #dde2ea;
+  --c-thead:         #eaeef4;
+  --c-thead-line:    #d9dfe8;
+  /* Product colours for the actions that belong to a product. */
+  --c-compr:         #2d5bff;   /* COMPR: valuation, underwriting, Open COMPR */
+  --c-compr-2:       #1d44d6;
+  --c-talkr:         #FF233B;   /* Talkr: calling, the dialer, texts */
+  --c-talkr-2:       #c20f26;
+  --c-talkr-soft:    #ffe9ec;
+  --c-genius:        #0A8560;   /* Genius and the buyer side */
+  --c-genius-2:      #08694C;
+  --c-genius-soft:   #F0FAF5;
+  --c-money:         #15803d;
+  --c-money-soft:    #dcfce7;
+  --c-sms:           #e6142e;
+
+  /* Lane (the TC assistant) is pink, so it reads apart from CLOZR's mint. */
+  --c-lane:      #db2777;
+  --c-lane-2:    #be185d;
+  --c-lane-soft: #fdf2f8;
+  --c-lane-line: #fbcfe8;
+
+  /* Phone numbers and email addresses, one colour wherever they show. */
+  --c-contact:   #0369a1;
+
+  /* The deals table's scroll well. */
+  --c-well:       #E7F5EF;
+  --c-well-thumb: #0A8560;
+
+  /* ---- Surfaces and elevation --------------------------------
+     One raised layer (white card) on a cool page, one recessed layer
+     (inset) for notes, code and nested groups, one tinted layer for
+     rails and header bands. Set the mood here; surfaces.css applies it.
+     Text contrast: ink and muted hold 4.5:1 on every surface below. */
+  --page:          #f2f4f8;   /* app background, cool and barely blue */
+  --page-deep:     #e9edf3;
+  --rail:          #ebeff5;   /* left nav rails, settings sub-navs */
+  --rail-line:     #d9dfe8;
+  --band:          #f6f8fb;   /* section header band, table zebra */
+  --band-line:     #e3e8ef;
+  --inset:         #eef1f6;   /* recessed: helper notes, code, nested groups */
+  --inset-line:    #dde3ec;
+  --edge:          #dde2ea;   /* card hairline */
+  --edge-hover:    #c9d1dd;
+
+  /* Elevation tiers. 1 card, 2 lifted card, 3 modal / drawer / popover /
+     sticky bar, 4 toast. Two stops each: a tight contact shadow and a soft
+     ambient one, both in the page's cool ink so they read as one light. */
+  --elev-1: 0 1px 2px rgba(20, 30, 55, .07), 0 2px 8px -2px rgba(20, 30, 55, .08);
+  --elev-2: 0 2px 4px rgba(20, 30, 55, .07), 0 10px 24px -6px rgba(20, 30, 55, .16);
+  --elev-3: 0 4px 8px rgba(20, 30, 55, .08), 0 18px 44px -10px rgba(20, 30, 55, .26);
+  --elev-4: 0 8px 16px rgba(20, 30, 55, .10), 0 28px 60px -12px rgba(20, 30, 55, .38);
+  --elev-inset: inset 0 1px 2px rgba(20, 30, 55, .08), inset 0 0 0 1px rgba(20, 30, 55, .02);
+  --elev-press: inset 0 1px 3px rgba(20, 30, 55, .14);
+  --elev-rail: inset -1px 0 0 rgba(255, 255, 255, .75);
+  /* Tier 3 thrown upward, for a bar that sits on the bottom edge (composer, sticky action bar). */
+  --elev-3-up: 0 -2px 6px rgba(20, 30, 55, .05), 0 -10px 26px -10px rgba(20, 30, 55, .16);
+  /* A raised key: lit top edge, contact shadow, soft ambient. Pressed reads as --elev-press. */
+  --elev-key: inset 0 1px 0 rgba(255, 255, 255, .95), 0 1px 2px rgba(20, 30, 55, .18), 0 4px 10px -3px rgba(20, 30, 55, .16);
+
+  /* A trough the raised cards sit in (board lanes). Darker than --inset so a
+     white card on it reads as lifted, not as more page. */
+  --trough:        #e6ebf3;
+  --trough-line:   #d3dae6;
+
+  /* Soft status surfaces: fill, matching border, readable ink (all >= 4.5:1
+     on their own fill). Badges, banners and stat cards read from these. */
+  --ok-bg:     #eaf8f1;  --ok-line:     #b4e3cd;  --ok-ink:     #0b6045;
+  --warn-bg:   #fff6df;  --warn-line:   #f1d58a;  --warn-ink:   #8a3f0a;
+  --danger-bg: #fdeeee;  --danger-line: #f4bdbd;  --danger-ink: #a71d1d;
+  --info-bg:   #ecf2ff;  --info-line:   #bfd2fa;  --info-ink:   #1e40af;
+  --chip-ok:   #d6f1e4;  --chip-warn:   #fbe7b0;  --chip-danger: #f9d0d0;  --chip-info: #d5e2fd;
+
+  /* ---- Radius --------------------------------------------- */
+  --r-sm:   8px;
+  --r-btn:  10px;
+  --r:      14px;
+  --r-lg:   18px;
+  --r-xl:   20px;
+  --r-2xl:  24px;
+  --r-pill: 16px; /* soft tray chip — not a full capsule */
+
+  /* ---- Shadows (DESIGN.md §5 beautiful-shadows) ----------- */
+  --shadow-ring: 0 0 0 1px rgba(0,0,0,.08), 0 1px 2px -1px rgba(0,0,0,.08), 0 2px 4px 0 rgba(0,0,0,.04);
+  --shadow-soft: var(--shadow-ring);
+  --shadow-md:   var(--elev-3);   /* menus and popovers: tier 3 */
+  --shadow-lg:   var(--elev-3);   /* dialogs: tier 3 (toasts alone are tier 4) */
+  --shadow-pop:  0 4px 14px rgba(10, 133, 96, .14), 0 12px 40px -8px rgba(10, 133, 96, .12);
+  --shadow-warm: 0 4px 14px rgba(255, 122, 69, 0.32);
+
+  /* ---- Motion --------------------------------------------- */
+  --ease:     cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 0.12s;
+  --dur:      0.2s;
+  --dur-slow: 0.35s;
+
+  /* ---- Type ----------------------------------------------- */
+  --font-sans: 'SF Pro Text', 'SF Pro Display', -apple-system, BlinkMacSystemFont, var(--font-inter), 'Segoe UI', Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-sans);
+  --num: 'tnum' 1;
+
+  --fs-offer:  clamp(46px, 7.4vw, 70px);
+  --fs-xl:     22px;
+  --fs-lg:     18px;
+  --fs-md:     15px;
+  --fs-sm:     13px;
+  --fs-xs:     11px;
+
+  --ls-tight:     -0.04em;
+  --ls-snug:      -0.02em;
+  --ls-normal:    -0.01em;
+  --ls-caps:      0.1em;
+  --ls-caps-wide: 0.16em;
+}
+
+/* ---- Focus ---------------------------------------------------
+   One visible ring on everything that takes focus from the keyboard
+   (DESIGN.md §8). :where() keeps it at zero specificity, so a control
+   with its own focus treatment still wins, and nothing is left bare. */
+:where(a, button, input, select, textarea, summary, [role="button"], [role="tab"], [role="menuitem"], [role="option"], [tabindex]):focus-visible {
+  outline: 2px solid var(--c-focus, #0A8560);
+  outline-offset: 2px;
+}
+
+/* Inputs are 16px on phones so iOS does not zoom (DESIGN.md §3). */
+:root { --ds-input-size: 13px; }
+@media (max-width: 640px), (pointer: coarse) { :root { --ds-input-size: 16px; } }

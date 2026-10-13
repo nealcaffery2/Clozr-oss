@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+<defs><clipPath id="c"><circle cx="128" cy="128" r="104"/></clipPath></defs>
+<circle cx="128" cy="128" r="122" fill="#5e9e5a" stroke="#2b2622" stroke-width="5"/>
+<circle cx="128" cy="128" r="106" fill="#dff3dc" stroke="#2b2622" stroke-width="4"/>
+<g clip-path="url(#c)"></g>
+<g stroke="#2b2622" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M44 196 Q60 168 90 170 L200 176 Q214 186 200 196 Z" fill="#c9e6a6"/><path d="M60 176 Q48 128 70 116 Q86 108 92 128 L96 176" fill="#c9e6a6"/><path d="M66 116 L58 90 M80 114 L84 88" fill="none"/><circle cx="58" cy="88" r="5" fill="#2b2622"/><circle cx="84" cy="86" r="5" fill="#2b2622"/><path d="M68 132 q5 -4 10 0 M82 132 q5 -4 10 0" fill="none" stroke-width="3.5"/><rect x="104" y="96" width="92" height="72" rx="8" fill="#fff"/><path d="M104 100 L150 138 L196 100" fill="none"/><text x="200" y="92" font-family="Arial Black,Arial,sans-serif" font-size="18" font-weight="900" fill="#2b2622" stroke="none">z</text><text x="214" y="74" font-family="Arial Black,Arial,sans-serif" font-size="14" font-weight="900" fill="#2b2622" stroke="none">z</text></g>
+<circle cx="128" cy="128" r="106" fill="none" stroke="#2b2622" stroke-width="4"/>
+<defs><path id="a" d="M 22 128 A 106 106 0 0 1 234 128"/></defs><text font-family="Arial Black,Arial,sans-serif" font-size="15" font-weight="900" fill="#fff" letter-spacing="3" stroke="#2b2622" stroke-width="3" paint-order="stroke" text-anchor="middle" dy="5"><textPath href="#a" startOffset="50%">ANTI-AWARD</textPath></text>
+</svg>
