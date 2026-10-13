@@ -46,6 +46,11 @@ permissions:
 jobs:
   deploy:
     name: supabase functions deploy
+    # Off until this repository opts in: set the Actions variable
+    # CLOZR_DEPLOY to "true" (Settings, Secrets and variables, Actions,
+    # Variables). Without it, a fresh fork or the public source repo would fail
+    # here on every push for want of Supabase secrets.
+    if: vars.CLOZR_DEPLOY == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:

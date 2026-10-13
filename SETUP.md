@@ -145,6 +145,8 @@ pnpm migrate
 **Option C, from GitHub Actions.** In your fork, add repository secrets
 (Settings → Secrets and variables → Actions): `SUPABASE_ACCESS_TOKEN`,
 `SUPABASE_PROJECT_REF`, and optionally `SUPABASE_DB_URL` (preferred when set).
+On the Variables tab of the same page, add `CLOZR_DEPLOY` = `true`; without it
+the deploy workflows skip.
 Then Actions → "Apply database migrations" → Run workflow → `apply`. After
 that, every push to `main` that touches the migrations folder applies new
 files.
@@ -172,7 +174,8 @@ check off for the functions that authenticate their own callers (webhooks, the
 signing page, OAuth callbacks, the ingest API).
 
 To deploy from GitHub instead, set `SUPABASE_ACCESS_TOKEN` and
-`SUPABASE_PROJECT_REF` as repository secrets and run Actions → "Deploy edge
+`SUPABASE_PROJECT_REF` as repository secrets, set the Actions variable
+`CLOZR_DEPLOY` to `true`, and run Actions → "Deploy edge
 functions". It also runs on every push to `main` that touches the functions.
 
 Check:

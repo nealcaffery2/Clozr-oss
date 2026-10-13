@@ -670,6 +670,11 @@ secret of the same name (upper case) wins.
 
 ### GitHub Actions secrets
 
+Both deploy workflows are off until you set the Actions **variable**
+`CLOZR_DEPLOY` to `true` (Settings → Secrets and variables → Actions →
+Variables). Until then they show as skipped, so a fork without Supabase
+secrets stays green.
+
 | Secret | Used by | Notes |
 | --- | --- | --- |
 | `SUPABASE_ACCESS_TOKEN` | both deploy workflows | personal access token from supabase.com/dashboard/account/tokens; these expire after 90 days |
