@@ -115,7 +115,7 @@ function siteUrl() {
     if (!s) continue;
     try {
       const host = new URL(s).hostname.toLowerCase();
-      if (host === 'talkrdialer.com' || host.endsWith('.talkrdialer.com')) continue;
+      if (host === 'talkr.example.com' || host.endsWith('.talkr.example.com')) continue;
       if (host.includes('talkr-platform') || /(^|\.)talkr.*\.vercel\.app$/i.test(host)) continue;
       return s;
     } catch { /* try next */ }

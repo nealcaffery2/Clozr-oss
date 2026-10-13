@@ -45,9 +45,9 @@ Deno.test('inviteEmail rewrites Talkr loginUrl to Clozr production', () => {
     roleLabel: 'Acquisitions',
     invitedByName: 'Sam',
     tempPassword: 'AbCdEfGh234567',
-    loginUrl: 'https://talkrdialer.com/login',
+    loginUrl: 'https://talkr.example.com/login',
   });
   assertStringIncludes(mail.html, 'https://your-clozr-site.example.com/login');
-  assertEquals(mail.html.includes('talkrdialer.com'), false);
-  assertEquals(mail.text.includes('talkrdialer.com'), false);
+  assertEquals(mail.html.includes('talkr.example.com'), false);
+  assertEquals(mail.text.includes('talkr.example.com'), false);
 });

@@ -753,7 +753,7 @@ export interface CreateTeamMemberInput {
   default_phone_number_id?: string | null;
   /**
    * When false, Talkr should create the seat without emailing a Talkr auth
-   * invite (talkrdialer.com). Clozr always sends its own CLOZR invite instead.
+   * invite (talkr.example.com). Clozr always sends its own CLOZR invite instead.
    */
   send_auth_invite?: boolean;
 }
@@ -2321,7 +2321,7 @@ export interface CoachingSummaryQuery {
  * CLOZR seam: Talkr's web app, for the few links the inbox makes to pages
  * CLOZR does not have (a contact's record). They open in a new tab.
  */
-export const TALKR_WEB_URL = (process.env.NEXT_PUBLIC_TALKR_WEB_URL || 'https://talkrdialer.com').replace(/\/$/, '');
+export const TALKR_WEB_URL = (process.env.NEXT_PUBLIC_TALKR_WEB_URL || 'https://talkr.example.com').replace(/\/$/, '');
 export function talkrWebUrl(path: string): string {
   return `${TALKR_WEB_URL}${path}`;
 }

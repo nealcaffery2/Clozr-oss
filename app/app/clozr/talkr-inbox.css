@@ -63,7 +63,7 @@
 }
 
 /* CLOZR's base sheet paints every anchor green; inside the inbox anchors
-   inherit, the way they do on talkrdialer.com, and the inline colours win. */
+   inherit, the way they do on talkr.example.com, and the inline colours win. */
 .talkr-inbox a,
 .talkr-inbox a:hover {
   color: inherit;

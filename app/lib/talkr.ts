@@ -387,13 +387,13 @@ export const talkr = {
   teamMembers: () => request<{ members: TalkrMemberDto[] }>('/v1/team/members'),
   /** Put a CLOZR teammate on Talkr (admin). They link by email on first Clozr
    * sign-in via the partner JWT — do not email a Talkr auth invite (that opens
-   * talkrdialer.com). `send_auth_invite: false` asks Talkr to skip that mail. */
+   * talkr.example.com). `send_auth_invite: false` asks Talkr to skip that mail. */
   createTeamMember: (input: {
     email: string;
     display_name: string;
     role: 'admin' | 'manager' | 'rep';
     title?: string | null;
-    /** When false, Talkr should not email a talkrdialer.com invite. Default false from Clozr. */
+    /** When false, Talkr should not email a talkr.example.com invite. Default false from Clozr. */
     send_auth_invite?: boolean;
   }) =>
     request<{ member: TalkrMemberDto }>('/v1/team/members', {

@@ -2,7 +2,7 @@
  * Canonical CLOZR web origin for emails and redirects.
  *
  * Invite CTAs, magic-link fallbacks and similar must never open Talkr
- * (talkrdialer.com / Talkr Vercel hosts). APP_URL has been mis-set to a Talkr
+ * (talkr.example.com / Talkr Vercel hosts). APP_URL has been mis-set to a Talkr
  * origin before; this helper refuses those hosts and falls back to production.
  */
 
@@ -11,7 +11,7 @@ export const CLOZR_APP_ORIGIN = 'https://your-clozr-site.example.com';
 
 function isTalkrHost(host: string): boolean {
   const h = host.toLowerCase();
-  if (h === 'talkrdialer.com' || h.endsWith('.talkrdialer.com')) return true;
+  if (h === 'talkr.example.com' || h.endsWith('.talkr.example.com')) return true;
   if (h.includes('talkr-platform') || h.includes('talkrphone')) return true;
   // Talkr web / API Vercel projects — never a Clozr invite target.
   if (/(^|\.)talkr.*\.vercel\.app$/i.test(h)) return true;

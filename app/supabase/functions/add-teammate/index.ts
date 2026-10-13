@@ -77,7 +77,7 @@ async function sendInvite(admin: SupabaseClient, workspaceId: number, opts: {
     roleLabel: ROLE_LABEL[opts.role] ?? opts.role,
     invitedByName: opts.invitedByName,
     tempPassword: opts.password,
-    // Never Talkr: clozrLoginUrl rejects talkrdialer / Talkr hosts and falls back.
+    // Never Talkr: clozrLoginUrl rejects Talkr hosts and falls back.
     loginUrl: clozrLoginUrl(opts.origin),
     resend: opts.resend,
   });

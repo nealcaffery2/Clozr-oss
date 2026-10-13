@@ -16,7 +16,7 @@
  * address, asking, last touch, open tasks and an Open record button — so it
  * is useful before, or without, Talkr knowing the number; `liveSlot` adds a
  * Live tab (transcript and seller intelligence) for the slide-out dialer;
- * links to Talkr-only pages open talkrdialer.com.
+ * links to Talkr-only pages open talkr.example.com.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';

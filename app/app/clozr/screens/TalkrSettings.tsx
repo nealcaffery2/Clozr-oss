@@ -1,5 +1,5 @@
 // Settings → Talkr: the phone's settings in one place, section for section
-// with talkrdialer.com's Settings (apps/web/app/(app)/settings/page.tsx) and
+// with talkr.example.com's Settings (apps/web/app/(app)/settings/page.tsx) and
 // Scripts page, plus the CLOZR-only phone admin that used to be scattered down
 // the Settings page (numbers and routing, caller reputation, per-teammate lines,
 // the Talkr API origin).

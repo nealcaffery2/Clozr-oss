@@ -416,7 +416,7 @@ export interface MessagesScreenProps {
   /** The header's "New call" button; CLOZR opens the dialer. */
   onNewCall?: () => void;
   /**
-   * Open this E.164 on mount — what `?to=` did on talkrdialer.com when a
+   * Open this E.164 on mount — what `?to=` did on talkr.example.com when a
    * Contacts "Text" action landed here. Its thread when one exists, otherwise
    * a fresh composer addressed to it.
    */
@@ -464,7 +464,7 @@ export interface ClozrRecord {
 }
 
 export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = null, recordFor, headerSlot, live = null, typing = false, clozrTemplates, inbox, startNew = 0, conversation: initialConversation = null, onOpen, onRead }: MessagesScreenProps) {
-  // On talkrdialer.com the filters and the open thread ride in the URL so a
+  // On talkr.example.com the filters and the open thread ride in the URL so a
   // view survives a refresh and can be handed to a teammate. CLOZR is one
   // shell that does not route per screen, so the same query string lives in
   // state here and everything below reads and writes it exactly as before.
