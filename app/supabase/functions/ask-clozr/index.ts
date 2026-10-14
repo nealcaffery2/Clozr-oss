@@ -389,7 +389,7 @@ async function runTool(ctx: Ctx, name: string, args: Json): Promise<unknown> {
   }
 
   if (name === 'search_conversations') {
-    // The raw words, not ilikeSafe(): search_communications reads them as a web search (migration 271).
+    // The raw words, not ilikeSafe(): search_communications reads them as a web search (migration 278).
     const words = typeof args.query === 'string' ? args.query.trim().slice(0, 200) : '';
     if (!words) return { error: 'query is required: the words to find' };
     const channels = Array.isArray(args.channels) ? args.channels.filter((c): c is string => typeof c === 'string') : [];

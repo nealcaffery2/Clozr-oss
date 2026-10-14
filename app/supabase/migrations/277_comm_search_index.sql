@@ -1,4 +1,4 @@
--- 270 · A full-text index over every call, text, email and voicemail, so a rep
+-- 277 · A full-text index over every call, text, email and voicemail, so a rep
 -- can search what was said across all their records ("roof", "divorce",
 -- "foreclosure") instead of one call at a time.
 --
@@ -7,7 +7,7 @@
 -- tags stripped and the call transcript (C). Each part is capped so a long
 -- transcript or a pasted newsletter stays under the tsvector size limit. It is
 -- IMMUTABLE (explicit 'english' config), so the index below and the search in
--- 271 (search_communications) use the same expression.
+-- 278 (search_communications) use the same expression.
 --
 -- CONCURRENTLY, so the runner applies this file outside a transaction, one
 -- statement at a time (227 is the pattern). The build reads ~48,000 rows

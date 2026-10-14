@@ -1,4 +1,4 @@
--- 271 · search_communications: find a word or phrase in every call transcript,
+-- 278 · search_communications: find a word or phrase in every call transcript,
 -- call summary, text, email and voicemail of a workspace.
 --
 --   search_communications(ws, q, channels default null, max default 20)
@@ -15,7 +15,7 @@
 --
 -- SECURITY INVOKER: the caller's own row security applies, so a rep finds only
 -- the messages they can already open (migration 107's mailbox visibility
--- included). The match uses communications_search_idx (270).
+-- included). The match uses communications_search_idx (277).
 
 create or replace function public.search_communications(
   ws bigint,

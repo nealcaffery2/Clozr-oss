@@ -13,7 +13,7 @@
 //
 // Past three letters the bar also searches what was said: every call
 // transcript, text, email and voicemail in the workspace (lib/comm-search.ts,
-// migration 271), listed last under "In calls and messages" with the words
+// migration 278), listed last under "In calls and messages" with the words
 // around the match. The record lists never wait on it.
 //
 // Details that matter in something used hundreds of times a day: no open or

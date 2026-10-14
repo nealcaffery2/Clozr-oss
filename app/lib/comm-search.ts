@@ -1,5 +1,5 @@
 // Search across every call transcript, call summary, text, email and voicemail
-// in the workspace (migration 271, search_communications). The ⌘K bar lists
+// in the workspace (migration 278, search_communications). The ⌘K bar lists
 // what this finds under "In calls and messages"; Ask CLOZR has the same search
 // as its search_conversations tool.
 //
