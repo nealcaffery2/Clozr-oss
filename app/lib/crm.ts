@@ -189,6 +189,8 @@ type SellerRow = {
   lead_stage: string; stage_entered_at: string | null; notes: string | null; source: string | null;
   created_at: string; created_by: string | null; property_id: number | null;
   assigned_to: string | null; tags: string[] | null;
+  /** Present when crm_sellers (259/260) filled the row. A paged row has neither key. */
+  underwriter_id?: string | null; last_touch_at?: string | null; last_touch_channel?: string | null;
   properties: PropertyRow | null;
 };
 type PropertyRow = {
@@ -1304,6 +1306,25 @@ async function all<T extends Page>(
 type CachedRow = { id: number; updated_at?: string | null };
 const rowCaches = new Map<string, RowCache<CachedRow>>();
 const ok200 = <T,>(data: unknown[]) => ({ data, error: null, count: null, status: 200, statusText: 'OK' }) as unknown as T;
+/** A table function's delta (migration 259): every live id, and the rows changed since. For a full read `ids` is null. */
+type TableDelta = { ids: number[] | null; rows: CachedRow[] };
+/** The caches a table function filled, so their rows carry the side columns. */
+const rpcFilled = new Set<string>();
+/**
+ * One call to a table function (migration 259) in place of a page per
+ * thousand rows. Null when the database has no such function, the caller is
+ * not a member of the workspace, or the call failed: the caller then pages
+ * the table as before, where RLS answers as it always has.
+ */
+async function tableRpc<T>(name: string, args: Record<string, unknown>): Promise<T | null> {
+  if (!supabase) return null;
+  const rpc = supabase.rpc.bind(supabase) as unknown as (fn: string, a: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null; status: number }>;
+  const r = await again(async () => {
+    const x = await rpc(name, args);
+    return { data: x.error || x.data == null ? null : [x.data], error: x.error, status: x.status } as Page;
+  });
+  return r.error || !r.data ? null : (r.data[0] as T);
+}
 
 /**
  * A big table read for a reload: the cached rows plus what changed since
@@ -1315,29 +1336,51 @@ const ok200 = <T,>(data: unknown[]) => ({ data, error: null, count: null, status
  */
 async function cachedRead<T extends Page>(name: string, ws: number, q: {
   full: () => Promise<T>;
-  ids: () => PromiseLike<Page>;
-  since: (iso: string) => PromiseLike<Page>;
+  /** The table function (migration 259): the whole table with `since` null, else the ids and the rows changed since. Null means page instead. */
+  one?: (since: string | null) => Promise<TableDelta | null>;
+  ids?: () => PromiseLike<Page>;
+  since?: (iso: string) => PromiseLike<Page>;
   byIds: (ids: number[]) => PromiseLike<Page>;
   extraIds?: (iso: string) => Promise<number[]>;
   order: (a: CachedRow, b: CachedRow) => number;
 }): Promise<T> {
   const c = rowCaches.get(name);
   const readAll = async () => {
-    const r = await q.full();
+    const one = await q.one?.(null);
+    const r = one ? ok200<T>(one.rows) : await q.full();
     const rows = (r.data ?? []) as CachedRow[];
     if (!r.error) rowCaches.set(name, { ws, at: Date.now(), cursor: newestStamp(rows), rows: new Map(rows.map((x) => [x.id, x] as const)) });
     else rowCaches.delete(name);
+    if (!r.error && one) rpcFilled.add(name); else rpcFilled.delete(name);
     return r;
   };
   const since = c && c.ws === ws && Date.now() - c.at < DELTA_MAX_AGE_MS ? sinceOf(c.cursor) : null;
   if (!c || !since) return readAll();
-  const [idsQ, changedQ, extra] = await Promise.all([q.ids(), q.since(since), q.extraIds?.(since) ?? Promise.resolve([])]);
-  if (idsQ.error || changedQ.error) return readAll();
-  const ids = ((idsQ.data ?? []) as CachedRow[]).map((r) => r.id);
-  const changed = (changedQ.data ?? []) as CachedRow[];
+  // The function's delta only over a cache the function filled, and the
+  // paged delta only over one the pages filled: the two row shapes differ.
+  const viaOne = !!q.one && rpcFilled.has(name);
+  let ids: number[];
+  let changed: CachedRow[];
+  let extra: number[] = [];
+  if (viaOne) {
+    const one = await q.one!(since);
+    if (!one?.ids) return readAll();
+    ids = one.ids;
+    changed = one.rows;
+  } else if (q.ids && q.since) {
+    const [idsQ, changedQ, ex] = await Promise.all([q.ids(), q.since(since), q.extraIds?.(since) ?? Promise.resolve([])]);
+    if (idsQ.error || changedQ.error) return readAll();
+    ids = ((idsQ.data ?? []) as CachedRow[]).map((r) => r.id);
+    changed = (changedQ.data ?? []) as CachedRow[];
+    extra = ex;
+  } else {
+    return readAll();
+  }
   const { rows, missing } = mergeDelta(c.rows, ids, changed);
   const seen = new Set(changed.map((r) => r.id));
   const refetch = [...new Set([...missing, ...extra.filter((id) => rows.has(id) && !seen.has(id))])];
+  // byIds selects lack the side columns a function-filled cache carries.
+  if (viaOne && refetch.length) return readAll();
   for (let i = 0; i < refetch.length; i += 200) {
     const r = await q.byIds(refetch.slice(i, i + 200));
     if (r.error) return readAll();
@@ -1352,10 +1395,20 @@ async function cachedRead<T extends Page>(name: string, ws: number, q: {
 const idsOf = (r: Page) => (r.error ? [] : ((r.data ?? []) as { id: number }[]).map((x) => x.id));
 
 /**
- * One row per seller: channel and time of their latest communication.
- * Migration 113 returns the whole set as one jsonb value (one round trip,
- * ~50ms). A database without that function falls back to the embedded read,
- * which is the same answer spread across a page per thousand sellers.
+ * Rows from crm_sellers on a database with migration 260 carry the seller's
+ * last touch, so there is nothing more to read. A paged row has no such key.
+ * No rows: nothing to look up either way. A null last_touch_at is still a key.
+ */
+const rowsCarryLastTouch = (r: Page) => {
+  const rows = (r.data ?? []) as { last_touch_at?: unknown }[];
+  return rows.length === 0 || rows.some((row) => 'last_touch_at' in row);
+};
+
+/**
+ * One row per seller: channel and time of their latest communication, for
+ * sellers whose rows did not carry it (rowsCarryLastTouch). Migration 167
+ * returns the whole set as one jsonb value. A database without that function
+ * falls back to the embedded read.
  */
 async function loadLastTouch(workspaceId: number): Promise<Map<number, LastComm>> {
   const out = new Map<number, LastComm>();
@@ -1431,7 +1484,7 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
   const [
     sellersQ, commsQ, dealsQ, tasksQ, buyersQ, vendorsQ,
     notifsQ, activityQ, plansQ, enrollQ, membersQ, offersQ, apptsQ, matchesQ, txQ, contractsQ,
-    pinCommsQ, pinActsQ, rosterQ, mailboxesQ, lastTouch,
+    pinCommsQ, pinActsQ, rosterQ, mailboxesQ,
     underwriterQ, buyerOwnerQ, dealUnderwriterQ, buyerArchivedQ, podioSubsQ, dealMovesQ, sellerPartiesQ, bandSetQ,
     buyerScoresQ,
   ] = await Promise.all([
@@ -1441,6 +1494,7 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
         .eq('workspace_id', w).is('archived_at', null).order('created_at', { ascending: false }).order('id', { ascending: false }),
       PAGE, [{ col: 'created_at', asc: false }, { col: 'id', asc: false }])
       : cachedRead('sellers', w, {
+        one: (since) => tableRpc<TableDelta>('crm_sellers', { p_ws: w, p_since: since }),
         full: () => all(() => supabase!.from('sellers').select(SELLER_COLS + ',updated_at')
           .eq('workspace_id', w).is('archived_at', null).order('created_at', { ascending: false }).order('id', { ascending: false }),
         Number.POSITIVE_INFINITY, [{ col: 'created_at', asc: false }, { col: 'id', asc: false }]),
@@ -1465,9 +1519,16 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
     again(() => supabase!.from('communications')
       .select('id,seller_id,buyer_id,deal_id,channel,direction,occurred_at,body,summary,subject,duration_s,recording_url,from_phone,to_phone,rep_id,status,source,ai_notes,score_overall,from_email,to_email,source_id')
       .eq('workspace_id', w).order('occurred_at', { ascending: false }).limit(500)),
-    full(() => all(() => supabase!.from('deals')
-      .select(DEAL_COLS)
-      .eq('workspace_id', w).order('id'), Number.POSITIVE_INFINITY, BY_ID)),
+    full(() => cachedRead('deals', w, {
+      one: (since) => tableRpc<TableDelta>('crm_deals', { p_ws: w, p_since: since }),
+      full: () => all(() => supabase!.from('deals')
+        .select(DEAL_COLS)
+        .eq('workspace_id', w).order('id'), Number.POSITIVE_INFINITY, BY_ID),
+      // No paged delta: deals.updated_at is kept by a trigger only from
+      // migration 259 on, and without the function the whole table is read.
+      byIds: (ids) => again(() => supabase!.from('deals').select(DEAL_COLS).in('id', ids)),
+      order: (a, b) => a.id - b.id,
+    })),
     all(() => supabase!.from('tasks')
       .select('id,seller_id,deal_id,buyer_id,title,task_type,priority,due_at,assigned_to,done,notes,completed_at,created_at')
       .eq('workspace_id', w).order('due_at', { ascending: true, nullsFirst: false }).order('id'),
@@ -1477,6 +1538,7 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
     // corpus through search_free_agent_buyers. isDistinct matches the partial
     // shell indexes; paging the corpus is what timed the request out.
     full(() => cachedRead('buyers', w, {
+      one: (since) => tableRpc<TableDelta>('crm_buyers', { p_ws: w, p_since: since }),
       full: () => all(() => supabase!.from('buyers').select(BUYER_COLS)
         .eq('workspace_id', w).isDistinct('source', BULK_BUYER_SOURCE).order('name').order('id'), Number.POSITIVE_INFINITY, BY_NAME),
       ids: () => all(() => supabase!.from('buyers').select('id').eq('workspace_id', w).isDistinct('source', BULK_BUYER_SOURCE).order('id'), Number.POSITIVE_INFINITY, BY_ID),
@@ -1531,9 +1593,6 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
     // the stored direction says (see ourAddresses below).
     supabase.from('workspace_roster').select('email').eq('workspace_id', w),
     supabase.from('google_accounts').select('email').eq('workspace_id', w),
-    // Latest touch per seller, so a lead last reached before the newest 500
-    // messages does not read "No contact yet".
-    shell ? Promise.resolve(new Map<number, LastComm>()) : loadLastTouch(w),
     // Underwriters (migration 122) are their own read, so a database without
     // the column yet loses the Underwriter line and nothing else.
     full(() => all(() => supabase!.from('sellers').select('id,underwriter_id')
@@ -1577,6 +1636,13 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
     full(() => all(() => supabase!.from('buyer_scores').select('buyer_id,response_rate,stats')
       .eq('workspace_id', w).order('buyer_id'), Number.POSITIVE_INFINITY, [{ col: 'buyer_id', asc: true }])),
   ]);
+
+  // The seller rows already carry last contact (migration 260). Otherwise the
+  // one-shot read still runs, so a lead reached before the newest 500
+  // messages does not read "No contact yet".
+  const lastTouch = shell || rowsCarryLastTouch(sellersQ)
+    ? new Map<number, LastComm>()
+    : await loadLastTouch(w);
 
   const ok = ![sellersQ, commsQ, dealsQ, tasksQ, buyersQ, vendorsQ, notifsQ, activityQ, plansQ, enrollQ, membersQ, offersQ, apptsQ]
     .some((q) => q.error);
@@ -1644,9 +1710,13 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
 
   const sellerName = new Map<number, string>(sellers.map((s) => [s.id, s.name]));
 
-  // Latest contact per seller: the one-shot read, else the timeline's newest
-  // 500, whichever is later. comms arrive newest-first.
+  // Latest contact per seller: the columns on the row (migration 260), else
+  // the one-shot read, then the timeline's newest 500, whichever is later.
+  // comms arrive newest-first.
   const lastBySeller = new Map<number, LastComm>(lastTouch);
+  for (const s of sellers) {
+    if (s.last_touch_at) lastBySeller.set(s.id, { channel: s.last_touch_channel || 'note', occurred_at: s.last_touch_at });
+  }
   for (const c of comms) {
     if (c.seller_id == null) continue;
     const cur = lastBySeller.get(c.seller_id);
