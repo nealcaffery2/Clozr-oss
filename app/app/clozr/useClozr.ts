@@ -7,6 +7,7 @@
 'use client';
 
 import { isProtectedBuyer } from '@/lib/ai-agent-client';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import type { BulkRecord } from '@/app/components/ai-agent/BulkAgentPanel';
 import { emailGist, looksHtml } from '@/lib/email-text';
 import { requestInboxSms, requestInboxThread, threadKeyFor } from '@/app/clozr/screens/inboxHandoff';
@@ -32,6 +33,7 @@ import { SMART_LIST_QUIET_MIN, isDeadLeadStage, isReactivationLead } from '@/lib
 import { BUYER_STAGES, PIPELINE_STAGES, PODIO_NEW_SUBMISSIONS, PODIO_SUBMISSION_STAGES, PODIO_TOTAL_SUBMISSIONS, SELLER_STAGES, podioItemInList, podioRowStage, type PodioSubmission, SELLER_STAGE_LABELS, dealStageColor, isDealStage, offDispo, onDispoBoard, sellerStageColor, sellerStageForDeal, sellerStageGroup, sellerUnderContract, nativeSubmissionDeals, submissionListMatch, isDeadStage, opensDeal, leadStagePicks } from '@/lib/stages';
 import { submissionIdentity, submissionOpenTarget } from '@/lib/vendor-sellers';
 import { formatPhone, toE164 } from '@/lib/talkr';
+import { type Contact, rankContacts } from '@/lib/contact-search';
 import { PHONE_OTHER_TAB } from '@/lib/softphone-lock';
 import type { IconName } from '@/app/components/talkr/Icon';
 import { fmtDuration, parseMoney, relativeTime, useTalkrPhone } from './useTalkrPhone';
@@ -69,7 +71,7 @@ import { loadBellDismissals, saveBellDismissals } from '@/lib/bell-dismissals';
 import { phoneTail } from '@/lib/bell-events';
 import { withFloorBellMutes } from '@/lib/floor-notify';
 import { useFloorNotifyPrefs } from '@/lib/floor-notify-prefs';
-import { GAP_BELL_CAT, sectionGaps, type SectionGap } from '@/lib/section-gaps';
+import { GAP_BELL_CAT, sectionGaps, withTitleFallbacks, type SectionGap } from '@/lib/section-gaps';
 import { flagsForStage, formatSourceScore, isDealSource, isNationalSource, sourceGetsEmailFollowup, sourceScorecard } from '@/lib/source-score';
 import { recommendStage } from '@/app/components/record/record-logic';
 import { type Recipient, sendSummary, textMany } from '@/lib/sms';
@@ -105,7 +107,7 @@ import { ENTITY_LABELS, STATE_NAMES, buildGazetteer, entityKind, resolveMarkets,
 import { openPopup, propertyLinks, streetViewImage } from '@/lib/property-links';
 import { collectPhotos, demoGallery, photoIndexOf } from '@/lib/house-photos';
 import { loadDealAlbum, pullDrivePhotos } from '@/lib/deal-files';
-import { CUSTOM_TAB, REPORT_RANGES, REPORT_TABS, type Kpi, type ReportRaw, buildReport, homeKpis, rangeOf, reportCsv, sampleReportRaw } from '@/lib/reporting';
+import { ADMIN_REPORT_TABS, CUSTOM_TAB, TEAM_STOPLIGHT_TAB, REPORT_RANGES, REPORT_TABS, type Kpi, type ReportRaw, buildReport, homeKpis, rangeOf, reportCsv, sampleReportRaw } from '@/lib/reporting';
 import { BUYR, COMPR, DEAL_MACHINE, LANE, TALKR_INK, TALKR_TINT } from '@/app/clozr/brand';
 import { boardFace } from '@/lib/rep-art';
 import { BADGES, DEFAULT_TZ, type Goals, PERIODS as LB_PERIODS, type SalesPerson, applyLeaderboardResets, badgesFor, buildBadgeContext, buildLeaderboard, calculatePoints, getCalls, getContracts, getConversations, resolveTitles } from '@/lib/leaderboard';
@@ -2005,13 +2007,14 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
   // live transcript every four seconds.
   useEffect(() => {
     if (callState !== 'live') return;
-    const id = setInterval(() => {
+    const tick = () => {
       set((prev) => ({
         callSec: phoneEnabled ? (sp.startedAt ? Math.floor((Date.now() - sp.startedAt) / 1000) : 0) : prev.callSec + 1,
         transcriptN: phoneEnabled ? 0 : Math.min(8, 1 + Math.floor(prev.callSec / 4)),
       }));
-    }, 1000);
-    return () => clearInterval(id);
+    };
+    tick();
+    return everyWhileVisible(tick, 1000);
   }, [callState, s.callSeq, set, phoneEnabled, sp.startedAt]);
 
   // The tone of the toast on screen now; anything raised without one is info.
@@ -2997,8 +3000,10 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
   // today comes back tomorrow if the section is still blank.
   const sectionGapList = useMemo(() => {
     if (!live || !me) return [] as SectionGap[];
-    const day = new Date().toISOString().slice(0, 10);
-    return sectionGaps(D.deals, me, role === 'owner' || role === 'admin').map((g) => ({ ...g, id: `${g.id}:${day}` }));
+    // The Central day, so a reminder dismissed in the afternoon stays dismissed until morning.
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+    const deals = withTitleFallbacks(D.deals, D.vendors ?? [], D.transactions ?? []);
+    return sectionGaps(deals, me, role === 'owner' || role === 'admin').map((g) => ({ ...g, id: `${g.id}:${day}` }));
   }, [D, live, me, role]);
   const myNotifications = useMemo(() => {
     if (!live) return D.notifications;
@@ -5380,7 +5385,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       call: ['#e6142e', 'Call'], sms_in: ['#e6142e', 'SMS in'], sms_out: ['#e6142e', 'SMS out'],
       offer: ['#d97706', 'Offer'], compr: [COMPR, 'COMPR'], stage: ['#71717a', 'Stage'],
       note: ['#71717a', 'Note'], email: ['#52525b', 'Email'], task: ['#71717a', 'Automation'], lead: ['#71717a', 'Lead'],
-      tc: ['#1f7a4d', 'TC'],
+      tc: ['#1f7a4d', 'TC'], voicemail: ['#e6142e', 'Voicemail'], ai_agent: ['#0f766e', 'AI agent'],
     };
     // Anything written this session — a composer send, a Quick Add note — goes
     // on the front of the feed. Without this the Activity tab was a fixed
@@ -5435,7 +5440,10 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       ...(live ? (focusDeal ? submissionTimeline(focusDeal) : withStages(TL.filter((t) => t.entity === P.id), stageTimeline('s:' + P.id, P.id))) : P.id === 'p1' ? D.timeline : D.timeline.slice(4)),
     ].filter(typeFilter).map((t) => ({
       // A received email is from its sender: their name when the record knows it, else the address.
-      id: t.id, who: t.user && D.team[t.user] ? D.team[t.user].name : 'email' in t && t.email?.inbound ? (t.email.fromName || t.email.from || t.who) : t.who,
+      id: t.id, who: 'agent' in t && t.agent ? t.agent.name : t.user && D.team[t.user] ? D.team[t.user].name : 'email' in t && t.email?.inbound ? (t.email.fromName || t.email.from || t.who) : t.who,
+      // An AI agent's row shows the agent's picture and name (migration 269); a message
+      // it sent also says it was the agent, since "Text sent · Riley" reads as a person.
+      agent: 'agent' in t && !!t.agent, agentTag: 'agent' in t && !!t.agent && t.type !== 'ai_agent',
       actor: t.user && D.team[t.user] ? D.team[t.user].name : 'System', time: t.time, title: t.title, body: t.body || '', hasBody: !!t.body,
       isCall: t.type === 'call', isSms: /sms/.test(t.type), ai: t.ai || null,
       callNote: 'callNote' in t && t.callNote ? t.callNote : null,
@@ -5455,8 +5463,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       // A stored communication ('ct123'): CallInsight loads its recording and transcript.
       commId: live && /^ct\d+$/.test(t.id) ? Number(t.id.slice(2)) : null,
       chan: (tlIcon[t.type] || tlIcon.note)[1], color: (tlIcon[t.type] || tlIcon.note)[0],
-      initials: t.user ? (D.team[t.user] ? D.team[t.user].initials : 'AI') : initialsOf('email' in t && t.email?.fromName ? t.email.fromName : t.who),
-      avatar: t.user && D.team[t.user]?.avatar ? D.team[t.user].avatar! : '',
+      initials: 'agent' in t && t.agent ? initialsOf(t.agent.name) : t.user ? (D.team[t.user] ? D.team[t.user].initials : 'AI') : initialsOf('email' in t && t.email?.fromName ? t.email.fromName : t.who),
+      avatar: 'agent' in t && t.agent ? t.agent.avatar || '' : t.user && D.team[t.user]?.avatar ? D.team[t.user].avatar! : '',
       // A row Talkr carried has no rep to show, and a "T" says nothing about
       // what happened: the avatar cell shows the channel instead.
       icon: !t.user && /^talkr$/i.test(t.who) ? talkrIcon(t.type) : null,
@@ -6351,6 +6359,12 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       const b = buyers.find((x) => toE164(x.phone) === e);
       return b ? { ...buyerRecord(b), target: { name: b.name, phone: b.phone, buyerId: b.id } } : null;
     };
+    // The dial box's name lookup over the people and buyers already loaded: instant, and the
+    // demo's only source. The dialer adds vendors and anyone not loaded from the database.
+    const dialerContacts = (q: string): Contact[] => rankContacts([
+      ...people.filter((p) => p.phone).map((p): Contact => ({ kind: 'seller', id: p.id, name: p.name, email: p.email || null, phone: p.phone, sub: p.property.addr || null })),
+      ...buyers.filter((b) => b.phone).map((b): Contact => ({ kind: 'buyer', id: b.id, name: b.name, email: b.email || null, phone: b.phone, sub: b.company || null })),
+    ], q, 8);
     const callPersonRec = s.callTarget?.personId ? person(s.callTarget.personId) : undefined;
     const callBuyerRec = s.callTarget?.buyerId ? buyer(s.callTarget.buyerId) : undefined;
     const callRecord = callPersonRec ? personRecord(callPersonRec) : callBuyerRec ? buyerRecord(callBuyerRec) : s.callTarget ? dialerRecordFor(s.callTarget.phone) : null;
@@ -7684,7 +7698,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         call: ['#e6142e', 'Call'], sms_in: ['#e6142e', 'SMS in'], sms_out: ['#e6142e', 'SMS out'], sms: ['#e6142e', 'SMS out'],
         offer: ['#d97706', 'Offer'], compr: ['#0A8560', 'COMPR'], stage: ['#71717a', 'Stage'],
         note: ['#71717a', 'Note'], email: ['#52525b', 'Email'], task: ['#71717a', 'Automation'],
-        portal: ['#4f46e5', 'Portal'], purchase: ['#15803d', 'Purchase'], ai_agent: ['#0f766e', 'AI agent'],
+        portal: ['#4f46e5', 'Portal'], purchase: ['#15803d', 'Purchase'], ai_agent: ['#0f766e', 'AI agent'], voicemail: ['#e6142e', 'Voicemail'],
       };
       return map[type] || ['#71717a', type ? type.charAt(0).toUpperCase() + type.slice(1) : 'Note'];
     };
@@ -7692,11 +7706,18 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       id: string; chan: string; color: string; title: string; body: string; time: string; who: string;
       isCall: boolean; commId: number | null; email: TimelineEntry['email'] | null;
       ai: { summary: string; objections: string[]; next: string } | null;
+      /** The teammate or AI agent who did it, so the feed shows their photo; null when the buyer or a system did. */
+      rep?: { name: string; avatar: string } | null;
+      /** An AI agent's message (migration 269): the header says so beside its name. */
+      agentTag?: boolean;
     };
+    const repFace = (id: string | null | undefined) => (id && D.team[id] ? { name: D.team[id].name, avatar: D.team[id].avatar || '' } : null);
     const buyerFrom = (t: TimelineEntry): BuyerEvent => {
       const [color, chan] = buyerChan(t.type);
+      const rep = t.agent ? { name: t.agent.name, avatar: t.agent.avatar || '' } : repFace(t.user);
       return {
-        id: t.id, chan, color, title: t.title, body: t.body || '', time: t.time, who: t.who,
+        id: t.id, chan, color, title: t.title, body: t.body || '', time: t.time, who: rep ? rep.name : t.who, rep,
+        agentTag: !!t.agent && t.type !== 'ai_agent',
         isCall: t.type === 'call',
         // Any stored message: a call loads its recording, an email its HTML.
         commId: /^ct\d+$/.test(t.id) ? Number(t.id.slice(2)) : null,
@@ -7705,7 +7726,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     };
     const buyerSent: BuyerEvent[] = (s.sent['buyer:' + B.id] ?? []).slice().reverse().map((m, i) => ({
       id: 'sent-' + i, chan: 'SMS out', color: '#e6142e', title: 'Text sent', body: m.text, time: m.time, who: 'You',
-      isCall: false, commId: null, email: null, ai: null,
+      isCall: false, commId: null, email: null, ai: null, rep: repFace(ME),
     }));
     const buyerDemo: BuyerEvent[] = [
       { id: 'bd1', chan: 'Offer', color: '#d97706', title: 'Submitted $238,500', body: 'Willow Street · cash, 14-day close.', time: '10:02 AM', who: B.name, isCall: false, commId: null, email: null, ai: null },
@@ -9361,11 +9382,12 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     }));
 
     // ---- REPORTING ----
-    // Profitability carries commissions and the bank feed: owner/admin only
-    // (the demo, with no role, shows it). A hidden tab left selected falls back.
+    // Profitability carries commissions and the bank feed, and Team stoplight
+    // grades each teammate: owner/admin only (the demo, with no role, shows
+    // them). A hidden tab left selected falls back.
     const reportAdmin = isAdmin(role);
-    const reportTab = REPORT_TABS.includes(s.reportTab) && (reportAdmin || s.reportTab !== 'Profitability') ? s.reportTab : 'Overview';
-    const reportTabs = REPORT_TABS.filter((t) => reportAdmin || t !== 'Profitability').map((t) => ({
+    const reportTab = REPORT_TABS.includes(s.reportTab) && (reportAdmin || !ADMIN_REPORT_TABS.includes(s.reportTab)) ? s.reportTab : 'Overview';
+    const reportTabs = REPORT_TABS.filter((t) => reportAdmin || !ADMIN_REPORT_TABS.includes(t)).map((t) => ({
       label: t, go: () => set({ reportTab: t }),
       color: reportTab === t ? '#18181b' : '#71717a',
       border: reportTab === t ? '#18181b' : 'transparent',
@@ -9395,7 +9417,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       }];
     }).slice(0, 120);
     // The builder tab draws itself (components/reporting/custom); nothing to compute here.
-    const reportBlocks = () => (reportRaw && reportTab !== CUSTOM_TAB ? buildReport(reportTab, s.reportRange, reportRaw, { admin: reportAdmin }) : []);
+    const reportBlocks = () => (reportRaw && reportTab !== CUSTOM_TAB && reportTab !== TEAM_STOPLIGHT_TAB ? buildReport(reportTab, s.reportRange, reportRaw, { admin: reportAdmin }) : []);
     const reportRangeBounds = rangeOf(s.reportRange);
 
     // ---- NOTIFICATIONS ----
@@ -10212,10 +10234,11 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       // person, so a box left open on Ann sent Bob's record composer to Ann.
       // Resolves true once the send or save has landed.
       send: (opts?: unknown): Promise<boolean> => {
-        const o = (opts && typeof opts === 'object' ? opts : {}) as { subject?: unknown; body?: unknown; personId?: unknown; channel?: unknown };
+        const o = (opts && typeof opts === 'object' ? opts : {}) as { subject?: unknown; body?: unknown; personId?: unknown; channel?: unknown; text?: unknown };
         const subjectIn = typeof o.subject === 'string' ? o.subject.trim() : '';
         const quickPid = typeof o.body === 'string' && typeof o.personId === 'string' ? o.personId : null;
-        const body = (quickPid ? o.body as string : s.composerText).trim();
+        // `text`: the record composer's box as it stands, which reaches composerText a beat late.
+        const body = (quickPid ? o.body as string : typeof o.text === 'string' ? o.text : s.composerText).trim();
         const fail = (msg: string, tone?: ToastTone) => { toast(msg, tone); return Promise.resolve(false); };
         if (!body) return fail('Type a message first');
         const tab = quickPid ? (o.channel === 'email' ? 'Email' : 'Text') : s.composerTab;
@@ -10654,12 +10677,13 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       talkrAuthed: talkrLive,
       // A number from the Talkr dialer or the inbox: the call carries the CLOZR
       // record behind it, so the context panel and wrap-up land on that record.
-      dialE164: (e164: string) => startCall(dialerRecordFor(e164)?.target ?? { name: formatPhone(e164), phone: e164 }),
+      // `name`: who the dial box's lookup found (a vendor, or someone not loaded), so the call still carries it.
+      dialE164: (e164: string, name?: string) => startCall(dialerRecordFor(e164)?.target ?? { name: name || formatPhone(e164), phone: e164 }),
       // A phone number shown in a list (People, Deals, Buyers). It used to be a
       // plain tel: link, which on a desktop rang through whatever the OS had
       // — no do-not-call check, and nothing logged. This is click-to-call.
       callPhone: (number: string) => startCall(dialerRecordFor(number)?.target ?? { name: number, phone: number }),
-      dialerRecordFor, callRecord,
+      dialerRecordFor, dialerContacts, callRecord,
       talkrPhone: phone, phoneEnabled,
       // A phone has no dialer screen to go to: the full-screen phone is it.
       goDialer: () => (s.isMobile ? openPhone('Dial') : go('dialer', { dialerOpen: false })),

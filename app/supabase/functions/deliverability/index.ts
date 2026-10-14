@@ -61,7 +61,7 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { HARDENING, clientIp, corsFor, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import { type Account, SCOPE, accessFor, has, seal } from '../_shared/google.ts';
-import { FREE_MAIL, dailyAllowance, dayStartUtc, domainOf, isDomain, localParts, rampDay } from '../_shared/deliverability-rules.ts';
+import { FREE_MAIL, POSTMASTER_V2_METRICS, dailyAllowance, dayStartUtc, domainOf, isDomain, localParts, postmasterDaysV2, rampDay } from '../_shared/deliverability-rules.ts';
 import { SETTINGS_COLUMNS, SENDER_COLUMNS, type SenderRow, checkAutoPauseSender, ensureBlastSender, ensureRepBlastSenders, readUnsubscribeToken, senderById, settingsFor } from '../_shared/mailguard.ts';
 import { recordDocsDelivery } from '../_shared/parity/delivery.ts';
 import { type EnvLike, blastFrom, classifyResendEvent, ensureResendDomain, parseFrom, resendConnectPayload, resendKeyProblem, suggestBlastFrom, verifyResendWebhook } from '../_shared/resend.ts';
@@ -213,54 +213,57 @@ async function workspaceDomains(admin: SupabaseClient, ws: number, env?: EnvLike
 
 // -------------------------------------------------------------- postmaster
 /**
- * Postmaster Tools v1 trafficStats, last 30 days, for every domain the
- * connected account can see there. v1 is the version that still reports
- * domain reputation.
- *
- * ponytail: v2 (scope postmaster.traffic.readonly, domainStats:query) drops
- * reputation but adds the bulk-sender compliance status (one-click
- * unsubscribe, DMARC alignment). Move to it when Google retires v1.
+ * Postmaster Tools v2, last 30 days, for every domain the connected account
+ * can see there: domains.list, then domainStats:query (DAILY) for spam rate,
+ * SPF / DKIM / DMARC pass rates and the delivery-error rate. Google retired
+ * v1 (trafficStats), and v2 has no domain reputation, so `reputation` is
+ * always null. v2 needs postmaster.domain and postmaster.traffic.readonly;
+ * an account that only granted v1's postmaster.readonly reads as not
+ * granted, so the panel offers Connect Postmaster again.
  */
 async function postmaster(admin: SupabaseClient, ws: number, account: Account, known: string[], force: boolean) {
   const siteOk = has(account, SCOPE.siteVerification);
-  if (!has(account, SCOPE.postmaster)) return { granted: false, site_verification: siteOk, domains: [], unverified: known, verification: await verificationRows(admin, ws, known) };
+  if (!has(account, SCOPE.postmaster) || !has(account, SCOPE.postmasterDomains)) return { granted: false, site_verification: siteOk, domains: [], unverified: known, verification: await verificationRows(admin, ws, known) };
   const token = await accessFor(admin, account);
   if (!token) return { granted: true, site_verification: siteOk, error: 'Google needs this connection approved again.', domains: [], unverified: known, verification: await verificationRows(admin, ws, known) };
-  const api = async (path: string) => {
-    const res = await fetch(`https://gmailpostmastertools.googleapis.com/v1/${path}`, { headers: { Authorization: `Bearer ${token}` } });
-    const body = await res.json().catch(() => ({})) as Any;
-    if (!res.ok) throw Object.assign(new Error(String(body?.error?.message ?? res.status)), { status: res.status });
-    return body;
+  const api = async (path: string, body?: unknown) => {
+    const res = await fetch(`https://gmailpostmastertools.googleapis.com/v2/${path}`, {
+      method: body ? 'POST' : 'GET',
+      headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    const out = await res.json().catch(() => ({})) as Any;
+    if (!res.ok) throw Object.assign(new Error(String(out?.error?.message ?? res.status)), { status: res.status });
+    return out;
   };
   let names: string[] = [];
   let error: string | undefined;
   try {
-    const list = await api('domains?pageSize=100');
+    const list = await api('domains?pageSize=200');
     names = ((list.domains ?? []) as Any[]).map((d) => String(d.name).replace(/^domains\//, '').toLowerCase());
   } catch (err) {
-    error = (err as Any).status === 403
-      ? 'Postmaster Tools refused this account. Check the Gmail Postmaster Tools API is enabled on the Google Cloud project, then reconnect Postmaster.'
-      : 'Postmaster Tools did not answer. Try again shortly.';
+    const status = Number((err as Any).status ?? 0);
+    const said = err instanceof Error ? err.message.slice(0, 200) : '';
+    console.error('postmaster domains.list', status, said);
+    error = status === 403
+      ? `Postmaster Tools refused this account (${said || '403'}). Check the Gmail Postmaster Tools API is enabled on the Google Cloud project, then press Connect Postmaster again.`
+      : status === 401
+        ? 'Google needs this connection approved again. Press Connect Postmaster.'
+        : `Postmaster Tools did not answer${said ? `: ${said}` : ''}. Try again shortly.`;
   }
-  const end = new Date();
+  const end = new Date(Date.now() - 86_400_000);
   const start = new Date(Date.now() - 30 * 86_400_000);
-  const d = (x: Date, p: string) => `${p}.year=${x.getUTCFullYear()}&${p}.month=${x.getUTCMonth() + 1}&${p}.day=${x.getUTCDate()}`;
+  const date = (x: Date) => ({ year: x.getUTCFullYear(), month: x.getUTCMonth() + 1, day: x.getUTCDate() });
   const domains = [];
   // Only this workspace's domains, even when the Google account sees more.
   for (const name of names.filter((n) => known.includes(n)).slice(0, 12)) {
-    const stats = await api(`domains/${name}/trafficStats?${d(start, 'startDate')}&${d(end, 'endDate')}&pageSize=40`).catch(() => ({ trafficStats: [] }));
-    const days = ((stats.trafficStats ?? []) as Any[]).map((s) => {
-      const id = String(s.name).split('/').pop() ?? '';
-      return {
-        date: `${id.slice(0, 4)}-${id.slice(4, 6)}-${id.slice(6, 8)}`,
-        reputation: (s.domainReputation as string | undefined) ?? null,
-        spam: typeof s.userReportedSpamRatio === 'number' ? s.userReportedSpamRatio : null,
-        spf: s.spfSuccessRatio ?? null, dkim: s.dkimSuccessRatio ?? null, dmarc: s.dmarcSuccessRatio ?? null,
-        errors: ((s.deliveryErrors ?? []) as Any[]).reduce((n, e) => n + Number(e.errorRatio ?? 0), 0),
-        error_types: ((s.deliveryErrors ?? []) as Any[]).map((e) => `${e.errorType} ${(100 * Number(e.errorRatio ?? 0)).toFixed(2)}%`),
-      };
-    }).sort((a, b) => a.date.localeCompare(b.date));
-    domains.push({ domain: name, days });
+    const stats = await api(`domains/${name}/domainStats:query`, {
+      metricDefinitions: POSTMASTER_V2_METRICS,
+      timeQuery: { dateRanges: { dateRanges: [{ start: date(start), end: date(end) }] } },
+      aggregationGranularity: 'DAILY',
+      pageSize: 200,
+    }).catch((err) => { console.error('postmaster domainStats', name, (err as Any).status, err instanceof Error ? err.message : err); return { domainStats: [] }; });
+    domains.push({ domain: name, days: postmasterDaysV2((stats.domainStats ?? []) as unknown[]) });
   }
   const unverified = known.filter((k) => !names.includes(k));
   const verification = siteOk
@@ -453,7 +456,7 @@ async function overview(admin: SupabaseClient, ws: number) {
     const today = localParts(now, m.timezone).date;
     mailboxes.push({
       account_id: a.id, email: a.email, owner: names.get(a.user_id) ?? null, user_id: a.user_id, status: a.status,
-      gmail_send: a.gmail_send, gmail_read: a.gmail_read && (a.scopes ?? []).includes(SCOPE.gmailRead), postmaster: (a.scopes ?? []).includes(SCOPE.postmaster),
+      gmail_send: a.gmail_send, gmail_read: a.gmail_read && (a.scopes ?? []).includes(SCOPE.gmailRead), postmaster: (a.scopes ?? []).includes(SCOPE.postmaster) && (a.scopes ?? []).includes(SCOPE.postmasterDomains),
       settings: m,
       sent_today: mine.filter((r) => r.sent_at >= dayStart).length,
       allowance: dailyAllowance(m, today), ramp_day: rampDay(m, today) + 1,

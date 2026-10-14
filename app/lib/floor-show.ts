@@ -424,17 +424,52 @@ export function audienceSees(event: FloorEvent, _me: string | null, admin: boole
  */
 export function catchUp(events: FloorEvent[], now = Date.now()): FloorEvent[] {
   const badges = events.filter((e): e is Extract<FloorEvent, { kind: 'badge' }> => e.kind === 'badge');
-  const rest = events.filter((e) => e.kind !== 'badge' && e.kind !== 'pass');
-  if (badges.length <= 2) return [...badges, ...rest];
+  const contracts = events.filter((e): e is Extract<FloorEvent, { kind: 'contract' }> => e.kind === 'contract');
+  const rest = events.filter((e) => e.kind !== 'badge' && e.kind !== 'pass' && e.kind !== 'contract');
+  const out: FloorEvent[] = [];
+  if (badges.length <= 2) out.push(...badges);
+  else out.push(badgeDigest(badges, now, 'while you were away'));
+  // A long weekend of signed contracts is one toast, not a stack that pushes each other off screen.
+  if (contracts.length <= 2) out.push(...contracts);
+  else {
+    const named = contracts.slice(0, 3).map((c) => c.title).join(', ');
+    const more = contracts.length - 3;
+    out.push({ id: `digest:contracts:${new Date(now).toISOString().slice(0, 13)}:${contracts.length}`, kind: 'digest', text: `${contracts.length} contracts signed while you were away: ${named}${more > 0 ? ` and ${more} more` : ''}.` });
+  }
+  return [...out, ...rest];
+}
+
+function badgeDigest(badges: Extract<FloorEvent, { kind: 'badge' }>[], now: number, when: string): FloorEvent {
   const named = badges.slice(0, 3).map((b) => `${b.person} got ${b.badgeName}`).join(', ');
   const more = badges.length - 3;
-  const digest: FloorEvent = {
-    id: `digest:${new Date(now).toISOString().slice(0, 13)}:${badges.length}`,
+  return {
+    id: `digest:${new Date(now).toISOString().slice(0, 13)}:${badges.length}:${badges[0]?.id ?? ''}`,
     kind: 'digest',
-    text: `${badges.length} badges while you were away — ${named}${more > 0 ? ` and ${more} more` : ''}.`,
+    text: `${badges.length} badges ${when} — ${named}${more > 0 ? ` and ${more} more` : ''}.`,
   };
-  return [digest, ...rest];
 }
+
+/** How many badges take over the screen from one look at the board; the rest fold into one toast. */
+export const LIVE_BADGE_TAKEOVERS = 2;
+
+/**
+ * A live look at the board (not the catch-up): at most two badges get the
+ * full-screen moment, the rest fold into one quiet toast, so a big refresh never
+ * plays ten popups and ten sounds in a row.
+ */
+export function throttleLive(events: FloorEvent[], now = Date.now(), max = LIVE_BADGE_TAKEOVERS): { loud: FloorEvent[]; quiet: FloorEvent[] } {
+  const badges = events.filter((e): e is Extract<FloorEvent, { kind: 'badge' }> => e.kind === 'badge');
+  if (badges.length <= max) return { loud: events, quiet: [] };
+  const keep = new Set(badges.slice(0, max).map((b) => b.id));
+  const folded = badges.slice(max);
+  return {
+    loud: events.filter((e) => e.kind !== 'badge' || keep.has(e.id)),
+    quiet: [badgeDigest(folded, now, 'just now')],
+  };
+}
+
+/** Away from the board this long, the next look is a quiet catch-up again (a tab left open over a weekend). */
+export const CATCH_UP_AFTER_MS = 30 * 60_000;
 
 export function canSpin(event: Extract<FloorEvent, { kind: 'contract' }>, me: string | null, admin: boolean): boolean {
   if (!me) return admin;

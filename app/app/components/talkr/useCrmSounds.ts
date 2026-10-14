@@ -8,6 +8,7 @@
 
 import { useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { armNotificationAsk, installAudioUnlock, playEvent, setAudioUser } from '@/lib/phone-audio';
 
 /** How far ahead due tasks are armed; re-armed on every task change and every half hour. */
@@ -45,7 +46,7 @@ export function useCrmSounds(workspaceId: number | null, userId: string | null):
     };
 
     void arm();
-    const every = setInterval(rearm, 30 * 60_000);
+    const stop = everyWhileVisible(() => { if (!document.hidden) rearm(); }, 30 * 60_000);
     // `notifications` joins the realtime publication in migration 56; until it
     // is applied only the task half of this channel delivers.
     const ch = db
@@ -61,7 +62,7 @@ export function useCrmSounds(workspaceId: number | null, userId: string | null):
       live = false;
       timers.forEach(clearTimeout);
       if (debounce) clearTimeout(debounce);
-      clearInterval(every);
+      stop();
       void db.removeChannel(ch);
     };
   }, [workspaceId, userId]);

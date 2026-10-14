@@ -16,7 +16,11 @@
 // chore.
 
 import { attachPhotoLinks, parseLinks } from './deal-files';
+import { type Json } from './database.types';
+import { type Table, parseTable } from './parse-table';
 import { supabase } from './supabase';
+
+export { type Table, parseTable };
 import { buyerRow, enrollInPlan, logActivity, moveOpenDeals, parseDue } from './crm-write';
 import { type Action, type DealOnFile, type Existing, type Keys, type Match, classify, mergePatch, planImportDeal } from './import-dedupe';
 import { toE164 } from './talkr';
@@ -325,48 +329,6 @@ const norm = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, '');
 /** A Podio header without its field-part suffix (" - amount", " - start") or a note in brackets. */
 const podioLabel = (h: string) => h.replace(/\s+-\s*(amount|start|end|value|text)\s*$/i, '').replace(/\s*\([^)]*\)/g, '').trim() || h;
 const tokens = (h: string) => h.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 1);
-
-// ---- parsing ----------------------------------------------------------------
-
-export type Table = { headers: string[]; rows: string[][]; delimiter: string };
-
-/**
- * CSV / TSV / pasted-spreadsheet parser. Handles quoted fields with embedded
- * commas, quotes and newlines. Picks the delimiter that splits the first line
- * into the most columns, which is what a paste from Excel or Sheets (tabs)
- * and a real CSV (commas) both want.
- */
-export function parseTable(text: string): Table {
-  const src = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
-  const firstLine = src.split('\n').find((l) => l.trim()) ?? '';
-  const delimiter = [',', '\t', ';', '|'].map((d) => ({ d, n: firstLine.split(d).length }))
-    .sort((a, b) => b.n - a.n)[0]?.d ?? ',';
-
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = '';
-  let quoted = false;
-  for (let i = 0; i < src.length; i++) {
-    const c = src[i];
-    if (quoted) {
-      if (c === '"') {
-        if (src[i + 1] === '"') { cell += '"'; i++; } else quoted = false;
-      } else cell += c;
-    } else if (c === '"') {
-      quoted = true;
-    } else if (c === delimiter) {
-      row.push(cell); cell = '';
-    } else if (c === '\n') {
-      row.push(cell); rows.push(row); row = []; cell = '';
-    } else cell += c;
-  }
-  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
-
-  const nonEmpty = rows.filter((r) => r.some((v) => v.trim() !== ''));
-  const headers = (nonEmpty[0] ?? []).map((h) => h.trim());
-  const body = nonEmpty.slice(1).map((r) => headers.map((_, i) => (r[i] ?? '').trim()));
-  return { headers, rows: body, delimiter };
-}
 
 // ---- mapping ----------------------------------------------------------------
 
@@ -1188,6 +1150,59 @@ export async function importProperty(workspaceId: number, r: ImportRecord, mode:
   return res.error ? null : (res.data as { id: number }).id;
 }
 
+/** Rows per import_property_batch / import_address_lookup call. The functions cap at 500. */
+export const IMPORT_PROPERTY_BATCH = 400;
+
+export type ImportPropertyHit = { propertyId: number | null; addressKey: string | null };
+
+/**
+ * Match a batch of import rows to properties in one call per 400 rows.
+ * `write` finds or creates (import_property_batch). Otherwise it only looks
+ * up (import_address_lookup). Null when the function is missing or errors,
+ * so the caller can keep the per-row path. A later batch that fails returns
+ * the hits already written, and the caller fills the gaps one row at a time.
+ */
+export async function resolveImportProperties(
+  workspaceId: number,
+  rows: { i: number; r: ImportRecord; mode: 'fill' | 'overwrite' }[],
+  write: boolean,
+): Promise<Map<number, ImportPropertyHit> | null> {
+  if (!supabase) return null;
+  const sb = supabase;
+  const map = new Map<number, ImportPropertyHit>();
+  if (!rows.length) return map;
+  const rpc = write ? 'import_property_batch' as const : 'import_address_lookup' as const;
+  let wrote = false;
+  try {
+    for (let i = 0; i < rows.length; i += IMPORT_PROPERTY_BATCH) {
+      const slice = rows.slice(i, i + IMPORT_PROPERTY_BATCH);
+      const payload = slice.map(({ i: rowIndex, r, mode }) => {
+        const place = normalizePlace({ city: r.city, state: r.st, zip: r.zip });
+        return {
+          i: rowIndex,
+          line1: r.addr,
+          city: place.city ?? '',
+          state: place.state ?? '',
+          zip: place.zip ?? '',
+          mode,
+          ...propertyImportFields(r),
+        };
+      });
+      const { data, error } = await sb.rpc(rpc, { p_workspace: workspaceId, p_rows: payload as Json });
+      if (error || !Array.isArray(data)) return write && wrote ? map : null;
+      const hits = data as { i?: number; property_id?: number | null; address_key?: string | null }[];
+      for (const h of hits) {
+        if (h.i == null || !Number.isFinite(Number(h.i))) continue;
+        map.set(Number(h.i), { propertyId: h.property_id ?? null, addressKey: h.address_key ?? null });
+      }
+      wrote = write;
+    }
+    return map;
+  } catch {
+    return wrote ? map : null;
+  }
+}
+
 /** What a record is matched on (address is the raw line; the database turns it into address_key). */
 const keysOf = (kind: RecordKind, rec: AnyRecord): Omit<Keys, 'address'> => ({
   name: rec.name, phone: rec.phone, email: rec.email,
@@ -1222,32 +1237,47 @@ export async function reviewDuplicates(
   const addressKeys: (string | null)[] = records.map(() => null);
 
   if (kind === 'sellers') {
-    const [sellers, props] = await Promise.all([
-      readAll((a, b) => sb.from('sellers').select('id, name, phone, email, property_id, property_address, source_id, lead_stage').eq('workspace_id', workspaceId).order('id').range(a, b)),
-      readAll((a, b) => sb.from('properties').select('id, address_key').eq('workspace_id', workspaceId).order('id').range(a, b)),
-    ]);
-    const keyOf = new Map(props.map((p) => [p.id, p.address_key]));
-    existing = sellers.map((s) => ({
-      id: s.id, name: s.name, phone: s.phone, email: s.email, sourceId: s.source_id,
-      address: s.property_id ? keyOf.get(s.property_id) ?? null : null, propertyId: s.property_id,
-      show: [s.name, s.phone ?? '', s.email ?? '', s.property_address ?? '', s.lead_stage],
-    }));
-    // address_key for each distinct incoming address, a few at a time.
-    const lines = records.map((r) => {
+    const sellers = await readAll((a, b) => sb.from('sellers').select('id, name, phone, email, property_id, property_address, source_id, lead_stage').eq('workspace_id', workspaceId).order('id').range(a, b));
+    const wanted = records.flatMap((r, i) => {
       const x = r as ImportRecord;
-      return x.addr ? [x.addr, x.city ?? '', x.st ?? '', x.zip ?? ''] : null;
+      return x.addr ? [{ i, r: x, mode: 'fill' as const }] : [];
     });
-    const distinct = [...new Set(lines.filter(Boolean).map((l) => JSON.stringify(l)))];
-    const got = new Map<string, string | null>();
-    for (let i = 0; i < distinct.length; i += 20) {
-      await Promise.all(distinct.slice(i, i + 20).map(async (k) => {
-        const [line1, city, st, zip] = JSON.parse(k) as string[];
-        const { data } = await sb.rpc('address_key', { p_line1: line1, p_city: city, p_state: st, p_zip: zip });
-        got.set(k, (data as string | null) ?? null);
+    const looked = await resolveImportProperties(workspaceId, wanted, false);
+    if (looked) {
+      const keyOf = new Map<number, string>();
+      looked.forEach((h) => { if (h.propertyId != null && h.addressKey) keyOf.set(h.propertyId, h.addressKey); });
+      existing = sellers.map((s) => ({
+        id: s.id, name: s.name, phone: s.phone, email: s.email, sourceId: s.source_id,
+        address: s.property_id ? keyOf.get(s.property_id) ?? null : null, propertyId: s.property_id,
+        show: [s.name, s.phone ?? '', s.email ?? '', s.property_address ?? '', s.lead_stage],
       }));
-      onProgress?.(Math.min(i + 20, distinct.length), distinct.length);
+      records.forEach((_, i) => { addressKeys[i] = looked.get(i)?.addressKey ?? null; });
+      onProgress?.(wanted.length, wanted.length);
+    } else {
+      const props = await readAll((a, b) => sb.from('properties').select('id, address_key').eq('workspace_id', workspaceId).order('id').range(a, b));
+      const keyOf = new Map(props.map((p) => [p.id, p.address_key]));
+      existing = sellers.map((s) => ({
+        id: s.id, name: s.name, phone: s.phone, email: s.email, sourceId: s.source_id,
+        address: s.property_id ? keyOf.get(s.property_id) ?? null : null, propertyId: s.property_id,
+        show: [s.name, s.phone ?? '', s.email ?? '', s.property_address ?? '', s.lead_stage],
+      }));
+      // address_key for each distinct incoming address, a few at a time.
+      const lines = records.map((r) => {
+        const x = r as ImportRecord;
+        return x.addr ? [x.addr, x.city ?? '', x.st ?? '', x.zip ?? ''] : null;
+      });
+      const distinct = [...new Set(lines.filter(Boolean).map((l) => JSON.stringify(l)))];
+      const got = new Map<string, string | null>();
+      for (let i = 0; i < distinct.length; i += 20) {
+        await Promise.all(distinct.slice(i, i + 20).map(async (k) => {
+          const [line1, city, st, zip] = JSON.parse(k) as string[];
+          const { data } = await sb.rpc('address_key', { p_line1: line1, p_city: city, p_state: st, p_zip: zip });
+          got.set(k, (data as string | null) ?? null);
+        }));
+        onProgress?.(Math.min(i + 20, distinct.length), distinct.length);
+      }
+      lines.forEach((l, i) => { addressKeys[i] = l ? got.get(JSON.stringify(l)) ?? null : null; });
     }
-    lines.forEach((l, i) => { addressKeys[i] = l ? got.get(JSON.stringify(l)) ?? null : null; });
   } else if (kind === 'buyers') {
     const rows = await readAll((a, b) => sb.from('buyers').select('id, name, company, phone, email, source_id, status').eq('workspace_id', workspaceId).order('id').range(a, b));
     existing = rows.map((b) => ({ id: b.id, name: b.name, phone: b.phone, email: b.email, sourceId: b.source_id, address: null, show: [b.name, b.phone ?? '', b.email ?? '', b.company ?? '', b.status] }));
@@ -1399,6 +1429,15 @@ export async function runImport(
 
   const extraTags = uniq([...opts.tags, opts.label]);
 
+  const propertyHits = kind === 'sellers'
+    ? await resolveImportProperties(workspaceId, recs.flatMap((rec, i) => {
+      const a = actions[i];
+      const r = rec as ImportRecord;
+      if (rec.problem || !a || a === 'skip' || a === 'merge' || !r.addr) return [];
+      return [{ i, r, mode: (a === 'overwrite' ? 'overwrite' : 'fill') as 'fill' | 'overwrite' }];
+    }), true)
+    : null;
+
   async function payload(i: number, rec: AnyRecord): Promise<Record<string, unknown>> {
     if (kind === 'vendors') {
       const r = rec as VendorImportRecord;
@@ -1436,7 +1475,10 @@ export async function runImport(
       return { ...row, source_id: r.source_id };
     }
     const r = rec as ImportRecord;
-    const propertyId = r.addr ? await importProperty(workspaceId, r, actions[i] === 'overwrite' ? 'overwrite' : 'fill') : null;
+    const hit = propertyHits?.get(i);
+    const propertyId = !r.addr ? null
+      : hit ? hit.propertyId
+      : await importProperty(workspaceId, r, actions[i] === 'overwrite' ? 'overwrite' : 'fill');
     return {
       name: r.name, phone: phoneOut(r.phone), email: r.email?.toLowerCase() ?? null,
       property_id: propertyId,

@@ -33,6 +33,7 @@ import { BUYER_STAGES, PODIO_SUBMISSION_STAGES, SELLER_STAGES } from '@/lib/stag
 import { sessionRole, useSession } from '@/lib/session';
 import { isAdmin, canSeeBuyers, type Role } from '@/lib/team';
 import { resetLeaderboardReps } from '@/lib/floor-store';
+import { pauseLive, resumeLive } from '@/lib/use-crm';
 
 const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
 const h2: React.CSSProperties = { margin: '0 0 2px', fontSize: '14px', fontWeight: 700, letterSpacing: '-0.01em' };
@@ -44,6 +45,41 @@ const mono: React.CSSProperties = { fontSize: '11.5px', color: '#52525b', whiteS
 const th: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid #e4e4e7', whiteSpace: 'nowrap', textAlign: 'left', color: '#71717a', fontSize: '11px' };
 const td: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid #f0f0f1', whiteSpace: 'nowrap', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'top' };
 const label: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11.5px', color: '#71717a', fontWeight: 600 };
+const stickyTh: React.CSSProperties = { ...th, position: 'sticky', top: 0, background: '#fff', zIndex: 1 };
+
+/** A large paste is parsed off the main thread. A short one stays here, and a worker that fails parses here too. */
+function parseOffMain(text: string): Promise<Table> {
+  if (text.length <= 8000 || typeof Worker === 'undefined') return Promise.resolve(parseTable(text));
+  return new Promise((resolve) => {
+    let worker: Worker;
+    try {
+      worker = new Worker(new URL('../../../lib/parse-table.worker.ts', import.meta.url), { type: 'module' });
+    } catch {
+      resolve(parseTable(text));
+      return;
+    }
+    let settled = false;
+    let timer = 0;
+    const finish = (t: Table) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      worker.terminate();
+      resolve(t);
+    };
+    timer = window.setTimeout(() => finish(parseTable(text)), 30_000);
+    worker.onmessage = (e: MessageEvent<Table>) => finish(e.data);
+    worker.onerror = () => finish(parseTable(text));
+    worker.postMessage({ text });
+  });
+}
+
+function rowWindow(scrollTop: number, count: number, rowHeight: number, viewport: number) {
+  const over = 4;
+  const start = Math.max(0, Math.floor(scrollTop / rowHeight) - over);
+  const end = Math.min(count, start + Math.ceil(viewport / rowHeight) + over * 2);
+  return { start, end, padTop: start * rowHeight, padBottom: Math.max(0, (count - end) * rowHeight) };
+}
 
 /** What the screen imports. 'submissions' is a vendor's list of houses: mapped like sellers, written as deals. */
 type Kind = RecordKind | 'submissions';
@@ -145,6 +181,10 @@ export function Import({ V }: { V: ClozrView }) {
   const [sheetName, setSheetName] = useState('');
   const [sheetUrl, setSheetUrl] = useState('');
   const [reading, setReading] = useState<string | null>(null);
+  const [previewScroll, setPreviewScroll] = useState(0);
+  const [dupScroll, setDupScroll] = useState(0);
+  const previewBox = useRef<HTMLDivElement>(null);
+  const dupBox = useRef<HTMLDivElement>(null);
   // Vendor submissions: who sent the list, and what kind of vendor they are.
   const [vendorName, setVendorName] = useState('');
   const [vendorType, setVendorType] = useState<string>(SUBMITTER_TYPES[0].value);
@@ -206,14 +246,20 @@ export function Import({ V }: { V: ClozrView }) {
     if (table) remap(table, k);
   }
 
-  function load(raw: string, name: string | null) {
-    const t = parseTable(raw);
+  async function load(raw: string, name: string | null) {
+    if (raw.length > 8000) setReading('Reading the table…');
+    const t = await parseOffMain(raw);
+    setReading(null);
     if (!t.headers.length || !t.rows.length) {
       setNote({ ok: false, text: 'That does not look like a table — it needs a header row and at least one row of data.' });
       return;
     }
     setFileName(name);
     setTable(t);
+    setPreviewScroll(0);
+    setDupScroll(0);
+    previewBox.current?.scrollTo(0, 0);
+    dupBox.current?.scrollTo(0, 0);
     setRunComprOnImport(false);
     remap(t, kind);
     setNote({ ok: true, text: `${t.rows.length.toLocaleString()} rows, ${t.headers.length} columns, mapped automatically. Check anything marked "Check"; a column with no field is kept as extra info on the record, never dropped.` });
@@ -232,14 +278,14 @@ export function Import({ V }: { V: ClozrView }) {
     setSheetName(pick.sheet);
     const csv = rowsToCsv(pick.rows);
     setText('');
-    load(csv, all.length > 1 ? `${name} · ${pick.sheet}` : name);
+    void load(csv, all.length > 1 ? `${name} · ${pick.sheet}` : name);
   }
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
-    if (isTextTable(f.name, f.type)) { setSheets([]); load(await f.text(), f.name); return; }
+    if (isTextTable(f.name, f.type)) { setSheets([]); await load(await f.text(), f.name); return; }
     setReading(`Reading ${f.name}…`);
     try {
       const all = await readSpreadsheet(f.name, await f.arrayBuffer());
@@ -272,7 +318,7 @@ export function Import({ V }: { V: ClozrView }) {
     const r = data as { ok?: boolean; csv?: string; name?: string | null; error?: string } | null;
     if (message || !r?.ok || !r.csv) return setNote({ ok: false, text: message ?? r?.error ?? 'Google sent nothing back.' });
     setSheets([]);
-    load(r.csv, r.name || 'Google Sheet');
+    await load(r.csv, r.name || 'Google Sheet');
   }
 
   async function askAi() {
@@ -365,6 +411,9 @@ export function Import({ V }: { V: ClozrView }) {
     : kind === 'submissions' ? records.filter((r, i) => !r.problem && (r as ImportRecord).addr && review?.matches[i]?.kind !== 'existing').length
       : comprCandidates(kind, records, actions);
 
+  const previewWin = rowWindow(previewScroll, records.length, 33, 360);
+  const dupWin = rowWindow(dupScroll, dupRows.length, 64, 420);
+
   async function runSubmissions() {
     if (!wsId) return;
     setResult(null);
@@ -376,7 +425,6 @@ export function Import({ V }: { V: ClozrView }) {
     setProgress(null);
     setResult({ result: out.result, report: out.report, ids: [...out.dealIds, ...out.updatedDealIds].map((id) => 'sub:d' + id) });
     setReview(null);
-    V.reloadCrm();
     const confirmed = comprMax;
     setRunComprOnImport(false);
     if (confirmed && out.dealIds.length) {
@@ -393,7 +441,9 @@ export function Import({ V }: { V: ClozrView }) {
     if (!table || !wsId || !review) return;
     // Billed per report, so the count is confirmed before anything is written.
     if (comprMax && !window.confirm(comprConfirmText(comprMax))) return;
-    if (kind === 'submissions') return runSubmissions();
+    pauseLive();
+    try {
+    if (kind === 'submissions') { await runSubmissions(); return; }
     setResult(null);
     setProgress({ done: 0, total: records.length });
     const out = await runImport(mapKind, wsId, s.user?.id ?? null, records, review, actions, {
@@ -410,7 +460,6 @@ export function Import({ V }: { V: ClozrView }) {
       const z = await resetLeaderboardReps(wsId, zeroIds);
       V.showToast(z.ok ? `Leaderboard zeroed for ${zeroIds.length} rep${zeroIds.length === 1 ? '' : 's'}` : (z.message ?? 'Could not zero the leaderboard'));
     }
-    V.reloadCrm();
     // COMPR only when switched on for this import, and never past the count confirmed above.
     const fresh = comprQueue(kind, out.report, records, comprMax);
     setRunComprOnImport(false);
@@ -420,6 +469,10 @@ export function Import({ V }: { V: ClozrView }) {
         .then((r) => { V.reloadCrm(); V.showToast(`COMPR done · ${r.ok} run${r.failed ? ` · ${r.failed} failed: ${r.firstError}` : ''}`); });
     }
     void lastImports(wsId).then(setLastRun);
+    } finally {
+      resumeLive();
+      V.reloadCrm();
+    }
   }
 
   const listView = kind === 'buyers' ? V.goBuyers : kind === 'vendors' ? V.goVendorList : V.goPeople;
@@ -462,17 +515,17 @@ export function Import({ V }: { V: ClozrView }) {
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onPaste={(e) => { const t = e.clipboardData.getData('text'); if (t.includes('\n')) { e.preventDefault(); setText(t); load(t, null); } }}
+          onPaste={(e) => { const t = e.clipboardData.getData('text'); if (t.includes('\n')) { e.preventDefault(); setText(t); void load(t, null); } }}
           placeholder={'Name\tPhone\tEmail\n…'}
           rows={5}
           spellCheck={false}
           style={{ width: '100%', padding: '10px', border: '1px solid #e4e4e7', borderRadius: '10px', fontSize: '12.5px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', background: '#fafafa', color: '#18181b', resize: 'vertical' }}
         />
         <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <button onClick={() => load(text, null)} disabled={!text.trim()} style={{ ...primary, opacity: text.trim() ? 1 : 0.5 }}>Read pasted table</button>
+          <button onClick={() => void load(text, null)} disabled={!text.trim()} style={{ ...primary, opacity: text.trim() ? 1 : 0.5 }}>Read pasted table</button>
           <input ref={fileRef} type="file" onChange={(e) => void onFile(e)} style={{ display: 'none' }} />
           <button onClick={() => fileRef.current?.click()} disabled={!!reading} style={btn}>Upload file…</button>
-          <button onClick={() => { setSheets([]); setText(SAMPLES[kind]); load(SAMPLES[kind], 'Sample'); }} style={{ ...btn, color: '#71717a' }}>Try a sample</button>
+          <button onClick={() => { setSheets([]); setText(SAMPLES[kind]); void load(SAMPLES[kind], 'Sample'); }} style={{ ...btn, color: '#71717a' }}>Try a sample</button>
           {fileName ? <span style={{ fontSize: '12px', color: '#71717a' }}>{fileName}</span> : null}
           {reading ? <span role="status" style={{ fontSize: '12px', color: '#0A8560' }}>{reading}</span> : null}
         </div>
@@ -552,19 +605,23 @@ export function Import({ V }: { V: ClozrView }) {
             {records.length - importable ? `; ${(records.length - importable).toLocaleString()} have nothing to create a record from` : ''}.
           </p>
           {!hasIdentity ? <div style={{ padding: '9px 11px', borderRadius: '9px', fontSize: '12.5px', background: '#fef3c7', border: '1px solid #fde68a', color: '#92400e', marginBottom: '10px' }}>Map at least {K.identityHint}, or there is nothing to create a record from.</div> : null}
-          <div style={{ overflowX: 'auto' }}>
+          <div ref={previewBox} onScroll={(e) => setPreviewScroll(e.currentTarget.scrollTop)} style={{ overflow: 'auto', maxHeight: '360px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-              <thead><tr>{[...PREVIEW_COLS[mapKind], ''].map((c) => <th key={c} style={th}>{c}</th>)}</tr></thead>
+              <thead><tr>{[...PREVIEW_COLS[mapKind], ''].map((c, i) => <th key={c || i} style={stickyTh}>{c}</th>)}</tr></thead>
               <tbody>
-                {records.slice(0, 8).map((r, i) => (
-                  <tr key={i} style={{ color: r.problem ? '#a1a1aa' : '#18181b' }}>
-                    {previewCells(mapKind, r).map((v, j) => <td key={j} style={td}>{v || '—'}</td>)}
+                {previewWin.padTop ? <tr style={{ height: previewWin.padTop }} aria-hidden="true"><td colSpan={PREVIEW_COLS[mapKind].length + 1} /></tr> : null}
+                {records.slice(previewWin.start, previewWin.end).map((r, k) => {
+                  const i = previewWin.start + k;
+                  return (
+                  <tr key={i} style={{ color: r.problem ? '#a1a1aa' : '#18181b', height: '33px' }}>
+                    {previewCells(mapKind, r).map((v, j) => <td key={j} style={td} title={v || undefined}>{v || '—'}</td>)}
                     <td style={{ ...td, color: '#b91c1c', fontSize: '11px' }}>{r.problem ?? ''}</td>
                   </tr>
-                ))}
+                  );
+                })}
+                {previewWin.padBottom ? <tr style={{ height: previewWin.padBottom }} aria-hidden="true"><td colSpan={PREVIEW_COLS[mapKind].length + 1} /></tr> : null}
               </tbody>
             </table>
-            {records.length > 8 ? <div style={{ fontSize: '11.5px', color: '#a1a1aa', padding: '6px 8px' }}>…and {(records.length - 8).toLocaleString()} more</div> : null}
           </div>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '12px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '12px', color: '#71717a' }}>Nothing is written until you have reviewed duplicates.</span>
@@ -637,22 +694,23 @@ export function Import({ V }: { V: ClozrView }) {
                   &ldquo;{sourceLabel}&rdquo; was last imported {new Date(last).toLocaleString()}. To sync it, choose Add new info or Override for the records already in CLOZR.
                 </div>
               ) : null}
-              <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto', border: '1px solid #f0f0f1', borderRadius: '9px' }}>
+              <div ref={dupBox} onScroll={(e) => setDupScroll(e.currentTarget.scrollTop)} style={{ overflow: 'auto', maxHeight: '420px', border: '1px solid #f0f0f1', borderRadius: '9px' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                  <thead><tr><th style={th}>Row</th><th style={th}>In the file</th><th style={th}>Matches</th><th style={th}>Why</th><th style={th}>Do</th></tr></thead>
+                  <thead><tr><th style={stickyTh}>Row</th><th style={stickyTh}>In the file</th><th style={stickyTh}>Matches</th><th style={stickyTh}>Why</th><th style={stickyTh}>Do</th></tr></thead>
                   <tbody>
-                    {dupRows.slice(0, 300).map(({ m, i }) => {
+                    {dupWin.padTop ? <tr style={{ height: dupWin.padTop }} aria-hidden="true"><td colSpan={5} /></tr> : null}
+                    {dupRows.slice(dupWin.start, dupWin.end).map(({ m, i }) => {
                       const cells = previewCells(mapKind, records[i]).filter(Boolean).slice(0, 4);
                       const other = m.kind === 'file' ? previewCells(mapKind, records[m.row]).filter(Boolean).slice(0, 4) : m.kind !== 'new' ? review.existing[m.id]?.show.filter(Boolean).slice(0, 4) ?? [] : [];
                       const a = actions[i];
                       return (
-                        <tr key={i} style={{ background: a == null ? '#fff7f7' : undefined }}>
+                        <tr key={i} style={{ background: a == null ? '#fff7f7' : undefined, height: '64px' }}>
                           <td style={td}>{i + 1}</td>
                           <td style={{ ...td, whiteSpace: 'normal', minWidth: '180px' }}><strong>{cells[0]}</strong><div style={mono}>{cells.slice(1).join(' · ')}</div></td>
                           <td style={{ ...td, whiteSpace: 'normal', minWidth: '180px' }}><strong>{other[0]}</strong><div style={mono}>{other.slice(1).join(' · ')}</div></td>
                           <td style={{ ...td, whiteSpace: 'normal', color: m.kind === 'conflict' ? '#b91c1c' : '#52525b', fontWeight: m.kind === 'conflict' ? 600 : 400 }}>{matchText(m)}</td>
                           <td style={{ ...td, maxWidth: 'none' }}>
-                            <select value={a ?? ''} onChange={(e) => { const v = e.target.value as Action; setActions((cur) => cur.map((x, k) => (k === i ? v : x))); }} style={{ ...select, borderColor: a == null ? '#fca5a5' : '#e4e4e7' }}>
+                            <select aria-label={`What to do with row ${i + 1}`} value={a ?? ''} onChange={(e) => { const v = e.target.value as Action; setActions((cur) => cur.map((x, k) => (k === i ? v : x))); }} style={{ ...select, borderColor: a == null ? '#fca5a5' : '#e4e4e7' }}>
                               {a == null ? <option value="">Choose…</option> : null}
                               {actionsFor(m).map((x) => <option key={x} value={x}>{m.kind === 'conflict' && x === 'fill' ? 'Add new info to existing seller' : ACTION_LABEL[x]}</option>)}
                             </select>
@@ -660,9 +718,9 @@ export function Import({ V }: { V: ClozrView }) {
                         </tr>
                       );
                     })}
+                    {dupWin.padBottom ? <tr style={{ height: dupWin.padBottom }} aria-hidden="true"><td colSpan={5} /></tr> : null}
                   </tbody>
                 </table>
-                {dupRows.length > 300 ? <div style={{ fontSize: '11.5px', color: '#a1a1aa', padding: '6px 8px' }}>Showing 300 of {dupRows.length.toLocaleString()} — use the buttons above to set the rest.</div> : null}
               </div>
             </>
           ) : kind === 'submissions' && summary.updates

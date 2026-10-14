@@ -16,7 +16,7 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { bearerOf, corsFor, isServiceCaller, jsonWith, memberRole, rateLimit, tooMany } from '../_shared/security.ts';
 import {
-  type PhotoOrder, type VueAddress, IvueitError, checkOrder, createVue, ivu, ivueitCreds, ivueitLogin, ivueitTemplates, pickTemplate,
+  type PhotoOrder, type VueAddress, IVUEIT_HOOK_TYPES, IvueitError, checkOrder, createVue, ivu, ivueitCreds, ivueitLogin, ivueitTemplates, pickTemplate,
 } from '../_shared/ivueit.ts';
 
 type Any = Record<string, unknown>;
@@ -191,34 +191,42 @@ Deno.serve(async (req) => {
       const c = await ivueitCreds(admin, ws);
       const token = await ivueitLogin(c);
       const templates = await ivueitTemplates(c, token);
-      // iVueit calls this when a Vue is completed. One active VueCompleted
-      // webhook per company: update it when one exists.
-      let webhook = 'not set';
+      // iVueit's three webhooks (one active per type per company): VueCompleted copies the photos,
+      // VueCanceled closes the order, VueEscalated tells the deal team the photos were flagged.
+      // Each is created, or updated when the company already has one of that type.
+      const results: string[] = [];
       if (c.hookToken) {
-        const hook = {
-          webhookType: 'VueCompleted', active: true, httpMethod: 'POST',
-          uri: `${url}/functions/v1/ivueit-webhook`,
-          queryParams: `?w=${ws}&t=${c.hookToken}&vue={{vueId}}`,
-          requestBody: '{"vueId":"{{vueId}}"}',
-          headers: '{}',
-        };
-        try {
-          await ivu(c, token, '/api/v1/webhook/create', { method: 'POST', body: hook });
-          webhook = 'created';
-        } catch {
+        let existing: Any[] | null = null;
+        for (const type of IVUEIT_HOOK_TYPES) {
+          const hook = {
+            webhookType: type, active: true, httpMethod: 'POST',
+            uri: `${url}/functions/v1/ivueit-webhook`,
+            queryParams: `?w=${ws}&t=${c.hookToken}&e=${type}&vue={{vueId}}`,
+            requestBody: '{"vueId":"{{vueId}}"}',
+            headers: '{}',
+          };
           try {
-            const list = await ivu(c, token, '/api/v1/webhooks');
-            const all = (Array.isArray(list.webhooks) ? list.webhooks : Array.isArray(list) ? list : []) as Any[];
-            const mine = all.find((w) => String(w.webhookType ?? w.type ?? '') === 'VueCompleted');
-            if (mine?.id) {
-              await ivu(c, token, '/api/v1/webhook/update', { method: 'PUT', body: { ...hook, id: mine.id } });
-              webhook = 'updated';
+            await ivu(c, token, '/api/v1/webhook/create', { method: 'POST', body: hook });
+            results.push(`${type} created`);
+          } catch {
+            try {
+              if (!existing) {
+                const list = await ivu(c, token, '/api/v1/webhooks');
+                existing = (Array.isArray(list.webhooks) ? list.webhooks : Array.isArray(list) ? list : []) as Any[];
+              }
+              const mine = existing.find((w) => String(w.webhookType ?? w.type ?? '') === type);
+              if (mine?.id) {
+                await ivu(c, token, '/api/v1/webhook/update', { method: 'PUT', body: { ...hook, id: mine.id } });
+                results.push(`${type} updated`);
+              } else results.push(`${type} not set`);
+            } catch (e) {
+              console.error('ivueit webhook', type, String(e));
+              results.push(`${type} not set`);
             }
-          } catch (e) {
-            console.error('ivueit webhook', String(e));
           }
         }
       }
+      const webhook = results.length ? results.join(', ') : 'not set';
       return json({ ok: true, templates, template_id: c.templateId, webhook, staging: !/prod\.data\.ivueit\.network/i.test(c.base) });
     }
 

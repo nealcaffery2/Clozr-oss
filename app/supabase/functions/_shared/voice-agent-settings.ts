@@ -11,7 +11,7 @@
 // is not built cannot be switched on), and text that tells the agent to deny
 // being an AI is refused (see deniesAi).
 import { toE164 } from './voice-agent.ts';
-import { DYNAMIC_VARIABLES } from './voice-agent.ts';
+import { DYNAMIC_VARIABLES, TOOL_ONLY_VARIABLES } from './voice-agent.ts';
 
 // ---- Keys, tools, variables ---------------------------------------------------
 
@@ -47,7 +47,7 @@ export const TOOL_LABELS: Record<ToolKey, string> = {
 };
 
 /** Variables the personalize webhook returns on every call; the only {{names}} a prompt may use besides system__*. */
-export const PROMPT_VARIABLES: readonly string[] = DYNAMIC_VARIABLES;
+export const PROMPT_VARIABLES: readonly string[] = DYNAMIC_VARIABLES.filter((v) => !TOOL_ONLY_VARIABLES.includes(v));
 
 /** {{name}} stays when it is a variable the agent has; any other {{...}} loses its braces (ElevenLabs fails a call on a variable it does not know). */
 export function sanitizeVars(text: string): string {

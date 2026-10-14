@@ -84,6 +84,7 @@ export const DYNAMIC_VARIABLE_PLACEHOLDERS: Record<string, string | boolean> = {
   next_step: '', rep_name: 'Alex', company: 'Acme Homes', agent_name: 'Riley', caller_known: false, do_not_engage: false, record_kind: 'seller',
   rep_phone: '+15125550100', lead_source: 'form', property_facts: '3 bed, 2 bath, about 1,450 sqft', mortgage_payoff_estimate: '$120,000',
   offer_low: '$150,000', offer_high: '$170,000', seller_asking_price: '$180,000', call_goal: '', rep_available: 'yes',
+  record_id: '', record_token: '',
 };
 
 // ---- URLs and secrets -----------------------------------------------------------
@@ -110,6 +111,8 @@ export type Wiring = {
   toolId: string | null; webhookId: string | null; personalizeUrl: string; personalizeSecret: string;
   /** ElevenLabs ids of the write tools (book_appointment, save_qualification, mark_do_not_contact), shared by the workspace's agents. */
   writeToolIds?: Partial<Record<WriteTool, string>>;
+  /** First names of the workspace's team, so speech recognition hears "Is Casey there?" right. */
+  teamNames?: string[];
 };
 
 /** The write tools that are built, in a fixed order. Read at call time, so flipping TOOL_AVAILABLE takes effect. */
@@ -192,6 +195,21 @@ export function unappliedSettings(s: AgentSettings): Unapplied[] {
   return out;
 }
 
+/** Words a caller says on these calls that speech recognition would otherwise mishear. */
+export const ASR_KEYWORDS = ['title company', 'earnest money', 'closing costs', 'as-is', 'walkthrough', 'probate', 'foreclosure', 'HOA', 'lien', 'back taxes', 'Zillow', 'Opendoor', 'Offerpad', 'wholesaler', 'realtor'];
+
+/** The asr.keywords sent to ElevenLabs: the company, the agent, the team's first names and the call vocabulary, deduped and capped. */
+export function asrKeywords(s: AgentSettings, teamNames: string[] = []): string[] {
+  const out: string[] = []; const seen = new Set<string>();
+  // The call words come before the team, so a big team never crowds them out.
+  for (const k of [s.identity.company, s.identity.name, ...ASR_KEYWORDS, ...teamNames.slice(0, 30)]) {
+    const t = String(k ?? '').trim();
+    if (t.length < 2 || t.length > 40 || seen.has(t.toLowerCase())) continue;
+    seen.add(t.toLowerCase()); out.push(t);
+  }
+  return out.slice(0, 50);
+}
+
 /**
  * The full create/update body for one agent: the assembled prompt, voice and
  * model, turn and call limits, voicemail and transfer tools, dynamic variables,
@@ -234,6 +252,8 @@ export function agentBody(s: AgentSettings, templates: TemplateRegistry, w: Wiri
         similarity_boost: s.voice.similarity ?? VOICE_DEFAULTS.similarity,
         speed: s.voice.speed ?? VOICE_DEFAULTS.speed,
       },
+      // High-quality transcription, primed with names and words these calls use.
+      asr: { quality: 'high', keywords: asrKeywords(s, w.teamNames) },
       conversation: { max_duration_seconds: s.call_handling.max_call_seconds },
       turn: {
         turn_eagerness: s.call_handling.turn_eagerness,
@@ -241,6 +261,8 @@ export function agentBody(s: AgentSettings, templates: TemplateRegistry, w: Wiri
         turn_model: 'turn_v3',
         // Start the reply during the caller's pause instead of after it: quicker answers, a little more LLM spend.
         speculative_turn: true,
+        // Speech the voice detector missed (a quiet or choppy line) is transcribed again before the agent re-engages.
+        retranscribe_on_turn_timeout: true,
         interruption_ignore_terms: ignoreTerms(s.call_handling.interruption_sensitivity),
         // A thinking pause longer than 3 s gets a short filler that fits the moment instead of dead air.
         soft_timeout_config: { timeout_seconds: 3, message: 'Mm, okay…', use_llm_generated_message: s.personality.use_fillers },
@@ -263,7 +285,11 @@ export function agentBody(s: AgentSettings, templates: TemplateRegistry, w: Wiri
   return { body, unapplied: [...xfer.unapplied, ...unappliedSettings(s)] };
 }
 
-/** The lead_context webhook tool. caller_id, called_number and agent_id are ElevenLabs system dynamic variables. */
+/**
+ * The lead_context webhook tool. caller_id, called_number and agent_id are ElevenLabs system dynamic variables.
+ * record_kind, record_id and record_token are ours: /personalize fills the first two for a known caller and
+ * leaves the token empty; test_session fills all three, so a browser test (no caller ID) finds its record.
+ */
 export function toolBody(toolUrl: string, toolSecret: string) {
   return {
     tool_config: {
@@ -283,6 +309,9 @@ export function toolBody(toolUrl: string, toolSecret: string) {
             called_number: { type: 'string', dynamic_variable: 'system__called_number' },
             agent_id: { type: 'string', dynamic_variable: 'system__agent_id' },
             contact_name: { type: 'string', description: "The caller's name, only when several people share the number" },
+            record_kind: { type: 'string', dynamic_variable: 'record_kind' },
+            record_id: { type: 'string', dynamic_variable: 'record_id' },
+            record_token: { type: 'string', dynamic_variable: 'record_token' },
           },
         },
       },
@@ -399,7 +428,7 @@ export type ConnectResult = {
  * and the rest still run, so one bad call leaves as much working as possible.
  * The tool and the webhook are one per workspace and shared by its agents.
  */
-export async function runConnect(cfg: ElConfig, input: ConnectState, s: AgentSettings, templates: TemplateRegistry, urls: WebhookUrls): Promise<ConnectResult> {
+export async function runConnect(cfg: ElConfig, input: ConnectState, s: AgentSettings, templates: TemplateRegistry, urls: WebhookUrls, teamNames: string[] = []): Promise<ConnectResult> {
   const state: ConnectState = { ...input };
   const errors: ConnectResult['errors'] = [];
   const scrub = [cfg.apiKey, state.personalize_secret, state.tool_secret, state.webhook_secret];
@@ -476,7 +505,7 @@ export async function runConnect(cfg: ElConfig, input: ConnectState, s: AgentSet
   try {
     const wiring: Wiring = {
       toolId: toolOk ? state.tool_id : null, webhookId: webhookOk ? state.webhook_id : null, personalizeUrl: urls.personalize, personalizeSecret: state.personalize_secret,
-      writeToolIds: writeIds,
+      writeToolIds: writeIds, teamNames,
     };
     const write = async (cur: AgentSettings) => {
       const built = agentBody(cur, templates, wiring);

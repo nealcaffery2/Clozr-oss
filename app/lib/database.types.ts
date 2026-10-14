@@ -593,6 +593,14 @@ export type PhotoOrderRow = {
   ordered_by: string | null; created_at: string; checked_at: string | null; completed_at: string | null;
 };
 
+/** Someone on the team's mail who is not in CLOZR yet (migration 259). Written by the Gmail sync; resolved through contact_suggestion_resolve. */
+export type ContactSuggestionRow = {
+  id: number; workspace_id: number; email: string; name: string | null; company: string | null;
+  kind: 'agent' | 'title' | 'other'; deal_id: number | null; user_id: string | null; subject: string | null;
+  seen_count: number; first_seen_at: string; last_seen_at: string; status: 'open' | 'added' | 'dismissed' | 'auto';
+  vendor_id: number | null; resolved_by: string | null; resolved_at: string | null;
+};
+
 /** COMPR's public record for a property, written by compr-underwrite (migration 57). Missing is null. */
 export type PropertyRecordRow = {
   id: number; workspace_id: number; property_id: number; source: string;
@@ -1038,6 +1046,7 @@ export type Database = {
       tasks: Table<TaskRow, 'workspace_id' | 'title'>;
       deal_files: Table<DealFileRow, 'workspace_id' | 'deal_id' | 'name'>;
       photo_orders: Table<PhotoOrderRow, 'workspace_id' | 'deal_id'>;
+      contact_suggestions: { Row: ContactSuggestionRow; Insert: never; Update: never; Relationships: [] };
       deal_price_changes: { Row: DealPriceChangeRow; Insert: never; Update: never; Relationships: [] };
       lane_updates: { Row: LaneUpdateRow; Insert: never; Update: Partial<Pick<LaneUpdateRow, 'status' | 'decided_by' | 'decided_at'>>; Relationships: [] };
       property_records: { Row: PropertyRecordRow; Insert: never; Update: never; Relationships: [] };
@@ -1189,6 +1198,10 @@ export type Database = {
       set_investorbase_key: { Args: { p_workspace_id: number; p_key: string }; Returns: undefined };
       investorbase_connected: { Args: { p_workspace_id: number }; Returns: boolean };
       set_ivueit_keys: { Args: { p_workspace_id: number; p_key: string | null; p_secret: string | null; p_base_url: string | null; p_template_id: string | null }; Returns: undefined };
+      contact_suggestion_resolve: {
+        Args: { p_id: number; p_action: 'add' | 'dismiss'; p_kind: string | null; p_name: string | null; p_company: string | null };
+        Returns: { ok: boolean; status: string; vendor_id?: number };
+      };
       ivueit_settings: { Args: { p_workspace_id: number }; Returns: { connected: boolean; base_url: string | null; template_id: string | null } };
       webhook_subscribe: {
         Args: { p_workspace_id: number; p_url: string; p_events: string[]; p_description?: string | null };
@@ -1224,6 +1237,16 @@ export type Database = {
       address_key: {
         Args: { p_line1: string; p_city: string; p_state: string; p_zip: string };
         Returns: string;
+      };
+      /** Migration 266: read-only address match for an import batch. */
+      import_address_lookup: {
+        Args: { p_workspace: number; p_rows: Json };
+        Returns: Json;
+      };
+      /** Migration 266: find or create properties for an import batch. */
+      import_property_batch: {
+        Args: { p_workspace: number; p_rows: Json };
+        Returns: Json;
       };
       /** Paged free-agent realtors (migration 96). The shell does not hydrate this corpus. */
       search_free_agent_buyers: {

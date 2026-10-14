@@ -14,6 +14,7 @@
 
 import React from 'react';
 import { Crash } from './Crash';
+import { reportClientError } from '@/lib/client-errors';
 
 type Props = { screen: string; label?: string | null; onHome?: () => void; children: React.ReactNode };
 type State = { error: unknown | null };
@@ -28,6 +29,7 @@ export class ScreenBoundary extends React.Component<Props, State> {
   componentDidCatch(error: unknown, info: React.ErrorInfo) {
     // The console is where the fix gets found; the card is where it gets noticed.
     console.error(`[clozr] screen "${this.props.screen}" threw`, error, info.componentStack);
+    reportClientError(error, { kind: 'screen', where: this.props.screen, componentStack: info.componentStack ?? null });
   }
 
   componentDidUpdate(prev: Props) {

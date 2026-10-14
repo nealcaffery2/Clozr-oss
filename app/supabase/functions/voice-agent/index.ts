@@ -18,11 +18,12 @@
  * POST /voice-agent/tool/lead-context
  *   Server (webhook) tool the agent calls mid-call. Header secret
  *   ELEVENLABS_TOOL_SECRET. Body { caller_id, called_number, contact_name?,
- *   record_kind?, record_id? }; configure caller_id and called_number as the
- *   {{system__caller_id}} / {{system__called_number}} dynamic variables. An
- *   explicit record is honoured only when it is one of the records on the
- *   caller's number, so a caller cannot talk the agent into reading someone
- *   else's file. https://elevenlabs.io/docs/eleven-agents/customization/tools/webhook-tools.md
+ *   record_kind?, record_id?, record_token? }; configure caller_id and called_number as the
+ *   {{system__caller_id}} / {{system__called_number}} dynamic variables. On a
+ *   phone call an explicit record is honoured only when it is one of the
+ *   records on the caller's number, so a caller cannot talk the agent into
+ *   reading someone else's file. A browser test has no caller ID: there the
+ *   record test_session picked is read, when its record_token checks out. https://elevenlabs.io/docs/eleven-agents/customization/tools/webhook-tools.md
  *
  * POST /voice-agent/tool/book-appointment
  * POST /voice-agent/tool/save-qualification
@@ -68,10 +69,10 @@ import { HARDENING, rateLimit, serverError } from '../_shared/security.ts';
 import { refreshLeadMemory } from '../_shared/lead-memory.ts';
 import { emailRep } from '../_shared/rep-alert.ts';
 import {
-  buildInitiation, callLeg, matchSecret, parsePostCall, phoneKey, phoneKeyVariants, pickPersona, resolveCaller, secretConfigured, toE164, verifySignatureAny,
+  browserLookup, buildInitiation, callLeg, checkTestRecordToken, matchSecret, parsePostCall, phoneKey, phoneKeyVariants, pickPersona, resolveCaller, secretConfigured, toE164, verifySignatureAny,
   type CallLeg, type Candidate, type Resolution,
 } from '../_shared/voice-agent.ts';
-import { initiationFor, loadAgentFor, loadCandidates, loadMemory, loadRep, loadSecretRows, loadTransferTarget, missingRelation, type AgentRow } from '../_shared/voice-agent-db.ts';
+import { initiationFor, loadAgentFor, loadCandidates, loadMemory, loadRep, loadSecretRows, loadTransferTarget, missingRelation, recordPhoneKey, type AgentRow } from '../_shared/voice-agent-db.ts';
 import { agentSwitchedOff, offerRange, outboundAllowedNow } from '../_shared/voice-agent-calls.ts';
 import { toolOn, type AgentSettings } from '../_shared/voice-agent-settings.ts';
 import {
@@ -164,7 +165,7 @@ async function personalize(req: Request, admin: SupabaseClient): Promise<Respons
 }
 
 type ToolBody = {
-  caller_id?: string; called_number?: string; contact_name?: string; record_kind?: string; record_id?: number | string; agent_id?: string; conversation_id?: string;
+  caller_id?: string; called_number?: string; contact_name?: string; record_kind?: string; record_id?: number | string; record_token?: string; agent_id?: string; conversation_id?: string;
 } & Record<string, unknown>;
 
 type ToolCaller = { ctx: Ctx; agent: AgentRow | null; match: Candidate; body: ToolBody };
@@ -177,7 +178,7 @@ type ToolCaller = { ctx: Ctx; agent: AgentRow | null; match: Candidate; body: To
  * number, so a caller cannot talk the agent into reading or changing someone
  * else's file. Anything short of that is an answer for the agent, not an error.
  */
-async function toolCaller(req: Request, admin: SupabaseClient, opts: { createNew?: boolean } = {}): Promise<ToolCaller | Response> {
+async function toolCaller(req: Request, admin: SupabaseClient, opts: { createNew?: boolean; browserTest?: boolean } = {}): Promise<ToolCaller | Response> {
   const rows = await loadSecretRows(admin);
   const secret = Deno.env.get('ELEVENLABS_TOOL_SECRET');
   if (!secretConfigured(rows, 'tool_secret', secret)) return notConfigured('ELEVENLABS_TOOL_SECRET');
@@ -185,6 +186,13 @@ async function toolCaller(req: Request, admin: SupabaseClient, opts: { createNew
   if (!auth.ok) return json({ error: 'unauthorized' }, 401);
   const body = await req.json().catch(() => ({})) as ToolBody;
   const agent = await loadAgentFor(admin, body.agent_id, auth.workspaceId);
+  // No caller ID: a browser test from Settings. Only the read tool (lead_context) answers it from the
+  // record the test picked; the write tools keep refusing, so a test never books or changes a real lead.
+  const browser = browserLookup(body);
+  if (browser && opts.browserTest) {
+    if (agentSwitchedOff(agent)) return json({ found: false, do_not_engage: true, note: 'This agent is switched off. End the call politely.' });
+    return await testCaller(admin, auth.workspaceId ?? agent?.workspace_id ?? null, agent, browser, body);
+  }
   const ctx = await context(admin, body.caller_id ?? null, body.called_number ?? null, auth.workspaceId ?? agent?.workspace_id ?? null);
   if (!ctx) return json({ found: false, note: 'No workspace owns this phone line.' });
   // Checked before any lead is read: a switched-off agent gets no context to talk from.
@@ -210,9 +218,33 @@ async function toolCaller(req: Request, admin: SupabaseClient, opts: { createNew
   return { ctx, agent, match: res.match, body };
 }
 
+const TEST_SAMPLE_NOTE = 'This is a test call with a made-up caller, so there is no record to look up. Work from the brief you were given.';
+const TEST_NONE_NOTE = 'There is no caller ID on this call, so there is no record to look up. Work from the brief you were given.';
+
+/**
+ * lead_context on a browser test: the record test_session picked, read in the
+ * agent's workspace only, and only with the token test_session signed for this
+ * agent and record (the browser passes the variables on, so record_id alone
+ * could be swapped). The record's own number still decides do-not-engage,
+ * as it would on a real call from it.
+ */
+async function testCaller(admin: SupabaseClient, ws: number | null, agent: AgentRow | null, want: NonNullable<ReturnType<typeof browserLookup>>, body: ToolBody): Promise<ToolCaller | Response> {
+  if (want.want === 'sample') return json({ found: false, sample: true, note: TEST_SAMPLE_NOTE });
+  if (want.want === 'none' || ws == null) return json({ found: false, note: TEST_NONE_NOTE });
+  const ok = await checkTestRecordToken(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', want.token, { ws, agentId: String(body.agent_id ?? ''), kind: want.kind, id: want.id });
+  if (!ok) return json({ found: false, note: 'This test could not be matched to its record. Work from the brief you were given.' });
+  const pk = await recordPhoneKey(admin, ws, want.kind, want.id);
+  const all = pk ? await loadCandidates(admin, ws, pk) : [];
+  const chosen = all.find((c) => c.kind === want.kind && c.id === want.id);
+  if (!pk || !chosen) return json({ found: false, note: 'That record is no longer on file. Work from the brief you were given.' });
+  if (resolveCaller(all).status === 'blocked') return json({ found: false, do_not_engage: true, note: 'This number is on a do-not-contact list. End the call politely.' });
+  const { data: w } = await admin.from('workspaces').select('name').eq('id', ws).maybeSingle();
+  return { ctx: { ws, leg: { direction: 'inbound', ours: '', theirs: pk }, wsName: String(w?.name ?? '') }, agent, match: chosen, body };
+}
+
 async function leadContext(req: Request, admin: SupabaseClient): Promise<Response> {
   try {
-    const t = await toolCaller(req, admin);
+    const t = await toolCaller(req, admin, { browserTest: true });
     if (t instanceof Response) return t;
     const { ctx, match: c } = t;
     const col = c.kind === 'seller' ? 'seller_id' : 'buyer_id';
@@ -271,7 +303,7 @@ async function createCallerLead(admin: SupabaseClient, ctx: Ctx, agent: AgentRow
     return json({ found: false, note: 'Their record could not be created. Keep going: take their details in the conversation and the team will add them from the call.' });
   }
   const c: Candidate = { kind: 'seller', id: Number((data as Any).id), name, tags: ['AI inbound'], archived_at: null, assigned_to: null, property_address: address };
-  await logActivity(admin, ctx.ws, c, `AI agent ${agentName} created this lead on an inbound call`, `${name} called in from ${ctx.leg.theirs} about ${address}.`, conversation ? `el:${conversation}:created` : null);
+  await logActivity(admin, ctx.ws, c, `AI agent ${agentName} created this lead on an inbound call`, `${name} called in from ${ctx.leg.theirs} about ${address}.`, conversation ? `el:${conversation}:created` : null, agent?.agent_key ?? null);
   const { data: w } = await admin.from('workspaces').select('owner_id').eq('id', ctx.ws).maybeSingle();
   if ((w as Any)?.owner_id) {
     await admin.from('notifications').insert({
@@ -286,11 +318,14 @@ async function createCallerLead(admin: SupabaseClient, ctx: Ctx, agent: AgentRow
 const agentLabel = (a: AgentRow | null) => a?.live_settings?.identity.name || a?.agent_key?.replace(/_/g, ' ') || 'voice agent';
 
 /** One line on the record's activity, so the People and Buyers timelines show what the agent did. A failure here never fails the tool. */
-async function logActivity(admin: SupabaseClient, ws: number, c: Candidate, title: string, body: string, externalId: string | null) {
-  const row = { workspace_id: ws, entity_type: c.kind, entity_id: c.id, kind: 'ai_agent', title: title.slice(0, 200), body: body.slice(0, 4000), occurred_at: new Date().toISOString(), external_id: externalId };
-  const { error } = externalId
-    ? await admin.from('activity').upsert(row, { onConflict: 'workspace_id,kind,external_id' })
-    : await admin.from('activity').insert(row);
+async function logActivity(admin: SupabaseClient, ws: number, c: Candidate, title: string, body: string, externalId: string | null, agentKey: string | null) {
+  const row: Record<string, unknown> = { workspace_id: ws, entity_type: c.kind, entity_id: c.id, kind: 'ai_agent', title: title.slice(0, 200), body: body.slice(0, 4000), occurred_at: new Date().toISOString(), external_id: externalId, ai_agent_key: agentKey };
+  const write = () => (externalId
+    ? admin.from('activity').upsert(row, { onConflict: 'workspace_id,kind,external_id' })
+    : admin.from('activity').insert(row));
+  let { error } = await write();
+  // Before migration 269: keep the line, lose only the agent's face.
+  if (error && /ai_agent_key/.test(error.message)) { delete row.ai_agent_key; ({ error } = await write()); }
   if (error) console.error('voice-agent activity', error.message);
 }
 
@@ -364,7 +399,7 @@ async function bookAppointment(req: Request, admin: SupabaseClient): Promise<Res
     if (error) throw error;
     const label = slotLabel(input.starts_at, hours.tz);
     await afterBooking(admin, ctx.ws, agent, c, repId, appt, label);
-    await logActivity(admin, ctx.ws, c, `AI agent ${name} booked: ${appt.title}`, `${label}.\n${appt.notes}`, conversation ? `el:${conversation}:book:${input.starts_at}` : null);
+    await logActivity(admin, ctx.ws, c, `AI agent ${name} booked: ${appt.title}`, `${label}.\n${appt.notes}`, conversation ? `el:${conversation}:book:${input.starts_at}` : null, agent?.agent_key ?? null);
     await logAction(admin, ctx.ws, agent, c, 'appointment_booked', { appointment_id: (made as Any)?.id ?? null, starts_at: appt.starts_at, kind: appt.kind }, conversation);
     // Who the call is with, so "who will I be speaking to?" gets a real name (null: no rep on the calendar).
     const withName = repId ? (await loadRep(admin, repId).catch(() => ({ name: null }))).name : null;
@@ -427,7 +462,7 @@ async function saveQualification(req: Request, admin: SupabaseClient): Promise<R
     }
     const conversation = convId(body);
     // One line per call: a second save on the same call replaces the first.
-    await logActivity(admin, ctx.ws, c, w.title, w.body, conversation ? `el:${conversation}:qualification` : null);
+    await logActivity(admin, ctx.ws, c, w.title, w.body, conversation ? `el:${conversation}:qualification` : null, agent?.agent_key ?? null);
     await logAction(admin, ctx.ws, agent, c, 'qualification_saved', { outcome: q.outcome, fields: Object.keys(q.values), filled: Object.keys(w.patch), kept: w.kept.map((k) => k.label) }, conversation);
     // An outcome of do_not_contact is the same request as the tool: honour it either way.
     if (q.outcome === 'do_not_contact') await applyDnc(admin, ctx, agent, c, 'outcome do_not_contact on save_qualification', conversation);
@@ -485,7 +520,7 @@ async function applyDnc(admin: SupabaseClient, ctx: Ctx, agent: AgentRow | null,
     .eq('workspace_id', ctx.ws).eq('record_kind', c.kind).eq('record_id', c.id).in('status', ['active', 'paused']);
   if (stopErr && !missingRelation(stopErr.message)) console.error('voice-agent dnc enrollment stop', stopErr.message);
   const name = agentLabel(agent);
-  await logActivity(admin, ctx.ws, c, `AI agent ${name}: asked not to be contacted, tagged DNC`, `On a call, the person asked not to be contacted again (${reason}). Tagged ${DNC_TAG}${c.kind === 'buyer' ? ' and the number flagged do-not-call' : ''}; any AI follow-up plan was stopped.`, conversation ? `el:${conversation}:dnc` : null);
+  await logActivity(admin, ctx.ws, c, `AI agent ${name}: asked not to be contacted, tagged DNC`, `On a call, the person asked not to be contacted again (${reason}). Tagged ${DNC_TAG}${c.kind === 'buyer' ? ' and the number flagged do-not-call' : ''}; any AI follow-up plan was stopped.`, conversation ? `el:${conversation}:dnc` : null, agent?.agent_key ?? null);
   await logAction(admin, ctx.ws, agent, c, 'marked_dnc', { reason, already_tagged: !tags }, conversation);
 }
 
@@ -613,9 +648,14 @@ async function postCall(req: Request, admin: SupabaseClient): Promise<Response> 
       from_phone: pc.direction === 'inbound' ? theirs : ours, to_phone: pc.direction === 'inbound' ? ours : theirs,
       summary: pc.summary, transcript: pc.transcript || null, transcript_status: pc.transcript ? 'completed' : null,
       duration_s: pc.durationS, status: pc.status, source: 'elevenlabs', source_id: 'el:' + pc.conversationId,
-      transcript_segments: pc.segments, call_origin: 'ai_agent',
+      transcript_segments: pc.segments, call_origin: 'ai_agent', ai_agent_key: agent?.agent_key ?? null,
     };
     let { error } = await admin.from('communications').upsert(row, { onConflict: 'workspace_id,source,source_id' });
+    if (error && /ai_agent_key/.test(error.message)) {
+      // Before migration 269: keep the call, lose only the agent's face on it.
+      delete row.ai_agent_key;
+      ({ error } = await admin.from('communications').upsert(row, { onConflict: 'workspace_id,source,source_id' }));
+    }
     if (error && /transcript_segments|call_origin/.test(error.message)) {
       // Before migration 109: keep the call, lose only the timed segments and the AI badge.
       const { transcript_segments: _s, call_origin: _o, ...older } = row;

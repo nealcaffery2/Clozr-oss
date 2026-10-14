@@ -3,6 +3,7 @@
 // the AI agents report. Every call returns { ok, ... } or { ok: false, error }
 // and never throws, so a screen can show the reason next to the control.
 import { invokeFn } from '@/app/components/phone/ui';
+import { forgetAgentFaces } from '@/lib/crm';
 
 export type RecordKind = 'seller' | 'buyer';
 export type Channel = 'call' | 'rvm' | 'sms' | 'email';
@@ -28,7 +29,11 @@ export type Reach = { phone: boolean; email: boolean; call: boolean };
 export type RecordStatus = {
   enrollment: Enrollment | null; agents: AgentInfo[]; agent: AgentInfo | null; eligible: { ok: true } | { ok: false; reason: string; code: string };
   reach: Reach; channels: Channel[]; record: { kind: RecordKind; id: number; name: string }; actions: AgentAction[];
+  /** How the agent opens a call: as the rep set it (null: not set), and what the history suggests (migration 258). */
+  contact?: Contact | null; contact_suggested?: Contact;
 };
+/** 'first': a new lead or cold call, they have never talked with us. 'known': a follow-up, we know it's them. */
+export type Contact = 'first' | 'known';
 export type AgentReportRow = AgentInfo & {
   texts: number; emails: number; calls: number; voicemails?: number; replies: number; booked: number; handoffs: number; dnc: number; records_touched: number; failed: number;
   by_day: { day: string; touches: number }[]; enrollments: { active: number; total: number; done: number; stopped: number };
@@ -85,9 +90,9 @@ export function aiAgentApi(workspaceId: number) {
     agents: () => call<{ agents: AgentInfo[]; can_edit: boolean }>(at('agents')),
     status: (kind: RecordKind, id: number) => call<RecordStatus>(at('status', { record_kind: kind, record_id: id })),
     log: (kind: RecordKind, id: number, limit = 50) => call<{ actions: AgentAction[] }>(at('log', { record_kind: kind, record_id: id, limit })),
-    chat: (kind: RecordKind, id: number, i: { agent_key?: string; message?: string; mode?: 'auto' | 'custom'; channels?: Channel[] }) =>
+    chat: (kind: RecordKind, id: number, i: { agent_key?: string; message?: string; mode?: 'auto' | 'custom'; channels?: Channel[]; contact?: Contact }) =>
       call<{ reply: string | null; enrollment: Enrollment; agent: AgentInfo }>(at('chat', { record_kind: kind, record_id: id, ...i })),
-    start: (kind: RecordKind, id: number, i: { agent_key?: string; message?: string; mode?: 'auto' | 'custom'; channels?: Channel[] }) =>
+    start: (kind: RecordKind, id: number, i: { agent_key?: string; message?: string; mode?: 'auto' | 'custom'; channels?: Channel[]; contact?: Contact }) =>
       call<{ reply: string | null; enrollment: Enrollment; agent: AgentInfo }>(at('start', { record_kind: kind, record_id: id, ...i })),
     stop: (kind: RecordKind, id: number) => call<{ enrollment: Enrollment | null }>(at('stop', { record_kind: kind, record_id: id })),
     /** Switch an agent on for many records of one kind (buyers by default). */
@@ -112,7 +117,9 @@ export function aiAgentApi(workspaceId: number) {
     /** Owners and admins: "Call me now", the speed-to-lead agent calls this phone with a sample lead. */
     testCall: (phone: string, agentKey?: string | null) => call<{ note: string; conversation_id: string | null }>(at('test_call', { phone, ...(agentKey ? { agent_key: agentKey } : {}) })),
     /** style: a realistic headshot (default) or an illustration. */
-    generateAvatar: (agentKey: string, prompt?: string, style: 'realistic' | 'illustrated' = 'realistic') => call<{ agent_key: string; avatar_url: string; provider: string }>(at('generate_avatar', { agent_key: agentKey, prompt, style })),
+    // A new picture shows on the activity logs from the next load, not the next sign-in.
+    generateAvatar: (agentKey: string, prompt?: string, style: 'realistic' | 'illustrated' = 'realistic') => call<{ agent_key: string; avatar_url: string; provider: string }>(at('generate_avatar', { agent_key: agentKey, prompt, style }))
+      .finally(() => forgetAgentFaces(workspaceId)),
     setAudience: (agentKey: string, audience: 'sellers' | 'buyers' | 'both') => call<{ agent_key: string; audience: string }>(at('set_audience', { agent_key: agentKey, audience })),
   };
 }

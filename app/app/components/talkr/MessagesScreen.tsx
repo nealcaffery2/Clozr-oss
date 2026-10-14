@@ -28,6 +28,7 @@
  */
 
 import { lineText, useLineNames } from '@/lib/line-names';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { useSession } from '@/lib/session';
 import { replyLine, textsAsSelf } from '@/lib/thread-line';
 import { type InboxState, isCleared, pinnedFirst, smsKey } from '@/lib/inbox-state';
@@ -548,8 +549,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
 
   useEffect(() => {
     setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(t);
+    return everyWhileVisible(() => setNow(Date.now()), 30_000);
   }, []);
 
   // ── URL state ───────────────────────────────────────────────────────────

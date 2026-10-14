@@ -52,9 +52,13 @@ export type Block =
   | { kind: 'note'; title: string; text: string; half?: boolean }
   | { kind: 'bank' };
 
-export const REPORT_TABS = ['Overview', 'Acquisitions', 'Lead Sources', 'Calls', 'Team', 'Offers', 'Contracts', 'Dispo', 'Buyers', 'Closings', 'Marketing', 'Profitability', 'AI Agents', 'AI Sales Manager', 'Custom reports'];
+export const REPORT_TABS = ['Overview', 'Acquisitions', 'Lead Sources', 'Calls', 'Team', 'Offers', 'Contracts', 'Dispo', 'Buyers', 'Closings', 'Marketing', 'Profitability', 'Team stoplight', 'AI Agents', 'AI Sales Manager', 'Custom reports'];
 /** The tab the report builder lives on; it draws itself (components/reporting/custom) rather than through buildReport. */
 export const CUSTOM_TAB = 'Custom reports';
+/** Each teammate against their targets (migration 260, lib/stoplight). Owner/admin only; draws itself (components/reporting/TeamStoplight). */
+export const TEAM_STOPLIGHT_TAB = 'Team stoplight';
+/** Tabs only owners and admins see: commissions and the bank feed, and the team's grades. */
+export const ADMIN_REPORT_TABS: readonly string[] = ['Profitability', TEAM_STOPLIGHT_TAB];
 /** The AI agents' own report (migration 123); it draws itself (components/reporting/AiAgentsReport) from the ai-agent function. */
 export const AI_AGENTS_TAB = 'AI Agents';
 /** The AI Sales Manager (migration 149): call reviews, flagged calls, rep scorecards, roleplay. Draws itself (components/coaching/SalesManager). */

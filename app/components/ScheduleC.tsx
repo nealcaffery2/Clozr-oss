@@ -21,6 +21,20 @@ const LIGHT: Record<ScheduleCStatus, { label: string; ink: string; bg: string; l
 };
 const ORDER: ScheduleCStatus[] = ['red', 'yellow', 'green'];
 
+/**
+ * Entering the commitment's items (each one green, yellow or red) is the
+ * "Review title commitment" line (a17 assignment / n21 novation), so it is
+ * ticked here. Lane, the stoplight and the TC board read the checklist, and
+ * kept calling a reviewed Schedule C overdue.
+ */
+async function markReviewed(txId: number) {
+  if (!supabase) return;
+  const { data } = await supabase.from('transactions').select('checklist').eq('id', txId).maybeSingle();
+  const ck = ((data as { checklist?: Record<string, unknown> | null } | null)?.checklist ?? {}) as Record<string, unknown>;
+  if (ck.a17 && ck.n21) return;
+  await patchRecord('transactions', txId, { checklist: { ...ck, a17: true, n21: true } });
+}
+
 export function ScheduleC({ txId, canWrite, readOnlyReason }: { txId: number; canWrite: boolean; readOnlyReason?: string }) {
   const [items, setItems] = useState<{ txId: number; list: ScheduleCItem[] } | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
@@ -67,6 +81,7 @@ export function ScheduleC({ txId, canWrite, readOnlyReason }: { txId: number; ca
     if (!r.ok) { setItems({ txId, list: before }); setErr(r.message); return false; }
     setItems({ txId, list: next });
     setErr(null);
+    if (next.length) await markReviewed(txId);
     return true;
   }
   async function add() {

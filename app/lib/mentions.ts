@@ -48,3 +48,18 @@ export function insertMention(text: string, start: number, caret: number, name: 
   const token = `@[${name.replace(/[[\]\n]/g, '')}](${id}) `;
   return { text: text.slice(0, start) + token + text.slice(caret), caret: start + token.length };
 }
+
+/**
+ * Plain `@Ann Lee` back to `@[Ann Lee](u1)` for every teammate named after an
+ * `@`, longest name first so "Ann Lee" wins over "Ann". The note box shows
+ * the plain form and stores this one.
+ */
+export function mentionTokens(plain: string, team: readonly { id: string; name: string }[]): string {
+  let out = plain;
+  for (const t of [...team].filter((x) => x.name.trim()).sort((a, b) => b.name.length - a.name.length)) {
+    const name = t.name.replace(/[[\]\n]/g, '');
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp(`(^|\\s)@${esc}(?![\\w\\]])`, 'g'), (_m, pre: string) => `${pre}@[${name}](${t.id})`);
+  }
+  return out;
+}

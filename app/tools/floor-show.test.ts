@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { applyLeaderboardResets, buildLeaderboard, type LeaderboardRaw } from '../lib/leaderboard';
 import {
-  catchUp, diffFloor, emailLooksSigned, findPasses, floorBadgeHits, snapFrom, spinWheel, wheelPrizes, windowKey,
+  catchUp, diffFloor, throttleLive, emailLooksSigned, findPasses, floorBadgeHits, snapFrom, spinWheel, wheelPrizes, windowKey,
   type BadgeHit, type DayStat, type FloorEvent, type SignedContract,
 } from '../lib/floor-show';
 import { BADGES } from '../lib/leaderboard';
@@ -160,6 +160,27 @@ const b: DayStat = { id: 'b', name: 'Jordan', calls: 4, offers: 3, talk: 200 };
   const many = catchUp([badge('Morgan', 'A'), badge('Morgan', 'B'), badge('Alex', 'C'), badge('Jamie', 'D'), contract, pass]);
   assert.deepEqual(many.map((e) => e.kind), ['digest', 'contract']);
   if (many[0].kind === 'digest') assert.match(many[0].text, /^4 badges while you were away — Morgan got A, Morgan got B, Alex got C and 1 more\.$/);
+}
+
+{
+  // Back after a long weekend: a pile of contracts is one toast too; two or fewer still show one by one.
+  const contract = (n: number): FloorEvent => ({ id: `contract:contract:${n}`, kind: 'contract', contractId: `contract:${n}`, title: `Lot ${n}`, ownerId: 't', ownerName: 'Morgan', source: 'esign' });
+  assert.deepEqual(catchUp([contract(1), contract(2)]).map((e) => e.kind), ['contract', 'contract']);
+  const pile = catchUp([contract(1), contract(2), contract(3), contract(4)]);
+  assert.deepEqual(pile.map((e) => e.kind), ['digest']);
+  if (pile[0].kind === 'digest') assert.match(pile[0].text, /^4 contracts signed while you were away: Lot 1, Lot 2, Lot 3 and 1 more\.$/);
+}
+
+{
+  // A live refresh: at most two badges take over the screen, the rest fold into one quiet toast.
+  const badge = (n: number): FloorEvent => ({ id: `badge:${n}`, kind: 'badge', tier: 'good', personId: 'p', person: 'Morgan', badgeId: `b${n}`, badgeName: `B${n}`, hint: '', image: '' });
+  const contract: FloorEvent = { id: 'contract:contract:9', kind: 'contract', contractId: 'contract:9', title: 'Oak', ownerId: 't', ownerName: 'Morgan', source: 'esign' };
+  const few = throttleLive([badge(1), badge(2), contract]);
+  assert.equal(few.loud.length, 3); assert.equal(few.quiet.length, 0);
+  const lots = throttleLive([badge(1), badge(2), badge(3), badge(4), badge(5), contract]);
+  assert.deepEqual(lots.loud.map((e) => e.id), ['badge:1', 'badge:2', 'contract:contract:9']);
+  assert.equal(lots.quiet.length, 1);
+  if (lots.quiet[0].kind === 'digest') assert.match(lots.quiet[0].text, /^3 badges just now — Morgan got B3, Morgan got B4, Morgan got B5\.$/);
 }
 
 {

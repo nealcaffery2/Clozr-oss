@@ -1,7 +1,8 @@
 // AI Agent, Test call: talk to the agent from the browser, as if a seller or
 // buyer had rung: a made-up sample seller or cash buyer, a real record, or "Me" (the sample
 // seller under your own name, from the browser or rung on any phone you type). `test_session` returns a signed link plus the exact dynamic
-// variables the phone path would send; the SDK is loaded only on Start.
+// variables the phone path would send (plus record_id and record_token for a real record, so lead_context finds it
+// without a caller ID); the SDK is loaded only on Start.
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -193,7 +194,9 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
           {!admin ? <div style={{ marginBottom: 12 }}><Banner tone="info">Only owners and admins can start a test call.</Banner></div> : null}
           {!demo && admin && !ready ? <div style={{ marginBottom: 12 }}><Banner tone="warn">Publish the agent first. The test call talks to the published agent, so there is nothing to call yet.</Banner></div> : null}
           <div style={{ marginBottom: 12 }}>
-            <Banner tone="info">A browser test has no caller ID, so the agent&apos;s <span style={mono}>lead_context</span> tool cannot look anything up here. It works from the brief below, which is what a real call starts with.</Banner>
+            <Banner tone="info">{target.kind === 'sample'
+              ? <>The sample callers are made up, so the agent&apos;s <span style={{ ...mono, whiteSpace: 'nowrap' }}>lead_context</span> tool finds no record. It works from the brief below.</>
+              : <>The agent&apos;s <span style={{ ...mono, whiteSpace: 'nowrap' }}>lead_context</span> tool looks up {target.name || 'this record'}, as it would on a real call from their number.</>}</Banner>
           </div>
 
           <span style={eyebrow}>Who is calling</span>

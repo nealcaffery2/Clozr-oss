@@ -20,6 +20,7 @@ import { liveCallerBlock, mergeLineProviders, type LinePools } from '@/lib/calle
 import { pushCallerIdPick, reconcileCallerId } from '@/lib/caller-id-link';
 import { loadLinePools } from '@/lib/line-pools';
 import { useSession } from '@/lib/session';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { getSmsFrom } from '@/lib/sms-from';
 import { replyLine, sendsAsSelf } from '@/lib/thread-line';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -495,8 +496,7 @@ export function useTalkrPhone({
     const status = heartbeatStatus(presence, phoneReady);
     const beat = () => void talkr.heartbeat(status).catch(() => undefined);
     beat();
-    const id = setInterval(beat, 30_000);
-    return () => clearInterval(id);
+    return everyWhileVisible(beat, 30_000);
   }, [enabled, data.status, phoneReady, extensionHasPhone, presence]);
   // Offline once, when this tab stops speaking for the rep, not on every change of presence.
   useEffect(() => {

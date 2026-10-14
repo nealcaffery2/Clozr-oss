@@ -10,7 +10,7 @@
  * CLOZR record — built in Talkr's card style.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { ClozrView } from '@/app/clozr/view';
 import { api } from '@/lib/talkr-web/api';
 import { duration, formatPhone, toE164 } from '@/lib/talkr-web/time';
@@ -27,6 +27,9 @@ import { firstName } from '@/lib/call-coaching';
 import { aiTargetFrom, useAiCall } from '@/lib/ai-call';
 import { TalkrCallRecording } from '@/app/components/record/CallRecording';
 import { PhoneText } from './CopyPhone';
+import { type Contact } from '@/lib/contact-search';
+import { searchDialable } from '@/lib/dial-search';
+import { dialKindLabel, isNameQuery, mergeDialMatches, whoseNumber } from '@/lib/dial-lookup';
 import { SellerWrapUp } from './OutcomePicker';
 import { shortDeviceLabel, useSoftphone } from './softphoneAdapter';
 
@@ -55,54 +58,210 @@ const shown = (d: string) => (d.startsWith('+') ? d : formatPhone(d));
 
 /**
  * The number being dialed — the Phone app's big centred display, with an ⓧ
- * that clears it all. Typed, pasted or tapped in; a phone keyboard when typed.
+ * that clears it all. Typed, pasted or tapped in. Letters turn it into a name
+ * search: `query` holds what was typed, and `matches` drop down under it
+ * (arrow keys and Enter pick, Esc closes).
  */
 export function NumberField({
   digits,
   setDigits,
   onDial,
   big,
+  query = '',
+  setQuery,
+  lookup,
+  onPick,
 }: {
   digits: string;
   setDigits: (next: string) => void;
   onDial: () => void;
   big: boolean;
+  query?: string;
+  setQuery?: (q: string) => void;
+  lookup?: DialLookupState;
+  onPick?: (c: Contact) => void;
 }) {
   const { callState } = useSoftphone();
+  const listId = useId();
+  const [open, setOpen] = useState(true);
+  const [active, setActive] = useState(0);
+  const naming = !!query;
+  const rows = naming && open && lookup?.q === query ? lookup.matches : [];
+  const showList = naming && open && query.trim().length >= 2;
+  const pick = (c: Contact) => {
+    onPick?.(c);
+    setActive(0);
+  };
+  const size = naming ? (big ? 24 : 22) : (big ? 34 : 30) - (digits.length > 10 ? 6 : 0);
   return (
     <div className="dial-display relative flex w-full items-center justify-center" style={{ minHeight: big ? 56 : 48 }}>
       <input
-        value={shown(digits)}
-        onChange={(e) => setDigits(dialDigits(e.target.value))}
+        value={naming ? query : shown(digits)}
+        onChange={(e) => {
+          const raw = e.target.value;
+          setOpen(true);
+          setActive(0);
+          if (setQuery && isNameQuery(raw)) {
+            setQuery(raw);
+            setDigits('');
+          } else {
+            setQuery?.('');
+            setDigits(dialDigits(raw));
+          }
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
         onKeyDown={(e) => {
+          if (rows.length) {
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => Math.min(rows.length - 1, a + 1)); return; }
+            if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(0, a - 1)); return; }
+            if (e.key === 'Enter') { e.preventDefault(); pick(rows[Math.min(active, rows.length - 1)]); return; }
+          }
+          if (e.key === 'Escape' && showList) { e.preventDefault(); setOpen(false); return; }
           if (e.key === 'Enter' && digits && callState === 'idle') onDial();
         }}
-        placeholder="Enter a number"
-        inputMode="tel"
+        placeholder={setQuery ? 'Number or name' : 'Enter a number'}
+        // Text, not tel: a name has letters. The keys below are the number pad.
+        inputMode={setQuery ? 'text' : 'tel'}
         // Off, and ignored by password managers: their autofill badge sat on
         // top of the last digits.
         autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
         data-lpignore="true"
         data-1p-ignore="true"
         data-bwignore="true"
         enterKeyHint="go"
-        aria-label="Number to dial"
+        aria-label={setQuery ? 'Number to dial, or a name to look up' : 'Number to dial'}
+        role={setQuery ? 'combobox' : undefined}
+        aria-expanded={setQuery ? showList : undefined}
+        aria-controls={setQuery ? listId : undefined}
+        aria-autocomplete={setQuery ? 'list' : undefined}
+        aria-activedescendant={rows.length ? `${listId}-${Math.min(active, rows.length - 1)}` : undefined}
         className="w-full min-w-0 bg-transparent text-center outline-none"
-        // A full (217) 555-0100 at 30px overran the narrow desk column; long numbers step down.
-        style={{ font: `500 ${(big ? 34 : 30) - (digits.length > 10 ? 6 : 0)}px/1.15 var(--sans)`, letterSpacing: '-0.01em', padding: '0 30px' }}
+        // A full (217) 555-0100 at 30px overran the narrow desk column; long numbers step down, and a name sits smaller.
+        style={{ font: `500 ${size}px/1.15 var(--sans)`, letterSpacing: '-0.01em', padding: '0 30px' }}
       />
-      {digits && (
+      {(digits || query) && (
         <button
           type="button"
-          onClick={() => setDigits('')}
-          aria-label="Clear number"
-          title="Clear number"
+          onClick={() => {
+            setDigits('');
+            setQuery?.('');
+          }}
+          aria-label={naming ? 'Clear search' : 'Clear number'}
+          title={naming ? 'Clear search' : 'Clear number'}
           className="absolute right-1 inline-flex items-center justify-center"
-          style={{ width: 22, height: 22, borderRadius: '50%', border: 'none', background: 'rgba(118,118,128,.32)', color: '#fff', cursor: 'pointer' }}
+          style={{ width: 24, height: 24, borderRadius: '50%', border: 'none', background: 'rgba(118,118,128,.32)', color: '#fff', cursor: 'pointer' }}
         >
           <Icon name="x" size={12} />
         </button>
       )}
+      {showList && (
+        <div className="dial-lookup" id={listId} role="listbox" aria-label="Contacts">
+          {rows.map((c, i) => (
+            <div
+              key={`${c.kind}:${c.id}`}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === active}
+              className="dial-lookup-row"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                pick(c);
+              }}
+              onMouseEnter={() => setActive(i)}
+            >
+              <DialKindBadge c={c} />
+              <span className="min-w-0 flex-1">
+                <span className="dial-lookup-name">{c.name}</span>
+                <span className="dial-lookup-sub" title={[c.sub, c.phone].filter(Boolean).join(' · ')}>
+                  {c.phone ? formatPhone(c.phone) : ''}
+                  {c.sub ? ` · ${c.sub}` : ''}
+                </span>
+              </span>
+            </div>
+          ))}
+          {!rows.length && (
+            <div className="dial-lookup-note" role="status">
+              {lookup?.q === query && !lookup.busy
+                ? `Nobody matching “${query.trim()}” has a number on file.`
+                : 'Searching…'}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Seller, Buyer, or a vendor's trade (Lender, Title): the word does the work, so the badge stays neutral. */
+export function DialKindBadge({ c }: { c: Contact }) {
+  return <span className="dial-kind">{dialKindLabel(c)}</span>;
+}
+
+export type DialLookupState = { q: string; matches: Contact[]; busy: boolean };
+
+/**
+ * The dial box's lookups: matches for a typed name, and whose a typed number
+ * is. People and buyers already loaded answer at once; the database adds
+ * vendors (lenders, title, contractors) and anyone not loaded.
+ */
+function useDialLookup(V: ClozrView, query: string, digits: string) {
+  const workspaceId = V.templatesWorkspaceId ?? null;
+  // Talkr's own contacts join the search once Talkr knows this rep.
+  const talkrOn = V.talkrStatus === 'ok';
+  const local = useRef(V.dialerContacts);
+  local.current = V.dialerContacts;
+  const search = useCallback(
+    async (q: string) => {
+      const mine = local.current(q);
+      const theirs = workspaceId !== null ? await searchDialable(workspaceId, q, { talkr: talkrOn }).catch(() => []) : [];
+      return mergeDialMatches(mine, theirs, 12);
+    },
+    [workspaceId, talkrOn],
+  );
+  const [names, setNames] = useState<DialLookupState | null>(null);
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) return;
+    let live = true;
+    setNames((n) => ({ q: query, matches: n?.q === query ? n.matches : mergeDialMatches(local.current(q), [], 12), busy: true }));
+    const t = window.setTimeout(() => {
+      void search(q).then((matches) => {
+        if (live) setNames({ q: query, matches, busy: false });
+      });
+    }, 180);
+    return () => {
+      live = false;
+      window.clearTimeout(t);
+    };
+  }, [query, search]);
+  const [owner, setOwner] = useState<{ digits: string; who: Contact | null } | null>(null);
+  useEffect(() => {
+    if (digits.replace(/\D/g, '').length < 10) return;
+    let live = true;
+    const t = window.setTimeout(() => {
+      // The last ten digits: a typed leading 1 is not on the number as most records store it.
+      void search(digits.replace(/\D/g, '').slice(-10)).then((list) => {
+        if (live) setOwner({ digits, who: whoseNumber(digits, list) });
+      });
+    }, 220);
+    return () => {
+      live = false;
+      window.clearTimeout(t);
+    };
+  }, [digits, search]);
+  return { names, owner: owner?.digits === digits ? owner.who : null };
+}
+
+/** Who the number in the dial box belongs to, under it: the badge, the name, the property or company. */
+function DialWho({ c }: { c: Contact }) {
+  return (
+    <div className="dial-who" role="status" aria-live="polite" title={[c.name, c.sub].filter(Boolean).join(' · ')}>
+      <DialKindBadge c={c} />
+      <span className="dial-who-name">{c.name}</span>
+      {c.sub && <span className="dial-who-sub">{c.sub}</span>}
     </div>
   );
 }
@@ -307,7 +466,16 @@ export function DialBlock({ V, digits, setDigits, error, big = false }: { V: Clo
   const ai = useAiCall(V.templatesWorkspaceId ?? null);
   const aiBusy = ai.busy;
   const aiNote = ai.note;
-  const dial = () => V.dialE164(toE164(digits));
+  const [query, setQuery] = useState('');
+  // Who was picked from the name search, kept while the number is still theirs.
+  const [picked, setPicked] = useState<Contact | null>(null);
+  const { names, owner } = useDialLookup(V, query, digits);
+  const who = picked && whoseNumber(digits, [picked]) ? picked : owner;
+  const dial = () => V.dialE164(toE164(digits), who?.name);
+  // A number set from outside the box (a Recent row) ends any name search, so the box shows what will be dialed.
+  useEffect(() => {
+    if (digits) setQuery('');
+  }, [digits]);
   const dialDisabled = !digits || callState !== 'idle' || deviceState !== 'ready';
 
   async function aiCall() {
@@ -318,8 +486,27 @@ export function DialBlock({ V, digits, setDigits, error, big = false }: { V: Clo
 
   return (
     <>
-      <NumberField digits={digits} setDigits={setDigits} onDial={dial} big={big} />
-      <Keys onKey={(d) => setDigits(dialDigits(digits + d))} />
+      <NumberField
+        digits={digits}
+        setDigits={setDigits}
+        onDial={dial}
+        big={big}
+        query={query}
+        setQuery={setQuery}
+        lookup={names ?? undefined}
+        onPick={(c) => {
+          setPicked(c);
+          setQuery('');
+          setDigits(dialDigits(c.phone ?? ''));
+        }}
+      />
+      {who && !query && <DialWho c={who} />}
+      <Keys
+        onKey={(d) => {
+          setQuery('');
+          setDigits(dialDigits(digits + d));
+        }}
+      />
       <div className="mx-auto grid w-max grid-cols-3 items-center justify-items-center gap-x-4">
         {/* Kept in the grid but hidden for a role without the inbox (TC), so the call button stays centred. */}
         <button
@@ -338,11 +525,11 @@ export function DialBlock({ V, digits, setDigits, error, big = false }: { V: Clo
         </button>
         <button
           type="button"
-          onClick={() => setDigits(digits.slice(0, -1))}
+          onClick={() => (query ? setQuery(query.slice(0, -1)) : setDigits(digits.slice(0, -1)))}
           aria-label="Backspace"
           title="Backspace"
           className="inline-flex items-center justify-center"
-          style={{ width: 76, height: 48, border: 'none', background: 'none', color: 'var(--muted)', cursor: 'pointer', visibility: digits ? 'visible' : 'hidden' }}
+          style={{ width: 76, height: 48, border: 'none', background: 'none', color: 'var(--muted)', cursor: 'pointer', visibility: digits || query ? 'visible' : 'hidden' }}
         >
           <Icon name="backspace" size={26} />
         </button>

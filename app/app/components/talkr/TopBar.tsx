@@ -11,6 +11,7 @@
 
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { Mark } from '@/components/ds/mark';
 import { Button } from './ui';
 import { localZone, tzAbbr, tzTime } from '@/lib/talkr-web/time';
@@ -35,8 +36,7 @@ export function TopBar({
   // and a mismatched first paint is a hydration error.
   useEffect(() => {
     setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(t);
+    return everyWhileVisible(() => setNow(Date.now()), 30_000);
   }, []);
 
   const zone = localZone();

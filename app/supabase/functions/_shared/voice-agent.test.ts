@@ -2,7 +2,7 @@
 // the post-call transcript, and the ElevenLabs signature.
 // Run:  npx tsx supabase/functions/_shared/voice-agent.test.ts
 //   or: deno run supabase/functions/_shared/voice-agent.test.ts
-import {
+import { streetOf, outboundOpener, browserLookup, checkTestRecordToken, testRecordToken, TEST_RECORD_TTL_SECS,
   buildInitiation, callLeg, DYNAMIC_VARIABLES, hmacHex, isDoNotEngage, mapTranscript, matchSecret, parsePostCall, phoneKey,
   NO_EXTRAS, pickPersona, resolveCaller, secretConfigured, toE164, verifySignature, verifySignatureAny, type Candidate, type SecretRow,
 } from './voice-agent.ts';
@@ -61,7 +61,8 @@ eq('known caller: next step', one.dynamic_variables.next_step, 'Email the writte
 eq('known caller: greeting by name', one.conversation_config_override.agent.first_message, 'Hey Ann, thanks for calling back, this is Sam with Acme Homes.');
 eq('known caller without memory uses the record name', buildInitiation({ status: 'one', match: ann }, inLeg, null, persona).dynamic_variables.first_name, 'Ann');
 const outOne = buildInitiation({ status: 'one', match: ann }, { ...inLeg, direction: 'outbound' }, mem, persona);
-eq('outbound: confirms who picked up first', outOne.conversation_config_override.agent.first_message, 'Hi, is this Ann? This is Sam with Acme Homes.');
+eq('outbound with a last contact on file opens as a follow-up', outOne.conversation_config_override.agent.first_message, "Hey Ann, it's Sam with Acme Homes, following up on your property on Oak Street.");
+eq('a follow-up tells the prompt so', String(outOne.dynamic_variables.call_goal).startsWith('FOLLOW-UP'), true);
 const many = buildInitiation({ status: 'many', matches: [ann, bob] }, inLeg, mem, persona);
 eq('many: no name', many.dynamic_variables.first_name, '');
 eq('many: no brief', many.dynamic_variables.lead_brief, '');
@@ -161,7 +162,7 @@ const leg = { direction: 'inbound' as const, ours: '2105550100', theirs: '512555
 const extras = { ...NO_EXTRAS, rep_phone: '+15125550100', lead_source: 'form', offer_low: '$170,000', offer_high: '$200,000', seller_asking_price: '$210,000' };
 const withExtras = buildInitiation(resolveCaller([annOne]), leg, null, { agentName: 'Riley', company: 'Acme', repName: 'Alex' }, extras);
 eq('extras reach the variables for a known caller', [withExtras.dynamic_variables.offer_low, withExtras.dynamic_variables.offer_high, withExtras.dynamic_variables.rep_phone, withExtras.dynamic_variables.lead_source, withExtras.dynamic_variables.seller_asking_price], ['$170,000', '$200,000', '+15125550100', 'form', '$210,000']);
-eq('there are 20 variables and extras default to empty', [DYNAMIC_VARIABLES.length, buildInitiation({ status: 'none' }, null, null, { agentName: null, company: 'Acme', repName: null }).dynamic_variables.offer_high, buildInitiation({ status: 'none' }, null, null, { agentName: null, company: 'Acme', repName: null }).dynamic_variables.call_goal], [20, '', '']);
+eq('there are 22 variables and extras default to empty', [DYNAMIC_VARIABLES.length, buildInitiation({ status: 'none' }, null, null, { agentName: null, company: 'Acme', repName: null }).dynamic_variables.offer_high, buildInitiation({ status: 'none' }, null, null, { agentName: null, company: 'Acme', repName: null }).dynamic_variables.call_goal], [22, '', '']);
 const blockedExtras = buildInitiation({ status: 'blocked', matches: [{ ...annOne, tags: ['DNC'] }] }, leg, null, { agentName: 'Riley', company: 'Acme', repName: 'Alex' }, extras);
 eq('a blocked caller gets none of the extras', [blockedExtras.dynamic_variables.offer_low, blockedExtras.dynamic_variables.rep_phone, blockedExtras.dynamic_variables.seller_asking_price, blockedExtras.dynamic_variables.do_not_engage], ['', '', '', true]);
 eq('virtual assistant intro', buildInitiation(resolveCaller([annOne]), leg, null, { agentName: 'Riley', company: 'Acme', repName: null, introduceAs: 'virtual_assistant' }).conversation_config_override.agent.first_message, 'Hey Ann, thanks for calling back, this is Riley, a virtual assistant with Acme.');
@@ -169,11 +170,54 @@ eq('recording notice ends every opener, blocked too', [
   buildInitiation({ status: 'none' }, null, null, { agentName: null, company: 'Acme', repName: null, recordingNotice: 'This call may be recorded.' }).conversation_config_override.agent.first_message,
   blockedExtras.conversation_config_override.agent.first_message.endsWith('recorded.'),
 ], ['Thanks for calling Acme. Who am I speaking with? This call may be recorded.', false]);
-eq('outbound virtual assistant intro', buildInitiation(resolveCaller([annOne]), { direction: 'outbound', ours: '2105550100', theirs: '5125550199' }, null, { agentName: 'Riley', company: 'Acme', repName: null, introduceAs: 'virtual_assistant' }).conversation_config_override.agent.first_message, 'Hi, is this Ann? This is Riley, a virtual assistant with Acme.');
+eq('outbound virtual assistant intro', buildInitiation(resolveCaller([annOne]), { direction: 'outbound', ours: '2105550100', theirs: '5125550199' }, null, { agentName: 'Riley', company: 'Acme', repName: null, introduceAs: 'virtual_assistant' }).conversation_config_override.agent.first_message, 'Hey Ann, this is Riley, a virtual assistant with Acme, calling about your property there on Oak Street.');
 
-if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
 console.log('\nall passed');
 
 // Casual agents answer like a person, never "us".
 eq('casual known caller', buildInitiation(resolveCaller([annOne]), leg, null, { agentName: 'Cody', company: 'Compr', repName: null, casual: true }).conversation_config_override.agent.first_message, 'Hey Ann! This is Cody from Compr, how can I help ya?');
 eq('casual unknown caller', buildInitiation({ status: 'none' }, leg, null, { agentName: 'Cody', company: 'Compr', repName: null, casual: true }).conversation_config_override.agent.first_message, 'Hey, this is Cody from Compr, how can I help ya?');
+
+eq('streetOf: house number, direction, suffix and city dropped', [streetOf('123 N Warnock St, San Antonio, TX 78201'), streetOf('4500 Bear Creek Trl'), streetOf('77 Grove Ave Apt 4'), streetOf('9 Oak Street'), streetOf('')], ['Warnock Street', 'Bear Creek Trail', 'Grove Avenue', 'Oak Street', '']);
+eq('opener with no address: name and who we are only', outboundOpener('Ann', { agentName: 'Riley', company: 'Acme Homes', repName: null }, ''), 'Hey Ann, this is Riley with Acme Homes.');
+eq('a buyer call never names a property', buildInitiation(resolveCaller([{ ...annOne, kind: 'buyer' }]), { direction: 'outbound', ours: '2105550100', theirs: '5125550199' }, null, { agentName: 'Avery', company: 'Acme Homes', repName: null }).conversation_config_override.agent.first_message, 'Hey Ann, this is Avery with Acme Homes.');
+eq('the rep says first call: the first-call opener, even with history on file', buildInitiation(resolveCaller([annOne]), { direction: 'outbound', ours: '2105550100', theirs: '5125550199' }, null, { agentName: 'Sam', company: 'Acme Homes', repName: null, contact: 'first' }).conversation_config_override.agent.first_message, 'Hey Ann, this is Sam with Acme Homes, calling about your property there on Oak Street.');
+eq('the rep says first call: the prompt hears FIRST CALL', String(buildInitiation(resolveCaller([annOne]), { direction: 'outbound', ours: '2105550100', theirs: '5125550199' }, null, { agentName: 'Sam', company: 'Acme Homes', repName: null, contact: 'first' }).dynamic_variables.call_goal).startsWith('FIRST CALL'), true);
+eq('follow-up with no address', outboundOpener('Ann', { agentName: 'Riley', company: 'Acme Homes', repName: null, contact: 'known' }, ''), "Hey Ann, it's Riley with Acme Homes, just following up with you.");
+eq('inbound calls carry no contact note', String(buildInitiation(resolveCaller([annOne]), { direction: 'inbound', ours: '2105550100', theirs: '5125550199' }, null, { agentName: 'Sam', company: 'Acme Homes', repName: null }).dynamic_variables.call_goal), '');
+eq('streetOf never speaks a house number', [streetOf('123-125 Main St'), streetOf('12 1/2 Oak Ave'), streetOf('123A Elm Dr'), streetOf('4500 33rd Way'), streetOf('77')], ['Main Street', 'Oak Avenue', 'Elm Drive', '33rd Way', '']);
+eq('streetOf keeps highway names', [streetOf('12345 IH-10 W, San Antonio, TX'), streetOf('900 US-90'), streetOf('4100 I-35 N'), streetOf('2200 FM 1560')], ['IH-10 W', 'US-90', 'I-35 N', 'FM 1560']);
+
+// ---- lead_context on a browser test (record_id, record_token) ----
+const known = buildInitiation(resolveCaller([annOne]), leg, null, { agentName: 'Riley', company: 'Acme', repName: null });
+eq('a known caller carries its record id, never a token', [known.dynamic_variables.record_kind, known.dynamic_variables.record_id, known.dynamic_variables.record_token], ['seller', '1', '']);
+eq('an unknown caller carries no record', [buildInitiation({ status: 'none' }, leg, null, { agentName: null, company: 'Acme', repName: null }).dynamic_variables.record_id], ['']);
+eq('a sample caller (id 0) carries no record id', buildInitiation(resolveCaller([{ ...annOne, id: 0 }]), leg, null, { agentName: null, company: 'Acme', repName: null }).dynamic_variables.record_id, '');
+eq('a blocked caller carries no record', buildInitiation({ status: 'blocked', matches: [{ ...annOne, tags: ['DNC'] }] }, leg, null, { agentName: null, company: 'Acme', repName: null }).dynamic_variables.record_id, '');
+
+eq('a phone call is never a browser lookup, even with a record', browserLookup({ caller_id: '+15125550199', record_kind: 'seller', record_id: '9', record_token: 'x' }), null);
+eq('no caller ID with a record', browserLookup({ caller_id: '', record_kind: 'buyer', record_id: '42', record_token: ' t ' }), { want: 'record', kind: 'buyer', id: 42, token: 't' });
+eq('a missing caller ID counts as a browser', browserLookup({ record_kind: 'seller', record_id: 7 }), { want: 'record', kind: 'seller', id: 7, token: '' });
+eq('a sample test: a kind and no id', [browserLookup({ caller_id: '', record_kind: 'seller', record_id: '' }), browserLookup({ caller_id: '', record_kind: 'buyer', record_id: '0' })], [{ want: 'sample' }, { want: 'sample' }]);
+eq('nothing to go on', [browserLookup({}), browserLookup({ caller_id: 'unknown', record_kind: 'lead', record_id: '5' })], [{ want: 'none' }, { want: 'none' }]);
+eq('a junk id is no id', browserLookup({ record_kind: 'seller', record_id: '5; drop' }), { want: 'sample' });
+
+const tKey = 'k'.repeat(40);
+const rec = { ws: 3, agentId: 'agent_abc', kind: 'seller' as const, id: 77 };
+const tNow = 1_800_000_000_000;
+const tok = await testRecordToken(tKey, rec, tNow);
+eq('token has an expiry and a 64-hex signature', /^\d+\.[0-9a-f]{64}$/.test(tok), true);
+eq('token checks for its own record', await checkTestRecordToken(tKey, tok, rec, tNow + 60_000), true);
+eq('token refuses another record, kind, agent or workspace', await Promise.all([
+  checkTestRecordToken(tKey, tok, { ...rec, id: 78 }, tNow), checkTestRecordToken(tKey, tok, { ...rec, kind: 'buyer' }, tNow),
+  checkTestRecordToken(tKey, tok, { ...rec, agentId: 'agent_other' }, tNow), checkTestRecordToken(tKey, tok, { ...rec, ws: 4 }, tNow),
+]), [false, false, false, false]);
+eq('token refuses a different key, no key, or no agent', await Promise.all([
+  checkTestRecordToken('other'.repeat(8), tok, rec, tNow), checkTestRecordToken('', tok, rec, tNow), checkTestRecordToken(tKey, tok, { ...rec, agentId: '' }, tNow),
+]), [false, false, false]);
+eq('token expires', [await checkTestRecordToken(tKey, tok, rec, tNow + (TEST_RECORD_TTL_SECS - 5) * 1000), await checkTestRecordToken(tKey, tok, rec, tNow + (TEST_RECORD_TTL_SECS + 5) * 1000)], [true, false]);
+const [exp, sig] = tok.split('.');
+eq('a pushed-out expiry breaks the signature', await checkTestRecordToken(tKey, `${Number(exp) + 9999}.${sig}`, rec, tNow), false);
+eq('junk tokens', await Promise.all(['', 'abc', `${exp}.zz`].map((t) => checkTestRecordToken(tKey, t, rec, tNow))), [false, false, false]);
+
+if (failed) { console.log(`\n${failed} failed`); process.exit(1); }

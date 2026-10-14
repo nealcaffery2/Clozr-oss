@@ -10,6 +10,8 @@ export type Contact = {
   name: string; email: string | null; phone: string | null;
   /** Second line: the property, the company, the trade, the title. */
   sub: string | null;
+  /** Vendors only: the trade (Lender, Title, Contractor), which the dialer shows in place of "Vendor". */
+  trade?: string | null;
 };
 
 /** How a recipient row remembers the record it came from (contract_signers, migration 114). */

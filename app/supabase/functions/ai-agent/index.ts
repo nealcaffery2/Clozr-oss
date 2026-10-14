@@ -100,6 +100,21 @@ const READ = ['agents', 'status', 'log', 'report', 'autopilot'];
 const WRITE = ['chat', 'start', 'stop', 'handoff', 'bulk_start', 'bulk_stop', 'generate_avatar', 'set_audience', 'set_handoff', 'set_autopilot', 'run_reactivation', 'test_call'];
 const ADMIN_ONLY = ['generate_avatar', 'set_audience', 'set_handoff', 'set_autopilot', 'run_reactivation', 'test_call'];
 const NOT_MIGRATED = 'AI agents are not set up: apply migration 123 (ai_agent_enrollments).';
+/** How the agent opens a call (migration 258): a first call, or a follow-up where we know it's them. */
+type Contact = 'first' | 'known';
+const contactOf = (v: unknown): Contact | null => (v === 'first' || v === 'known' ? v : null);
+/** Read on its own so a database without migration 258 still works (null: the agent decides from the history). */
+async function readContact(admin: SupabaseClient, enrollmentId: number): Promise<Contact | null> {
+  const { data, error } = await admin.from('ai_agent_enrollments').select('contact').eq('id', enrollmentId).maybeSingle();
+  return error ? null : contactOf((data as Any)?.contact);
+}
+/** What the toggle starts on: a follow-up once they have called or texted us, or we have had a real call with them. */
+async function suggestedContact(admin: SupabaseClient, ws: number, kind: RecordKind, id: number): Promise<Contact> {
+  const { data } = await admin.from('communications').select('id').eq('workspace_id', ws).eq(kind === 'seller' ? 'seller_id' : 'buyer_id', id)
+    .or('direction.eq.inbound,duration_s.gte.30').limit(1);
+  return (data ?? []).length ? 'known' : 'first';
+}
+
 const ENROLL_COLS = 'id, workspace_id, record_kind, record_id, agent_key, status, mode, instructions, channels, plan, chat, touches, max_touches, next_action_at, last_action_at, last_inbound_seen_at, claimed_at, stop_reason, started_by, started_at, stopped_by, stopped_at, updated_at';
 /** ENROLL_COLS plus the autopilot program (migration 146). */
 const ENROLL_COLS_146 = `${ENROLL_COLS}, program, autopilot`;
@@ -271,12 +286,34 @@ async function record(admin: SupabaseClient, i: {
     conversation_id: i.conversationId ?? null, actor_id: i.actorId ?? null,
   });
   if (error) console.error('ai-agent ledger', error.message);
+  // The text, email or voicemail itself names the agent that sent it (migration
+  // 269), so the activity log shows the agent's face on it instead of the rep's.
+  const agentKey = i.agent.agent_key;
+  if (i.communicationId) await stampAgent(admin, 'communications', i.communicationId, agentKey);
+  const dropId = Number(i.detail?.rvm_drop_id);
+  if (i.channel === 'rvm' && dropId > 0) await stampAgent(admin, 'rvm_drops', dropId, agentKey);
   if (i.timeline === false) return;
+  // A sent text or email is already on the timeline as the message, under the
+  // agent; a second "AI agent sent a text" line would only repeat it. The why
+  // stays in the agent's own log (ai_agent_actions).
+  if (i.communicationId && (i.status ?? 'done') === 'done' && (i.action === 'sms_sent' || i.action === 'email_sent')) return;
   const line = activityLine(i.agent.name, i.status === 'failed' ? 'failed' : i.status === 'skipped' && i.action !== 'stopped' ? 'skipped' : i.action, i.summary, i.actorName);
-  const { error: aErr } = await admin.from('activity').insert({
-    workspace_id: i.ws, entity_type: i.kind, entity_id: i.id, kind: 'ai_agent', title: line.title, body: line.body || null, actor_id: i.actorId ?? null,
-  });
+  const row: Record<string, unknown> = {
+    workspace_id: i.ws, entity_type: i.kind, entity_id: i.id, kind: 'ai_agent', title: line.title, body: line.body || null, actor_id: i.actorId ?? null, ai_agent_key: agentKey,
+  };
+  let { error: aErr } = await admin.from('activity').insert(row);
+  if (aErr && /ai_agent_key/.test(aErr.message)) {
+    // Before migration 269: keep the line, lose only the agent's face.
+    delete row.ai_agent_key;
+    ({ error: aErr } = await admin.from('activity').insert(row));
+  }
   if (aErr) console.error('ai-agent activity', aErr.message);
+}
+
+/** Name the agent on a message or a queued voicemail. Best effort: before migration 269 the column is missing and the row keeps the rep. */
+async function stampAgent(admin: SupabaseClient, table: 'communications' | 'rvm_drops', id: number, agentKey: string): Promise<void> {
+  const { error } = await admin.from(table).update({ ai_agent_key: agentKey }).eq('id', id);
+  if (error && !/ai_agent_key/.test(error.message)) console.error('ai-agent stamp', table, error.message);
 }
 
 const planText = (p: Plan) => [p.summary, p.goal ? `Goal: ${p.goal}` : '', ...p.steps.map((s) => `Day ${s.day} · ${s.channel === 'sms' ? 'text' : s.channel === 'rvm' ? 'voicemail' : s.channel}: ${s.purpose}`), p.stop_when ? `Stops when: ${p.stop_when}` : ''].filter(Boolean).join('\n');
@@ -435,7 +472,9 @@ Deno.serve(async (req) => {
         const current = e ? agents.find((a) => a.agent_key === e.agent_key) ?? null : serving[0] ?? null;
         const channels = cleanChannels(e?.channels);
         const el = eligibility({ kind, record: rec, dnc: dncOf(rec), audience: current?.audience ?? (kind === 'buyer' ? 'buyers' : 'sellers'), channels: [...CHANNELS], reach: reachOf(rec, current) });
+        const [contact, contactSuggested] = await Promise.all([e ? readContact(admin, Number(e.id)) : Promise.resolve(null), suggestedContact(admin, ws, kind, id)]);
         return json({
+          contact, contact_suggested: contactSuggested,
           ok: true, enrollment: enrollmentOut(e), agents: serving.map((a) => agentOut(a)), agent: current ? agentOut(current) : null,
           eligible: el.ok ? { ok: true } : { ok: false, reason: el.reason, code: el.code }, reach: reachOf(rec, current), channels,
           record: { kind, id, name: rec.name }, actions: acts ?? [],
@@ -482,7 +521,10 @@ Deno.serve(async (req) => {
           const pl = await rateLimit(admin, `ai-agent-plan:${userId}`, 120, 3600);
           if (!pl.allowed) return tooMany(CORS, pl);
           const persona = await personaFor(admin, ws, agent, e?.started_by ?? rec.assigned_to ?? userId);
-          const drafted = await draftPlan(anthropic(), { persona, kind, agent, history: await historyFor(admin, ws, kind, id), chat, mode, channels, reach: reachOf(rec, agent), tz: tzOf(agent) });
+          const said = contactOf(body.contact);
+          const contactLine = said === 'known' ? "The rep says this is a follow-up: we have talked with them before and know it's them. Do not open as a first contact.\n\n"
+            : said === 'first' ? 'The rep says this is a first contact (a new lead or a cold call): they have never talked with us, so the first touch introduces us and why we are reaching out.\n\n' : '';
+          const drafted = await draftPlan(anthropic(), { persona, kind, agent, history: contactLine + await historyFor(admin, ws, kind, id), chat, mode, channels, reach: reachOf(rec, agent), tz: tzOf(agent) });
           plan = drafted.plan; reply = drafted.reply;
           chat = appendChat(chat, { role: 'agent', text: reply, at: new Date().toISOString() });
         }
@@ -508,6 +550,12 @@ Deno.serve(async (req) => {
         }
         e = saved as Any;
         if (fresh) await clearRelayed(admin, Number(e.id));
+        // First call or follow-up, as the rep set it; saved on its own so a database without migration 258 still starts.
+        const contact = body.contact === null ? null : contactOf(body.contact);
+        if (contact || body.contact === null) {
+          const { error: ce } = await admin.from('ai_agent_enrollments').update({ contact }).eq('id', e.id);
+          if (ce) console.error('ai-agent contact', ce.message);
+        }
         const actorName = await myName();
         if (turningOn) {
           await record(admin, { ws, agent, enrollmentId: e.id, kind, id, channel: 'system', action: 'started', summary: `${mode === 'auto' ? 'Deciding from the record history' : `Instructions: ${instructionsFrom(chat, 600)}`}\nChannels: ${channels.map((c) => (c === 'sms' ? 'text' : c)).join(', ')}\n\n${planText(plan)}`, detail: { mode, channels }, actorId: userId, actorName });
@@ -1144,7 +1192,7 @@ async function work(admin: SupabaseClient, client: Anthropic | null, e: Any): Pr
       return 'voicemails';
     }
     case 'call': {
-      const r = await placeCall(admin, ws, agent, rec, decision, persona);
+      const r = await placeCall(admin, ws, agent, rec, decision, persona, { contact: await readContact(admin, Number(e.id)) });
       if (!r.ok) {
         await save({ next_action_at: nextLookAt(now, r.retryHours, tz), last_inbound_seen_at: seenAt });
         await record(admin, { ...base, channel: 'call', action: 'call_placed', status: 'failed', summary: `Call not placed: ${r.reason}.` });
@@ -1259,7 +1307,7 @@ async function callerNumberFor(admin: SupabaseClient, ws: number, to: string | n
  * number is checked like an inbound call: a do-not-engage match stops it.
  * The post-call webhook files the transcript on the record as usual.
  */
-async function placeCall(admin: SupabaseClient, ws: number, a: AgentLite, rec: Rec, d: Decision, p: Persona, opts: { leadWindowChecked?: boolean } = {}): Promise<{ ok: true; conversationId: string | null; from: { market: string | null; phone: string | null } } | { ok: false; reason: string; retryHours: number; stop?: boolean }> {
+async function placeCall(admin: SupabaseClient, ws: number, a: AgentLite, rec: Rec, d: Decision, p: Persona, opts: { leadWindowChecked?: boolean; contact?: Contact | null } = {}): Promise<{ ok: true; conversationId: string | null; from: { market: string | null; phone: string | null } } | { ok: false; reason: string; retryHours: number; stop?: boolean }> {
   const apiKey = Deno.env.get('ELEVENLABS_API_KEY');
   if (!apiKey || !a.agent_id || !a.live || !a.live.channels.phone_number_id) return { ok: false, reason: 'the agent has no published ElevenLabs agent and phone number id (Settings, AI Agent, Handling)', retryHours: 24 };
   if (!a.live.channels.outbound) return { ok: false, reason: 'outbound calls are switched off for this agent (Settings, AI Agent, Handling)', retryHours: 24 };
@@ -1274,6 +1322,7 @@ async function placeCall(admin: SupabaseClient, ws: number, a: AgentLite, rec: R
   const rn = a.live.rules.compliance.recording_notice;
   const init = await initiationFor(admin, ws, match ? { status: 'one', match } : { status: 'none' }, { direction: 'outbound', ours: '', theirs: key }, {
     agentName: p.name, company: p.company, introduceAs: a.live.identity.introduce_as, recordingNotice: rn.enabled ? rn.text : null,
+    ...(opts.contact ? { contact: opts.contact } : {}),
   }, a.live, d.call_goal);
   try {
     const from = await callerNumberFor(admin, ws, rec.phone, a.live.channels.phone_number_id);

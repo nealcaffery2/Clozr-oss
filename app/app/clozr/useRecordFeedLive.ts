@@ -7,8 +7,8 @@
 // - Opening a record asks Google for new mail straight away, at most every
 //   two minutes per workspace, so a reply the seller sent a minute ago is
 //   there without waiting for the five-minute pg_cron sweep.
-// - A one-minute poll and a refresh on returning to the tab, in case the
-//   socket dropped.
+// - A refresh on returning to the tab, in case the socket dropped. The
+//   one-minute poll is gone: realtime and the visibility change cover it.
 //
 // Returns a counter: put it in the deps of the effect that loads the feed.
 'use client';
@@ -18,7 +18,6 @@ import { supabase } from '@/lib/supabase';
 import { syncGoogle } from '@/lib/google';
 
 const PULL_EVERY_MS = 2 * 60_000;
-const POLL_MS = 60_000;
 /** When each workspace last asked Google for mail from a record. Module scope: screens remount. */
 const pulledAt = new Map<number, number>();
 
@@ -52,11 +51,9 @@ export function useRecordFeedLive(workspaceId: number | null, record: { sellerId
       : null;
     const onVisible = () => { if (document.visibilityState === 'visible') bump(); };
     document.addEventListener('visibilitychange', onVisible);
-    const every = setInterval(() => { if (document.visibilityState === 'visible') bump(); }, POLL_MS);
     return () => {
       alive = false;
       if (timer) clearTimeout(timer);
-      clearInterval(every);
       document.removeEventListener('visibilitychange', onVisible);
       if (sb && ch) void sb.removeChannel(ch);
     };

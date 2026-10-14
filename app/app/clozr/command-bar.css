@@ -52,3 +52,8 @@
 .clozr-cmd[data-mobile] .clozr-cmd-row{min-height:52px}
 .clozr-cmd[data-mobile] .clozr-cmd-title{font-size:14.5px}
 .clozr-cmd[data-mobile] .clozr-cmd-sub{font-size:12.5px}
+/* What was said (lib/comm-search.ts): two lines of the words around the match, the match bold. */
+.clozr-cmd-snip{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;line-height:1.4}
+.clozr-cmd-hit{background:none;color:#18181b;font-weight:600}
+.clozr-cmd-row[aria-selected="true"] .clozr-cmd-snip{color:#52525b}
+.clozr-cmd-status{padding:8px 10px 10px;font-size:12px;color:#71717a}

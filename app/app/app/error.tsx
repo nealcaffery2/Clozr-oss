@@ -10,9 +10,13 @@
 
 import React, { useEffect } from 'react';
 import { Crash } from '@/components/ds/Crash';
+import { reportClientError } from '@/lib/client-errors';
 
 export default function AppError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
-  useEffect(() => { console.error('[clozr] app threw', error); }, [error]);
+  useEffect(() => {
+    console.error('[clozr] app threw', error);
+    reportClientError(error, { kind: 'app', where: error.digest ? `app (digest ${error.digest})` : 'app' });
+  }, [error]);
   return (
     <Crash
       full

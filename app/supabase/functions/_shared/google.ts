@@ -28,6 +28,7 @@ import { type Book, type DealRef, type Link, type Route, addrKey, addressesOf as
 import { AI_PER_RUN, aiKey, classifyDeal } from './gmail-ai.ts';
 import { googleSyncWorkspace } from './google-scope.ts';
 import { rateLimit } from './security.ts';
+import { type Stranger, classifyStranger, namesOf, titleDomains } from './contact-suggest.ts';
 
 type Any = any;
 
@@ -46,7 +47,13 @@ export const SCOPE = {
    * ("Connect Postmaster"): Gmail's numbers on domain reputation and spam
    * rate. Not in DEFAULT_SCOPES, so nobody already connected is asked again.
    */
-  postmaster: 'https://www.googleapis.com/auth/postmaster.readonly',
+  postmaster: 'https://www.googleapis.com/auth/postmaster.traffic.readonly',
+  /**
+   * Postmaster Tools v2 lists domains under its own scope; asked for with
+   * `postmaster`. v1's postmaster.readonly no longer reads anything, so an
+   * account holding only that one is asked to connect Postmaster again.
+   */
+  postmasterDomains: 'https://www.googleapis.com/auth/postmaster.domain',
   /**
    * Asked for together with Postmaster: lets CLOZR verify the workspace's
    * sending domains for that account (site-verification.ts), so Postmaster
@@ -1218,7 +1225,10 @@ async function aiFill(budget: AiBudget, route: Route, link: Link, msg: { subject
  * one its street names. A row a person filed, or one filed before 107, is
  * never moved.
  */
-async function relinkEmail(admin: SupabaseClient, ws: number, book: Book, conversations: Map<string, Link>, budget: AiBudget): Promise<number> {
+/** Older unfiled mail re-tried per run, on top of the newest 40. */
+const OLDER_RELINK_PER_RUN = 60;
+
+async function relinkEmail(admin: SupabaseClient, ws: number, book: Book, conversations: Map<string, Link>, budget: AiBudget, accountId?: number): Promise<number> {
   const since = new Date(Date.now() - 120 * 86_400_000).toISOString();
   const read = (cols: string, routed: boolean) => {
     const q = admin.from('communications').select(`${LINK_COLS}, ${cols}`).eq('workspace_id', ws).eq('channel', 'email');
@@ -1226,10 +1236,28 @@ async function relinkEmail(admin: SupabaseClient, ws: number, book: Book, conver
       .order('occurred_at', { ascending: false }).limit(40);
   };
   let routedCol = true;
-  let { data: loose, error } = await read('from_email, to_email, cc_email, subject, summary, deal_routed_by', true);
+  let cols = 'from_email, to_email, cc_email, subject, summary, deal_routed_by';
+  let { data: loose, error } = await read(cols, true);
   // Before migration 107 there is no deal_routed_by (only unfiled mail is re-run); before 82 no cc_email.
-  if (error) { routedCol = false; ({ data: loose, error } = await read('from_email, to_email, cc_email, subject, summary', false)); }
-  if (error) ({ data: loose } = await read('from_email, to_email, subject', false));
+  if (error) { routedCol = false; cols = 'from_email, to_email, cc_email, subject, summary'; ({ data: loose, error } = await read(cols, false)); }
+  if (error) { cols = 'from_email, to_email, subject'; ({ data: loose } = await read(cols, false)); }
+  // The newest 40 alone never reach older mail that is still unfiled. A page
+  // of it per run, walking back from gmail_relink_before (migration 259) and
+  // starting over from the newest when it reaches the end, so every unfiled
+  // email is tried again against the deals and people as they are now.
+  if (accountId != null) {
+    const { data: cur, error: curErr } = await admin.from('google_accounts').select('gmail_relink_before').eq('id', accountId).maybeSingle();
+    if (!curErr) {
+      let q = admin.from('communications').select(`${LINK_COLS}, ${cols}, occurred_at`).eq('workspace_id', ws).eq('channel', 'email').is('deal_id', null);
+      if (cur?.gmail_relink_before) q = q.lt('occurred_at', cur.gmail_relink_before);
+      const { data: older } = await q.order('occurred_at', { ascending: false }).limit(OLDER_RELINK_PER_RUN);
+      const page = (older ?? []) as Any[];
+      const have = new Set(((loose ?? []) as Any[]).map((c) => c.id));
+      loose = [...((loose ?? []) as Any[]), ...page.filter((c) => !have.has(c.id))];
+      const edge = page.length >= OLDER_RELINK_PER_RUN ? page[page.length - 1].occurred_at ?? null : null;
+      await admin.from('google_accounts').update({ gmail_relink_before: edge }).eq('id', accountId);
+    }
+  }
   // The files on each row, by name: a street there files the mail like one in the subject.
   const names = new Map<number, string[]>();
   const ids = ((loose ?? []) as Any[]).map((c) => c.id as number);
@@ -1271,6 +1299,75 @@ async function relinkEmail(admin: SupabaseClient, ws: number, book: Book, conver
     if (!error) relinked++;
   }
   return relinked;
+}
+
+// ------------------------------------------------------- new contacts
+/** An address the workspace already knows: a teammate, a seller, buyer or vendor, or a party on a deal. */
+const knownAddress = (book: Book, e: string) =>
+  book.ours.has(e) || book.sellers.has(e) || book.buyers.has(e) || book.vendors.has(e) || book.parties.has(e);
+
+/**
+ * Notes the agents, escrow officers and title reps on this run's mail that
+ * CLOZR does not know (contact-suggest.ts, migration 259). Someone at a title
+ * company we already use is added as a vendor under that company right away,
+ * and onto the deal when the mail is on one. Everyone else becomes a
+ * suggestion the TC adds or dismisses from the Inbox. Words alone (no
+ * brokerage or title domain) only count on mail filed on a deal, or in the
+ * TC's own mailbox, so a wholesaler's blast to a rep does not fill the list.
+ */
+async function noteStrangers(admin: SupabaseClient, ws: number, account: Pick<Account, 'id' | 'user_id'>, book: Book,
+  seen: { m: Any; h: Map<string, string>; from: string; to: string[]; subject: string; link: Link }[]): Promise<void> {
+  const live = seen.filter((s) => !isBulk(s.h));
+  if (!live.length) return;
+  const [{ data: vendorRows }, { data: me }] = await Promise.all([
+    admin.from('vendors').select('business_name, email').eq('workspace_id', ws).ilike('service_type', 'title%').not('email', 'is', null).limit(500),
+    admin.from('workspace_members').select('role').eq('workspace_id', ws).eq('user_id', account.user_id).maybeSingle(),
+  ]);
+  const titles = titleDomains((vendorRows ?? []) as Any[]);
+  const tcMailbox = me?.role === 'tc';
+  const found = new Map<string, Stranger & { deal_id: number | null; subject: string; seen_at: string }>();
+  for (const s of live) {
+    const names = namesOf(`${s.h.get('from') ?? ''},${s.h.get('to') ?? ''},${s.h.get('cc') ?? ''}`);
+    const files = filesOf(s.m?.payload).map((f) => f.filename).join(' ');
+    const text = s.link.deal_id != null || tcMailbox ? `${s.subject} ${String(s.m?.snippet ?? '')} ${files}` : '';
+    const at = new Date(Number(s.m?.internalDate) || Date.now()).toISOString();
+    for (const e of [s.from, ...s.to].map(addrKey)) {
+      if (!e || knownAddress(book, e)) continue;
+      const c = classifyStranger(e, names.get(e) ?? null, text, titles);
+      if (!c) continue;
+      const had = found.get(e);
+      if (!had || (had.deal_id == null && s.link.deal_id != null)) found.set(e, { ...c, deal_id: s.link.deal_id ?? had?.deal_id ?? null, subject: s.subject, seen_at: at });
+    }
+  }
+  if (!found.size) return;
+  const emails = Array.from(found.keys());
+  const { data: prior } = await admin.from('contact_suggestions').select('email, status').eq('workspace_id', ws).in('email', emails);
+  const statusOf = new Map(((prior ?? []) as Any[]).map((r) => [String(r.email), String(r.status)]));
+  const rows: Any[] = [];
+  for (const c of found.values()) {
+    const row: Any = { email: c.email, name: c.name, company: c.company, kind: c.kind, deal_id: c.deal_id, user_id: account.user_id, subject: c.subject.slice(0, 300), seen_at: c.seen_at };
+    if (c.known_company && !statusOf.has(c.email)) {
+      const { data: v, error } = await admin.from('vendors').insert({
+        workspace_id: ws, business_name: c.company, contact_name: c.name, email: c.email,
+        service_type: 'Title Company', source: 'gmail', source_id: `gmail-title:${c.email}`,
+      }).select('id').single();
+      if (!error && v) {
+        row.status = 'auto';
+        row.vendor_id = v.id;
+        book.vendors.set(c.email, Number(v.id));
+        if (c.deal_id != null) {
+          await admin.from('deal_parties').insert({
+            workspace_id: ws, deal_id: c.deal_id, role: 'title', vendor_id: v.id, name: c.name, company: c.company,
+            email: c.email, source: 'gmail', source_id: `gmail-title:${c.email}`,
+          });
+        }
+      } else if (error) console.error('title contact not added', { email: c.email, err: error.message });
+    }
+    rows.push(row);
+  }
+  const { error } = await admin.rpc('contact_suggestions_note', { p_ws: ws, p_rows: rows });
+  // Before migration 259 there is nowhere to write; the mail itself is unaffected.
+  if (error) console.error('contact_suggestions_note', error.message);
 }
 
 // ------------------------------------------------------------- attachments
@@ -1578,7 +1675,7 @@ export async function pullGmail(admin: SupabaseClient, account: Account, accessT
   book.ours.add(addrKey(account.email));
   const budget: AiBudget = { key: aiKey(), left: AI_PER_RUN, routed: 0 };
   const conversations = await loadConversations(admin, ws, book).catch((err) => { console.error('gmail conversations failed', String(err)); return new Map<string, Link>(); });
-  let relinked = await relinkEmail(admin, ws, book, conversations, budget).catch((err) => { console.error('gmail relink failed', String(err)); return 0; });
+  let relinked = await relinkEmail(admin, ws, book, conversations, budget, account.id).catch((err) => { console.error('gmail relink failed', String(err)); return 0; });
   let logged = 0;
   let failed = false;
   const filings: Filing[] = [];
@@ -1709,6 +1806,8 @@ export async function pullGmail(admin: SupabaseClient, account: Account, accessT
     const ai = await aiFill(budget, s.route, s.link, { subject: s.subject, from: s.from, to: s.to, text: String(s.m.snippet ?? '') });
     if (ai) { s.link = ai; s.by = 'ai'; }
   }
+  // Agents, escrow officers and title reps on this mail who are not in CLOZR yet.
+  await noteStrangers(admin, ws, account, book, merged).catch((err) => console.error('gmail contact suggestions failed', String(err)));
   const wanted = merged.filter((s) => isLinked(s.link));
   // HTML bodies are the expensive part. Stop after FULL_PER_RUN and leave
   // the window edge on the last one stored, so the next run continues there

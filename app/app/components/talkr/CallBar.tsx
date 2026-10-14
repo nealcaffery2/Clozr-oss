@@ -14,6 +14,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { ClozrView } from '@/app/clozr/view';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { useSoftphone } from './softphoneAdapter';
 import { formatDialed } from './DialerParts';
 import { Icon, HangupIcon } from './Icon';
@@ -47,8 +48,9 @@ export function CallBar({ V }: { V: ClozrView }) {
   const startedAt = active?.startedAt ?? null;
   useEffect(() => {
     if (callState !== 'in_call' || !startedAt) return;
-    const t = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
-    return () => clearInterval(t);
+    const tick = () => setElapsed(Math.floor((Date.now() - startedAt) / 1000));
+    tick();
+    return everyWhileVisible(tick, 1000);
   }, [callState, startedAt]);
 
   // The full Dialer screen already is the call; the bar would only repeat it.

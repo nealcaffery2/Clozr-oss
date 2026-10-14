@@ -20,6 +20,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import {
   ApiError,
   api,
@@ -166,8 +167,7 @@ export function CallContext({
 
   useEffect(() => {
     setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(t);
+    return everyWhileVisible(() => setNow(Date.now()), 30_000);
   }, []);
 
   // Load on every change of party. A typed number settles for 300ms first

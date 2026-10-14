@@ -14,8 +14,14 @@
 
 // ------------------------------------------------------------------ types
 export type Status = 'pass' | 'warn' | 'fail' | 'unknown' | 'info';
-/** A record to add, exactly as a DNS host's form wants it. */
-export type DnsFix = { type: 'TXT' | 'CNAME' | 'MX'; host: string; value: string; note?: string };
+/**
+ * A record to add, exactly as a DNS host's form wants it. `host` starts out
+ * relative to the domain being checked; {@link placeDnsFixes} rewrites it
+ * relative to the zone the DNS host manages (`deals` on example.com, never a
+ * bare `@` for a subdomain) and fills in `fqdn`. `paste: false` means
+ * `value` is an instruction, not something to copy into DNS.
+ */
+export type DnsFix = { type: 'TXT' | 'CNAME' | 'MX'; host: string; value: string; note?: string; fqdn?: string; paste?: false };
 export type Check = {
   key: string; label: string; status: Status; detail: string;
   /** Deducted from 100 when this check is not a pass. */
@@ -207,6 +213,33 @@ export async function spfLookups(domain: string, txt: (name: string) => Promise<
   return out;
 }
 
+/**
+ * The zone a DNS host manages for `domain`: the last two labels, or three
+ * under a two-letter country code with a short second level (example.co.uk).
+ */
+export function zoneOf(domain: string): string {
+  const labels = domain.trim().toLowerCase().replace(/\.$/, '').split('.');
+  const n = labels.length >= 3 && labels[labels.length - 1].length === 2 && /^(co|com|net|org|gov|ac|edu)$/.test(labels[labels.length - 2]) ? 3 : 2;
+  return labels.slice(-n).join('.');
+}
+
+/**
+ * Fix hosts rewritten for the DNS host's form. A check's host is relative to
+ * the domain checked, but the form is relative to the zone: `@` on
+ * deals.example.com is `deals` in the example.com zone, and entering `@`
+ * there lands the record on example.com.
+ */
+export function placeDnsFixes(checks: Check[], domain: string): Check[] {
+  const d = domain.trim().toLowerCase().replace(/\.$/, '');
+  const zone = zoneOf(d);
+  return checks.map((c) => {
+    if (!c.fix) return c;
+    const fqdn = (c.fix.fqdn ?? (c.fix.host === '@' ? d : `${c.fix.host}.${d}`)).toLowerCase();
+    const host = fqdn === zone ? '@' : fqdn.endsWith(`.${zone}`) ? fqdn.slice(0, -zone.length - 1) : fqdn;
+    return { ...c, fix: { ...c.fix, host, fqdn } };
+  });
+}
+
 /** The existing record with an include added before its `all`, ending ~all if it ended in nothing safe. */
 export function withInclude(record: string | null, include: string): string {
   const terms = (record ?? 'v=spf1').trim().split(/\s+/).slice(1).filter((t) => t.toLowerCase() !== `include:${include}`);
@@ -218,8 +251,12 @@ export function withInclude(record: string | null, include: string): string {
 
 export function evaluateSpf(domain: string, txts: string[], lookups: { count: number; errors: string[] }, want: string[]): Check[] {
   const recs = spfRecords(txts);
-  const fixFor = (rec: string | null): DnsFix => ({ type: 'TXT', host: '@', value: want.reduce((r, inc) => withInclude(r, inc), rec ?? 'v=spf1 ~all'), note: 'Replace the existing SPF record — a domain may have only one.' });
-  if (!recs.length) return [{ key: 'spf', label: 'SPF', status: 'fail', blocking: true, points: 25, detail: `${domain} publishes no SPF record, so receivers cannot tell your mail from forged mail.`, fix: fixFor(null) }];
+  const fixFor = (rec: string | null): DnsFix => ({
+    type: 'TXT', host: '@', value: want.reduce((r, inc) => withInclude(r, inc), rec ?? 'v=spf1 ~all'),
+    note: rec ? 'Edit the SPF record you have to this value. Do not add a second one: a name may have only one.' : 'Add this record. If this name already has a TXT record starting v=spf1, edit that one instead: a name may have only one.',
+  });
+  // Knowing no sender, the only record we could offer is v=spf1 ~all, which authorises nobody.
+  if (!recs.length) return [{ key: 'spf', label: 'SPF', status: 'fail', blocking: true, points: 25, detail: `${domain} publishes no SPF record, so receivers cannot tell your mail from forged mail.${want.length ? '' : ' Add one that lists every service that sends as this domain.'}`, fix: want.length ? fixFor(null) : undefined }];
   if (recs.length > 1) return [{ key: 'spf', label: 'SPF', status: 'fail', blocking: true, points: 25, detail: `${recs.length} SPF records — receivers treat that as a permanent error. Merge them into one.`, fix: fixFor(recs[0]) }];
   const rec = recs[0];
   const terms = parseSpf(rec);
@@ -269,8 +306,8 @@ export function evaluateDkim(domain: string, found: { selector: string; txts: st
         out.push({
           key: `dkim_${f.selector}`, label: `DKIM (${f.selector})`, status: 'fail', points: 0, detail: `No DKIM key at ${host}.${domain}.`,
           fix: f.selector === 'google'
-            ? { type: 'TXT', host, value: 'v=DKIM1; k=rsa; p=<the key Google generates>', note: 'Google Admin → Apps → Google Workspace → Gmail → Authenticate email → Generate new record (2048-bit), add it here, wait an hour, then press Start authentication. The key is unique to your domain, so it has to come from that screen.' }
-            : { type: 'TXT', host, value: 'p=<the key Resend shows>', note: 'Resend → Domains → your domain shows the exact value.' },
+            ? { type: 'TXT', host, paste: false, value: 'Copy the value Google generates. It starts v=DKIM1; k=rsa; p=', note: 'Google Admin → Apps → Google Workspace → Gmail → Authenticate email → Generate new record (2048-bit), add it here, wait an hour, then press Start authentication. The key is unique to your domain, so it has to come from that screen.' }
+            : { type: 'TXT', host, paste: false, value: `Copy the DKIM value from Resend → Domains → ${domain}. It starts p=MIGf`, note: 'This is a public key Resend generates for the domain. It is not your Resend API key (re_…): never put an API key in DNS.' },
         });
       } else {
         out.push({ key: `dkim_${f.selector}`, label: `DKIM (${f.selector})`, status: 'info', points: 0, detail: `Nothing at ${host}.` });
@@ -572,4 +609,49 @@ export function spamRisk(i: SpamInput): { score: number; level: 'low' | 'medium'
 
   const score = Math.min(100, f.reduce((s, x) => s + x.points, 0));
   return { score, level: score < 20 ? 'low' : score < 45 ? 'medium' : 'high', findings: f };
+}
+
+// ------------------------------------------------------ postmaster v2
+/** One day of Gmail Postmaster numbers, as the Signals panel draws it. v2 has no domain reputation, so it is always null. */
+export type PostmasterDayV2 = { date: string; reputation: null; spam: number | null; spf: number | null; dkim: number | null; dmarc: number | null; errors: number; error_types: string[] };
+
+/**
+ * The metrics asked of domains.domainStats:query (Postmaster Tools v2). The
+ * names come back on each DomainStat as `metric`.
+ */
+export const POSTMASTER_V2_METRICS = [
+  { name: 'spam', baseMetric: { standardMetric: 'SPAM_RATE' } },
+  { name: 'spf', baseMetric: { standardMetric: 'AUTH_SUCCESS_RATE' }, filter: 'auth_type = "spf"' },
+  { name: 'dkim', baseMetric: { standardMetric: 'AUTH_SUCCESS_RATE' }, filter: 'auth_type = "dkim"' },
+  { name: 'dmarc', baseMetric: { standardMetric: 'AUTH_SUCCESS_RATE' }, filter: 'auth_type = "dmarc"' },
+  { name: 'errors', baseMetric: { standardMetric: 'DELIVERY_ERROR_RATE' } },
+] as const;
+
+/** A v2 rate as a 0–1 ratio. Google documents these as rates; a value over 1 is read as a percent. */
+function v2Rate(value: unknown): number | null {
+  const v = (value ?? {}) as Record<string, unknown>;
+  const raw = v.doubleValue ?? v.floatValue ?? v.intValue ?? v.stringValue;
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() ? Number(raw) : NaN;
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n > 1 ? Math.min(1, n / 100) : n;
+}
+
+/** domainStats:query rows (DAILY) folded into one row per date, oldest first. */
+export function postmasterDaysV2(stats: unknown[]): PostmasterDayV2[] {
+  const days = new Map<string, PostmasterDayV2>();
+  for (const s of stats ?? []) {
+    const row = (s ?? {}) as { metric?: string; value?: unknown; date?: { year?: number; month?: number; day?: number } };
+    const d = row.date;
+    if (!d?.year || !d.month || !d.day) continue;
+    const date = `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`;
+    const day = days.get(date) ?? { date, reputation: null, spam: null, spf: null, dkim: null, dmarc: null, errors: 0, error_types: [] };
+    const rate = v2Rate(row.value);
+    if (row.metric === 'spam') day.spam = rate;
+    else if (row.metric === 'spf') day.spf = rate;
+    else if (row.metric === 'dkim') day.dkim = rate;
+    else if (row.metric === 'dmarc') day.dmarc = rate;
+    else if (row.metric === 'errors') day.errors = rate ?? 0;
+    days.set(date, day);
+  }
+  return [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
 }

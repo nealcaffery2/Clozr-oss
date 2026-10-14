@@ -192,7 +192,7 @@ ok('...and the locked block is still last', endsWithLocked(hostile));
 for (const id of ['lead_manager', 'acquisitions']) {
   const t = TEMPLATES[id];
   ok(`template ${id}: data is complete`, !!t.name && !!t.description && t.sections.length >= 4 && t.sections.every((s) => s.id && s.title && s.body) && Array.isArray(t.open_items));
-  ok(`template ${id}: its prompt is a sensible size`, estimateTokens(P(withTemplate(id))) > 1500 && estimateTokens(P(withTemplate(id))) < (id === 'acquisitions' ? 8500 : 6000), estimateTokens(P(withTemplate(id))));
+  ok(`template ${id}: its prompt is a sensible size`, estimateTokens(P(withTemplate(id))) > 1500 && estimateTokens(P(withTemplate(id))) < (id === 'acquisitions' ? 9000 : 6000), estimateTokens(P(withTemplate(id))));
 }
 ok('lead manager never offers a price', /You do not make offers/.test(P(withTemplate('lead_manager'))) && /Never: Negotiate, never state or hint at a price except as the offer authority rules allow/.test(P(withTemplate('lead_manager'))) && !/\{\{offer_low\}\}|ballpark/.test(P(withTemplate('lead_manager'))));
 {

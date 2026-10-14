@@ -212,6 +212,8 @@ type CommRow = {
   ai_notes: { summary?: string | null; next_step?: string | null } | null; score_overall: number | null;
   /** Who sent or took it (migration 153 fills it from the line when the source did not). */
   rep_id?: string | null; to_phone?: string | null;
+  /** Migration 269: the AI agent that sent it, when one did. */
+  ai_agent_key?: string | null;
 };
 type DealRow = {
   /** Migration 118. */
@@ -303,6 +305,8 @@ type PinRow = { id: number; pinned_at: string | null; pinned_by: string | null }
 type ActivityRow = {
   id: number; entity_type: string; entity_id: number; kind: string; title: string;
   body: string | null; actor_id: string | null; occurred_at: string;
+  /** Migration 269: the AI agent behind an 'ai_agent' line. */
+  ai_agent_key?: string | null;
 };
 type PlanRow = {
   id: number; name: string; trigger_event: string | null; active: boolean;
@@ -458,12 +462,79 @@ export function forgetLineLabels(workspaceId: number): void {
   lineCache.delete(workspaceId);
 }
 
-/** Who an outbound message reads as from: its rep, else the owner or name of the line it went out on. */
+/** An AI agent as the activity log shows it: its name and picture (voice_agent_settings, migration 123). */
+export type AgentFace = { key: string; name: string; avatar: string | null };
+/** The workspace's AI agents by agent_key. Read once per workspace, like the lines. */
+const agentCache = new Map<number, Promise<Map<string, AgentFace>>>();
+export function agentFaces(workspaceId: number): Promise<Map<string, AgentFace>> {
+  let p = agentCache.get(workspaceId);
+  if (!p) {
+    const sb = supabase;
+    type Row = { agent_key: string; name: string | null; avatar_url: string | null; live_name: string | null; draft_name: string | null };
+    p = (sb ? Promise.resolve(sb.from('voice_agent_settings' as never).select('agent_key,name,avatar_url,live_name:live_settings->identity->>name,draft_name:settings->identity->>name').eq('workspace_id', workspaceId)) : Promise.resolve({ data: [] as unknown[], error: null }))
+      .then((r) => {
+        // A failed read is not cached: the next record open asks again.
+        if ('error' in r && r.error) agentCache.delete(workspaceId);
+        return r;
+      })
+      .then((r) => new Map(((r.data ?? []) as Row[]).map((x) => [x.agent_key, {
+        key: x.agent_key,
+        name: (x.name || x.live_name || x.draft_name || x.agent_key.replace(/_/g, ' ')).trim(),
+        avatar: x.avatar_url || null,
+      }] as const)))
+      .catch(() => { agentCache.delete(workspaceId); return new Map<string, AgentFace>(); });
+    agentCache.set(workspaceId, p);
+  }
+  return p;
+}
+
+/** Drop a workspace's cached agents after one is renamed or gets a new picture. */
+export function forgetAgentFaces(workspaceId: number): void {
+  agentCache.delete(workspaceId);
+}
+
+/**
+ * The agent a row names (ai_agent_key), else, for an 'ai_agent' line written
+ * before migration 269, the agent its title names ("AI agent Riley sent a text").
+ */
+function agentOfRow(key: string | null | undefined, agents: Map<string, AgentFace> | undefined, title?: string): AgentFace | null {
+  if (!agents?.size) return null;
+  if (key) return agents.get(key) ?? null;
+  if (!title?.startsWith('AI agent ')) return null;
+  for (const a of agents.values()) if (a.name && title.startsWith(`AI agent ${a.name} `)) return a;
+  return null;
+}
+
+const COMM_COLS = 'id,seller_id,buyer_id,deal_id,channel,direction,occurred_at,body,summary,subject,duration_s,recording_url,from_phone,to_phone,rep_id,status,source,ai_notes,score_overall,from_email,to_email,source_id';
+const ACTIVITY_COLS = 'id,entity_type,entity_id,kind,title,body,actor_id,occurred_at';
+/** False once the database says ai_agent_key is missing (the app shipped before migration 269 ran). */
+let agentColumn = true;
+const commCols = (agent: boolean) => (agent ? COMM_COLS + ',ai_agent_key' : COMM_COLS);
+const activityCols = (agent: boolean) => (agent ? ACTIVITY_COLS + ',ai_agent_key' : ACTIVITY_COLS);
+/** A read that asks for ai_agent_key, and asks again without it when the column is not there yet. */
+async function withAgentColumn<T extends { error: { message: string } | null }>(make: (agent: boolean) => PromiseLike<T>): Promise<T> {
+  if (agentColumn) {
+    const r = await make(true);
+    if (!r.error || !/ai_agent_key/.test(r.error.message)) return r;
+    agentColumn = false;
+  }
+  return make(false);
+}
+
+/**
+ * Who an outbound message reads as from: its rep, else the owner or name of the
+ * line it went out on. `user` is that teammate's id when one resolves, so the
+ * feed can show their photo; a line with only a label credits no one.
+ */
 function sentByFor(lines: Map<string, Line>, repName: (id: string | null) => string) {
   const member = (id: string | null | undefined) => { const n = id ? repName(id) : ''; return n && n !== 'CLOZR' ? n : null; };
-  return (c: CommRow): string | null => {
+  return (c: CommRow): { name: string | null; user: string | null } => {
     const line = lines.get(String(c.from_phone ?? '').replace(/\D/g, '').slice(-10));
-    return member(c.rep_id) ?? member(line?.user_id) ?? line?.label ?? null;
+    const rep = member(c.rep_id);
+    if (rep) return { name: rep, user: c.rep_id ?? null };
+    const owner = member(line?.user_id);
+    if (owner) return { name: owner, user: line!.user_id };
+    return { name: line?.label ?? null, user: null };
   };
 }
 
@@ -480,13 +551,14 @@ export async function loadRecordTimeline(
   if (!supabase) return null;
   const actOr = [`and(entity_type.eq.seller,entity_id.eq.${sellerId})`, ...(dealIds.length ? [`and(entity_type.eq.deal,entity_id.in.(${dealIds.join(',')}))`] : [])].join(',');
   const commOr = [`seller_id.eq.${sellerId}`, ...(dealIds.length ? [`deal_id.in.(${dealIds.join(',')})`] : [])].join(',');
-  const [acts, comms, lines] = await Promise.all([
-    supabase.from('activity').select('id,entity_type,entity_id,kind,title,body,actor_id,occurred_at')
-      .eq('workspace_id', workspaceId).or(actOr).order('occurred_at', { ascending: false }).limit(500),
-    supabase.from('communications')
-      .select('id,seller_id,buyer_id,deal_id,channel,direction,occurred_at,body,summary,subject,duration_s,recording_url,from_phone,to_phone,rep_id,status,source,ai_notes,score_overall,from_email,to_email,source_id')
-      .eq('workspace_id', workspaceId).or(commOr).order('occurred_at', { ascending: false }).limit(500),
+  const [acts, comms, lines, agents] = await Promise.all([
+    withAgentColumn((a) => supabase!.from('activity').select(activityCols(a))
+      .eq('workspace_id', workspaceId).or(actOr).order('occurred_at', { ascending: false }).limit(500)),
+    withAgentColumn((a) => supabase!.from('communications')
+      .select(commCols(a))
+      .eq('workspace_id', workspaceId).or(commOr).order('occurred_at', { ascending: false }).limit(500)),
     lineLabels(workspaceId),
+    agentFaces(workspaceId),
   ]);
   const sentBy = sentByFor(lines, repName);
   if (acts.error || comms.error) return null;
@@ -494,9 +566,9 @@ export async function loadRecordTimeline(
   const commRows = (comms.data ?? []) as unknown as CommRow[];
   const callNotes = linkCallNotes(commRows);
   return [
-    ...((acts.data ?? []) as unknown as ActivityRow[]).map((a) => ({ at: a.occurred_at, e: mapActivity(a, repName) })),
+    ...((acts.data ?? []) as unknown as ActivityRow[]).map((a) => ({ at: a.occurred_at, e: mapActivity(a, repName, agents) })),
     ...commRows.map((c) => {
-      const base = commTimeline(c, names, undefined, sentBy);
+      const base = commTimeline(c, names, undefined, sentBy, agents);
       const notes = callNotes.notesByCall.get(c.id);
       const e = notes ? { ...base, callNote: notes.join('\n\n') } : callNotes.placed.has(c.id) ? { ...base, underCall: true } : base;
       // Every message read here is about this contact or one of its deals.
@@ -515,22 +587,23 @@ export async function loadBuyerTimeline(
   workspaceId: number, buyerId: number, repName: (id: string | null) => string,
 ): Promise<TimelineEntry[] | null> {
   if (!supabase) return null;
-  const [acts, comms, lines] = await Promise.all([
-    supabase.from('activity').select('id,entity_type,entity_id,kind,title,body,actor_id,occurred_at')
+  const [acts, comms, lines, agents] = await Promise.all([
+    withAgentColumn((a) => supabase!.from('activity').select(activityCols(a))
       .eq('workspace_id', workspaceId).eq('entity_type', 'buyer').eq('entity_id', buyerId)
-      .order('occurred_at', { ascending: false }).limit(500),
-    supabase.from('communications')
-      .select('id,seller_id,buyer_id,deal_id,channel,direction,occurred_at,body,summary,subject,duration_s,recording_url,from_phone,to_phone,rep_id,status,source,ai_notes,score_overall,from_email,to_email,source_id')
-      .eq('workspace_id', workspaceId).eq('buyer_id', buyerId).order('occurred_at', { ascending: false }).limit(500),
+      .order('occurred_at', { ascending: false }).limit(500)),
+    withAgentColumn((a) => supabase!.from('communications')
+      .select(commCols(a))
+      .eq('workspace_id', workspaceId).eq('buyer_id', buyerId).order('occurred_at', { ascending: false }).limit(500)),
     lineLabels(workspaceId),
+    agentFaces(workspaceId),
   ]);
   if (acts.error || comms.error) return null;
   const sentBy = sentByFor(lines, repName);
   const entity = 'b' + buyerId;
   return [
-    ...((acts.data ?? []) as unknown as ActivityRow[]).map((a) => ({ at: a.occurred_at, e: mapActivity(a, repName) })),
+    ...((acts.data ?? []) as unknown as ActivityRow[]).map((a) => ({ at: a.occurred_at, e: mapActivity(a, repName, agents) })),
     // A message on a seller's deal that also names this buyer still belongs on the buyer's feed.
-    ...((comms.data ?? []) as unknown as CommRow[]).map((c) => ({ at: c.occurred_at, e: { ...commTimeline(c, new Map(), undefined, sentBy), entity } })),
+    ...((comms.data ?? []) as unknown as CommRow[]).map((c) => ({ at: c.occurred_at, e: { ...commTimeline(c, new Map(), undefined, sentBy, agents), entity } })),
   ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).map((x) => ({ ...x.e, at: x.at }));
 }
 
@@ -631,7 +704,7 @@ function linkCallNotes(comms: CommRow[]): { notesByCall: Map<number, string[]>; 
  * communication is an event on the record; it belongs on the same feed, and
  * its type matches what the Texts and Calls filters already look for.
  */
-function commTimeline(c: CommRow, sellerName: Map<number, string>, ours: Set<string> = new Set(), sentBy?: (c: CommRow) => string | null): TimelineEntry {
+function commTimeline(c: CommRow, sellerName: Map<number, string>, ours: Set<string> = new Set(), sentBy?: (c: CommRow) => { name: string | null; user: string | null }, agents?: Map<string, AgentFace>): TimelineEntry {
   const from = (c.from_email ?? '').trim().toLowerCase();
   const inbound = c.channel === 'email' && from && ours.size ? !ours.has(from) : c.direction === 'inbound';
   const type = c.channel === 'sms'
@@ -640,9 +713,13 @@ function commTimeline(c: CommRow, sellerName: Map<number, string>, ours: Set<str
   // An outbound row credits the rep who sent it (rep_id, or the line's owner
   // or name, migration 153), else the system that carried it; an inbound one
   // was the seller.
+  // An AI agent's text, email, voicemail or call is the agent's, not the rep it went out as (migration 269).
   const src = c.source || 'system';
+  const agent = !inbound ? agentOfRow(c.ai_agent_key, agents) : null;
+  const by = !inbound && !agent ? sentBy?.(c) : undefined;
   const who = c.channel === 'email' && inbound && from ? from
-    : !inbound ? (sentBy?.(c) || (src === 'clozr' ? 'CLOZR' : src.charAt(0).toUpperCase() + src.slice(1)))
+    : agent ? agent.name
+    : !inbound ? (by?.name || (src === 'clozr' ? 'CLOZR' : src.charAt(0).toUpperCase() + src.slice(1)))
     : c.seller_id ? sellerName.get(c.seller_id) || 'Unknown' : c.from_phone || 'Unknown';
   // A text we sent says how far it got; "failed" is the word that has to reach
   // the person who sent it, so it goes in the title rather than a badge. A
@@ -662,8 +739,9 @@ function commTimeline(c: CommRow, sellerName: Map<number, string>, ours: Set<str
   return {
     id: 'ct' + c.id,
     type: isTc ? 'tc' : type,
-    user: null,
+    user: by?.user ?? null,
     who,
+    ...(agent ? { agent } : {}),
     time: relative(c.occurred_at),
     title,
     // What the AI heard beats the disposition line, which beats a raw body.
@@ -778,7 +856,7 @@ function mapDeal(d: DealRow, staleDays: number, prop?: { line1: string; city: st
     facts: {
       earnest: n(d.earnest_money ?? null), condition: d.condition_notes ?? null, occupancy: d.occupancy_notes ?? null,
       dispoRep: d.dispo_rep_id ?? null, tcRep: d.tc_rep_id ?? null,
-      titleVendor: d.title_vendor_id != null, titleContact: d.title_contact ?? null, titleEmail: d.title_email ?? null, titlePhone: d.title_phone ?? null,
+      titleVendor: d.title_vendor_id != null, titleVendorId: d.title_vendor_id != null ? 'v' + d.title_vendor_id : null, titleContact: d.title_contact ?? null, titleEmail: d.title_email ?? null, titlePhone: d.title_phone ?? null,
       marketingStarted: d.marketing_started_on ?? null,
     },
     ...(d.buyer_id ? { buyerId: bid(d.buyer_id) } : {}),
@@ -1008,13 +1086,16 @@ function mapTask(t: TaskRow, sellerOfDeal?: (dealId: number) => number | null | 
 }
 
 /** Stage moves, offers and automation — the events a communication is not. */
-function mapActivity(a: ActivityRow, repName: (id: string | null) => string): TimelineEntry {
+function mapActivity(a: ActivityRow, repName: (id: string | null) => string, agents?: Map<string, AgentFace>): TimelineEntry {
+  // An agent's line is the agent's, even when a rep switched it on (the rep is named in the title).
+  const agent = a.kind === 'ai_agent' ? agentOfRow(a.ai_agent_key, agents, a.title) : null;
   return {
     id: 'a' + a.id,
     type: a.kind,
-    user: a.actor_id,
+    user: agent ? null : a.actor_id,
+    ...(agent ? { agent } : {}),
     // No actor means a webhook or automation wrote it; name the source.
-    who: a.actor_id ? repName(a.actor_id)
+    who: agent ? agent.name : a.actor_id ? repName(a.actor_id)
       : /pandadoc/i.test(a.title + (a.body ?? '')) ? 'PandaDoc'
         : a.kind === 'ai_agent' ? 'AI agent' : a.kind === 'contract' ? 'E-sign' : a.kind === 'email' ? 'Gmail' : a.kind === 'task' ? 'Automation' : a.kind === 'tc' ? (/^Lane\b/.test(a.title) ? 'Lane' : 'TC') : 'System',
     time: relative(a.occurred_at),
@@ -1462,9 +1543,9 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
           return x === y ? b.id - a.id : x < y ? 1 : -1;
         },
       }),
-    again(() => supabase!.from('communications')
-      .select('id,seller_id,buyer_id,deal_id,channel,direction,occurred_at,body,summary,subject,duration_s,recording_url,from_phone,to_phone,rep_id,status,source,ai_notes,score_overall,from_email,to_email,source_id')
-      .eq('workspace_id', w).order('occurred_at', { ascending: false }).limit(500)),
+    again(() => withAgentColumn((a) => supabase!.from('communications')
+      .select(commCols(a))
+      .eq('workspace_id', w).order('occurred_at', { ascending: false }).limit(500))),
     full(() => all(() => supabase!.from('deals')
       .select(DEAL_COLS)
       .eq('workspace_id', w).order('id'), Number.POSITIVE_INFINITY, BY_ID)),
@@ -1496,9 +1577,9 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
       .select('*')
       // Only what is addressed to me: a row with no recipient is nobody's, not everybody's.
       .eq('workspace_id', w).eq('user_id', uid ?? '00000000-0000-0000-0000-000000000000').order('created_at', { ascending: false }).limit(50),
-    again(() => supabase!.from('activity')
-      .select('id,entity_type,entity_id,kind,title,body,actor_id,occurred_at')
-      .eq('workspace_id', w).order('occurred_at', { ascending: false }).limit(300)),
+    again(() => withAgentColumn((a) => supabase!.from('activity')
+      .select(activityCols(a))
+      .eq('workspace_id', w).order('occurred_at', { ascending: false }).limit(300))),
     supabase.from('action_plans')
       .select('id,name,description,trigger_event,active,settings,action_plan_steps(id,position,channel,delay_hours,title,body)')
       .eq('workspace_id', w).order('name'),
@@ -1626,7 +1707,7 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
     };
   }
   const repName = (id: string | null) => (id && team[id] ? team[id].name : 'CLOZR');
-  const lines = await lineLabels(w);
+  const [lines, agents] = await Promise.all([lineLabels(w), agentFaces(w)]);
   const sentBy = sentByFor(lines, repName);
   // Whose conversation a message is: the rep on it, else the owner of the line it came in or went out on.
   const commOwner = (c: CommRow): string | null => {
@@ -1788,10 +1869,10 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
       // One feed: what was done to the record (activity) and what was said on
       // it (communications), newest first.
       timeline: [
-        ...acts.map((a) => ({ at: a.occurred_at, e: pinned(mapActivity(a, repName)) })),
+        ...acts.map((a) => ({ at: a.occurred_at, e: pinned(mapActivity(a, repName, agents)) })),
         // An email Gmail matched to a seller and a buyer lands on both records.
         ...comms.flatMap((c) => {
-          const base = pinned(commTimeline(c, sellerName, ours, sentBy));
+          const base = pinned(commTimeline(c, sellerName, ours, sentBy, agents));
           const notes = callNotes.notesByCall.get(c.id);
           const e = notes ? { ...base, callNote: notes.join('\n\n') } : callNotes.placed.has(c.id) ? { ...base, underCall: true } : base;
           const rows = e.entity ? [{ at: c.occurred_at, e }] : [];
@@ -2077,6 +2158,50 @@ export async function loadSellerSlice(workspaceId: number, sellerId: number): Pr
 }
 
 /**
+ * Several new sellers in two reads per 200 ids (the seller rows, then their
+ * deals), for a realtime burst. Null when a read failed. Last touch and the
+ * underwriter are left for the next full load: this only puts the lead on
+ * the list. A save on one record still uses loadSellerSlice.
+ */
+export async function loadSellerSlices(workspaceId: number, ids: number[]): Promise<SellerSlice[] | null> {
+  if (!supabase) return null;
+  const unique = [...new Set(ids.filter((n) => Number.isFinite(n)))];
+  if (!unique.length) return [];
+  const w = workspaceId;
+  const out: SellerSlice[] = [];
+  for (let i = 0; i < unique.length; i += 200) {
+    const chunk = unique.slice(i, i + 200);
+    const [sellerQ, dealsQ] = await Promise.all([
+      supabase.from('sellers').select(SELLER_COLS + ',archived_at').eq('workspace_id', w).in('id', chunk),
+      supabase.from('deals').select(DEAL_COLS).eq('workspace_id', w).in('seller_id', chunk).order('id'),
+    ]);
+    if (sellerQ.error || dealsQ.error) return null;
+    const deals = (dealsQ.data ?? []) as unknown as DealRow[];
+    const bySeller = new Map<number, DealRow[]>();
+    for (const d of deals) {
+      if (d.seller_id == null) continue;
+      const list = bySeller.get(d.seller_id) ?? [];
+      list.push(d);
+      bySeller.set(d.seller_id, list);
+    }
+    for (const row of (sellerQ.data ?? []) as unknown as (SellerRow & { archived_at?: string | null })[]) {
+      const theirs = bySeller.get(row.id) ?? [];
+      let best: DealRow | undefined;
+      for (const d of theirs) if (!best || dealRank(d) > dealRank(best)) best = d;
+      out.push({
+        sellerId: row.id,
+        person: row.archived_at ? null : mapPerson(row, null, undefined, best),
+        deals: theirs.map((d) => {
+          const m = mapDeal(d, Math.floor((minutesAgo(d.updated_at) ?? 0) / (60 * 24)), dealProperty(d.properties));
+          return m.heroUrl ? { ...m, photoUrl: m.heroUrl } : m;
+        }),
+      });
+    }
+  }
+  return out;
+}
+
+/**
  * The loaded workspace with one seller's slice in place: their person row
  * replaced (or added at the top, for a lead that just arrived), each of their
  * deals replaced field by field. What the slice does not read (photos, the
@@ -2223,15 +2348,22 @@ export function withGallery(d: Deal, rows: DealPhotoRow[]): Deal {
  * Photos, price amendments, offer gaps, and the reporting history.
  * Called after the shell is on screen. A failed read leaves that slice as the
  * shell already drew it.
+ *
+ * The five reporting reads (offer gaps, the long communications history, and
+ * the deal and offer columns Reporting needs) run only when `opts.reporting`
+ * is set. Home keeps the 500-row communications read from the shell. Until
+ * Reporting or the leaderboard has loaded them, `partial` stays `loading`.
  */
-export async function enrichWorkspace(workspaceId: number, data: LiveData, reuse?: LiveData | null): Promise<LiveData> {
+export async function enrichWorkspace(
+  workspaceId: number, data: LiveData, reuse?: LiveData | null, opts?: { reporting?: boolean },
+): Promise<LiveData> {
   if (!supabase) return data;
   const w = workspaceId;
   // Offer gaps and the reporting history are the heavy reads and change
   // slowly; `reuse` (the last enriched load) stands in for them between
   // refreshes. Photos, links and price changes follow every write.
   const skip = Promise.resolve({ data: null, error: { message: 'reused' } });
-  const heavy = !reuse;
+  const heavy = !!opts?.reporting && !reuse;
   const [photoQ, photoLinkQ, linksQ, amendQ, gapsQ, gapPeopleQ, reportDealsQ, reportCommsQ, reportOffersQ] = await Promise.all([
     loadCoverPhotos(w),
     // Source photo links (Podio Photos, a Drive folder, a listing). Separate from
@@ -2269,9 +2401,11 @@ export async function enrichWorkspace(workspaceId: number, data: LiveData, reuse
   }
   const raw = data.reporting.raw;
   const failed = (q: { error: { message: string } | null }) => !!q.error && q.error.message !== 'reused';
-  const partial: ReportRaw['partial'] = heavy
-    ? (failed(reportDealsQ) || failed(reportCommsQ) || failed(reportOffersQ) ? 'failed' : undefined)
-    : reuse?.reporting.raw?.partial;
+  // A reload that did not ask for reporting must not clear `loading`, or Home
+  // would show zero offers. A reused load keeps the partial it already had.
+  let partial: ReportRaw['partial'] = raw?.partial;
+  if (heavy) partial = failed(reportDealsQ) || failed(reportCommsQ) || failed(reportOffersQ) ? 'failed' : undefined;
+  else if (reuse?.reporting.raw) partial = reuse.reporting.raw.partial;
   return {
     ...data,
     deals: attachSourcePhotos(

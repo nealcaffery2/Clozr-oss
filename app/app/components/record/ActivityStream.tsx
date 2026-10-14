@@ -61,6 +61,15 @@ export function ActivityChips({ V }: { V: ClozrView }) {
   );
 }
 
+/** Beside the name on a message an AI agent sent, so "Text sent · Riley" does not read as a teammate. */
+export function AgentBadge() {
+  return (
+    <span style={{display: "inline-flex", alignItems: "center", height: "18px", padding: "0 6px", borderRadius: "6px", background: "#f0fdfa", color: "#0f766e", fontSize: "11px", fontWeight: "600", whiteSpace: "nowrap"}}>
+      AI agent
+    </span>
+  );
+}
+
 /** The stream itself. `me` is the signed-in user (call insight notes). */
 export function ActivityStream({ V, me }: { V: ClozrView; me: string | null }) {
   const [shown, setShown] = useState(PAGE);
@@ -82,8 +91,8 @@ export function ActivityStream({ V, me }: { V: ClozrView; me: string | null }) {
       ) : null}
       <div className="clozr-tl" style={{display: "grid", gridTemplateColumns: "30px minmax(0,1fr)", gap: "12px", paddingBottom: "16px"}}>
         <div style={{display: "flex", flexDirection: "column", alignItems: "center", minWidth: "0"}}>
-          {t.avatar ? (
-            <UserAvatar name={t.who} src={t.avatar} size={30} radius="8px" border="1px solid #e4e4e7" />
+          {(t.avatar || t.agent) ? (
+            <UserAvatar name={t.who} src={t.avatar || null} size={30} radius="8px" border="1px solid #e4e4e7" />
           ) : (
           <span title={t.who} aria-label={t.who} style={{width: "30px", height: "30px", borderRadius: "8px", background: "#fff", border: "1px solid #e4e4e7", display: "grid", placeItems: "center", fontSize: "10px", fontWeight: "700", color: "#52525b", flex: "none", cursor: "default"}}>
             {t.talkr ? <TalkrMark size={16} /> : t.clozr ? <ClozrIcon size={8} /> : t.icon ? <Icon name={t.icon} size={15} /> : t.initials}
@@ -108,6 +117,7 @@ export function ActivityStream({ V, me }: { V: ClozrView; me: string | null }) {
               · {t.who}
             </span>
             ) : null}
+            {t.agentTag ? <AgentBadge /> : null}
             <span style={{flex: "1"}}></span>
             <span style={{fontSize: "11.5px", color: "#a1a1aa", whiteSpace: "nowrap"}}>
               {t.time}

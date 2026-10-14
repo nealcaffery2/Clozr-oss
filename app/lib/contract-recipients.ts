@@ -12,7 +12,7 @@ import { loadDealForSeller } from './deal-sheet';
 
 export type { Contact, ContactLink };
 
-/** Up to `limit` matches across People, Buyers, Vendors and the team. */
+/** Up to `limit` matches across People, Buyers, Vendors and the team. A trade ("lender") finds the vendors in it. */
 export async function searchContacts(workspaceId: number, q: string, limit = 12): Promise<Contact[]> {
   if (!supabase) return [];
   const { terms, digits } = parseQuery(q);
@@ -24,7 +24,7 @@ export async function searchContacts(workspaceId: number, q: string, limit = 12)
   const [sellers, buyers, vendors, team] = await Promise.all([
     supabase.from('sellers').select('id, name, email, phone, property_address').eq('workspace_id', workspaceId).or(ors(['name', 'email'])).limit(25),
     supabase.from('buyers').select('id, name, company, email, phone').eq('workspace_id', workspaceId).or(ors(['name', 'company', 'email'])).limit(25),
-    supabase.from('vendors').select('id, business_name, contact_name, email, phone, service_type').eq('workspace_id', workspaceId).or(ors(['business_name', 'contact_name', 'email'])).limit(15),
+    supabase.from('vendors').select('id, business_name, contact_name, email, phone, service_type').eq('workspace_id', workspaceId).or(ors(['business_name', 'contact_name', 'email', 'service_type'])).limit(15),
     supabase.from('workspace_roster').select('user_id, full_name, email, title').eq('workspace_id', workspaceId).limit(100),
   ]);
   const list: Contact[] = [
@@ -33,7 +33,7 @@ export async function searchContacts(workspaceId: number, q: string, limit = 12)
     ...((buyers.data ?? []) as { id: number; name: string; company: string | null; email: string | null; phone: string | null }[])
       .map((b) => ({ kind: 'buyer' as const, id: b.id, name: b.name, email: b.email, phone: b.phone, sub: b.company })),
     ...((vendors.data ?? []) as { id: number; business_name: string; contact_name: string | null; email: string | null; phone: string | null; service_type: string | null }[])
-      .map((v) => ({ kind: 'vendor' as const, id: v.id, name: v.contact_name || v.business_name, email: v.email, phone: v.phone, sub: [v.contact_name ? v.business_name : null, v.service_type].filter(Boolean).join(' · ') || null })),
+      .map((v) => ({ kind: 'vendor' as const, id: v.id, name: v.contact_name || v.business_name, email: v.email, phone: v.phone, sub: [v.contact_name ? v.business_name : null, v.service_type].filter(Boolean).join(' · ') || null, trade: v.service_type })),
     ...((team.data ?? []) as { user_id: string; full_name: string | null; email: string | null; title: string | null }[])
       .filter((t) => t.full_name || t.email)
       .map((t) => ({ kind: 'team' as const, id: t.user_id, name: t.full_name || t.email || 'Teammate', email: t.email, phone: null, sub: t.title })),

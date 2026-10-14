@@ -16,6 +16,26 @@ type Any = any;
 
 export const missingRelation = (msg: string) => /does not exist|schema cache|PGRST20[25]|42P01/i.test(msg);
 
+/**
+ * The number a record is reached on: its own phone, else (a buyer) its first
+ * buyer_phones row. `row` is the record when the caller already read it.
+ * Null when the record is not in the workspace or has no usable number.
+ */
+export async function recordPhoneKey(admin: SupabaseClient, ws: number, kind: 'seller' | 'buyer', id: number, row?: { phone?: string | null; phone_key?: string | null } | null): Promise<string | null> {
+  let rec = row;
+  if (rec === undefined) {
+    const { data } = await admin.from(kind === 'seller' ? 'sellers' : 'buyers').select('id, phone, phone_key').eq('id', id).eq('workspace_id', ws).maybeSingle();
+    rec = data as Any;
+  }
+  if (!rec) return null;
+  let pk = phoneKey(rec.phone_key ?? rec.phone);
+  if (!pk && kind === 'buyer') {
+    const { data: bp } = await admin.from('buyer_phones').select('phone, phone_key').eq('workspace_id', ws).eq('buyer_id', id).order('position').limit(5);
+    for (const p of (bp ?? []) as Any[]) { pk = phoneKey(p.phone_key ?? p.phone); if (pk) break; }
+  }
+  return pk;
+}
+
 /** Every seller and buyer on the number, with what the DNC check needs. */
 export async function loadCandidates(admin: SupabaseClient, ws: number, theirs: string): Promise<Candidate[]> {
   const keys = phoneKeyVariants(theirs);
