@@ -50,7 +50,7 @@ export function IvueitCard({ workspaceId, admin, demo }: { workspaceId: number |
     if (!template && r.templates.length === 1) setTemplate(r.templates[0].id);
     setNote({
       text: `Connected to iVueit ${r.staging ? 'staging' : 'production'}. ${r.templates.length} survey${r.templates.length === 1 ? '' : 's'} on the account.`
-        + (r.webhook === 'created' || r.webhook === 'updated' ? ' Finished Vues report back to CLOZR on their own.' : ' Finished Vues are picked up every 20 minutes.'),
+        + (/VueCompleted (created|updated)/.test(r.webhook) ? ' Finished, canceled and flagged Vues report back to CLOZR on their own.' : ' Finished Vues are picked up every 20 minutes.'),
     });
   }
 

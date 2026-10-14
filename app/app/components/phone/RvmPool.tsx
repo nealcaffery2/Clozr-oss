@@ -13,12 +13,13 @@ import { supabase } from '@/lib/supabase';
 import { useSession } from '@/lib/session';
 import { loadSettings, saveSettings } from '@/lib/integrations';
 import { forgetLinePools } from '@/lib/line-pools';
+import { lineOwner, useLineNames } from '@/lib/line-names';
 import { localMidnightIso } from '@/lib/rvm';
 import { DEFAULT_RVM_CEILING, DEFAULT_RVM_RAMP, lineUsable, rampCap, rampDay, stateCode2, stateOfPhone, suggestPool, type RvmPoolSettings } from '@/lib/rvm-pool';
 import { Btn, INK, LINE, MUTED, NoteBox, card, errText, field, label, type Note } from './ui';
 
 type Row = {
-  phone_e164: string; label: string | null;
+  phone_e164: string; label: string | null; assigned_user_id?: string | null;
   pool: 'rvm' | 'dialer' | null; market_state: string | null; daily_cap: number | null; ramp_started_at: string | null;
   spam_risk: string | null;
 };
@@ -26,7 +27,7 @@ type Health = { phone_e164: string; paused: boolean; grade: string | null; spam_
 
 const POOL_LABEL: Record<string, string> = { rvm: 'RVM pool', dialer: 'Dialer pool', '': 'Not pooled' };
 
-export function RvmPool({ numbers, admin, onBuy }: { numbers: { phone_e164: string; label: string | null }[]; admin: boolean; onBuy?: () => void }) {
+export function RvmPool({ numbers, admin, onBuy }: { numbers: { phone_e164: string; label: string | null; assigned_user_id?: string | null }[]; admin: boolean; onBuy?: () => void }) {
   const wsId = useSession().workspace?.id ?? null;
   const [rows, setRows] = useState<Row[] | null>(null);
   const [missing, setMissing] = useState(false);
@@ -52,7 +53,7 @@ export function RvmPool({ numbers, admin, onBuy }: { numbers: { phone_e164: stri
     const all = new Map<string, Row>();
     for (const n of numbers) {
       const r = have.get(n.phone_e164);
-      all.set(n.phone_e164, { phone_e164: n.phone_e164, label: n.label, pool: (r?.pool as Row['pool']) ?? null, market_state: r?.market_state ?? null, daily_cap: r?.daily_cap ?? null, ramp_started_at: r?.ramp_started_at ?? null, spam_risk: r?.spam_risk ?? null });
+      all.set(n.phone_e164, { phone_e164: n.phone_e164, label: n.label, assigned_user_id: n.assigned_user_id ?? null, pool: (r?.pool as Row['pool']) ?? null, market_state: r?.market_state ?? null, daily_cap: r?.daily_cap ?? null, ramp_started_at: r?.ramp_started_at ?? null, spam_risk: r?.spam_risk ?? null });
     }
     for (const [phone, r] of have) if (!all.has(phone)) all.set(phone, { phone_e164: phone, label: null, pool: (r.pool as Row['pool']) ?? null, market_state: r.market_state ?? null, daily_cap: r.daily_cap ?? null, ramp_started_at: r.ramp_started_at ?? null, spam_risk: r.spam_risk ?? null });
     setRows([...all.values()].sort((a, b) => a.phone_e164.localeCompare(b.phone_e164)));
@@ -93,6 +94,11 @@ export function RvmPool({ numbers, admin, onBuy }: { numbers: { phone_e164: stri
 
   const suggestion = useMemo(() => suggestPool(byState, want), [byState, want]);
   const pooled = (rows ?? []).filter((r) => r.pool === 'rvm');
+  // A rep's own line (assigned in Talkr, or named in rep_phone_numbers) is
+  // their caller ID. The pool keeps its lines off live calls, so a rep's line
+  // in it blocks their dialer: (830) 971-8620, Connor's, sat there for days.
+  useLineNames();
+  const ownerOf = (r: Row) => lineOwner(r);
   const haveByState = useMemo(() => {
     const m: Record<string, number> = {};
     for (const r of pooled) { const s = stateCode2(r.market_state) ?? stateOfPhone(r.phone_e164) ?? '?'; m[s] = (m[s] ?? 0) + 1; }
@@ -104,6 +110,11 @@ export function RvmPool({ numbers, admin, onBuy }: { numbers: { phone_e164: stri
   const save = async (r: Row, patch: Partial<Row>) => {
     if (!supabase) return;
     const next = { ...r, ...patch };
+    const owner = ownerOf(r);
+    if (next.pool === 'rvm' && r.pool !== 'rvm' && owner) {
+      setNote({ ok: false, text: `${formatPhone(r.phone_e164)} is ${owner}'s line. Lines in the RVM pool are kept off live calls, so ${owner} could not dial from it. Unassign it in Talkr first, or pick another line.` });
+      return;
+    }
     setBusy(r.phone_e164); setNote(null);
     const { error } = await supabase.rpc('caller_line_set', {
       p_workspace: wsId, p_phone: next.phone_e164, p_pool: next.pool, p_state: next.market_state,
@@ -157,9 +168,13 @@ export function RvmPool({ numbers, admin, onBuy }: { numbers: { phone_e164: stri
                 const cap = rampCap(day, settings, r.daily_cap);
                 const st = stateCode2(r.market_state) ?? stateOfPhone(r.phone_e164);
                 const dis = !admin || busy === r.phone_e164 || missing;
+                const owner = ownerOf(r);
                 return (
                   <tr key={r.phone_e164} style={{ borderTop: '1px solid #f0f0f1' }}>
-                    <td style={{ padding: '7px 10px', color: INK, whiteSpace: 'nowrap' }}>{formatPhone(r.phone_e164)}{r.label ? <span style={{ color: MUTED }}> · {r.label}</span> : null}</td>
+                    <td style={{ padding: '7px 10px', color: INK, whiteSpace: 'nowrap' }}>
+                      {formatPhone(r.phone_e164)}{owner ? <span style={{ color: MUTED }}> · {owner}</span> : null}{r.label && r.label.toLowerCase() !== owner.toLowerCase() ? <span style={{ color: MUTED }}> · {r.label}</span> : null}
+                      {r.pool === 'rvm' && owner ? <div style={{ fontSize: '11.5px', color: '#b91c1c', whiteSpace: 'normal' }}>{owner}&rsquo;s line, blocked from live calls while pooled.</div> : null}
+                    </td>
                     <td style={{ padding: '7px 10px' }}>
                       <select aria-label={`Pool for ${r.phone_e164}`} disabled={dis} value={r.pool ?? ''} style={field}
                         onChange={(e) => void save(r, { pool: (e.target.value || null) as Row['pool'], ramp_started_at: e.target.value === 'rvm' && r.pool !== 'rvm' ? null : r.ramp_started_at })}>

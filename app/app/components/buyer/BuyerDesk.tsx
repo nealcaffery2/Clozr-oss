@@ -7,12 +7,14 @@ import type { ClozrView } from '@/app/clozr/view';
 import { ContractsCard } from '@/components/ContractsCard';
 import { MentionText } from '@/app/components/record/MentionField';
 import { EmailThread } from '@/app/components/record/EmailThread';
+import { AgentBadge } from '@/app/components/record/ActivityStream';
 import { attachBuyerToDeal, createBuyerNote, createBuyerOffer, listBuyerCampaigns, type BuyerCampaignRow } from '@/lib/buyer-desk';
 import { parseDollars } from '@/lib/money';
 import { uploadPof } from '@/lib/dispo-sop';
 import { emptyPof, hasPof, PofField, type PofDraft } from '@/app/components/dispo/PofField';
 import { CallInsight } from '@/app/components/record/CallInsight';
 import { Mark } from '@/components/ds/mark';
+import { UserAvatar } from '@/components/UserAvatar';
 import { SearchSelect } from '@/components/SearchSelect';
 
 const field: React.CSSProperties = {
@@ -102,10 +104,20 @@ function Activity({ V }: { V: ClozrView }) {
       </div>
       {!V.buyerTimeline.length ? <Empty label="activity" /> : !rows.length ? <Empty label={chip.toLowerCase()} /> : rows.map((t) => (
         <div key={t.id} className="clozr-tl" style={{ display: 'grid', gridTemplateColumns: '30px minmax(0,1fr)', gap: 12, padding: '14px 16px 0' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <span title={t.who} style={{ width: 30, height: 30, borderRadius: 8, background: '#fff', border: '1px solid #e4e4e7', display: 'grid', placeItems: 'center', color: t.color }}>
-              <Mark label={t.chan} size={15} />
-            </span>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 0 }}>
+            {/* A teammate's row shows their face, as the seller feed does; the buyer's own and system rows keep the channel mark. */}
+            {t.rep ? (
+              <UserAvatar name={t.rep.name} src={t.rep.avatar} size={30} radius="8px" border="1px solid #e4e4e7" />
+            ) : (
+              <span title={t.who} style={{ width: 30, height: 30, borderRadius: 8, background: '#fff', border: '1px solid #e4e4e7', display: 'grid', placeItems: 'center', color: t.color }}>
+                <Mark label={t.chan} size={15} />
+              </span>
+            )}
+            {t.rep ? (
+              <span title={t.rep.name} style={{ maxWidth: 52, marginTop: 3, fontSize: 9.5, lineHeight: 1.2, color: '#71717a', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {t.rep.name.split(' ')[0]}
+              </span>
+            ) : null}
             <span style={{ flex: 1, width: 1, background: '#e4e4e7', marginTop: 6 }} />
           </div>
           <div style={{ background: '#fff', border: '1px solid #e4e4e7', borderRadius: 10, padding: '12px 14px', minWidth: 0, marginBottom: 4 }}>
@@ -116,6 +128,7 @@ function Activity({ V }: { V: ClozrView }) {
               </span>
               <span style={{ fontWeight: 600, fontSize: 13 }}>{t.title}</span>
               {t.email ? null : <span style={{ fontSize: 12, color: '#71717a' }}>· {t.who}</span>}
+              {t.agentTag ? <AgentBadge /> : null}
               <span style={{ flex: 1 }} />
               <span style={{ fontSize: 11.5, color: '#a1a1aa', whiteSpace: 'nowrap' }}>{t.time}</span>
             </div>

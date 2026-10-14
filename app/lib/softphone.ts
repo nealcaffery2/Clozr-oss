@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isBrowserLegError, RELOAD_AND_TRY } from './browser-leg';
+import { everyWhileVisible } from './visible-timer';
 import { createEngine, engineKindOf, type EngineAudio, type EngineCall, type SoftphoneEngine } from './softphone-engine';
 import {
   callWhileLockedElsewhere, createSoftphoneLock, mayAutoAcquirePhone, PHONE_OTHER_TAB, USE_PHONE_HERE, type SoftphoneLock,
@@ -814,15 +815,15 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
 
   useEffect(() => {
     if (deviceError !== PHONE_OTHER_TAB) return;
-    const timer = setInterval(() => {
-      // A background tab must not pick the phone up the moment the row goes stale.
-      if (!mayAutoAcquirePhone(typeof document === 'undefined' ? null : document)) return;
+    // A background tab must not pick the phone up. Visible and focused tabs
+    // retry every 30s; showing the tab tries immediately (the wake effect above).
+    return everyWhileVisible(() => {
+      if (!mayAutoAcquirePhone(document)) return;
       if (lockRef.current?.tryHold() !== 'ok') return;
       setErr(null);
       setDeviceAction(null);
       setDeviceState('off');
-    }, 2000);
-    return () => clearInterval(timer);
+    }, 30_000);
   }, [deviceError, setErr]);
 
   const placeCall = useCallback<Softphone['placeCall']>(

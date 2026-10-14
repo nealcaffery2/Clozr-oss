@@ -17,7 +17,7 @@ import { ActionsMenu } from '@/app/components/bulk/ActionsMenu';
 import { firstN, inListOrder } from '@/lib/bulk-assign';
 
 type Bulk = ClozrView['buyerBulk'];
-type Mode = null | 'market' | 'rvm' | 'plan' | 'campaign' | 'enroll' | 'unenroll' | 'trace' | 'ai' | 'assign' | 'stage';
+type Mode = null | 'market' | 'email' | 'sms' | 'rvm' | 'plan' | 'campaign' | 'enroll' | 'unenroll' | 'trace' | 'ai' | 'assign' | 'stage';
 
 const btn: React.CSSProperties = { flex: 'none', whiteSpace: 'nowrap', height: '28px', padding: '0 10px', borderRadius: '7px', border: '1px solid rgba(10, 133, 96,.25)', background: '#fff', fontSize: '12px', color: '#18181b', cursor: 'pointer', fontWeight: 500 };
 const field: React.CSSProperties = { height: '30px', borderRadius: '7px', border: '1px solid #e4e4e7', padding: '0 8px', fontSize: '12.5px', background: '#fff' };
@@ -93,11 +93,14 @@ export function BuyerBulkBar({ bulk, selectedIds, onClear, compact, list = [], o
           title="Assign to one teammate, or split between several in list order" style={{ ...btn, background: mode === 'assign' ? '#E7F8F1' : '#fff' }}>
           Assign
         </button>
-        <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'market' ? null : 'market')} style={btn}>Send to marketing</button>
+        <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'market' ? null : 'market')} aria-pressed={mode === 'market'} style={btn}>Send to marketing</button>
+        {/* Straight to the selection, no deal needed: a note, a check-in, an offer of a demo. */}
+        <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'email' ? null : 'email')} aria-pressed={mode === 'email'} style={btn}>Send email</button>
+        <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'sms' ? null : 'sms')} aria-pressed={mode === 'sms'} style={btn}>Send text</button>
+        <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'rvm' ? null : 'rvm')} aria-pressed={mode === 'rvm'} title="Ringless voicemail" style={btn}>Send RVM</button>
         <button className="dc11" disabled={busy} onClick={() => { onClear(); void bulk.addToCallQueue(selectedIds); }} style={btn}>Add to call queue</button>
         {/* Everything else under Actions ▾ (app/components/bulk/ActionsMenu). */}
         <ActionsMenu accent="#0A8560" actions={[
-          { key: 'rvm', label: 'RVM', group: 'Reach out', note: 'ringless voicemail', run: () => setMode('rvm') },
           { key: 'campaign', label: 'Build campaign', group: 'Reach out', run: () => setMode('campaign') },
           { key: 'plan', label: 'Enroll for a deal', group: 'Reach out', run: () => setMode('plan') },
           { key: 'stage', label: 'Move to stage…', group: 'Organize', run: () => setMode('stage') },
@@ -138,7 +141,7 @@ export function BuyerBulkBar({ bulk, selectedIds, onClear, compact, list = [], o
         </div>
       ) : null}
       {mode === 'market' ? <Market bulk={bulk} selectedIds={selectedIds} onClose={() => setMode(null)} /> : null}
-      {mode === 'rvm' ? <Market bulk={bulk} selectedIds={selectedIds} channel="rvm" onClose={() => setMode(null)} /> : null}
+      {mode === 'email' || mode === 'sms' || mode === 'rvm' ? <Market key={mode} bulk={bulk} selectedIds={selectedIds} channel={mode} direct onClose={() => setMode(null)} /> : null}
       {mode === 'campaign' ? <Campaign bulk={bulk} selectedIds={selectedIds} onClose={() => setMode(null)} /> : null}
       {mode === 'plan' ? <Plan bulk={bulk} selectedIds={selectedIds} onClose={() => setMode(null)} onDone={done} /> : null}
       {mode === 'trace' ? (
@@ -184,8 +187,12 @@ function DealPick({ bulk, value, onChange }: { bulk: Bulk; value: string; onChan
   );
 }
 
-/** Buyers -> Send to marketing: the shared bulk composer, after they pick which deal (app/components/bulk/BulkCompose.tsx). */
-function Market({ bulk, selectedIds, channel, onClose }: { bulk: Bulk; selectedIds: string[]; channel?: 'sms' | 'rvm'; onClose: () => void }) {
+/**
+ * Buyers -> Send to marketing: the shared bulk composer, after they pick which
+ * deal (app/components/bulk/BulkCompose.tsx). `direct` is Send email, text or
+ * RVM: the same composer on that channel, where a deal is optional.
+ */
+function Market({ bulk, selectedIds, channel, direct, onClose }: { bulk: Bulk; selectedIds: string[]; channel?: 'email' | 'sms' | 'rvm'; direct?: boolean; onClose: () => void }) {
   const session = useSession();
   // The sender's own signature fields: {{rep_phone}} and {{rep_email}} in the dispo templates.
   const rep = { ...bulk.textCtx, repPhone: session.profile?.phone ?? '', repEmail: session.user?.email ?? '' };
@@ -199,7 +206,7 @@ function Market({ bulk, selectedIds, channel, onClose }: { bulk: Bulk; selectedI
       channel={channel}
       people={people}
       deals={bulk.deals}
-      requireDeal
+      requireDeal={!direct}
       workspaceId={bulk.workspaceId}
       canWrite={bulk.canWrite}
       userId={session.user?.id ?? null}

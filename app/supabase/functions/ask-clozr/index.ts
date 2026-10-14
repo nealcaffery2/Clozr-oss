@@ -125,6 +125,20 @@ const READ_TOOLS: Anthropic.Tool[] = [
     input_schema: { type: 'object', properties: { seller_id: { type: 'number' } }, required: ['seller_id'] },
   },
   {
+    name: 'search_conversations',
+    description: 'What was said, across every record: finds a word or phrase in every call transcript, call summary, text, email and voicemail in the workspace, best match first, with the seller or buyer each is on and the words around the match. Use it for "who mentioned a roof leak", "which sellers talked about probate", "find the call where they said divorce". Web-search syntax: "exact phrase", -word to leave out, or. English stemming, so roof also finds roofs and roofing.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The words to find, e.g. roof leak, "behind on payments", probate -will.' },
+        channels: { type: 'array', items: { type: 'string', enum: ['call', 'sms', 'email', 'voicemail', 'note'] }, description: 'Only these kinds of message. Default all.' },
+        since_days: { type: 'number', description: 'Only messages from the last this many days.' },
+        limit: { type: 'number', description: `1–${LIMIT}, default 8.` },
+      },
+      required: ['query'],
+    },
+  },
+  {
     name: 'find_buyers',
     description: 'Cash buyers and their buy boxes. Filter by free text (name, company, email, phone), by market, or by the price they can go to.',
     input_schema: {
@@ -371,6 +385,31 @@ async function runTool(ctx: Ctx, name: string, args: Json): Promise<unknown> {
       recent: (comms.data ?? []).map((c) => ({ ...c, body: String(c.body ?? '').slice(0, 300) })),
       action_plans: (plans.data ?? []).map((e) => ({ id: e.id, plan: (e.action_plans as unknown as { name?: string } | null)?.name ?? null, status: e.status, stopped_reason: e.stopped_reason, enrolled_at: e.enrolled_at, routed: e.routed_reason })),
       deals: deals.data ?? [],
+    };
+  }
+
+  if (name === 'search_conversations') {
+    // The raw words, not ilikeSafe(): search_communications reads them as a web search (migration 278).
+    const words = typeof args.query === 'string' ? args.query.trim().slice(0, 200) : '';
+    if (!words) return { error: 'query is required: the words to find' };
+    const channels = Array.isArray(args.channels) ? args.channels.filter((c): c is string => typeof c === 'string') : [];
+    const since = Number(args.since_days) > 0 ? Date.parse(days(Number(args.since_days))) : null;
+    // Asked for more than shown when a date cut follows, so the cut does not empty a full page.
+    const { data, error } = await db.rpc('search_communications', { ws, q: words, channels: channels.length ? channels : null, max: since ? 50 : limit });
+    if (error) throw error;
+    type Hit = { id: number; channel: string; direction: string | null; occurred_at: string; duration_s: number | null; seller_id: number | null; buyer_id: number | null; deal_id: number | null; record_name: string | null; snippet: string | null };
+    const hits = ((data ?? []) as Hit[]).filter((h) => since == null || Date.parse(h.occurred_at) >= since).slice(0, limit);
+    remember(ctx, 'seller', hits.map((h) => h.seller_id));
+    remember(ctx, 'buyer', hits.map((h) => h.buyer_id));
+    remember(ctx, 'deal', hits.map((h) => h.deal_id));
+    return {
+      count: hits.length,
+      matches: hits.map((h) => ({
+        channel: h.channel, direction: h.direction, occurred_at: h.occurred_at, duration_s: h.duration_s,
+        seller_id: h.seller_id, buyer_id: h.buyer_id, deal_id: h.deal_id, on: h.record_name,
+        // The matched words between « », as the snippet marked them.
+        said: String(h.snippet ?? '').replace(/\u0002/g, '«').replace(/\u0003/g, '»').replace(/\s+/g, ' ').trim(),
+      })),
     };
   }
 

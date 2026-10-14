@@ -14,7 +14,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, ArrowUp, Ban, CalendarCheck, Clock, Mail, MessageSquare, Phone, Power, Sparkles, Voicemail, X } from 'lucide-react';
 import {
   CHANNEL_LABEL, CHANNEL_ORDER, QUICK_ASKS, RVM_HELP, actionText, agoLabel, whenLabel,
-  type AiAgentApi, type AgentAction, type Channel, type ChatTurn, type RecordKind, type RecordStatus, type Result,
+  type AiAgentApi, type AgentAction, type Channel, type ChatTurn, type Contact, type RecordKind, type RecordStatus, type Result,
 } from '@/lib/ai-agent-client';
 import { AgentAvatar } from './AgentAvatar';
 import { AiaStyles } from './styles';
@@ -44,6 +44,8 @@ export function AiAgentDialog({ api, kind, recordId, recordName, canWrite, initi
   const [pending, setPending] = useState<ChatTurn | null>(null);
   const [agentKey, setAgentKey] = useState<string>(initial?.enrollment?.agent_key ?? initial?.agent?.agent_key ?? '');
   const [channels, setChannels] = useState<Channel[]>(initial?.enrollment?.channels ?? defaultChannels(initial));
+  // How the agent opens its calls: the rep's pick, else what was saved, else what the history suggests.
+  const [contactPick, setContactPick] = useState<Contact | null>(null);
   const box = useRef<HTMLDivElement | null>(null);
   const thread = useRef<HTMLDivElement | null>(null);
   const area = useRef<HTMLTextAreaElement | null>(null);
@@ -96,6 +98,7 @@ export function AiAgentDialog({ api, kind, recordId, recordName, canWrite, initi
   const first = recordName.split(/\s+/)[0] || (kind === 'buyer' ? 'this buyer' : 'this seller');
   const agentName = agent?.name ?? 'Your agent';
   const locked = !canWrite || !!blocked || !!noAgent || !agent;
+  const contact: Contact = contactPick ?? st?.contact ?? st?.contact_suggested ?? 'first';
 
   useEffect(() => { thread.current?.scrollTo({ top: thread.current.scrollHeight, behavior: 'smooth' }); }, [chat.length, busy]);
 
@@ -103,7 +106,7 @@ export function AiAgentDialog({ api, kind, recordId, recordName, canWrite, initi
     if (locked || busy) return;
     setError(null); setBusy(kindOfBusy);
     if (message) setPending({ role: 'rep', text: message, at: new Date().toISOString() });
-    const body = { agent_key: agentKey || undefined, channels, ...(message ? { message } : {}), ...(kindOfBusy === 'auto' ? { mode: 'auto' as const } : {}) };
+    const body = { agent_key: agentKey || undefined, channels, contact, ...(message ? { message } : {}), ...(kindOfBusy === 'auto' ? { mode: 'auto' as const } : {}) };
     const r = kindOfBusy === 'chat' ? await api.chat(kind, recordId, body) : await api.start(kind, recordId, body);
     setPending(null); setBusy(null);
     if (!r.ok) { setError(r.error); if (message) setDraft(message); return; }
@@ -225,6 +228,7 @@ export function AiAgentDialog({ api, kind, recordId, recordName, canWrite, initi
 
             {/* Composer */}
             <div style={{ padding: '10px 14px 14px' }}>
+              {!on ? <ContactPicker value={contact} onChange={setContactPick} disabled={locked || !!busy} first={first} suggested={!contactPick && !st?.contact} /> : null}
               <div className="aia-composer" style={{ border: `1px solid ${LINE}`, borderRadius: 18, background: '#fff', boxShadow: '0 1px 2px rgba(15,23,42,.04), 0 8px 24px -16px rgba(15,23,42,.25)', padding: '10px 10px 8px 14px' }}>
                 <label htmlFor="aia-input" className="aia-sr">Message {agentName}</label>
                 <textarea id="aia-input" ref={area} rows={2} value={draft} disabled={locked}
@@ -388,6 +392,37 @@ function BigSwitch({ on, busy, disabled, onTurnOn, onTurnOff }: { on: boolean; b
         <Power size={13} />
       </span>
     </button>
+  );
+}
+
+const CONTACT_CHOICES: { value: Contact; label: string; hint: (first: string) => string }[] = [
+  { value: 'first', label: 'First call', hint: (f) => `A new lead or cold call. It opens with who it is and why it's calling about ${f}'s property.` },
+  { value: 'known', label: 'Already talking', hint: (f) => `You know it's ${f}. It opens as a follow-up and picks up where you left off.` },
+];
+
+/** First call or follow-up: sets how the agent opens its calls and its first touch (migration 258). */
+function ContactPicker({ value, onChange, disabled, first, suggested }: { value: Contact; onChange: (c: Contact) => void; disabled: boolean; first: string; suggested: boolean }) {
+  const pick = CONTACT_CHOICES.find((c) => c.value === value) ?? CONTACT_CHOICES[0]!;
+  return (
+    <div role="group" aria-labelledby="aia-contact-label" style={{ marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span id="aia-contact-label" style={{ fontSize: 11.5, fontWeight: 500, color: '#52525b' }}>Have you talked with {first}?</span>
+        <div style={{ display: 'inline-flex', padding: 2, borderRadius: 10, background: '#f4f4f5', border: `1px solid ${LINE}` }}>
+          {CONTACT_CHOICES.map((c) => {
+            const sel = c.value === value;
+            return (
+              <button key={c.value} type="button" aria-pressed={sel} disabled={disabled} onClick={() => onChange(c.value)} className="aia-seg"
+                style={{ height: 28, padding: '0 12px', borderRadius: 8, border: 0, fontSize: 12, fontWeight: 600, fontFamily: 'inherit', cursor: disabled ? 'not-allowed' : 'pointer',
+                  background: sel ? '#fff' : 'transparent', color: sel ? INK : '#52525b', boxShadow: sel ? '0 1px 2px rgba(15,23,42,.08), 0 0 0 1px rgba(15,23,42,.06)' : 'none' }}>
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+        {suggested ? <span style={{ fontSize: 11.5, color: '#52525b' }}>{value === 'known' ? 'Picked from the history' : 'No conversation on file'}</span> : null}
+      </div>
+      <p style={{ margin: '5px 0 0', fontSize: 12, color: '#52525b', lineHeight: 1.45 }}>{pick.hint(first)}</p>
+    </div>
   );
 }
 

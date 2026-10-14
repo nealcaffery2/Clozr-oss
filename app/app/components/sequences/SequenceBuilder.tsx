@@ -29,6 +29,7 @@ import {
   type SequenceStepDto,
 } from '@/lib/talkr-web/api';
 import { useSoftphone } from '@/app/components/talkr/softphoneAdapter';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { Icon } from '@/app/components/talkr/Icon';
 import {
   Button,
@@ -142,8 +143,7 @@ export function SequenceBuilder({ id, onOpen, onBack, headerLeft }: { id: string
 
   useEffect(() => {
     setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(t);
+    return everyWhileVisible(() => setNow(Date.now()), 30_000);
   }, []);
 
   const applySequence = useCallback((s: SequenceDto) => {
@@ -205,8 +205,7 @@ export function SequenceBuilder({ id, onOpen, onBack, headerLeft }: { id: string
   // Refresh the run table while leads are moving through the sequence.
   useEffect(() => {
     if (!authed || isNew || !runs.some((r) => ACTIVE.has(r.status))) return;
-    const t = setInterval(() => void load(), 30_000);
-    return () => clearInterval(t);
+    return everyWhileVisible(() => { void load(); }, 30_000);
   }, [authed, isNew, runs, load]);
 
   const problems = useMemo(() => steps.map(stepProblem), [steps]);

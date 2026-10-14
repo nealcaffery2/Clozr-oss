@@ -28,6 +28,8 @@ export function AiaStyles() {
       .aia-glow { position: absolute; inset: 0; background: radial-gradient(600px 120px at 10% -20%, rgba(255,255,255,.22), transparent 60%), radial-gradient(400px 140px at 100% 120%, rgba(255,255,255,.12), transparent 60%); pointer-events: none; }
       .aia-orbit { position: absolute; inset: -6px; border-radius: 50%; border: 2px dashed rgba(10,133,96,.35); animation: aia-spin 14s linear infinite; }
       .aia-icon-btn:hover:not(:disabled) { background: rgba(255,255,255,.2) !important; }
+      .aia-seg { transition: background .15s, color .15s, box-shadow .15s; }
+      .aia-seg:hover:not(:disabled):not([aria-pressed="true"]) { color: #18181b !important; background: rgba(255,255,255,.6) !important; }
       .aia-pill { transition: box-shadow .15s, transform .15s, background .2s, border-color .2s; }
       .aia-pill:hover:not(:disabled) { transform: translateY(-1px); }
       .aia-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

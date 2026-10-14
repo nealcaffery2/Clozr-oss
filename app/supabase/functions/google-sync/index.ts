@@ -614,6 +614,9 @@ Deno.serve(async (req) => {
         body: html && html.length <= HTML_BODY_MAX ? html : bodyText.slice(0, 20_000),
         from_email: account.email.toLowerCase(), to_email: to.join(', '),
         status: 'sent', source: 'gmail', source_id: messageId,
+        // Who sent it, so the leaderboard and the rep's activity count it
+        // (the line-owner trigger, migration 153, fills calls and texts only).
+        rep_id: account.user_id,
       };
       let { data: row, error } = await admin.from('communications')
         .upsert({ ...base, cc_email: cc.join(', ') || null, bcc_email: bcc.join(', ') || null }, { onConflict: 'workspace_id,source,source_id' }).select('id').maybeSingle();

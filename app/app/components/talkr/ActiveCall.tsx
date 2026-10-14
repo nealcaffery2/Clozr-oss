@@ -26,6 +26,7 @@ import { Avatar, Eyebrow } from './ui';
 import { IosSegmented, PhoneSheet } from './ios';
 import { ProspectTime } from './ProspectTime';
 import { useSoftphone } from './softphoneAdapter';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { api, type ContactDto, type ParticipantDto, type TeamMemberDto } from '@/lib/talkr-web/api';
 import { duration, formatPhone, toE164, tzTime, zoneForNumber } from '@/lib/talkr-web/time';
 import { isIOSDevice } from '@/lib/phone-audio';
@@ -420,14 +421,15 @@ export function ActiveCall({
 
   const startedAt = active?.startedAt ?? null;
   useEffect(() => {
-    setNow(Date.now());
-    const t = setInterval(() => {
+    const tick = () => {
       setNow(Date.now());
       // A held call is still connected; the timer keeps running, as it does on
-      // every phone the rep has ever used.
+      // every phone the rep has ever used. A hidden tab pauses and catches up
+      // from the start time when it is shown.
       if (startedAt) setElapsed(Math.floor((Date.now() - startedAt) / 1000));
-    }, 1000);
-    return () => clearInterval(t);
+    };
+    tick();
+    return everyWhileVisible(tick, 1000);
   }, [startedAt]);
 
   /**

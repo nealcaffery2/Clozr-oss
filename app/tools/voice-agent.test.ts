@@ -624,6 +624,9 @@ test('variables list reads in rep order and leaves the brief for its own block',
   assert.deepEqual(v.map((x) => x.key), ['first_name', 'rep_name', 'do_not_engage', 'zeta']);
   assert.equal(v[2]!.value, 'false');
 });
+test('variables list hides the lookup token', () => {
+  assert.deepEqual(orderVariables({ record_id: '12', record_token: '1800000000.abc', first_name: 'Kara' }).map((x) => x.key), ['first_name', 'record_id']);
+});
 test('the demo session carries every variable the agent prompt expects, and the opener does not announce an AI', () => {
   const t = demoTestSession(ok, { key: 'lead_manager', version: 3 });
   for (const k of ['first_name', 'property_address', 'lead_brief', 'last_contact_summary', 'next_step', 'rep_name', 'company', 'agent_name', 'caller_known', 'do_not_engage', 'record_kind', 'offer_low', 'offer_high', 'property_facts', 'mortgage_payoff_estimate']) {

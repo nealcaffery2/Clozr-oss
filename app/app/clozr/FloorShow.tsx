@@ -5,11 +5,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ClozrView } from '@/app/clozr/view';
 import {
-  audienceSees, canSpin, catchUp, dayStats, diffFloor, floorBadgeHits, metricLabel,
-  monthlyIsStale, signedFromContracts, signedFromMail, sliceMid, snapFrom, spinWheel, wheelPrizes,
+  audienceSees, CATCH_UP_AFTER_MS, canSpin, catchUp, dayStats, diffFloor, floorBadgeHits, metricLabel,
+  monthlyIsStale, signedFromContracts, signedFromMail, sliceMid, snapFrom, spinWheel, throttleLive, wheelPrizes,
   type FloorEvent, type WheelPrize,
 } from '@/lib/floor-show';
 import { playFloorSound, soundFor, unlockFloorAudio } from '@/lib/floor-audio';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { floorEventSilenced } from '@/lib/floor-notify';
 import { getFloorNotifyPrefs, useFloorNotifyPrefs } from '@/lib/floor-notify-prefs';
 import {
@@ -113,6 +114,8 @@ export function FloorShow({ V }: { V: ClozrView }) {
   const seen = useRef(new Set<string>());
   // The first diff after the screen opens is a catch-up (see catchUp in lib/floor-show).
   const caughtUp = useRef(false);
+  // When the board was last diffed: a long gap makes the next look a catch-up again.
+  const lastDiff = useRef(0);
   const confettiOn = current?.kind === 'contract';
   const canvasRef = useConfetti(confettiOn);
 
@@ -123,7 +126,7 @@ export function FloorShow({ V }: { V: ClozrView }) {
     const stats = dayStats(filtered);
     const hits = floorBadgeHits(filtered);
     const contracts = collectContracts(filtered, V.floorMail);
-    return JSON.stringify({ stats, hits: hits.map((h) => `${h.personId}:${h.badge.id}@${h.window}`), contracts: contracts.map((c) => c.id), rev: V.floorResetRev });
+    return JSON.stringify({ partial: raw.partial ?? null, stats, hits: hits.map((h) => `${h.personId}:${h.badge.id}@${h.window}`), contracts: contracts.map((c) => c.id), rev: V.floorResetRev });
   }, [V.floorRaw, V.floorMail, V.floorResetRev]);
 
   // Unlock on the first click or key, never at mount: building an AudioContext
@@ -169,6 +172,10 @@ export function FloorShow({ V }: { V: ClozrView }) {
     // zeroed after an import still has the imported deals, so every login
     // announced their old badges again and the reset took them away a second later.
     if (!V.floorRaw || !settingsReady) return;
+    // Not on the quick first load either: it has no offers, no deal money and only the newest
+    // calls, so the catch-up was spent on it (with a false "Warm Milk" from the empty offers) and
+    // every badge the full read then revealed popped up one by one with a sound.
+    if (V.floorRaw.partial === 'loading') return;
     const filtered = applyLeaderboardResets(V.floorRaw, getLeaderboardResets());
     const stats = dayStats(filtered);
     const hits = floorBadgeHits(filtered);
@@ -176,10 +183,16 @@ export function FloorShow({ V }: { V: ClozrView }) {
     const prev = loadSnap(V.floorWorkspaceId);
     const events = diffFloor(prev, stats, hits, contracts).filter((e) => audienceSees(e, V.floorMe, V.floorAdmin));
     saveSnap(V.floorWorkspaceId, snapFrom(stats, hits, contracts, prev));
-    const first = !caughtUp.current;
+    const now = Date.now();
+    const first = !caughtUp.current || now - lastDiff.current > CATCH_UP_AFTER_MS;
     caughtUp.current = true;
-    if (first) for (const e of catchUp(events)) push(e, false, true);
-    else for (const e of events) push(e, false);
+    lastDiff.current = now;
+    if (first) for (const e of catchUp(events, now)) push(e, false, true);
+    else {
+      const { loud, quiet } = throttleLive(events, now);
+      for (const e of loud) push(e, false);
+      for (const e of quiet) push(e, false, true);
+    }
     // feedKey is the snapshot of the board; the function closes over the latest view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feedKey, settingsReady]);
@@ -202,9 +215,9 @@ export function FloorShow({ V }: { V: ClozrView }) {
       last = Date.now();
       V.reloadCrm();
     };
-    const t = window.setInterval(refresh, 30_000);
-    document.addEventListener('visibilitychange', refresh);
-    return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', refresh); };
+    return everyWhileVisible(refresh, 30_000);
+    // reloadCrm is the call. V is a new object on most renders, so it stays off this list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [V.floorWorkspaceId, V.reloadCrm]);
 
   useEffect(() => {

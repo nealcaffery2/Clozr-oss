@@ -17,7 +17,7 @@
 // one report; this list joins the two by name and shows the newer read.
 
 import React, { useState } from 'react';
-import { type Check, type DomainRow, deliverability, textValue } from '@/lib/deliverability';
+import { type Check, type DnsFix, type DomainRow, deliverability, textValue } from '@/lib/deliverability';
 import { type ColdDomain, type ColdOverview, coldPool } from '@/lib/cold-pool';
 import { Badge, Copy, Fold, Mark, Note, Section, type Tone, danger, fieldLabel, fullDate, ghost, input, mono, pct, primary, relDays, row, toneOf } from './ui';
 
@@ -194,20 +194,9 @@ export function Domains({ workspaceId, domains, admin, onChange, cold }: {
 
             {fixes.length > 0 && (
               <div style={{ border: '1px solid #fde68a', background: '#fffbeb', borderRadius: '10px', padding: '10px 12px', marginBottom: '10px' }}>
-                <div style={{ fontSize: '12.5px', fontWeight: 600, marginBottom: '6px' }}>Records to add at your DNS host</div>
-                {fixes.map((c) => (
-                  <div key={c.key} style={{ padding: '6px 0', borderTop: '1px solid #fef3c7' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: '4px 8px', alignItems: 'start' }}>
-                      <span style={{ ...mono, fontWeight: 700 }}>{textValue(c.fix!.type)}</span>
-                      <span style={{ minWidth: 0 }}>
-                        <span style={{ ...mono, display: 'block' }}>{textValue(c.fix!.host)}</span>
-                        <span style={{ ...mono, display: 'block', color: '#52525b' }}>{textValue(c.fix!.value)}</span>
-                      </span>
-                      <Copy text={textValue(c.fix!.value)} />
-                    </div>
-                    <div style={{ fontSize: '11.5px', color: '#78350f', marginTop: '3px' }}>{textValue(c.label)}: {textValue(c.fix!.note ?? c.detail)}</div>
-                  </div>
-                ))}
+                <div style={{ fontSize: '12.5px', fontWeight: 600, marginBottom: '2px' }}>Records to add at your DNS host</div>
+                <div style={{ fontSize: '11.5px', color: '#78350f', marginBottom: '6px' }}>Type each Name exactly as shown. Use <span style={mono}>@</span> only where it says <span style={mono}>@</span>.</div>
+                {fixes.map((c) => <FixRow key={c.key} check={c} />)}
               </div>
             )}
 
@@ -259,9 +248,43 @@ function CheckRow({ c }: { c: Check }) {
         </span>
         <span style={{ color: '#52525b', overflowWrap: 'anywhere', flex: '1 1 240px', minWidth: 0 }}>
           {textValue(c.detail)}
-          {status !== 'fail' && status !== 'warn' && c.fix ? <span style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '3px', flexWrap: 'wrap' }}><span style={{ ...mono, color: '#71717a' }}>{textValue(c.fix.host)} {textValue(c.fix.type)} {textValue(c.fix.value)}</span><Copy text={textValue(c.fix.value)} /></span> : null}
+          {status !== 'fail' && status !== 'warn' && c.fix ? <span style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '3px', flexWrap: 'wrap' }}><span style={{ ...mono, color: '#71717a' }}>{textValue(c.fix.host)} {textValue(c.fix.type)} {textValue(c.fix.value)}</span>{pasteable(c.fix) ? <Copy text={textValue(c.fix.value)} label="Copy value" /> : null}</span> : null}
         </span>
       </span>
+    </div>
+  );
+}
+
+/** Values like "p=<the key Resend shows>" from reports saved before `paste` existed are instructions too. */
+const pasteable = (fix: DnsFix) => fix.paste !== false && !/<[^>]+>/.test(textValue(fix.value));
+
+/** One record to add: Name as the DNS host's form wants it (relative to the zone), the full name under it, and the value. */
+export function FixRow({ check: c }: { check: Check }) {
+  const fix = c.fix!;
+  const host = textValue(fix.host);
+  const fqdn = textValue(fix.fqdn);
+  const value = textValue(fix.value);
+  const paste = pasteable(fix);
+  const label: React.CSSProperties = { fontSize: '11px', fontWeight: 500, color: '#78350f' };
+  return (
+    <div style={{ padding: '6px 0', borderTop: '1px solid #fef3c7' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: '4px 8px', alignItems: 'baseline' }}>
+        <span style={label}>Type</span>
+        <span style={{ ...mono, fontWeight: 700 }}>{textValue(fix.type)}</span>
+        <span />
+        <span style={label}>Name</span>
+        <span style={{ minWidth: 0 }}>
+          <span style={{ ...mono, fontWeight: 600 }}>{host}</span>
+          {fqdn && fqdn !== host ? <span style={{ ...mono, display: 'block', fontSize: '11px', color: '#71717a' }}>{fqdn}</span> : null}
+        </span>
+        <Copy text={host} label="Copy name" />
+        <span style={label}>Value</span>
+        {paste
+          ? <span style={{ ...mono, color: '#3f3f46' }}>{value}</span>
+          : <span style={{ fontSize: '12px', color: '#3f3f46' }}>{value}</span>}
+        {paste ? <Copy text={value} label="Copy value" /> : <span />}
+      </div>
+      <div style={{ fontSize: '11.5px', color: '#78350f', marginTop: '3px' }}>{textValue(c.label)}: {textValue(fix.note ?? c.detail)}</div>
     </div>
   );
 }

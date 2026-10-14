@@ -30,8 +30,8 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import { corsFor, fence, jsonWith, rateLimit, serverError, tooMany, UNTRUSTED_RULE } from '../_shared/security.ts';
 import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
-import { NO_EXTRAS, buildInitiation, phoneKey, pickPersona, resolveCaller, type CallLeg, type Resolution } from '../_shared/voice-agent.ts';
-import { initiationFor, loadCandidates, missingRelation } from '../_shared/voice-agent-db.ts';
+import { NO_EXTRAS, TEST_CALL_GOAL, buildInitiation, outboundOpener, pickPersona, resolveCaller, testRecordToken, type CallLeg, type Resolution } from '../_shared/voice-agent.ts';
+import { initiationFor, loadCandidates, missingRelation, recordPhoneKey } from '../_shared/voice-agent-db.ts';
 import {
   ElevenError, PREVIEW_MAX_CHARS, SAMPLE_BUYER, SAMPLE_BUYER_MEMORY, SAMPLE_CANDIDATE, SAMPLE_MEMORY, SAMPLE_REP, agentBody, builtWriteTools, callOut, checksFromAgent, deleteRemoteAgent, elJson,
   generateSecret, getSignedUrl, listVoices, previewSpeech, runConnect, webhookUrls,
@@ -136,6 +136,8 @@ Deno.serve(async (req) => {
   /** An ElevenLabs failure as our answer: 502 with its (redacted) reason, never a 500. */
   const elFail = (e: unknown) => {
     if (!(e instanceof ElevenError)) return null;
+    // A 5xx is ElevenLabs down or degraded, not our settings: say so, and where to look.
+    if (e.status >= 500) return json({ error: `ElevenLabs is having trouble on their side (${e.status}), so nothing reached the agent. Check status.elevenlabs.io and try again in a few minutes.` }, 502);
     const hint = e.status === 401 || e.status === 403 ? 'ElevenLabs rejected the API key or its permissions' : 'ElevenLabs refused the request';
     return json({ error: `${hint}: ${e.message}` }, 502);
   };
@@ -376,7 +378,12 @@ Deno.serve(async (req) => {
     // The secrets are stored before ElevenLabs is told them, so a webhook that fires the
     // moment the agent exists already finds its row.
     await persist(state);
-    const r = await runConnect(cfg, state, settings, TEMPLATES, urls);
+    // The team's first names, so a caller asking for a rep by name is heard right.
+    const { data: members } = await admin.from('workspace_members').select('user_id').eq('workspace_id', ws);
+    const ids = ((members ?? []) as { user_id: string }[]).map((m) => m.user_id).slice(0, 60);
+    const { data: people } = ids.length ? await admin.from('profiles').select('full_name').in('id', ids) : { data: [] };
+    const teamNames = ((people ?? []) as { full_name?: string | null }[]).map((p) => String(p.full_name ?? '').trim().split(/\s+/)[0]).filter(Boolean);
+    const r = await runConnect(cfg, state, settings, TEMPLATES, urls, teamNames);
     await persist(r.state);
 
     // What to do by hand: the phone number, settings ElevenLabs cannot express, and any step that failed.
@@ -750,11 +757,7 @@ Deno.serve(async (req) => {
           // Checked as the caller, so a rep who cannot see the record cannot hear its memory.
           const { data: visible } = await asCaller.from(kind === 'seller' ? 'sellers' : 'buyers').select('id, phone, phone_key').eq('id', id).eq('workspace_id', ws).maybeSingle();
           if (!visible) return json({ error: 'record not found' }, 404);
-          let pk = phoneKey((visible as Any).phone_key ?? (visible as Any).phone);
-          if (!pk && kind === 'buyer') {
-            const { data: bp } = await admin.from('buyer_phones').select('phone, phone_key').eq('workspace_id', ws).eq('buyer_id', id).order('position').limit(5);
-            for (const p of (bp ?? []) as Any[]) { pk = phoneKey(p.phone_key ?? p.phone); if (pk) break; }
-          }
+          const pk = await recordPhoneKey(admin, ws, kind, id, visible as Any);
           if (!pk) return json({ error: 'This record has no phone number, so there is no caller to test as.' }, 422);
           const all = await loadCandidates(admin, ws, pk);
           const chosen = all.find((c) => c.kind === kind && c.id === id);
@@ -765,7 +768,15 @@ Deno.serve(async (req) => {
           // chose who is calling, even when a shared number would leave it ambiguous.
           if (res.status !== 'blocked') res = { status: 'one', match: chosen };
           init = await initiationFor(admin, ws, res, { direction: 'inbound', ours: '', theirs: pk }, persona, live);
+          // A browser test has no caller ID: these let lead_context find this record (voice-agent toolCaller),
+          // and the token proves test_session picked it, since the browser passes the variables on itself.
+          const dv = init.dynamic_variables as Record<string, unknown>;
+          dv.record_kind = kind;
+          dv.record_id = String(id);
+          dv.record_token = await testRecordToken(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', { ws, agentId: String(row.agent_id), kind, id });
         }
+        // A test from the console is the team: quiet hours and call hours do not apply, day or night.
+        (init.dynamic_variables as Record<string, unknown>).call_goal = TEST_CALL_GOAL;
         if (typeof body.phone === 'string' && body.phone.trim()) {
           // A real phone test: the agent rings this number with the same brief. Nothing is read from or written to the CRM.
           const to = phoneE164(body.phone);
@@ -777,7 +788,12 @@ Deno.serve(async (req) => {
           const fromId = local?.el_phone_number_id ?? live.channels.phone_number_id;
           if (!fromId) return json({ error: 'This agent has no phone number to call from yet. Add one on the Handling tab, then publish.' }, 409);
           const dv = init.dynamic_variables as Record<string, unknown>;
-          const first_message = dv.first_name ? `Hi, is this ${dv.first_name}?` : 'Hi, who am I speaking with?';
+          // A phone test has a caller ID (the tester's), so lead_context looks up that number, never the record.
+          dv.record_token = '';
+          // The same opener a real outbound call gets (outboundOpener), so the test hears what a seller hears.
+          const first_message = dv.first_name
+            ? outboundOpener(String(dv.first_name), persona, dv.record_kind === 'seller' ? String(dv.property_address ?? '') : '')
+            : 'Hi, who am I speaking with?';
           try {
             const r = await elJson<{ success?: boolean; message?: string; conversation_id?: string | null }>(cfg, 'POST', '/v1/convai/sip-trunk/outbound-call', {
               agent_id: row.agent_id, agent_phone_number_id: fromId, to_number: to,

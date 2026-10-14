@@ -191,6 +191,7 @@ eq('settingsFromRow of junk', settingsFromRow('junk'), D);
 // ---- text helpers ----
 eq('cleanText keeps a lone brace', cleanText('a { b } c', 50), 'a { b } c');
 eq('cleanText multiline', cleanText('a\n\n\n\nb', 50, true), 'a\n\nb');
+eq('a prompt cannot read the lookup-only variables', sanitizeVars('{{record_id}} {{record_token}} {{record_kind}}'), 'record_id record_token {{record_kind}}');
 eq('sanitizeVars keeps real and system variables, defuses the rest', sanitizeVars('{{first_name}} {{system__time}} {{ company }} {{nope}} {{'), '{{first_name}} {{system__time}} {{company}} nope ');
 eq('cleanVarText caps after sanitising', cleanVarText('{{first_name}}' + 'x'.repeat(50), 20), '{{first_name}}xxxxxx');
 

@@ -7,6 +7,7 @@ import { BackLink } from '@/components/ds/BackLink';
 import { keepInView } from '@/components/ds/keepInView';
 import { UserAvatar } from '@/components/UserAvatar';
 import type { ClozrView } from '@/app/clozr/view';
+import { holdReporting } from '@/lib/use-crm';
 
 // A rep's face on the board: photo (Google photos need no-referrer, which a CSS
 // background can't send), else initials on the board's dark disc.
@@ -15,6 +16,7 @@ function Face({ name, src, size, style }: { name: string; src?: string | null; s
 }
 
 export function SalesLeaderboard({ V }: { V: ClozrView }) {
+  React.useEffect(() => holdReporting(), []);
   return (
     <section data-screen-label="Sales leaderboard" style={{flex: "1", minWidth: "0", display: "flex", flexDirection: "column", background: "#f4f2ec", color: "#1c1d1f", overflow: "hidden", position: "relative"}}>
       <header style={{display: "flex", alignItems: "center", flexWrap: V.isMobile ? "wrap" : "nowrap", rowGap: "8px", gap: V.isMobile ? "10px" : "16px", padding: V.isMobile ? "10px 14px" : "10px 22px", background: "#f4f2ec", borderBottom: "1px solid #e2dfd5", flex: "none"}}>

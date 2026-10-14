@@ -4,7 +4,7 @@
  * into pass/fail and a score are in ../_shared/deliverability-rules.ts.
  */
 import {
-  type Check, FREE_MAIL, evaluateDkim, evaluateDmarc, evaluateSpf, healthScore, joinTxt, spfLookups,
+  type Check, FREE_MAIL, evaluateDkim, evaluateDmarc, evaluateSpf, healthScore, joinTxt, placeDnsFixes, spfLookups,
 } from '../_shared/deliverability-rules.ts';
 
 type Answer = { type: number; data: string };
@@ -186,10 +186,10 @@ export async function checkDomain(domain: string, o: DomainOptions): Promise<{ c
     const cname = await resolve(host, 'CNAME');
     checks.push(cname?.answers.length
       ? { key: 'tracking', label: 'Link domain', status: 'pass', points: 0, detail: `${host} → ${cname.answers[0].data.replace(/\.$/, '')}` }
-      : { key: 'tracking', label: 'Link domain', status: 'warn', points: 5, detail: `${host} has no CNAME, so tracked links would point at a shared domain whose reputation is not yours.`, fix: { type: 'CNAME', host: host.endsWith(`.${domain}`) ? host.slice(0, -domain.length - 1) : host, value: '<the host your link-tracking provider gives you>' } });
+      : { key: 'tracking', label: 'Link domain', status: 'warn', points: 5, detail: `${host} has no CNAME, so tracked links would point at a shared domain whose reputation is not yours.`, fix: { type: 'CNAME', host, fqdn: host, paste: false, value: 'The host your link-tracking provider gives you' } });
   }
 
   checks.push(...await blocklists(domain, lookups.ips));
   const { score, blocking } = healthScore(checks);
-  return { checks, score, blocking, provider, checked_at: new Date().toISOString() };
+  return { checks: placeDnsFixes(checks, domain), score, blocking, provider, checked_at: new Date().toISOString() };
 }

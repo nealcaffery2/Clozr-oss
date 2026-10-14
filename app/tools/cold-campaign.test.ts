@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { blockUnverified, dailyAllowance, type MailboxSettings } from '../supabase/functions/_shared/deliverability-rules';
 import {
   COLD_DAILY_CAP, COLD_GAP_MAX_SECONDS, COLD_GAP_MIN_SECONDS, COLD_RAMP_DAYS, COLD_RAMP_INCREASE_PCT, COLD_RAMP_START, COLD_RAMP_TARGET, DEFAULT_BLOCKED_SENDING_DOMAINS,
-  DEFAULT_COLD_DELIVERABILITY, GOOGLE_WORKSPACE_IMAP, GOOGLE_WORKSPACE_SMTP, applyMerge, applySpintax, blockedSendingDomains, bodyFingerprint, bodyTooCommon, businessWindowOpen, buyerInAudience,
+  DEFAULT_COLD_DELIVERABILITY, GOOGLE_WORKSPACE_IMAP, assignOnReply, GOOGLE_WORKSPACE_SMTP, applyMerge, applySpintax, blockedSendingDomains, bodyFingerprint, bodyTooCommon, businessWindowOpen, buyerInAudience,
   classifyReply, coldAudienceBlocked, coldDailyAllowance, coldMessageId, coldSendRoom, composeColdText, countsAsComplaint, createWarmupProvider, domainBlocked, healthRates, inRecipientWindow,
   isCatchAllStatus, isInstantlyWarmup, isRoleAddress, isThreadedFollowUp, lintColdCopy, mailboxGapSeconds, matchReply, oooResumeAt, parseMailboxCsv, pickPoolMailbox, pickVariant, placementPausesRamp, plainHtml, planColdSend, poolPauseReason,
   prospectReply, recipientCompanyDomain, recipientProvider, renderStep, replyOwner, replySubject, rewriteTrackedLinks, seeded, sendGapSeconds, sequenceStop, stateOf, withOpenPixel, zoneForState,
@@ -313,6 +313,14 @@ async function main() {
   assert.equal(replyOwner({ buyerOwnerId: 'owner', workspaceOwnerId: 'ws' }), 'owner');
   assert.equal(replyOwner({ workspaceOwnerId: 'ws' }), 'ws');
   assert.equal(replyOwner({}), null);
+  // Replies route back to the rep the inbox sends as (migration 268), after an assignee.
+  assert.equal(replyOwner({ mailboxUserId: 'inbox-rep', buyerOwnerId: 'owner', workspaceOwnerId: 'ws' }), 'inbox-rep');
+  assert.equal(replyOwner({ buyerAssignedTo: 'assignee', mailboxUserId: 'inbox-rep' }), 'assignee');
+  assert.equal(assignOnReply({ mailboxUserId: 'inbox-rep', classification: 'interested', complaint: false }), 'inbox-rep');
+  assert.equal(assignOnReply({ buyerAssignedTo: 'other-rep', mailboxUserId: 'inbox-rep', classification: 'interested', complaint: false }), null, 'never takes a contact from a rep');
+  for (const c of ['bounce', 'unsubscribe', 'out_of_office']) assert.equal(assignOnReply({ mailboxUserId: 'inbox-rep', classification: c, complaint: false }), null, `${c} is not a lead`);
+  assert.equal(assignOnReply({ mailboxUserId: 'inbox-rep', classification: 'reply', complaint: true }), null, 'a complaint is not a lead');
+  assert.equal(assignOnReply({ classification: 'reply', complaint: false }), null);
 
   // ---- merge, spintax, A/B stay stable for one seed
   assert.equal(applyMerge('Hi {{first_name}}', { first_name: 'Pat' }), 'Hi Pat');

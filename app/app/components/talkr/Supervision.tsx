@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react';
 import type { LiveCallDto, MonitorMode } from '@/lib/talkr-web/api';
 import { duration, formatPhone } from '@/lib/talkr-web/time';
 import { useSoftphone } from './softphoneAdapter';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { Icon } from './Icon';
 import { Avatar, EmptyState, Eyebrow } from './ui';
 import { IosSegmented } from './ios';
@@ -49,8 +50,8 @@ function useTicking(seconds: number) {
   useEffect(() => {
     const at = Date.now();
     setExtra(0);
-    const t = setInterval(() => setExtra(Math.floor((Date.now() - at) / 1000)), 1000);
-    return () => clearInterval(t);
+    const tick = () => setExtra(Math.floor((Date.now() - at) / 1000));
+    return everyWhileVisible(tick, 1000);
   }, [seconds]);
   return seconds + extra;
 }

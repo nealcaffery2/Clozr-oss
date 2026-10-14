@@ -1,5 +1,5 @@
 // Pipeline section reminders. Run: npx tsx tools/section-gaps.test.ts
-import { sectionGaps, soldToEndBuyer, underContractBlanks, type GapDeal, type GapFacts, type SheetFacts } from '../lib/section-gaps';
+import { sectionGaps, soldToEndBuyer, underContractBlanks, withTitleFallbacks, type GapDeal, type GapFacts, type SheetFacts } from '../lib/section-gaps';
 
 let failed = 0;
 const eq = (label: string, got: unknown, exp: unknown) => {
@@ -65,6 +65,16 @@ const sheet: SheetFacts = {
 eq('a filled sheet needs nothing', underContractBlanks(sheet), []);
 eq('a fresh submission sheet lists the deal type first', underContractBlanks({ ...sheet, transaction_type: null, offer_amount: null, earnest_money: null }), ['deal type', 'under contract price', 'earnest money']);
 eq('a zero rehab is filled in, a zero price is not', underContractBlanks({ ...sheet, rehab: 0, offer_amount: 0 }), ['under contract price']);
+
+// The deal sheet shows the title company's contact when the deal has none, and
+// the TC file has title fields of its own: the reminder reads the same.
+const bare: GapFacts = { ...full, tcRep: 'tc', titleVendor: true, titleVendorId: 'v9', titleContact: null, titleEmail: null, titlePhone: null };
+const bareDeal = { id: 'd1', facts: bare };
+const viaVendor = withTitleFallbacks([bareDeal], [{ id: 'v9', contact: 'Sara at Example Title', email: 'sara@exampletitle.com', phone: '210-555-0101' }], [])[0]!.facts!;
+eq('the vendor contact fills the title contact, email and phone', [viaVendor.titleContact, viaVendor.titleEmail, viaVendor.titlePhone], ['Sara at Example Title', 'sara@exampletitle.com', '210-555-0101']);
+const viaFile = withTitleFallbacks([{ id: 'd1', facts: { ...bare, titleVendor: false, titleVendorId: null } }], [], [{ dealId: 'd1', titleCo: 'Alamo Title', titleContact: 'Sara', titleEmail: '—', titlePhone: '210-555-0101' }])[0]!.facts!;
+eq('the TC file fills what the deal lacks; a dash is empty', [viaFile.titleVendor, viaFile.titleContact, viaFile.titleEmail, viaFile.titlePhone], [true, 'Sara', null, '210-555-0101']);
+eq('the deal\'s own value wins', withTitleFallbacks([{ id: 'd1', facts: { ...bare, titleContact: 'Own' } }], [{ id: 'v9', contact: 'Vendor' }], [])[0]!.facts!.titleContact, 'Own');
 
 if (failed) {
   console.error(`section-gaps: ${failed} failed`);

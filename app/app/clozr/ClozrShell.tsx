@@ -38,6 +38,7 @@ import { ScreenEnter, usePressFeedback } from './motion';
 import { Account, ActionPlans, Automations, BuyerRecord, Buyers, Buyr, Calendar, Coaching, DealMachine, DealSheet, Deals, Dialer, Dispo, DispoProperty, Genius, Home, Import, Inbox, People, Reporting, SalesLeaderboard, ScreenLoading, SellerRecord, Settings, Tasks, Today, TransactionCoordination, preloadScreens } from './screens/lazy';
 import { ClozrAppIcon, ClozrMark } from '@/components/ds/ClozrMark';
 import { displayName, useSession } from '@/lib/session';
+import { usePendingLeads } from '@/lib/use-crm';
 import { UserAvatar } from '@/components/UserAvatar';
 import { avatarOf } from '@/lib/avatar';
 import { PhotoShow } from '@/app/components/record/PhotoShow';
@@ -65,6 +66,20 @@ function CardIcon({ d, size = 14 }: { d: string; size?: number }) {
 }
 const XIcon = () => <CardIcon d={ICON_PATHS.x} size={16} />;
 const ChevronRightIcon = () => <CardIcon d={ICON_PATHS.chevronRight} size={14} />;
+
+function NewLeadsBar() {
+  const { count, refresh } = usePendingLeads();
+  if (!count) return null;
+  const noun = count === 1 ? 'new lead arrived' : 'new leads arrived';
+  return (
+    <div role="status" style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 16px', background: '#fff7ed', borderBottom: '1px solid #fdba74', color: '#9a3412', fontSize: '13px' }}>
+      <span style={{ flex: 1, minWidth: 0 }}>{count.toLocaleString()} {noun}.</span>
+      <button type="button" onClick={refresh} style={{ height: '32px', padding: '0 12px', borderRadius: '8px', border: '1px solid #0A8560', background: '#0A8560', color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer' }}>
+        Refresh
+      </button>
+    </div>
+  );
+}
 
 export function ClozrShell({ V, children }: { V: ClozrView; children?: React.ReactNode }) {
   // The shell owns the account menu, so it reads the session directly rather
@@ -144,6 +159,7 @@ export function ClozrShell({ V, children }: { V: ClozrView; children?: React.Rea
           {V.accountMenuOpen ? <AccountMenu V={V} className="cz-menu cz-menu--right" style={{top: "40px", width: "240px"}} /> : null}
         </div>
       </header>
+      <NewLeadsBar />
       <main ref={mainRef} inert={V.isMobile && V.phoneUp ? true : undefined} style={{flex: "1", minHeight: "0", display: "flex", position: "relative"}}>
         <ScreenBoundary screen={V.screen} label={V.screenLabel} onHome={V.goHome}>
         <Suspense fallback={<ScreenLoading />}>
