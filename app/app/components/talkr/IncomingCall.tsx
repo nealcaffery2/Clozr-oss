@@ -15,6 +15,7 @@
 
 import { useEffect, useState } from 'react';
 import { api, type CallContextDto } from '@/lib/talkr-web/api';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { fetchCallContext } from '@/lib/talkr-web/callContext';
 import { useSoftphone } from './softphoneAdapter';
 import { Icon, HangupIcon } from './Icon';
@@ -54,8 +55,7 @@ export function IncomingCall({ record = null, callback = null }: { record?: Cloz
   useEffect(() => {
     if (!incoming) return;
     setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(t);
+    return everyWhileVisible(() => setNow(Date.now()), 30_000);
   }, [incoming]);
 
   useEffect(() => {

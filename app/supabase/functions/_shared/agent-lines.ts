@@ -133,7 +133,9 @@ export function fqdnConnectionBody() {
     active: true,
     transport_protocol: 'TCP',
     tags: ['clozr', 'elevenlabs'],
-    inbound: { ani_number_format: '+E.164', dnis_number_format: '+e164' },
+    // ElevenLabs takes G.722 (wideband) or G.711; G.729 is left off. The jitter buffer smooths choppy audio.
+    inbound: { ani_number_format: '+E.164', dnis_number_format: '+e164', codecs: ['G722', 'G711U', 'G711A'] },
+    jitter_buffer: { enable_jitter_buffer: true, jitterbuffer_msec_min: 60, jitterbuffer_msec_max: 200 },
   };
 }
 

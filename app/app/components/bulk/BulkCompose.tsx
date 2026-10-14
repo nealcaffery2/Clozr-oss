@@ -135,11 +135,12 @@ function defaultBlast(templates: MessageTemplate[]): MessageTemplate | null {
 
 export function BulkCompose(props: BulkComposeProps) {
   const t = useTemplates(props.workspaceId);
-  // Templates first, then the composer. A buyer email opens on the Acme Homes
-  // deal blast, and that is the composer's initial state — not an effect that
-  // rewrites what the rep may already have typed.
+  // Templates first, then the composer. A buyer deal email opens on the Acme
+  // Homes deal blast, and that is the composer's initial state — not an effect
+  // that rewrites what the rep may already have typed. A plain email (no deal
+  // required) opens blank.
   if (t.loading) return null;
-  return <Composer {...props} t={t} blast={props.kind === 'buyer' ? defaultBlast(t.templates) : null} />;
+  return <Composer {...props} t={t} blast={props.kind === 'buyer' && props.requireDeal ? defaultBlast(t.templates) : null} />;
 }
 
 function Composer({

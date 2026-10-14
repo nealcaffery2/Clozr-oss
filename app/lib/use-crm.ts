@@ -5,8 +5,9 @@
 
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { type CrmData, emptyLiveData, enrichWorkspace, loadDealGallery, loadSellerSlice, loadWorkspace, mergeSlice, withGallery } from './crm';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { type CrmData, emptyLiveData, enrichWorkspace, loadDealGallery, loadSellerSlice, loadSellerSlices, loadWorkspace, mergeSlice, withGallery } from './crm';
+import { LEAD_BATCH_MS, LEAD_HOLD_AT, RELOAD_DEBOUNCE_MS, planLeadRefresh } from './lead-refresh';
 import { playEvent } from './phone-audio';
 import { supabase } from './supabase';
 import { type WorkspaceSettings, loadSettings } from './integrations';
@@ -49,12 +50,65 @@ export type CrmState = {
 /** The lists patchLocal can change in place, each keyed by its screen id. */
 export type PatchTable = 'people' | 'deals' | 'buyers' | 'vendors' | 'tasks' | 'offers' | 'matches' | 'transactions';
 type Patch = { at: number; apply: (d: CrmData) => CrmData };
-/** New leads arriving within this long of each other are handled together. */
-const LEAD_BATCH_MS = 1500;
-/** More new leads than this at once (an import) re-read the workspace instead of each seller. */
-const LEAD_REFRESH_MAX = 5;
 /** How long a local patch is re-applied over a full load that started before it. */
 const PATCH_KEEP_MS = 60_000;
+
+/**
+ * The import screen calls pauseLive for the whole run and resumeLive when it
+ * finishes. While paused, seller inserts do not start reads: the import
+ * reloads once at the end. A count, so a nested pause still holds.
+ */
+let livePause = 0;
+export function pauseLive() { livePause += 1; }
+export function resumeLive() { livePause = Math.max(0, livePause - 1); }
+export function liveIsPaused() { return livePause > 0; }
+
+/**
+ * Reporting and the leaderboard call holdReporting while they are on screen.
+ * The heavy reporting reads wait for that, and refresh on a ten minute timer
+ * only while something is holding.
+ */
+let reportingWatchers = 0;
+const reportingListeners = new Set<() => void>();
+
+export function reportingHeld() { return reportingWatchers > 0; }
+
+export function holdReporting(): () => void {
+  reportingWatchers += 1;
+  for (const fn of reportingListeners) fn();
+  return () => {
+    reportingWatchers = Math.max(0, reportingWatchers - 1);
+    for (const fn of reportingListeners) fn();
+  };
+}
+
+function onReportingWatch(fn: () => void): () => void {
+  reportingListeners.add(fn);
+  return () => { reportingListeners.delete(fn); };
+}
+
+function reportingOff() { return false; }
+
+/** New leads held back from a read, waiting for a click. */
+let pendingLeads = 0;
+const pendingListeners = new Set<() => void>();
+let pendingRefresh: (() => void) | null = null;
+
+function setPendingLeads(n: number) {
+  pendingLeads = n;
+  for (const fn of pendingListeners) fn();
+}
+
+export function usePendingLeads(): { count: number; refresh: () => void } {
+  const [count, setCount] = useState(pendingLeads);
+  useEffect(() => {
+    const fn = () => setCount(pendingLeads);
+    pendingListeners.add(fn);
+    fn();
+    return () => { pendingListeners.delete(fn); };
+  }, []);
+  return { count, refresh: () => pendingRefresh?.() };
+}
 
 /** One row in a list replaced field by field; the list itself is new only when the row was there. */
 export function patchRows<T extends { id: string }>(rows: T[] | undefined, row: { id: string } & Record<string, unknown>): T[] | undefined {
@@ -67,7 +121,7 @@ export function patchRows<T extends { id: string }>(rows: T[] | undefined, row: 
 }
 
 /** How long offer gaps and the reporting history are reused across reloads before they are read again. */
-const HEAVY_EVERY_MS = 2 * 60_000;
+const HEAVY_EVERY_MS = 10 * 60_000;
 /** Workspace and user pairs whose catalog plans were already checked this page load. */
 const plansChecked = new Set<string>();
 
@@ -76,6 +130,8 @@ export function useCrm(): CrmState {
   const workspaceId = s.workspace?.id ?? null;
   const userId = s.user?.id ?? null;
   const [nonce, setNonce] = useState(0);
+  const [reportTick, setReportTick] = useState(0);
+  const reportingOn = useSyncExternalStore(onReportingWatch, reportingHeld, reportingOff);
 
   // Keyed by the workspace it was loaded for, so switching workspaces (or
   // signing out) reads as "not loaded" on the very next render instead of
@@ -94,7 +150,10 @@ export function useCrm(): CrmState {
   const again = useRef(false);
   // The last enriched load and when its heavy half (offer gaps, reporting
   // history) was read; reloads in between reuse it.
-  const enriched = useRef<{ ws: number; at: number; data: CrmData } | null>(null);
+  const enriched = useRef<{ ws: number; at: number; data: CrmData; reporting: boolean } | null>(null);
+  const reportGen = useRef(0);
+  const loadedNow = useRef(loaded);
+  useEffect(() => { loadedNow.current = loaded; }, [loaded]);
   // Local patches and refreshed slices, kept a minute: a full load that was
   // already reading when one landed would otherwise put the old row back.
   const patches = useRef<Patch[]>([]);
@@ -106,6 +165,8 @@ export function useCrm(): CrmState {
   useEffect(() => {
     if (!workspaceId) return;
     let live = true;
+    reportGen.current += 1;
+    const gen = reportGen.current;
     const key = `${workspaceId}:${nonce}`;
     const startedAt = Date.now();
     inFlight.current = true;
@@ -134,17 +195,25 @@ export function useCrm(): CrmState {
       if (!live) { settle(); return; }
       setLoaded({ key, data: replay(data, startedAt), ok, settings });
       if (!ok) { settle(); return; }
-      // Photos, gaps, and reporting history. The shell is already on screen.
+      // Photos every time. Offer gaps and the reporting history only while
+      // Reporting or the leaderboard is open, and only once every ten minutes.
       const last = enriched.current;
-      const reuse = last && last.ws === workspaceId && Date.now() - last.at < HEAVY_EVERY_MS ? last.data : null;
-      void enrichWorkspace(workspaceId, data, reuse).then((next) => {
-        if (!reuse) enriched.current = { ws: workspaceId, at: Date.now(), data: next };
-        else if (enriched.current) enriched.current = { ...enriched.current, data: next };
-        if (live) setLoaded((prev) => (prev && prev.key === key ? { ...prev, data: replay(next, startedAt) } : prev));
+      const reuse = last && last.reporting && last.ws === workspaceId && Date.now() - last.at < HEAVY_EVERY_MS ? last.data : null;
+      const ask = reportingHeld() && (typeof document === 'undefined' || !document.hidden) && !reuse;
+      void enrichWorkspace(workspaceId, data, reuse, { reporting: ask }).then((next) => {
+        if (!live || reportGen.current !== gen) return;
+        enriched.current = {
+          ws: workspaceId,
+          at: ask ? Date.now() : (reuse && last ? last.at : 0),
+          data: next,
+          reporting: ask || !!reuse,
+        };
+        setLoaded((prev) => (prev && prev.key === key ? { ...prev, data: replay(next, startedAt) } : prev));
+        if (reportingHeld() && !ask && !reuse) setReportTick((n) => n + 1);
       }).catch(() => {
         // The money columns, offers and full call history never came: say so
         // on Reporting rather than leave the first load's zeros standing.
-        if (!live) return;
+        if (!live || !ask) return;
         setLoaded((prev) => {
           const raw = prev && prev.key === key ? prev.data.reporting.raw : null;
           return raw ? { ...prev!, data: { ...prev!.data, reporting: { ...prev!.data.reporting, raw: { ...raw, partial: 'failed' } } } } : prev;
@@ -173,7 +242,7 @@ export function useCrm(): CrmState {
       pending.current = null;
       if (inFlight.current) again.current = true;
       else setNonce((n) => n + 1);
-    }, 400);
+    }, RELOAD_DEBOUNCE_MS);
   }, []);
   // Applied now and replayed over any full load already reading (replay above).
   const apply = useCallback((fn: (d: CrmData) => CrmData) => {
@@ -190,6 +259,44 @@ export function useCrm(): CrmState {
   // The workspace a refresh was read for must still be the one on screen.
   const wsNow = useRef(workspaceId);
   useEffect(() => { wsNow.current = workspaceId; patches.current = []; }, [workspaceId]);
+
+  useEffect(() => {
+    if (!reportingOn) return;
+    const onVis = () => { if (!document.hidden) setReportTick((n) => n + 1); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [reportingOn]);
+  useEffect(() => {
+    if (!workspaceId || !reportingOn) return;
+    const id = window.setInterval(() => {
+      if (!document.hidden) setReportTick((n) => n + 1);
+    }, HEAVY_EVERY_MS);
+    return () => window.clearInterval(id);
+  }, [workspaceId, reportingOn]);
+  useEffect(() => {
+    if (!workspaceId || !reportingOn || (typeof document !== 'undefined' && document.hidden)) return;
+    if (inFlight.current) return;
+    const last = enriched.current;
+    if (last?.reporting && last.ws === workspaceId && Date.now() - last.at < HEAVY_EVERY_MS) return;
+    const cur = loadedNow.current;
+    if (!cur?.ok || !cur.data.reporting.raw) return;
+    const gen = reportGen.current;
+    const started = Date.now();
+    let cancelled = false;
+    void enrichWorkspace(workspaceId, cur.data, null, { reporting: true }).then((next) => {
+      if (cancelled || reportGen.current !== gen || wsNow.current !== workspaceId) return;
+      enriched.current = { ws: workspaceId, at: Date.now(), data: next, reporting: true };
+      setLoaded((prev) => (prev && prev.key.startsWith(`${workspaceId}:`) ? { ...prev, data: replay(next, started) } : prev));
+    }).catch(() => {
+      if (cancelled || reportGen.current !== gen) return;
+      setLoaded((prev) => {
+        const raw = prev?.data.reporting.raw;
+        if (!raw || !prev.key.startsWith(`${workspaceId}:`)) return prev;
+        return { ...prev, data: { ...prev.data, reporting: { ...prev.data.reporting, raw: { ...raw, partial: 'failed' } } } };
+      });
+    });
+    return () => { cancelled = true; };
+  }, [workspaceId, reportingOn, reportTick, nonce]);
   const refreshSeller = useCallback(async (sellerId: number) => {
     if (!workspaceId || !Number.isFinite(sellerId)) return;
     const slice = await loadSellerSlice(workspaceId, sellerId);
@@ -218,35 +325,63 @@ export function useCrm(): CrmState {
   // inside the 60–90 second window instead of after someone reloads. One
   // channel per workspace; RLS decides which rows reach this browser
   // (migration 226 adds sellers to the realtime publication). Arrivals are
-  // gathered for a moment: an import or a sync that lands hundreds at once
-  // makes one sound and one full reload, not hundreds of each.
+  // gathered for a moment. A burst is read by id in chunks of 200. Past
+  // LEAD_HOLD_AT the tab shows a count and waits for a click, instead of
+  // re-reading the workspace. Nothing runs while the tab is hidden or while
+  // an import has paused live updates.
   const refreshRef = useRef(refreshSeller);
   const reloadRef = useRef(reload);
-  useEffect(() => { refreshRef.current = refreshSeller; reloadRef.current = reload; }, [refreshSeller, reload]);
+  const applyRef = useRef(apply);
+  useEffect(() => { refreshRef.current = refreshSeller; reloadRef.current = reload; applyRef.current = apply; }, [refreshSeller, reload, apply]);
+  useEffect(() => {
+    pendingRefresh = () => { setPendingLeads(0); reloadRef.current(); };
+    return () => { if (pendingRefresh) pendingRefresh = null; };
+  }, []);
   useEffect(() => {
     const db = supabase;
     if (!db || !workspaceId || s.demo) return;
     const batch = { ids: new Set<number>(), sound: false, timer: null as ReturnType<typeof setTimeout> | null };
     const flush = () => {
+      batch.timer = null;
+      if (liveIsPaused()) { batch.ids.clear(); batch.sound = false; return; }
+      if (typeof document !== 'undefined' && document.hidden) return;
       const ids = [...batch.ids];
       const sound = batch.sound;
-      batch.ids.clear(); batch.sound = false; batch.timer = null;
+      batch.ids.clear(); batch.sound = false;
+      if (!ids.length) return;
       if (sound) playEvent('lead');
-      if (ids.length > LEAD_REFRESH_MAX) reloadRef.current();
-      else for (const id of ids) void refreshRef.current(id);
+      const plan = planLeadRefresh(ids.length);
+      if (plan === 'hold') { setPendingLeads(pendingLeads + ids.length); return; }
+      if (plan === 'each') { for (const id of ids) void refreshRef.current(id); return; }
+      const ws = workspaceId;
+      void loadSellerSlices(ws, ids).then((slices) => {
+        if (wsNow.current !== ws) return;
+        if (!slices) { setPendingLeads(pendingLeads + ids.length); return; }
+        applyRef.current((d) => slices.reduce((acc, slice) => mergeSlice(acc, slice), d));
+      }).catch(() => { if (wsNow.current === ws) setPendingLeads(pendingLeads + ids.length); });
     };
     const ch = db.channel(`crm-sellers:${workspaceId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sellers', filter: `workspace_id=eq.${workspaceId}` }, (m) => {
+        if (liveIsPaused()) return;
         const row = m.new as { id?: number; archived_at?: string | null; created_by?: string | null };
         if (row.id == null || row.archived_at) return;
         batch.ids.add(row.id);
         // Someone adding a contact by hand already knows it arrived.
         if (!row.created_by || row.created_by !== userId) batch.sound = true;
+        if (typeof document !== 'undefined' && document.hidden) return;
+        if (batch.ids.size > LEAD_HOLD_AT) {
+          if (batch.timer) clearTimeout(batch.timer);
+          flush();
+          return;
+        }
         batch.timer ??= setTimeout(flush, LEAD_BATCH_MS);
       })
       .subscribe();
+    const onVisible = () => { if (!document.hidden && batch.ids.size) flush(); };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       if (batch.timer) clearTimeout(batch.timer);
+      document.removeEventListener('visibilitychange', onVisible);
       void db.removeChannel(ch);
     };
   }, [workspaceId, userId, s.demo]);

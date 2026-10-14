@@ -24,7 +24,42 @@ export type GapFacts = {
   titleEmail: string | null;
   titlePhone: string | null;
   marketingStarted: string | null;
+  /** The deal's title company vendor id ("v12"), for the contact fallbacks below. */
+  titleVendorId?: string | null;
 };
+
+const filled = (v: string | null | undefined) => (v && v.trim() && v.trim() !== '—' ? v.trim() : null);
+
+/**
+ * Title facts as the deal sheet shows them: the deal's own, else the title
+ * company's contact, else what the TC typed on the file. The reminder used
+ * to read only the deal's columns, so a sheet that looked complete (it shows
+ * the vendor's contact) kept saying the TC section was missing.
+ */
+export function withTitleFallbacks<T extends { id: string; facts?: GapFacts }>(
+  deals: readonly T[],
+  vendors: readonly { id: string; contact?: string | null; email?: string | null; phone?: string | null }[],
+  files: readonly { dealId: string; titleCo?: string | null; titleContact?: string | null; titleEmail?: string | null; titlePhone?: string | null }[],
+): T[] {
+  const vendorById = new Map(vendors.map((v) => [v.id, v]));
+  const fileByDeal = new Map(files.filter((f) => f.dealId).map((f) => [f.dealId, f]));
+  return deals.map((d) => {
+    if (!d.facts) return d;
+    const f = d.facts;
+    const v = f.titleVendorId ? vendorById.get(f.titleVendorId) : undefined;
+    const tx = fileByDeal.get(d.id);
+    return {
+      ...d,
+      facts: {
+        ...f,
+        titleVendor: f.titleVendor || !!filled(tx?.titleCo),
+        titleContact: filled(f.titleContact) ?? filled(v?.contact) ?? filled(tx?.titleContact),
+        titleEmail: filled(f.titleEmail) ?? filled(v?.email) ?? filled(tx?.titleEmail),
+        titlePhone: filled(f.titlePhone) ?? filled(v?.phone) ?? filled(tx?.titlePhone),
+      },
+    };
+  });
+}
 
 export type GapDeal = {
   id: string;

@@ -24,3 +24,10 @@ export function submissionPhotos(sub: Any): VuePhoto[] {
   }
   return out;
 }
+
+/** The webhooks iVueit offers (one active per type per company), all pointed at ivueit-webhook with `e=<type>`. */
+export const IVUEIT_HOOK_TYPES = ['VueCompleted', 'VueCanceled', 'VueEscalated'] as const;
+export type IvueitHookType = typeof IVUEIT_HOOK_TYPES[number];
+/** Which webhook fired; a URL from before the type was added is VueCompleted. */
+export const hookTypeOf = (v: string | null | undefined): IvueitHookType =>
+  (IVUEIT_HOOK_TYPES as readonly string[]).includes(String(v)) ? v as IvueitHookType : 'VueCompleted';

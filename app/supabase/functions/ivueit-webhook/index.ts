@@ -1,13 +1,14 @@
 /**
- * POST /ivueit-webhook?w=<workspace>&t=<token>&vue=<vueId> — iVueit's
- * VueCompleted webhook (registered by ivueit setup). No JWT: the token is the
+ * POST /ivueit-webhook?w=<workspace>&t=<token>&e=<type>&vue=<vueId> — iVueit's
+ * VueCompleted, VueCanceled and VueEscalated webhooks (registered by ivueit setup;
+ * a URL without `e` is VueCompleted). No JWT: the token is the
  * workspace's ivueit_hook_token (migration 255), compared in constant time.
  * Answers at once; the photos copy onto the deal in the background.
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { sameSecret } from '../_shared/security.ts';
-import { type PhotoOrder, checkOrder, ivueitCreds, ivueitLogin } from '../_shared/ivueit.ts';
+import { type PhotoOrder, checkOrder, closeCanceledOrder, hookTypeOf, ivueitCreds, ivueitLogin, noteEscalation } from '../_shared/ivueit.ts';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
@@ -32,12 +33,15 @@ Deno.serve(async (req) => {
   // A Vue ordered outside CLOZR: nothing to do, and iVueit should not retry.
   if (!order) return json({ ok: true, matched: false });
 
+  const type = hookTypeOf(q.get('e'));
   EdgeRuntime.waitUntil((async () => {
     try {
+      if (type === 'VueCanceled') { await closeCanceledOrder(admin, order as PhotoOrder); return; }
+      if (type === 'VueEscalated') { await noteEscalation(admin, order as PhotoOrder); return; }
       const c = await ivueitCreds(admin, ws);
       await checkOrder(admin, c, await ivueitLogin(c), order as PhotoOrder);
     } catch (e) {
-      console.error('ivueit-webhook', { order: (order as PhotoOrder).id, err: String(e) });
+      console.error('ivueit-webhook', { order: (order as PhotoOrder).id, type, err: String(e) });
     }
   })());
   return json({ ok: true, matched: true });

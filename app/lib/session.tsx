@@ -18,6 +18,7 @@
 
 import type { Session, User } from '@supabase/supabase-js';
 import { DEMO_ROLE, type Role } from './team';
+import { installClientErrorHandlers } from './client-errors';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   browserWorkspaceStore,
@@ -144,6 +145,8 @@ const NO_WORKSPACES: Workspace[] = [];
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   installWorkspaceResets();
+  // Errors outside any React boundary (handlers, timers, promises) get recorded too.
+  useEffect(() => { installClientErrorHandlers(); }, []);
   const demo = !supabase;
   const [ready, setReady] = useState(demo);
   const [session, setSession] = useState<Session | null>(null);

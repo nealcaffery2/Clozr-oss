@@ -185,6 +185,8 @@ export type TimelineEntry = {
   /** Pinned to the top of the record's feed (migration 43): when, and by whom. */
   pinnedAt?: string; pinnedBy?: string | null;
   ai?: { summary: string; objections: string[]; next: string };
+  /** The AI agent that did it (migration 269): the feed shows its name and picture instead of a rep's. */
+  agent?: { key: string; name: string; avatar: string | null };
   /** An email: what the record's feed draws as a message (components/record/EmailEntry.tsx) rather than a text blob. */
   email?: {
     subject: string; from: string; fromName: string; to: string[]; inbound: boolean; body: string;

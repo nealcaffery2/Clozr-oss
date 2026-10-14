@@ -318,6 +318,22 @@ async function logDrop(
     ({ error } = await admin.from('communications').upsert(row, { onConflict: 'workspace_id,source,source_id' }));
   }
   if (error) console.error('rvm activity row', drop.id, error.message);
+  else await carryAgent(admin, drop);
+}
+
+/**
+ * A drop an AI agent queued (rvm_drops.ai_agent_key, migration 269) names that
+ * agent on its voicemail row, so the activity log shows the agent, not the rep
+ * it went out as. Read apart from the drop's columns so the tick keeps working
+ * before the migration.
+ */
+async function carryAgent(admin: SupabaseClient, drop: Pick<Drop, 'id' | 'workspace_id'>): Promise<void> {
+  const { data, error } = await admin.from('rvm_drops').select('ai_agent_key').eq('id', drop.id).maybeSingle();
+  const key = error ? null : (data as { ai_agent_key?: string | null } | null)?.ai_agent_key ?? null;
+  if (!key) return;
+  const { error: upErr } = await admin.from('communications').update({ ai_agent_key: key })
+    .eq('workspace_id', drop.workspace_id).eq('source', 'rvm').eq('source_id', `rvm:${drop.id}`);
+  if (upErr) console.error('rvm agent', drop.id, upErr.message);
 }
 
 /** A failure on drops whose activity row already exists (the stale-receipt sweep). */

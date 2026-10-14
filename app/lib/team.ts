@@ -8,7 +8,7 @@ import { renderNotaryStamp, stampGaps } from '../supabase/functions/_shared/nota
 import { supabase } from './supabase';
 import { PODIO_NEW_SUBMISSIONS, PODIO_TOTAL_SUBMISSIONS } from './stages';
 
-export type Role = 'owner' | 'admin' | 'acquisitions' | 'dispositions' | 'tc' | 'member' | 'notary' | 'partnerships';
+export type Role = 'owner' | 'admin' | 'acquisitions' | 'dispositions' | 'tc' | 'member' | 'notary' | 'partnerships' | 'sdr';
 
 export const ROLE_LABEL: Record<Role, string> = {
   owner: 'Owner',
@@ -19,10 +19,11 @@ export const ROLE_LABEL: Record<Role, string> = {
   member: 'Member',
   notary: 'Notary',
   partnerships: 'Partnerships',
+  sdr: 'SDR',
 };
 
 /** Roles an admin can assign. Owner is the workspace creator and is not assignable. */
-export const ASSIGNABLE_ROLES: Role[] = ['admin', 'acquisitions', 'dispositions', 'tc', 'partnerships', 'notary', 'member'];
+export const ASSIGNABLE_ROLES: Role[] = ['admin', 'acquisitions', 'dispositions', 'sdr', 'tc', 'partnerships', 'notary', 'member'];
 
 /**
  * Which screens a role may open. The key is the shell's screen id.
@@ -66,6 +67,14 @@ const SCREENS: Record<Role, ReadonlySet<string> | 'all'> = {
   // rails (seesSellerLists hides the rest of it), and the record for COMPR.
   // Calls (the dialer), texts and email (Inbox, the record) to partners.
   partnerships: new Set(['home', 'people', 'person', 'import', 'inbox', 'talkr', 'dialer', 'tasks', 'calendar', 'deals', 'dealSheet', 'settings', 'account', 'contracts']),
+  // An SDR works a contacts list (Buyers) by phone, text, email and RVM: their
+  // records, the dialer and texts on their own Talkr lines, the action plans
+  // and their own numbers. No sellers, deals, contracts or wholesaling tools
+  // (migration 263).
+  sdr: new Set([
+    'buyers', 'buyer', 'import', 'inbox', 'talkr', 'dialer', 'tasks', 'calendar', 'plans', 'automations',
+    'reporting', 'leaderboard', 'coaching', 'settings', 'account',
+  ]),
 };
 
 /**
@@ -105,9 +114,10 @@ export const seesAllMail = (role: Role | null | undefined) => isAdmin(role) || r
 /**
  * Where a role lands when the address names no screen. Acquisitions starts
  * the day on Today, the list they call; Partnerships on People (its
- * Submissions); everyone else on Home, for now.
+ * Submissions); an SDR on Buyers, their contacts; everyone else on Home.
  */
-export const landingFor = (role: Role | null | undefined): 'today' | 'home' | 'people' => (role === 'acquisitions' ? 'today' : role === 'partnerships' ? 'people' : 'home');
+export const landingFor = (role: Role | null | undefined): 'today' | 'home' | 'people' | 'buyers' =>
+  (role === 'acquisitions' ? 'today' : role === 'partnerships' ? 'people' : role === 'sdr' ? 'buyers' : 'home');
 
 /** The transaction coordinator on this roster — never a hardcoded name. */
 export function teamTc<T extends { id: string; name: string; role: string; dept?: string }>(team: Record<string, T>): T | null {

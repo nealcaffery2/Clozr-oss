@@ -21,7 +21,10 @@ import { Badge, Copy, Icon, Note, NotSetUp, Section, danger, fieldLabel, ghost, 
 const REP_TONE = { HIGH: 'good', MEDIUM: 'warn', LOW: 'bad', BAD: 'bad' } as const;
 const REP_COLOR: Record<string, string> = { HIGH: '#0A8560', MEDIUM: '#d97706', LOW: '#dc2626', BAD: '#7f1d1d' };
 
-/** 30 days as small squares coloured by reputation, with the spam rate as bar height. */
+/** Postmaster v2 has no reputation: a day is coloured by its spam rate against Gmail's 0.1% / 0.3% lines. */
+const spamColor = (spam: number | null) => (spam == null ? '#a1a1aa' : spam > 0.003 ? '#dc2626' : spam > 0.001 ? '#d97706' : '#0A8560');
+
+/** 30 days as small squares coloured by reputation (or spam rate, on v2), with the spam rate as bar height. */
 function Trend({ days }: { days: PostmasterDay[] }) {
   const byDate = new Map(days.map((d) => [d.date, d]));
   // The 30 days up to Postmaster's latest day (it lags a day or two behind today).
@@ -33,7 +36,7 @@ function Trend({ days }: { days: PostmasterDay[] }) {
       {cells.map((date) => {
         const d = byDate.get(date);
         const h = d?.spam != null ? 6 + 28 * (d.spam / max) : 6;
-        return <span key={date} title={d ? `${date} · reputation ${d.reputation ?? 'none'} · spam ${pct(d.spam, 2)} · DMARC pass ${pct(d.dmarc, 0)}` : `${date} · no data (too little Gmail volume that day)`} style={{ flex: 1, height: `${h}px`, borderRadius: '2px', background: d ? REP_COLOR[d.reputation ?? ''] ?? '#a1a1aa' : '#f0f0f1' }} />;
+        return <span key={date} title={d ? `${date}${d.reputation ? ` · reputation ${d.reputation}` : ''} · spam ${pct(d.spam, 2)} · DMARC pass ${pct(d.dmarc, 0)}` : `${date} · no data (too little Gmail volume that day)`} style={{ flex: 1, height: `${h}px`, borderRadius: '2px', background: d ? (d.reputation ? REP_COLOR[d.reputation] : spamColor(d.spam)) : '#f0f0f1' }} />;
       })}
     </div>
   );
@@ -96,8 +99,8 @@ export function PostmasterCard({ workspaceId, me, data, onLoad }: { workspaceId:
     return () => window.clearTimeout(t);
   }, [waiting, polls, onLoad]);
 
-  const how = <>Gmail&apos;s own numbers for your domain: reputation, the spam-complaint rate (the one signal a mailbox cannot see), and authentication pass rates. Read-only, from your Google connection; optional. Gmail only reports days with enough mail to Gmail users (roughly a few hundred a day). CLOZR verifies each of this workspace&apos;s domains for your Google account: it asks Google for the TXT record, writes it at InboxKit or Vercel DNS, and checks again until Google sees it. Google has no API for the last step, so a verified domain is added once at postmaster.google.com.</>;
-  const why = 'Gmail’s own report card for your domain: how much it trusts your mail and how often people press Report spam. Optional.';
+  const how = <>Gmail&apos;s own numbers for your domain: the spam-complaint rate (the one signal a mailbox cannot see), authentication pass rates and delivery errors. Google&apos;s current Postmaster API no longer reports domain reputation. Read-only, from your Google connection; optional. Gmail only reports days with enough mail to Gmail users (roughly a few hundred a day). CLOZR verifies each of this workspace&apos;s domains for your Google account: it asks Google for the TXT record, writes it at InboxKit or Vercel DNS, and checks again until Google sees it. Google has no API for the last step, so a verified domain is added once at postmaster.google.com.</>;
+  const why = 'Gmail’s own report card for your domain: how often people press Report spam and how much of your mail passes SPF, DKIM and DMARC. Optional.';
 
   if (!me) {
     return <NotSetUp title="Gmail Postmaster" why={why} how={how} action={<button type="button" style={ghost} onClick={() => requestSettingsTab({ main: 'outbound', tab: 'google' })}>Connect Google first</button>} />;
@@ -134,7 +137,7 @@ export function PostmasterCard({ workspaceId, me, data, onLoad }: { workspaceId:
           <div key={textValue(d.domain)} style={row}>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '13px', fontWeight: 600 }}>{textValue(d.domain)}</span>
-              {last?.reputation ? <Badge tone={REP_TONE[last.reputation]}>reputation {last.reputation.toLowerCase()}</Badge> : <Badge tone="muted">no reputation yet</Badge>}
+              {last?.reputation ? <Badge tone={REP_TONE[last.reputation]}>reputation {last.reputation.toLowerCase()}</Badge> : null}
               {last?.spam != null && <Badge tone={last.spam > 0.003 ? 'bad' : last.spam > 0.001 ? 'warn' : 'good'}>spam {pct(last.spam, 2)}</Badge>}
               {last && <span style={{ fontSize: '11.5px', color: '#71717a' }}>SPF {pct(last.spf, 0)} · DKIM {pct(last.dkim, 0)} · DMARC {pct(last.dmarc, 0)} · delivery errors {pct(last.errors, 2)}</span>}
             </div>

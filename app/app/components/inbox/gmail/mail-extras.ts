@@ -107,20 +107,23 @@ export function useDealTeam(dealId: number | null, tick = 0) {
   return parties && parties.dealId === dealId ? parties.rows : [];
 }
 
-/** Which folder a deal's stage puts it in. */
-export type DealFolder = 'contract' | 'escrow' | 'marketing' | 'closed' | 'other';
+/**
+ * Which folder a deal's stage puts it in. Only the four stages a deal is live
+ * in get a folder, in pipeline order; Prospect, Closed, Terminated and the
+ * rest stay out of the rail (their mail is still in the inbox and on the deal).
+ */
+export type DealFolder = 'contract' | 'marketing' | 'buyer' | 'escrow' | 'other';
 export const FOLDER_OF: Record<string, DealFolder> = {
   'Under Contract Seller': 'contract',
-  'Buyer Under Contract': 'contract',
-  'In Escrow': 'escrow',
   'Ready To Market': 'marketing',
-  Closed: 'closed',
+  'Buyer Under Contract': 'buyer',
+  'In Escrow': 'escrow',
 };
 export const FOLDERS: { key: DealFolder; label: string }[] = [
   { key: 'contract', label: 'Under contract' },
+  { key: 'marketing', label: 'Ready to market' },
+  { key: 'buyer', label: 'Buyer under contract' },
   { key: 'escrow', label: 'In escrow' },
-  { key: 'marketing', label: 'Active · marketing' },
-  { key: 'closed', label: 'Closed' },
 ];
 
 export const fmtBytes = (n: number | null) =>

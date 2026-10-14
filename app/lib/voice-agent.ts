@@ -818,7 +818,8 @@ export const MIC_MESSAGES: Record<MicProblem, string> = {
 const VAR_ORDER = ['first_name', 'property_address', 'caller_known', 'rep_name', 'company', 'agent_name', 'record_kind', 'do_not_engage', 'last_contact_summary', 'next_step'];
 
 export function orderVariables(vars: Record<string, string | number | boolean>): { key: string; value: string }[] {
-  const keys = Object.keys(vars).filter((k) => k !== 'lead_brief');
+  // record_token is a signature for the lookup tool, nothing to read.
+  const keys = Object.keys(vars).filter((k) => k !== 'lead_brief' && k !== 'record_token');
   keys.sort((a, b) => {
     const ia = VAR_ORDER.indexOf(a); const ib = VAR_ORDER.indexOf(b);
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);

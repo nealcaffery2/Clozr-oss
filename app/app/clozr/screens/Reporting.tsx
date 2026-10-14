@@ -8,15 +8,19 @@ import { ReportBlocks } from '@/app/components/reporting/ReportBlocks';
 import { BankPanel } from '@/app/components/reporting/BankPanel';
 import { CustomReports } from '@/app/components/reporting/custom/CustomReports';
 import { SkeletonRows } from '@/components/ds/Skeleton';
-import { AI_AGENTS_TAB, AI_SALES_TAB, CUSTOM_TAB } from '@/lib/reporting';
+import { AI_AGENTS_TAB, AI_SALES_TAB, CUSTOM_TAB, TEAM_STOPLIGHT_TAB } from '@/lib/reporting';
 import { SalesManager } from '@/app/components/coaching/SalesManager';
 import { AiAgentsReport } from '@/app/components/reporting/AiAgentsReport';
+import { TeamStoplight } from '@/app/components/reporting/TeamStoplight';
+import { holdReporting } from '@/lib/use-crm';
 
 export function Reporting({ V }: { V: ClozrView }) {
+  React.useEffect(() => holdReporting(), []);
   // Both draw themselves with their own ranges, so the shared range buttons and Export are not theirs.
   const ai = V.reportTab === AI_AGENTS_TAB;
   const sales = V.reportTab === AI_SALES_TAB;
-  const custom = V.reportTab === CUSTOM_TAB || ai || sales;
+  const stoplight = V.reportTab === TEAM_STOPLIGHT_TAB;
+  const custom = V.reportTab === CUSTOM_TAB || ai || sales || stoplight;
   return (
     <section data-screen-label="Reporting" style={{flex: "1", minWidth: "0", display: "flex", flexDirection: "column"}}>
       <div style={{background: "#fff", borderBottom: "1px solid #e4e4e7", padding: "12px 20px 0"}}>
@@ -62,6 +66,10 @@ export function Reporting({ V }: { V: ClozrView }) {
       {sales ? (
         <div style={{flex: "1", minHeight: "0", overflow: "auto", padding: V.isMobile ? "12px 12px 40px" : "16px 20px 40px"}}>
           <SalesManager workspaceId={V.liveIds?.workspaceId ?? null} me={V.liveIds?.userId ?? null} admin={!!V.reportAdmin} isMobile={V.isMobile} toast={V.showToast} />
+        </div>
+      ) : stoplight ? (
+        <div style={{flex: "1", minHeight: "0", overflow: "auto", padding: V.isMobile ? "12px 12px 40px" : "16px 20px 40px"}}>
+          <TeamStoplight workspaceId={V.liveIds?.workspaceId ?? null} isMobile={V.isMobile} />
         </div>
       ) : ai ? (
         <div style={{flex: "1", minHeight: "0", overflow: "auto", padding: V.isMobile ? "12px 12px 40px" : "16px 20px 40px"}}>

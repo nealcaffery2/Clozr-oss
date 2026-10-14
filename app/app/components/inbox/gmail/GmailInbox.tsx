@@ -19,8 +19,8 @@
 // one implementation of the part that must not be written twice.
 //
 // Migration 82 adds three ways to cut the mail:
-//   Deals      a folder per deal, grouped by stage (under contract, in escrow,
-//              marketing, closed), holding every email filed on it whoever it
+//   Deals      a folder per deal, grouped by stage (under contract, ready to
+//              market, buyer under contract, in escrow), holding every email filed on it whoever it
 //              was with — the deal team across the top, the files underneath.
 //              "Not on a deal" collects mail with a CRM person but no deal, to
 //              be filed by hand.
@@ -41,6 +41,7 @@ import { FileChip, GmailThread } from './GmailThread';
 import { type DealFolder, FOLDERS, FOLDER_OF, useDealTeam, useMailExtras, useScopedThreads, useTeam } from './mail-extras';
 import { GmailCheck, GmailIcon } from './GmailIcon';
 import { GmailRow } from './GmailRow';
+import { NewContacts, useSuggestionCount } from './NewContacts';
 import { participantsOf, snippetOf } from './format';
 import '@/app/clozr/gmail-inbox.css';
 
@@ -104,8 +105,10 @@ export function GmailInbox({
   const [dealId, setDealId] = useState<number | null>(null);
   const [dealTab, setDealTab] = useState<'mail' | 'files'>('mail');
   const [party, setParty] = useState<string | null>(null);
-  const [folderOpen, setFolderOpen] = useState<Record<DealFolder, boolean>>({ contract: true, escrow: true, marketing: false, closed: false, other: false });
+  const [folderOpen, setFolderOpen] = useState<Record<DealFolder, boolean>>({ contract: true, marketing: true, buyer: true, escrow: true, other: false });
   const [tick, setTick] = useState(0);
+  // The "New contacts" list in place of the mail list.
+  const [showNew, setShowNew] = useState(false);
   const refresh = useCallback(() => { setTick((n) => n + 1); void email.reload(); }, [email]);
 
   // Someone else's mailbox is read as them — their read state — and never written to.
@@ -117,6 +120,9 @@ export function GmailInbox({
   const setArchived = useMemo(() => (viewingOther ? () => {} : state.setArchived), [viewingOther, state.setArchived]);
 
   const team = useTeam(workspaceId, true);
+  // TC, owners and admins see the whole team's new contacts; anyone else the ones in their own mail.
+  const newMine = seesAllMail ? null : userId;
+  const newCount = useSuggestionCount(workspaceId, newMine, tick);
   // A rep outside TC and admin is held to their own mailbox, deal folders included.
   const own = seesAllMail ? undefined : userId ?? undefined;
   const dealSeller = dealId ? (dealFor?.(dealId) ?? deals.find((d) => d.id === dealId))?.sellerId ?? null : null;
@@ -278,8 +284,8 @@ export function GmailInbox({
     setChecked(new Set<string>());
   };
 
-  const pickBucket = (b: Bucket) => { setBucket(b); setDealId(null); setParty(null); setPicked(null); setPage(0); };
-  const pickDeal = (id: number) => { setDealId(id); setDealTab('mail'); setParty(null); setPicked(null); setPage(0); };
+  const pickBucket = (b: Bucket) => { setShowNew(false); setBucket(b); setDealId(null); setParty(null); setPicked(null); setPage(0); };
+  const pickDeal = (id: number) => { setShowNew(false); setDealId(id); setDealTab('mail'); setParty(null); setPicked(null); setPage(0); };
   const pickMailbox = (v: string) => { setMailbox(v || null); setDealId(null); setPicked(null); setPage(0); setChecked(new Set<string>()); };
   const threadStarred = thread ? idsOf(thread).some((id) => starred.has(id)) : false;
 
@@ -307,7 +313,7 @@ export function GmailInbox({
           {BUCKETS.map((b) => (
             <button
               key={b.key} type="button" className="em-nav"
-              aria-current={!dealId && bucket === b.key ? 'true' : undefined}
+              aria-current={!dealId && !showNew && bucket === b.key ? 'true' : undefined}
               onClick={() => pickBucket(b.key)}
             >
               <GmailIcon name={b.icon} size={18} />
@@ -315,6 +321,14 @@ export function GmailInbox({
               {b.key === 'inbox' && unreadCount > 0 ? <span className="em-nav-count">{unreadCount}</span> : null}
             </button>
           ))}
+          {workspaceId && !demo ? (
+            <button type="button" className="em-nav" aria-current={showNew ? 'true' : undefined}
+              onClick={() => { setShowNew(true); setDealId(null); setPicked(null); }}>
+              <GmailIcon name="person_add" size={18} />
+              <span className="em-nav-label">New contacts</span>
+              {newCount ? <span className="em-nav-count">{newCount}</span> : null}
+            </button>
+          ) : null}
           {deals.length ? <div className="em-rail-head em-rail-head--deals">Deals</div> : null}
           {FOLDERS.map((f) => {
             const list = folders.get(f.key) ?? [];
@@ -402,6 +416,8 @@ export function GmailInbox({
                 />
               ) : null}
             </>
+          ) : showNew && workspaceId ? (
+            <NewContacts workspaceId={workspaceId} mine={newMine} team={team} deals={deals} toast={toast} onChanged={() => setTick((n) => n + 1)} />
           ) : (
             <>
               {openDeal && dealId ? (
@@ -520,6 +536,11 @@ export function GmailInbox({
                     {b.key === 'inbox' && unreadCount > 0 ? <span className="em-nav-count">{unreadCount}</span> : null}
                   </button>
                 ))}
+                {workspaceId && !demo && newCount ? (
+                  <button type="button" className="em-chip-btn" onClick={() => { setShowNew(true); setPicked(null); }}>
+                    New contacts <span className="em-nav-count">{newCount}</span>
+                  </button>
+                ) : null}
               </div>
               ) : null}
 

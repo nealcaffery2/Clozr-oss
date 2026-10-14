@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { armDrop } from '@/lib/busy-drop';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { readPrefs, savePrefs, DIAL_PREFS_CHANGED } from '@/lib/dial-session';
 import { clipClock, MAX_RVM_SECONDS } from '@/lib/rvm-pick';
 import { useVmLibrary, VM_LIBRARY_CHANGED, type VmClip } from './useVmLibrary';
@@ -74,10 +75,10 @@ export function useArmBusyDrop(workspaceId: number | null, userId: string | null
       }).catch(() => { if (live) armDrop(null); });
     };
     sign();
-    const timer = window.setInterval(sign, 90_000);
+    const stop = everyWhileVisible(() => { if (!document.hidden) sign(); }, 90_000);
     return () => {
       live = false;
-      window.clearInterval(timer);
+      stop();
     };
   }, [clips, signedUrl, workspaceId, userId, prefsRev]);
 }

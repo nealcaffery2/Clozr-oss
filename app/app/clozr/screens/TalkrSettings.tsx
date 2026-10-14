@@ -20,6 +20,7 @@ import React, { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, type AiAgentDto, type HoldMusicDto, type MeDto, type MessageTemplateDto } from '@/lib/talkr-web/api';
 import { SAFE_WINDOW, callWindow, localZone, tzTime } from '@/lib/talkr-web/time';
 import { displayName, useSession } from '@/lib/session';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { type Role, isAdmin } from '@/lib/team';
 import { type WorkspaceSettings, loadSettings, saveSettings } from '@/lib/integrations';
 import { useSoftphone } from '@/app/components/talkr/softphoneAdapter';
@@ -51,10 +52,10 @@ function useNow(): number | null {
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
     const first = setTimeout(() => setNow(Date.now()), 0);
-    const t = setInterval(() => setNow(Date.now()), 30_000);
+    const stop = everyWhileVisible(() => setNow(Date.now()), 30_000);
     return () => {
       clearTimeout(first);
-      clearInterval(t);
+      stop();
     };
   }, []);
   return now;

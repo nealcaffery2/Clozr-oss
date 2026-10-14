@@ -18,6 +18,7 @@
  */
 
 import { eventFacts, useTalkrEvents } from '@/lib/talkr-events';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ClozrView } from '@/app/clozr/view';
 import type { CallTarget } from '@/app/clozr/useClozr';
@@ -228,7 +229,7 @@ export function TalkrSoftphoneProvider({ V, children }: { V: ClozrView; children
   }, []);
 
   // The room re-reads when Talkr says this call changed (the shared stream,
-  // lib/talkr-events), and every 8 s while the tab is in view in case an
+  // lib/talkr-events), and every 30 s while the tab is in view in case an
   // event is missed. Not while hidden: nobody is looking at the roster.
   useTalkrEvents(!!callId, ['call.updated'], (events) => {
     if (callId && events.some((e) => { const id = eventFacts(e).callId; return !id || id === callId; })) void refreshParticipants(callId);
@@ -239,10 +240,7 @@ export function TalkrSoftphoneProvider({ V, children }: { V: ClozrView; children
       return;
     }
     void refreshParticipants(callId);
-    const t = setInterval(() => {
-      if (document.visibilityState === 'visible') void refreshParticipants(callId);
-    }, 8000);
-    return () => clearInterval(t);
+    return everyWhileVisible(() => { void refreshParticipants(callId); }, 30_000);
   }, [callId, refreshParticipants]);
 
   const control = useCallback(

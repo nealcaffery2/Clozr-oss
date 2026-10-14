@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { type GoogleStatus, GOOGLE_SCOPE, granted, googleStatus } from '@/lib/google';
 import { type HistoryItemDto, api } from '@/lib/talkr-web/api';
 import type { ClozrRecord } from '@/app/components/talkr/MessagesScreen';
@@ -323,8 +324,8 @@ export function useEmail(workspaceId: number | null, ownOnly: string | null = nu
     };
     document.addEventListener('visibilitychange', onFocus);
     // A socket can drop without saying so: every five minutes while in view.
-    const every = setInterval(() => { if (document.visibilityState === 'visible') bump(); }, 300_000);
-    return () => { if (timer) clearTimeout(timer); clearInterval(every); document.removeEventListener('visibilitychange', onFocus); void sb.removeChannel(ch); };
+    const stop = everyWhileVisible(() => bump(), 300_000);
+    return () => { if (timer) clearTimeout(timer); stop(); document.removeEventListener('visibilitychange', onFocus); void sb.removeChannel(ch); };
   }, [workspaceId, readNewest]);
 
   const threads = useMemo(() => groupThreads(rows), [rows]);

@@ -22,6 +22,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ClozrView } from '@/app/clozr/view';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import type { CallContextParams } from '@/lib/talkr-web/api';
 import { callWindow, tzAbbr, tzTime, toE164, zoneForNumber } from '@/lib/talkr-web/time';
 import { useSoftphone } from './softphoneAdapter';
@@ -86,8 +87,7 @@ export function DialerScreen({ V }: { V: ClozrView }) {
   // mismatched first paint is a hydration error.
   useEffect(() => {
     setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(t);
+    return everyWhileVisible(() => setNow(Date.now()), 30_000);
   }, []);
 
   // A call placed from here clears the field.
@@ -209,7 +209,7 @@ export function DialerScreen({ V }: { V: ClozrView }) {
         title="Dialer"
         subtitle={wrap ? 'Wrapping up' : inCall ? 'One live call' : 'Ready to dial'}
         // Talkr's New call opens /dialer; here that is this page, so it lands in the number field.
-        onNewCall={() => document.querySelector<HTMLInputElement>('.talkr-dialer input[aria-label="Number to dial"]')?.focus()}
+        onNewCall={() => document.querySelector<HTMLInputElement>('.talkr-dialer input[aria-label^="Number to dial"]')?.focus()}
       />
       <TalkrNotSignedIn V={V} />
       <DialSessionBar V={V} />

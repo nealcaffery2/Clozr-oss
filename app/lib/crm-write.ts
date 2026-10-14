@@ -643,8 +643,10 @@ export async function createTask(
   const sid = sellerId != null && Number.isFinite(sellerId) ? sellerId : null;
   const itemId = sid != null ? checklistIdForTitle(f.title.trim()) : null;
   if (itemId && sid != null) {
+    // A seller can have more than one TC file: the newest open one (maybeSingle on several errored, and the tick was lost).
     const { data: tx } = await supabase.from('transactions')
-      .select('id, checklist').eq('workspace_id', workspaceId).eq('seller_id', sid).maybeSingle();
+      .select('id, checklist').eq('workspace_id', workspaceId).eq('seller_id', sid).eq('status', 'open')
+      .order('id', { ascending: false }).limit(1).maybeSingle();
     if (tx) {
       const cur = ((tx as { checklist?: Record<string, boolean> }).checklist ?? {});
       if (!cur[itemId]) {
@@ -1235,7 +1237,7 @@ export async function setTaskDone(taskId: string, done: boolean, actorId?: strin
   const id = dbId(taskId);
   if (!Number.isFinite(id)) return { ok: false, message: 'Unknown task.' };
   const { data: task, error: readErr } = await supabase.from('tasks')
-    .select('id, title, seller_id, workspace_id').eq('id', id).maybeSingle();
+    .select('id, title, seller_id, deal_id, workspace_id').eq('id', id).maybeSingle();
   if (readErr) return fail(readErr);
   const { error } = await supabase.from('tasks')
     .update({ done, completed_at: done ? new Date().toISOString() : null }).eq('id', id);
@@ -1243,8 +1245,11 @@ export async function setTaskDone(taskId: string, done: boolean, actorId?: strin
   const sellerId = task?.seller_id ?? null;
   const itemId = task?.title ? checklistIdForTitle(task.title) : null;
   if (sellerId && itemId && task?.workspace_id) {
-    const { data: tx } = await supabase.from('transactions')
-      .select('id, checklist').eq('workspace_id', task.workspace_id).eq('seller_id', sellerId).maybeSingle();
+    // The task's own deal's file when it names one, else the seller's newest open file:
+    // with two files maybeSingle errored and finishing the task never ticked the line.
+    let q = supabase.from('transactions').select('id, checklist').eq('workspace_id', task.workspace_id).eq('status', 'open');
+    q = task.deal_id ? q.eq('deal_id', task.deal_id) : q.eq('seller_id', sellerId);
+    const { data: tx } = await q.order('id', { ascending: false }).limit(1).maybeSingle();
     if (tx) {
       const cur = ((tx as { checklist?: Record<string, boolean> }).checklist ?? {});
       if (!!cur[itemId] !== done) {

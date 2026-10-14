@@ -262,7 +262,7 @@ export function NumbersPage({ isMobile }: { isMobile: boolean }) {
       </Card>
 
       <Collapsed title="RVM pool" meta={`${book.pool.length} line${book.pool.length === 1 ? '' : 's'}`}>
-        <RvmPool numbers={phone.numbers.filter((n) => n.status === 'active' || !n.status).map((n) => ({ phone_e164: n.phone_e164, label: n.label }))} admin={talkrAdmin} onBuy={admin ? () => setOpen({ kind: 'add' }) : undefined} />
+        <RvmPool numbers={phone.numbers.filter((n) => n.status === 'active' || !n.status).map((n) => ({ phone_e164: n.phone_e164, label: n.label, assigned_user_id: n.assigned_user_id }))} admin={talkrAdmin} onBuy={admin ? () => setOpen({ kind: 'add' }) : undefined} />
       </Collapsed>
       {talkrAdmin ? <Collapsed title="Caller reputation" meta="Registrations, spam checks, 10DLC"><CallerReputation enabled /></Collapsed> : null}
       {book.agentLines ? <Collapsed title="AI agent lines" meta={`${book.agentLines} · managed under AI agents`} /> : null}

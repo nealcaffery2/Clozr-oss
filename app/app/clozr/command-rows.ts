@@ -109,6 +109,8 @@ export type CmdRow = {
   mark: Mark;
   /** A colour of its own (a record's stage) in place of the mark's. */
   dot?: string;
+  /** The word the row's icon is picked by, when it is not the label ("Call" for a call that matched). */
+  glyph?: string;
   action: CmdAction;
   /** ⌘⏎. */
   alt?: { label: string; action: CmdAction };
