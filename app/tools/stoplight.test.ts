@@ -27,14 +27,14 @@ eq('lower: 20 days is yellow', grade(20, lo), 'yellow');
 eq('lower: 22 days is red', grade(22, lo), 'red');
 
 // The example targets in lib/stoplight.ts.
-eq('acq revenue $75K / $100K a month', [ACQ_TARGETS.revenue.expectation, ACQ_TARGETS.revenue.goal], [75000, 100000]);
-eq('acq pipeline $150K / $200K, not prorated', [ACQ_TARGETS.pipeline.expectation, ACQ_TARGETS.pipeline.prorate], [150000, false]);
-eq('lead manager appointments 15 / 30', [LEAD_MANAGER_TARGETS.appointments.expectation, LEAD_MANAGER_TARGETS.appointments.goal], [15, 30]);
-eq('dispo deals assigned is a placeholder', DISPO_TARGETS.dealsAssigned.placeholder, true);
+eq('acq revenue $50K / $80K a month', [ACQ_TARGETS.revenue.expectation, ACQ_TARGETS.revenue.goal], [50000, 80000]);
+eq('acq pipeline $100K / $150K, not prorated', [ACQ_TARGETS.pipeline.expectation, ACQ_TARGETS.pipeline.prorate], [100000, false]);
+eq('lead manager appointments 10 / 20', [LEAD_MANAGER_TARGETS.appointments.expectation, LEAD_MANAGER_TARGETS.appointments.goal], [10, 20]);
+eq('dispo deals assigned 4 / 6', [DISPO_TARGETS.dealsAssigned.expectation, DISPO_TARGETS.dealsAssigned.goal], [4, 6]);
 
 // Prorating: 4 weeks of 5 workdays, so a week is a quarter of the month.
-eq('a week is a quarter of monthly revenue', scaled(ACQ_TARGETS.revenue, 5), { expectation: 18750, goal: 25000 });
-eq('pipeline is the same in any range', scaled(ACQ_TARGETS.pipeline, 5), { expectation: 150000, goal: 200000 });
+eq('a week is a quarter of monthly revenue', scaled(ACQ_TARGETS.revenue, 5), { expectation: 12500, goal: 20000 });
+eq('pipeline is the same in any range', scaled(ACQ_TARGETS.pipeline, 5), { expectation: 100000, goal: 150000 });
 
 // Activity blocks.
 eq('any: 2 hits green', activityLight(2, 5, 'any'), 'green');
@@ -57,18 +57,18 @@ const zero: StoplightMetrics = {
   buyer_calls: 0, buyer_talk_min: 0, buyer_texts: 0, buyers_added: 0, buyer_offers: 0, deals_marketed: 0, buyer_contracts: 0,
   closed_acq: 0, revenue_acq: 0, closed_dispo: 0, revenue_dispo: 0, pipeline_acq: 0, pipeline_dispo: 0,
 };
-// Andino's week: 116 calls a day, no offers, no contracts.
-const andino = acquisitionsCells({ ...zero, calls: 580, talk_min: 200 }, 5);
+// A rep's week: 116 calls a day, no offers, no contracts.
+const caller = acquisitionsCells({ ...zero, calls: 580, talk_min: 200 }, 5);
 const cell = (cells: ReturnType<typeof acquisitionsCells>, k: string) => cells.find((c) => c.key === k)!;
-eq('116 calls a day meets the 50 minimum', [cell(andino, 'calls').light, cell(andino, 'calls').shown], ['green', '116/day']);
-eq('one minimum hit is a yellow activity block', cell(andino, 'activity').light, 'yellow');
-eq('no closings: average fee not graded', cell(andino, 'avgFee').light, 'none');
-eq('conversations have no target', cell(andino, 'conversations').target, null);
-eq('a week with no revenue is red', cell(andino, 'revenue').light, 'red');
-const both = acquisitionsCells({ ...zero, calls: 300, talk_min: 500 }, 5);
+eq('116 calls a day meets the 60 minimum', [cell(caller, 'calls').light, cell(caller, 'calls').shown], ['green', '116/day']);
+eq('one minimum hit is a yellow activity block', cell(caller, 'activity').light, 'yellow');
+eq('no closings: average fee not graded', cell(caller, 'avgFee').light, 'none');
+eq('conversations have no target', cell(caller, 'conversations').target, null);
+eq('a week with no revenue is red', cell(caller, 'revenue').light, 'red');
+const both = acquisitionsCells({ ...zero, calls: 300, talk_min: 650 }, 5);
 eq('calls and talk time is a green block', cell(both, 'activity').light, 'green');
 // A missed single minimum doesn't make the row red when the block passes.
-const taylor = acquisitionsCells({ ...zero, calls: 290, talk_min: 520, closed_acq: 1, revenue_acq: 32000, pipeline_acq: 214000, appointments: 10 }, 5);
+const taylor = acquisitionsCells({ ...zero, calls: 320, talk_min: 650, closed_acq: 1, revenue_acq: 32000, pipeline_acq: 214000, appointments: 10 }, 5);
 eq('missed offers minimum is red on its own', cell(taylor, 'offers').light, 'red');
 eq('...but the row reads green when the block and KPIs pass', personLight(taylor, []), 'green');
 const jamie = acquisitionsCells(zero, 5);
@@ -76,11 +76,11 @@ eq('nothing logged is a red block', cell(jamie, 'activity').light, 'red');
 const closer = acquisitionsCells({ ...zero, closed_acq: 1, revenue_acq: 28000, pipeline_acq: 210000 }, 5);
 eq('one $28K closing: fee green', cell(closer, 'avgFee').light, 'green');
 eq('$210K pipeline green', cell(closer, 'pipeline').light, 'green');
-eq('$28K in a week passes the $25K goal', cell(closer, 'revenue').light, 'green');
+eq('$28K in a week passes the $20K goal', cell(closer, 'revenue').light, 'green');
 
-const dispo = dispositionsCells({ ...zero, buyer_calls: 260, buyer_talk_min: 470, buyers_added: 16, buyer_offers: 11 }, 5);
+const dispo = dispositionsCells({ ...zero, buyer_calls: 260, buyer_talk_min: 470, buyers_added: 26, buyer_offers: 11 }, 5);
 eq('dispo: all four minimums is green', dispo.find((c) => c.key === 'activity')!.light, 'green');
-const dispoLow = dispositionsCells({ ...zero, buyer_calls: 260, buyer_talk_min: 470, buyers_added: 16 }, 5);
+const dispoLow = dispositionsCells({ ...zero, buyer_calls: 260, buyer_talk_min: 470, buyers_added: 26 }, 5);
 eq('dispo: three of four is yellow', dispoLow.find((c) => c.key === 'activity')!.light, 'yellow');
 eq('dispo: deals marketed has no target', dispo.find((c) => c.key === 'marketed')!.target, null);
 

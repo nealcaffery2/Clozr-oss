@@ -167,7 +167,7 @@ const SUFFIX: Record<string, string> = {
   pkwy: 'Parkway', trl: 'Trail', hwy: 'Highway', pl: 'Place', ter: 'Terrace', cv: 'Cove',
 };
 
-/** "123 N Warnock St, San Antonio, TX" -> "Warnock Street": the street the way a rep says it ("your property there on Warnock Street"). */
+/** "123 N Maple St, San Antonio, TX" -> "Maple Street": the street the way a rep says it ("your property there on Maple Street"). */
 export function streetOf(address: string): string {
   const line = String(address ?? '').split(',')[0].trim();
   const words = line.replace(/\s+(apt|unit|ste|suite|#)\s*\S*$/i, '').split(/\s+/).filter(Boolean);
@@ -187,7 +187,7 @@ export function streetOf(address: string): string {
  * The first line on a call we placed to a known person, the way a seasoned acquisitions rep opens
  * hundreds of calls: their name said with confidence (no "is this...?"), who we
  * are, and the reason in the same breath ("calling about your property there on
- * Warnock Street"), then a pause for them to answer. Stating the reason up front
+ * Maple Street"), then a pause for them to answer. Stating the reason up front
  * is what moves a cold call; asking whether it's a bad time is what stalls it.
  */
 export function outboundOpener(first: string, p: Persona, address = ''): string {

@@ -37,7 +37,7 @@ export const FREE_MAIL = new Set(['gmail.com', 'googlemail.com', 'outlook.com', 
 export const WARMUP_START = 50;
 
 /** Who emails buyers, and therefore gets from-addresses on the blast domain. */
-export const BUYER_SEND_ROLES = ['owner', 'admin', 'dispositions'] as const;
+export const BUYER_SEND_ROLES = ['owner', 'admin', 'dispositions', 'sdr'] as const;
 
 /**
  * Addresses on the blast domain for one rep. Ten at 100/day is 1,000 once

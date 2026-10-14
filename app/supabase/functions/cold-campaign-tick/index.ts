@@ -27,7 +27,7 @@ import { unsubscribeToken, unsubscribeUrl, verificationBlock } from '../_shared/
 import {
   blockedSendingDomains, coldDailyAllowance, coldDeliverability, coldMessageId, coldSendRoom, composeColdText, countsAsComplaint, createWarmupProvider,
   mailboxDayStart, mailboxGapSeconds, oooResumeAt, placementPausesRamp, plainHtml, planColdSend, poolPauseReason, prospectReply,
-  recipientCompanyDomain, recipientProvider, replyOwner, rewriteTrackedLinks, poolAlerts, stateOf, warmupGateOn, WARMUP_GATE_MIN_SCORE, withOpenPixel, zoneForState, type ColdDeliverability, type ColdDomain, type ColdMailbox, type ColdStep,
+  assignOnReply, recipientCompanyDomain, recipientProvider, replyOwner, rewriteTrackedLinks, poolAlerts, stateOf, warmupGateOn, WARMUP_GATE_MIN_SCORE, withOpenPixel, zoneForState, type ColdDeliverability, type ColdDomain, type ColdMailbox, type ColdStep,
 } from '../_shared/cold-campaign.ts';
 import { pollPool, sendPool, textToHtml, type Polled } from '../_shared/cold-transport.ts';
 import { syncWarmup } from '../_shared/cold-warmup.ts';
@@ -266,11 +266,20 @@ async function recordReply(admin: SupabaseClient, mailbox: Any, ws: number, msg:
     ? (await admin.from('buyers').select('assigned_to, owner_id, name').eq('id', enrollment.buyer_id).eq('workspace_id', ws).maybeSingle()).data as Any
     : null;
   const workspace = (await admin.from('workspaces').select('owner_id').eq('id', ws).maybeSingle()).data as Any;
+  const mailboxUserId: string | null = mailbox.user_id ?? null;
   const owner = replyOwner({
     buyerAssignedTo: buyerRow?.assigned_to ?? null,
+    mailboxUserId,
     buyerOwnerId: buyerRow?.owner_id ?? null,
     workspaceOwnerId: workspace?.owner_id ?? null,
   });
+  // A person answered and nobody had them: they are the inbox rep's now (migration 268).
+  const assignTo = assignOnReply({ buyerAssignedTo: buyerRow?.assigned_to ?? null, mailboxUserId, classification, complaint });
+  if (assignTo && enrollment.buyer_id) {
+    const { error: assignErr } = await admin.from('buyers').update({ assigned_to: assignTo })
+      .eq('id', enrollment.buyer_id).eq('workspace_id', ws).is('assigned_to', null);
+    if (assignErr) console.error('cold reply assign', assignErr.message);
+  }
   const { data: comm } = await admin.from('communications').upsert({
     workspace_id: ws, buyer_id: enrollment.buyer_id, channel: 'email', direction: 'inbound', occurred_at: msg.receivedAt,
     subject: msg.subject, body: msg.body.slice(0, 20_000), from_email: msg.from, to_email: mailbox.email, status: 'received',

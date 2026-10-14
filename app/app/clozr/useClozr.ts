@@ -8182,13 +8182,14 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       home: 'M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5',
       people: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M22 21v-2a4 4 0 0 0-3-3.87',
       deals: 'M3 3v18h18 M7 15l4-4 3 3 5-6',
+      buyers: 'M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16 M4 6h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z',
       tasks: 'M9 11l3 3L22 4 M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11',
       inbox: 'M22 12h-6l-2 3h-4l-2-3H2 M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z',
       today: 'M16.13 12a4.13 4.13 0 1 1-8.26 0 4.13 4.13 0 0 1 8.26 0z M12 2.25V4.5 M12 19.5v2.25 M2.25 12H4.5 M19.5 12h2.25 M5.1 5.1l1.65 1.65 M17.25 17.25l1.65 1.65 M5.1 18.9l1.65-1.65 M17.25 6.75l1.65-1.65',
     };
     // The first slot is where the role lands: Today for acquisitions.
     const mobileTabs = ([
-      [landing === 'today' ? 'Today' : 'Home', landing === 'today' ? 'today' : 'home'], ['People', 'people'], ['Deals', 'deals'], ['Tasks', 'tasks'], ['Inbox', 'inbox'],
+      [landing === 'today' ? 'Today' : 'Home', landing === 'today' ? 'today' : 'home'], ...(role === 'sdr' ? [['Buyers', 'buyers']] : [['People', 'people'], ['Deals', 'deals']]) as [string, string][], ['Tasks', 'tasks'], ['Inbox', 'inbox'],
     ] as [string, string][]).filter(([, key]) => canSee(role, key)).map(([label, key]) => ({
       label, key, icon: TAB_ICONS[key],
       active: activeKey === key,
@@ -8216,7 +8217,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       ['Settings', 'settings'], ['Account', 'account'],
     // COMPR is on every record for every role (the desktop Tools menu shows it
     // to everyone), so it is not a screen canSee knows about.
-    ] as [string, string][]).filter(([, key]) => key === 'compr' || canSee(role, key)).map(([label, key]) => ({
+    // An SDR already has Buyers as a tab, so it is not in More.
+    ] as [string, string][]).filter(([, key]) => (key === 'compr' || canSee(role, key)) && !(role === 'sdr' && key === 'buyers')).map(([label, key]) => ({
       label, key,
       active: key !== 'compr' && activeKey === key,
       // COMPR is not a screen of its own — it is the underwriting workspace on

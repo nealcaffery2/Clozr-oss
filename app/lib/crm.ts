@@ -1701,7 +1701,7 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
       name,
       initials: initialsOf(name),
       role: m.profiles?.title || (m.role === 'tc' ? 'Transaction coordinator' : m.role === 'owner' ? 'Owner' : 'Member'),
-      dept: m.role === 'tc' ? 'TC' : m.role === 'dispositions' ? 'Dispo' : m.role === 'partnerships' ? 'Partnerships' : 'Acquisitions',
+      dept: m.role === 'tc' ? 'TC' : m.role === 'dispositions' ? 'Dispo' : m.role === 'partnerships' ? 'Partnerships' : m.role === 'sdr' ? 'SDR' : 'Acquisitions',
       memberRole: m.role,
       ...(m.profiles?.avatar_url ? { avatar: m.profiles.avatar_url } : {}),
     };

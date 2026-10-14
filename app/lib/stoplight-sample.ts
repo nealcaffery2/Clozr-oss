@@ -33,7 +33,7 @@ export function sampleStoplight(from: Date, to: Date, workdays: number, now = ne
       items: {
         overdue_tasks: [
           { id: 9101, title: 'Call back: wants offer in writing', due_at: ago(2), seller_id: 1, deal_id: null, buyer_id: null, who: 'Kara Mitchell' },
-          { id: 9102, title: 'Send seller the walkthrough times', due_at: ago(1), seller_id: 2, deal_id: 3, buyer_id: null, who: 'Dale Porter' },
+          { id: 9102, title: 'Send seller the walkthrough times', due_at: ago(1), seller_id: 2, deal_id: 3, buyer_id: null, who: 'Drew Collins' },
           { id: 9103, title: 'Follow up on probate letter', due_at: ago(1), seller_id: null, deal_id: null, buyer_id: null, who: null },
         ],
         untouched_leads: [], no_next_step: [],
@@ -45,16 +45,16 @@ export function sampleStoplight(from: Date, to: Date, workdays: number, now = ne
       gaps: { overdue_tasks: 46, overdue_unlinked: 40, untouched_leads: 812, no_next_step: 1 },
       items: {
         overdue_tasks: [
-          { id: 9201, title: 'Call back', due_at: ago(19), seller_id: 4, deal_id: null, buyer_id: null, who: 'Rosa Delgado' },
-          { id: 9202, title: 'Call back', due_at: ago(17), seller_id: 5, deal_id: null, buyer_id: null, who: 'Marcus Hill' },
-          { id: 9203, title: 'Text seller the offer range', due_at: ago(9), seller_id: 6, deal_id: null, buyer_id: null, who: 'Anita Shah' },
+          { id: 9201, title: 'Call back', due_at: ago(19), seller_id: 4, deal_id: null, buyer_id: null, who: 'Nina Patel' },
+          { id: 9202, title: 'Call back', due_at: ago(17), seller_id: 5, deal_id: null, buyer_id: null, who: 'Omar Reyes' },
+          { id: 9203, title: 'Text seller the offer range', due_at: ago(9), seller_id: 6, deal_id: null, buyer_id: null, who: 'Lena Brooks' },
         ],
         untouched_leads: [
-          { id: 7, name: 'Ana Delgado', address: '418 Rigsby Ave', created_at: ago(3) },
-          { id: 8, name: 'Dale Hughes', address: '2210 W Mulberry Ave', created_at: ago(5) },
-          { id: 9, name: 'Rosa Flores', address: '901 Hammond Ave', created_at: ago(8) },
+          { id: 7, name: 'Ana Delgado', address: '418 Maple Ave', created_at: ago(3) },
+          { id: 8, name: 'Dale Hughes', address: '2210 W Cedar Ave', created_at: ago(5) },
+          { id: 9, name: 'Rosa Flores', address: '901 Birch Ave', created_at: ago(8) },
         ],
-        no_next_step: [{ deal_id: 11, seller_id: 10, label: '7314 Callaghan Rd', stage: 'Under Contract Seller' }],
+        no_next_step: [{ deal_id: 11, seller_id: 10, label: '7314 Poplar Rd', stage: 'Under Contract Seller' }],
       },
     }),
     person({
@@ -68,10 +68,10 @@ export function sampleStoplight(from: Date, to: Date, workdays: number, now = ne
       gaps: { overdue_tasks: 4, overdue_unlinked: 4, untouched_leads: 1, no_next_step: 2 },
       items: {
         overdue_tasks: [{ id: 9301, title: 'Send buyer the assignment', due_at: ago(4), seller_id: null, deal_id: null, buyer_id: 12, who: null }],
-        untouched_leads: [{ id: 13, name: 'Luis Romero', address: '115 Brady Blvd', created_at: ago(12) }],
+        untouched_leads: [{ id: 13, name: 'Luis Romero', address: '115 Aspen Blvd', created_at: ago(12) }],
         no_next_step: [
-          { deal_id: 14, seller_id: 15, label: '5502 Timber Path', stage: 'Ready To Market' },
-          { deal_id: 16, seller_id: 17, label: '230 E Mitchell St', stage: 'Buyer Under Contract' },
+          { deal_id: 14, seller_id: 15, label: '5502 Pine Path', stage: 'Ready To Market' },
+          { deal_id: 16, seller_id: 17, label: '230 E Hazel St', stage: 'Buyer Under Contract' },
         ],
       },
     }),
@@ -82,14 +82,14 @@ export function sampleStoplight(from: Date, to: Date, workdays: number, now = ne
       items: {
         overdue_tasks: [{ id: 9401, title: 'Chase title for payoff', due_at: ago(3), seller_id: null, deal_id: null, buyer_id: null, who: null }],
         untouched_leads: [],
-        no_next_step: [{ deal_id: 18, seller_id: 19, label: '1907 Fresno St', stage: 'In Escrow' }],
+        no_next_step: [{ deal_id: 18, seller_id: 19, label: '1907 Laurel St', stage: 'In Escrow' }],
       },
     }),
     person({
       user_id: 'sam', name: 'Sam Rivera', role: 'owner', is_tc: false, last_call_at: ago(0.5),
       metrics: m({ calls: 3 }),
       gaps: { overdue_tasks: 1, overdue_unlinked: 1, untouched_leads: 0, no_next_step: 0 },
-      items: { overdue_tasks: [{ id: 9501, title: 'Approve the HUD for 1907 Fresno', due_at: ago(1), seller_id: 19, deal_id: 18, buyer_id: null, who: 'Ellen Ford' }], untouched_leads: [], no_next_step: [] },
+      items: { overdue_tasks: [{ id: 9501, title: 'Approve the HUD for 1907 Laurel', due_at: ago(1), seller_id: 19, deal_id: 18, buyer_id: null, who: 'Quinn Avery' }], untouched_leads: [], no_next_step: [] },
     }),
   ];
 
@@ -98,11 +98,11 @@ export function sampleStoplight(from: Date, to: Date, workdays: number, now = ne
     emd_received_at: null, checklist: [], schedule_c: [], tc_rep_id: 'casey', last_activity_at: ago(1), ...f,
   });
   const tc_files: TcFileRow[] = [
-    file({ transaction_id: 1, deal_id: 18, label: '1907 Fresno St', stage: 'In Escrow', contract_date: day(18), ctc_target: day(8), close_date: day(-3), checklist: ['a1', 'a2', 'a5', 'a7', 'a9', 'a11', 'a12', 'a13', 'a16'] }),
-    file({ transaction_id: 2, deal_id: 20, label: '4410 Vance Jackson Rd', stage: 'Ready To Market', contract_date: day(9), ctc_target: day(-1), checklist: ['a1', 'a2', 'a34', 'a5', 'a7', 'a9', 'a11', 'a12', 'a13', 'a17'], schedule_c: [{ id: 'c1', text: 'Open city lien, $2,140', status: 'red' }] }),
-    file({ transaction_id: 3, deal_id: 22, label: '812 Pleasanton Rd', deal_type: 'novation', contract_date: day(5), ctc_target: null, checklist: [] }),
-    file({ transaction_id: 4, deal_id: 24, label: '316 Kayton Ave', contract_date: day(2), checklist: ['a1', 'a2', 'a34', 'a5', 'a7'], tc_rep_id: null, last_activity_at: ago(11) }),
-    file({ transaction_id: 5, deal_id: 26, label: '6015 Ingram Rd', contract_date: day(1), checklist: ['a1', 'a2', 'a34'] }),
+    file({ transaction_id: 1, deal_id: 18, label: '1907 Laurel St', stage: 'In Escrow', contract_date: day(18), ctc_target: day(8), close_date: day(-3), checklist: ['a1', 'a2', 'a5', 'a7', 'a9', 'a11', 'a12', 'a13', 'a16'] }),
+    file({ transaction_id: 2, deal_id: 20, label: '4410 Juniper Rd', stage: 'Ready To Market', contract_date: day(9), ctc_target: day(-1), checklist: ['a1', 'a2', 'a34', 'a5', 'a7', 'a9', 'a11', 'a12', 'a13', 'a17'], schedule_c: [{ id: 'c1', text: 'Open city lien, $2,140', status: 'red' }] }),
+    file({ transaction_id: 3, deal_id: 22, label: '812 Sycamore Rd', deal_type: 'novation', contract_date: day(5), ctc_target: null, checklist: [] }),
+    file({ transaction_id: 4, deal_id: 24, label: '316 Spruce Ave', contract_date: day(2), checklist: ['a1', 'a2', 'a34', 'a5', 'a7'], tc_rep_id: null, last_activity_at: ago(11) }),
+    file({ transaction_id: 5, deal_id: 26, label: '6015 Willow Rd', contract_date: day(1), checklist: ['a1', 'a2', 'a34'] }),
   ];
 
   return {

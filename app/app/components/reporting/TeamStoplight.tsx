@@ -216,7 +216,7 @@ function LaneCard({ lane, rows, isMobile, open, setOpen, files, today, staleDays
     return () => ro.disconnect();
   }, [isMobile]);
   const sub = lane === 'acquisitions' ? 'Daily minimums: hit any one (2 of 5 is green). KPIs and appointment minimums from the team targets.'
-    : lane === 'dispositions' ? 'Daily minimums: all four for green, 3 of 4 is yellow. Deals assigned is still a placeholder on the sheet.'
+    : lane === 'dispositions' ? 'Daily minimums: all four for green, 3 of 4 is yellow.'
       : lane === 'tc' ? `Live TC files they coordinate, checked against the TC SOP checklist. Stale means nothing logged in ${staleDays} days.`
         : 'No activity targets for these roles, so only the admin gaps are checked.';
   return (

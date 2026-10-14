@@ -27,21 +27,21 @@ const QUOTA_DOC = 'the lead manager expectations';
 
 /** Team targets, ACQUISITIONS KPI TARGETS (monthly). Pipeline is a balance, so it is not prorated. */
 export const ACQ_TARGETS = {
-  pipeline: { expectation: 150_000, goal: 200_000, direction: 'higher', prorate: false, source: SHEET },
-  revenue: { expectation: 75_000, goal: 100_000, direction: 'higher', prorate: true, source: SHEET },
-  avgFee: { expectation: 15_000, goal: 20_000, direction: 'higher', prorate: false, source: SHEET },
+  pipeline: { expectation: 100_000, goal: 150_000, direction: 'higher', prorate: false, source: SHEET },
+  revenue: { expectation: 50_000, goal: 80_000, direction: 'higher', prorate: true, source: SHEET },
+  avgFee: { expectation: 10_000, goal: 15_000, direction: 'higher', prorate: false, source: SHEET },
 } satisfies Record<string, Target>;
 
 /** Lead manager expectations, monthly appointments. */
 export const LEAD_MANAGER_TARGETS = {
-  appointments: { expectation: 15, goal: 30, direction: 'higher', prorate: true, source: QUOTA_DOC },
+  appointments: { expectation: 10, goal: 20, direction: 'higher', prorate: true, source: QUOTA_DOC },
 } satisfies Record<string, Target>;
 
-/** Team targets, DISPOSITIONS KPI TARGETS (monthly). The sheet marks deals assigned as a placeholder. */
+/** Team targets, DISPOSITIONS KPI TARGETS (monthly). */
 export const DISPO_TARGETS = {
-  dealsAssigned: { expectation: 5, goal: 6, direction: 'higher', prorate: true, source: SHEET, placeholder: true },
-  revenue: { expectation: 75_000, goal: 100_000, direction: 'higher', prorate: true, source: SHEET },
-  avgFee: { expectation: 15_000, goal: 20_000, direction: 'higher', prorate: false, source: SHEET },
+  dealsAssigned: { expectation: 4, goal: 6, direction: 'higher', prorate: true, source: SHEET },
+  revenue: { expectation: 50_000, goal: 80_000, direction: 'higher', prorate: true, source: SHEET },
+  avgFee: { expectation: 10_000, goal: 15_000, direction: 'higher', prorate: false, source: SHEET },
 } satisfies Record<string, Target>;
 
 /**
@@ -51,16 +51,16 @@ export const DISPO_TARGETS = {
  */
 export const ACQ_ACTIVITY = {
   mode: 'any' as const,
-  daily: { contracts: 1, calls: 50, offers: 3, talkMin: 90, jvSellers: 2 },
+  daily: { contracts: 1, calls: 60, offers: 2, talkMin: 120, jvSellers: 2 },
 };
 
 /**
- * Team targets, DISPOSITIONS DAILY ACTIVITY MINIMUMS, grading mode ALL (cell
- * C49): 4 of 4 green, 3 of 4 yellow, 2 or fewer red.
+ * Team targets, DISPOSITIONS DAILY ACTIVITY MINIMUMS, grading mode ALL: 4 of
+ * 4 green, 3 of 4 yellow, 2 or fewer red.
  */
 export const DISPO_ACTIVITY = {
   mode: 'all' as const,
-  daily: { buyerCalls: 50, talkMin: 90, buyersAdded: 3, offers: 2 },
+  daily: { buyerCalls: 40, talkMin: 60, buyersAdded: 5, offers: 2 },
 };
 
 /** Days a TC file can sit with no call, text, email, finished task or stage change before it reads stale. */
@@ -68,7 +68,7 @@ export const TC_STALE_DAYS = 7;
 
 // ---- grading -----------------------------------------------------------------
 
-/** The sheet's rule: green at the goal, yellow at the expectation, red below. A missing value is not graded. */
+/** The rule: green at the goal, yellow at the expectation, red below. A missing value is not graded. */
 export function grade(value: number | null | undefined, t: Pick<Target, 'expectation' | 'goal' | 'direction'>): Light {
   if (value == null || !Number.isFinite(value)) return 'none';
   if (t.direction === 'higher') return value >= t.goal ? 'green' : value >= t.expectation ? 'yellow' : 'red';
@@ -82,14 +82,14 @@ export function scaled(t: Target, workdays: number): { expectation: number; goal
   return { expectation: t.expectation * f, goal: t.goal * f };
 }
 
-/** Activity hits graded the sheet's way: `any` needs 2 for green, `all` needs every one. */
+/** Activity hits graded this way: `any` needs 2 for green, `all` needs every one. */
 export function activityLight(hits: number, of: number, mode: 'any' | 'all'): Light {
   if (of <= 0) return 'none';
   if (mode === 'any') return hits >= 2 ? 'green' : hits === 1 ? 'yellow' : 'red';
   return hits >= of ? 'green' : hits === of - 1 ? 'yellow' : 'red';
 }
 
-/** Week status from the sheet: any red is red, all green is green, else yellow. Ungraded cells don't count. */
+/** Week status: any red is red, all green is green, else yellow. Ungraded cells don't count. */
 export function overall(lights: Light[]): Light {
   const graded = lights.filter((l) => l !== 'none');
   if (!graded.length) return 'none';
@@ -222,7 +222,7 @@ function kpiCell(key: string, label: string, value: number | null, t: Target, wo
     target: `${expText} expected, ${goalText} goal`,
     short: `${money ? usdShort(s.expectation) : expText} / ${money ? usdShort(s.goal) : goalText} goal`,
     light: workdays > 0 || !t.prorate ? grade(value, { ...s, direction: t.direction }) : 'none',
-    note: t.placeholder ? `${t.source}. The sheet marks this target as a placeholder.` : t.source,
+    note: t.placeholder ? `${t.source}. This target is a placeholder.` : t.source,
   };
 }
 
@@ -298,7 +298,7 @@ export function dispositionsCells(m: StoplightMetrics, workdays: number): Cell[]
     activity,
     ...mins.map((m) => m.cell),
     untargeted('buyerTexts', 'Buyer texts', num(m.buyer_texts), 'No target set.'),
-    untargeted('marketed', 'Deals marketed', num(m.deals_marketed), 'The sheet tracks deals taken to market but sets no target.'),
+    untargeted('marketed', 'Deals marketed', num(m.deals_marketed), 'Deals taken to market have no target.'),
     kpiCell('assigned', 'Buyer contracts', m.buyer_contracts, DISPO_TARGETS.dealsAssigned, workdays, false),
     kpiCell('revenue', 'Closed revenue', m.revenue_dispo, DISPO_TARGETS.revenue, workdays, true),
     avgFee == null

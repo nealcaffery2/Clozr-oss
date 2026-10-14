@@ -113,7 +113,7 @@ Deno.serve(async (req) => {
   if (!Number.isFinite(ws)) return json({ error: 'workspace_id is required' }, 422);
   const { data: member } = await asCaller.from('workspace_members').select('role').eq('workspace_id', ws).eq('user_id', who.user.id).maybeSingle();
   if (!member) return json({ error: 'not a member of that workspace' }, 403);
-  if (!['owner', 'admin', 'dispositions', 'tc', 'member'].includes(member.role)) return json({ error: 'your role cannot import buyers' }, 403);
+  if (!['owner', 'admin', 'dispositions', 'sdr', 'tc', 'member'].includes(member.role)) return json({ error: 'your role cannot import buyers' }, 403);
 
   const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
   const rl = await rateLimit(admin, `investorbase:${who.user.id}`, 12, 60);
