@@ -1387,7 +1387,11 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
   useEffect(() => { sRef.current = s; }, [s]);
 
   const set = useCallback((patch: Partial<ClozrState> | ((prev: ClozrState) => Partial<ClozrState>)) => {
-    setS((prev) => ({ ...prev, ...(typeof patch === 'function' ? patch(prev) : patch) }));
+    setS((prev) => {
+      const next = typeof patch === 'function' ? patch(prev) : patch;
+      if (!next || !Object.keys(next).length) return prev;
+      return { ...prev, ...next };
+    });
   }, []);
 
   // Raising a toast is state only; the dismissal timer is owned by an effect
@@ -1985,14 +1989,11 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         set((prev) => ({ laneOpen: !prev.laneOpen, aiOpen: false }));
         return;
       }
-      if (/^[1-9]$/.test(e.key)) {
+      if (!typing && /^[1-9]$/.test(e.key) && sRef.current.quickAddOpen) {
         const go = quickAddRef.current[Number(e.key) - 1];
-        set((prev) => {
-          if (!prev.quickAddOpen || !go) return {};
-          e.preventDefault();
-          queueMicrotask(go);
-          return {};
-        });
+        if (!go) return;
+        e.preventDefault();
+        queueMicrotask(go);
       }
     };
     // Capture: the chord wins even when a screen (or a framed app) stops
