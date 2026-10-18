@@ -23,7 +23,9 @@ export function PeopleBulkCompose({ bulk }: { bulk: ClozrView['peopleBulk'] }) {
       rep={{ ...bulk.textCtx, repPhone: session.profile?.phone ?? '', repEmail: session.user?.email ?? '' }}
       testTo={session.user?.email ?? null}
       toast={bulk.toast}
-      onSent={() => bulk.reload?.()}
+      // The sellers the texts reached are re-read; a vendor list, or a build
+      // without the slice reader, falls back to the full reload.
+      onSent={({ sentDbIds }) => (bulk.kind === 'seller' && bulk.refreshSellers ? bulk.refreshSellers(sentDbIds) : bulk.reload?.())}
       onClose={bulk.close}
     />
   );

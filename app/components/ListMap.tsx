@@ -34,7 +34,7 @@ export function MapLegend({ items }: { items: LegendItem[] }) {
       boxShadow: '0 0 0 1px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.07)', fontSize: '11.5px', fontWeight: 550, color: '#3f3f46' }}>
       {items.map((it) => (
         <span key={it.label} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
-          <span style={{ width: '9px', height: '9px', borderRadius: '50%', background: it.color, boxShadow: it.ring ? '0 0 0 1.5px #fff, 0 0 0 3px #f59e0b' : '0 0 0 1.5px #fff, 0 0 0 2.5px rgba(0,0,0,.08)' }} />{it.label}
+          <span style={{ width: '9px', height: '9px', borderRadius: '50%', background: it.color, boxShadow: it.ring ? '0 0 0 1.5px var(--surface, #fff), 0 0 0 3px #f59e0b' : '0 0 0 1.5px var(--surface, #fff), 0 0 0 2.5px rgba(0,0,0,.08)' }} />{it.label}
         </span>
       ))}
     </div>
@@ -53,7 +53,7 @@ export function MapStatus({ text, selected, onClear, busy }: { text: string; sel
           <span style={{ color: PURPLE, fontWeight: 650, fontVariantNumeric: 'tabular-nums' }}>{selected.toLocaleString('en-US')} selected</span>
           <button type="button" onClick={onClear} style={{ border: 0, background: 'none', padding: 0, color: PURPLE, fontSize: '12px', cursor: 'pointer', textDecoration: 'underline' }}>Clear</button>
         </>
-      ) : <span style={{ color: '#71717a' }}>Lasso (right) to select</span>}
+      ) : <span style={{ color: 'var(--meta, #71717a)' }}>Lasso (right) to select</span>}
     </div>
   );
 }
@@ -98,7 +98,7 @@ export function ListMap({ pins, height, selected, onLasso, onPin, popup, popupId
 export function PopupButton({ onClick, children, primary }: { onClick: () => void; children: React.ReactNode; primary?: boolean }) {
   return (
     <button type="button" onClick={onClick}
-      style={{ height: '28px', padding: '0 10px', borderRadius: '7px', border: `1px solid ${primary ? PURPLE : '#e4e4e7'}`, background: primary ? PURPLE : '#fff', color: primary ? '#fff' : '#18181b', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+      style={{ height: '28px', padding: '0 10px', borderRadius: '7px', border: `1px solid ${primary ? PURPLE : 'var(--divider, #e4e4e7)'}`, background: primary ? PURPLE : 'var(--surface, #fff)', color: primary ? 'var(--surface, #fff)' : 'var(--ink, #18181b)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
       {children}
     </button>
   );
@@ -122,13 +122,13 @@ export function useListOrMap(key: string): [ListOrMap, (v: ListOrMap) => void] {
 export function ListMapSwitch({ value, onChange, pill }: { value: ListOrMap; onChange: (v: ListOrMap) => void; pill?: boolean }) {
   const h = pill ? 34 : 32;
   return (
-    <div role="tablist" aria-label="View as" style={{ flex: 'none', display: 'inline-flex', height: h, padding: 2, borderRadius: pill ? 999 : 10, background: '#f4f4f5', boxShadow: 'inset 0 0 0 1px #e4e4e7', boxSizing: 'border-box' }}>
+    <div role="tablist" aria-label="View as" style={{ flex: 'none', display: 'inline-flex', height: h, padding: 2, borderRadius: pill ? 999 : 10, background: 'var(--surface-2, #f4f4f5)', boxShadow: 'inset 0 0 0 1px var(--divider, #e4e4e7)', boxSizing: 'border-box' }}>
       {(['list', 'map'] as const).map((k) => {
         const on = value === k;
         return (
           <button key={k} type="button" role="tab" aria-selected={on} onClick={() => onChange(k)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: h - 4, padding: '0 11px', border: 0, borderRadius: pill ? 999 : 8, cursor: 'pointer', fontSize: 12.5, fontWeight: on ? 650 : 500,
-              background: on ? '#fff' : 'transparent', color: on ? '#18181b' : '#52525b', boxShadow: on ? '0 1px 2px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04)' : 'none', fontFamily: 'inherit' }}>
+              background: on ? 'var(--surface, #fff)' : 'transparent', color: on ? 'var(--ink, #18181b)' : 'var(--muted, #52525b)', boxShadow: on ? '0 1px 2px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04)' : 'none', fontFamily: 'inherit' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d={k === 'list' ? 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' : 'M9 3 3 6v15l6-3 6 3 6-3V3l-6 3-6-3zM9 3v15M15 6v15'} />
             </svg>

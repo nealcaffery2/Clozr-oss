@@ -7,7 +7,7 @@ import { CZ, darkBtn, field as chromeField, ghostBtn, primaryBtn } from '@/compo
 
 export const INK = CZ.ink;
 export const MUTED = CZ.muted;
-export const LINE = '#dadce0'; // Google Calendar hairline
+export const LINE = 'var(--line-2, #dadce0)'; // Google Calendar hairline
 export const SOFT = '#e8eaed';
 export const MINT = CZ.mint;
 
@@ -37,7 +37,7 @@ export function Chip({ on, color, label: text, onClick, count }: { on: boolean; 
       font: '500 12px/1 var(--font-sans)', cursor: 'pointer',
       display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap',
     }}>
-      <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: on ? color : '#dadce0', flex: 'none' }} />
+      <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: on ? color : 'var(--line-2, #dadce0)', flex: 'none' }} />
       {text}
       {count != null ? <span style={{ fontSize: '11px', color: CZ.faint }}>{count}</span> : null}
     </button>
@@ -46,7 +46,7 @@ export function Chip({ on, color, label: text, onClick, count }: { on: boolean; 
 
 export function Avatar({ initials, color, size = 20 }: { initials: string; color: string; size?: number }) {
   return (
-    <span style={{ width: size, height: size, borderRadius: '50%', background: color, color: '#fff', fontSize: size <= 20 ? '9px' : '11px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none', letterSpacing: '.02em' }}>
+    <span style={{ width: size, height: size, borderRadius: '50%', background: color, color: 'var(--on-dark, #fff)', fontSize: size <= 20 ? '9px' : '11px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none', letterSpacing: '.02em' }}>
       {initials}
     </span>
   );

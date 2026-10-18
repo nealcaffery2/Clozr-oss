@@ -5,8 +5,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { type GoogleStatus, GOOGLE_SCOPE, granted, googleStatus } from '@/lib/google';
+import { everyWhileVisible } from '@/lib/visible-timer';
+import { type GoogleStatus, GOOGLE_SCOPE, granted, googleStatus, pullNewMail } from '@/lib/google';
 import { type HistoryItemDto, api } from '@/lib/talkr-web/api';
+import { withoutElsewhereHistory } from '@/lib/talkr-elsewhere';
 import type { ClozrRecord } from '@/app/components/talkr/MessagesScreen';
 import { baseSubject } from '@/lib/email-thread';
 
@@ -163,6 +165,42 @@ export async function loadEmailRows(workspaceId: number, scope: EmailScope, limi
     }
   }
   return { rows, error: null, more };
+}
+
+/** An address as a PostgREST filter value can carry it: no commas, parentheses or wildcards. */
+export const filterAddress = (email: string) => email.trim().toLowerCase().replace(/[^a-z0-9@._+-]/g, '');
+
+/**
+ * Every email with one person, newest first: filed on their seller or buyer
+ * record, or sent from or to their address. The dialer's Email tab reads this
+ * (the Inbox reads whole mailboxes); RLS decides whose mail a rep may see.
+ */
+export async function loadContactEmail(
+  workspaceId: number, who: { email: string | null; sellerId?: number | null; buyerId?: number | null }, limit = 100,
+): Promise<{ rows: EmailRow[]; error: string | null }> {
+  if (!supabase) return { rows: [], error: null };
+  const sb = supabase;
+  const addr = who.email ? filterAddress(who.email) : '';
+  const ors = [
+    ...(who.sellerId ? [`seller_id.eq.${who.sellerId}`] : []),
+    ...(who.buyerId ? [`buyer_id.eq.${who.buyerId}`] : []),
+    ...(addr.includes('@') ? [`from_email.ilike.${addr}`, `to_email.ilike.%${addr}%`] : []),
+  ];
+  if (!ors.length) return { rows: [], error: null };
+  const run = () => sb.from('communications')
+    .select([LIST_COLS, ...(ccColumns ? ['cc_email', 'bcc_email'] : []), ...(previewColumn ? ['body_preview'] : [])].join(','))
+    .eq('workspace_id', workspaceId).eq('channel', 'email').or(ors.join(','))
+    .order('occurred_at', { ascending: false }).limit(limit);
+  let res = await run();
+  // A project without migration 244 (the preview) or 82 (cc/bcc) asks again without it.
+  for (let i = 0; i < 2 && res.error; i++) {
+    if (previewColumn && /body_preview/.test(res.error.message)) previewColumn = false;
+    else if (ccColumns && /cc_email|bcc_email/.test(res.error.message)) ccColumns = false;
+    else break;
+    res = await run();
+  }
+  if (res.error) return { rows: [], error: res.error.message };
+  return { rows: ((res.data ?? []) as unknown as (EmailRow & { body_preview?: string | null })[]).map(asRow), error: null };
 }
 
 function asRow(r: EmailRow & { communication_mailboxes?: unknown; body_preview?: string | null }): EmailRow {
@@ -323,14 +361,38 @@ export function useEmail(workspaceId: number | null, ownOnly: string | null = nu
     };
     document.addEventListener('visibilitychange', onFocus);
     // A socket can drop without saying so: every five minutes while in view.
-    const every = setInterval(() => { if (document.visibilityState === 'visible') bump(); }, 300_000);
-    return () => { if (timer) clearTimeout(timer); clearInterval(every); document.removeEventListener('visibilitychange', onFocus); void sb.removeChannel(ch); };
+    const stop = everyWhileVisible(() => bump(), 300_000);
+    return () => { if (timer) clearTimeout(timer); stop(); document.removeEventListener('visibilitychange', onFocus); void sb.removeChannel(ch); };
   }, [workspaceId, readNewest]);
 
   const threads = useMemo(() => groupThreads(rows), [rows]);
   const account = google?.account ?? null;
   const canSend = !!account && account.status === 'active' && account.gmail_send && granted(account, GOOGLE_SCOPE.gmailSend);
   return { threads, google, account, canSend, loading, error, reload, version, hasMore, loadingMore, more, search, searching };
+}
+
+/** How often the open Inbox asks for new mail. lib/google pullNewMail asks at most once a minute per tab. */
+export const GMAIL_POLL_MS = 60_000;
+
+/**
+ * New mail within about a minute while the Inbox is open and in front of
+ * the rep: google-sync's fast Gmail lane (lib/google pullNewMail), on top of
+ * the every-minute pg_cron pass. What it stores reaches the lists through
+ * useEmail's realtime subscription. Nothing runs in a hidden or unfocused tab.
+ */
+export function useGmailPoll(workspaceId: number | null, enabled: boolean): void {
+  useEffect(() => {
+    if (!enabled || !workspaceId || !supabase) return;
+    let busy = false;
+    const ask = () => {
+      if (busy || document.visibilityState !== 'visible' || !document.hasFocus()) return;
+      busy = true;
+      void Promise.resolve(pullNewMail(workspaceId)).catch(() => null).finally(() => { busy = false; });
+    };
+    const first = setTimeout(ask, 3000);
+    const stop = everyWhileVisible(ask, GMAIL_POLL_MS);
+    return () => { clearTimeout(first); stop(); };
+  }, [workspaceId, enabled]);
 }
 
 /** Voicemail, as the dialer has always counted it: inbound, recorded, nobody picked up. */
@@ -343,7 +405,9 @@ export function useCalls(authed: boolean) {
   const fetchCalls = useCallback(() => {
     if (!authed) return;
     api.history({ type: 'calls', limit: 200 })
-      .then((r) => { setCalls(r.items.filter((i) => i.kind === 'call')); setError(null); })
+      // Not the calls another workspace on this Talkr org owns (lib/talkr-elsewhere).
+      .then((r) => withoutElsewhereHistory(r.items.filter((i) => i.kind === 'call')))
+      .then((items) => { setCalls(items); setError(null); })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Could not load calls'))
       .finally(() => setLoading(false));
   }, [authed]);

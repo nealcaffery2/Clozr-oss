@@ -21,10 +21,10 @@ const pretty = (e164: string | null) => {
   const d = String(e164 ?? '').replace(/\D/g, '').slice(-10);
   return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : '';
 };
-const input: React.CSSProperties = { height: 30, padding: '0 8px', border: '1px solid #e4e4e7', borderRadius: 7, fontSize: 12.5, background: '#fff', minWidth: 0 };
-const btn: React.CSSProperties = { height: 30, padding: '0 12px', borderRadius: 7, border: '1px solid #d4d4d8', background: '#fff', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', whiteSpace: 'nowrap' };
-const th: React.CSSProperties = { textAlign: 'left', fontSize: 11, color: MUTED, fontWeight: 600, padding: '6px 8px', borderBottom: '1px solid #e4e4e7', whiteSpace: 'nowrap' };
-const td: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid #f0f0f1', fontSize: 12.5, verticalAlign: 'middle' };
+const input: React.CSSProperties = { height: 30, padding: '0 8px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: 7, fontSize: 12.5, background: 'var(--surface, #fff)', minWidth: 0 };
+const btn: React.CSSProperties = { height: 30, padding: '0 12px', borderRadius: 7, border: '1px solid var(--line, #d4d4d8)', background: 'var(--surface, #fff)', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', whiteSpace: 'nowrap' };
+const th: React.CSSProperties = { textAlign: 'left', fontSize: 11, color: MUTED, fontWeight: 600, padding: '6px 8px', borderBottom: '1px solid var(--divider, #e4e4e7)', whiteSpace: 'nowrap' };
+const td: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid var(--divider-2, #f0f0f1)', fontSize: 12.5, verticalAlign: 'middle' };
 
 function Status({ n }: { n: Num }) {
   const live = n.status === 'active' && !!n.el_phone_number_id;
@@ -97,7 +97,7 @@ export function LocalNumbers({ workspaceId, agentKey, canEdit, published, epoch,
         (the same area code, else the same state, else the agent&apos;s default). Answers only decides who picks up when someone calls one of these numbers back.
       </p>
       {nums.length ? (
-        <div style={{ overflowX: 'auto', border: '1px solid #e4e4e7', borderRadius: 10 }}>
+        <div style={{ overflowX: 'auto', border: '1px solid var(--divider, #e4e4e7)', borderRadius: 10 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
             <thead>
               <tr><th style={th}>Market</th><th style={th}>Local for</th><th style={th}>Number</th><th style={th}>Name</th><th style={th}>Callbacks ring</th><th style={th}>Status</th></tr>

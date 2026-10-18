@@ -13,24 +13,26 @@ import { supabase } from '@/lib/supabase';
 import { type DealPartyWithDeal, loadDealParties } from '@/lib/deal-parties';
 import { type Teammate, listTeam } from '@/lib/team';
 import { type EmailScope, type EmailThread, groupThreads, loadEmailRows } from '../data';
+import { type Receipt, useEmailReceipts } from '../receipts';
+import { emailOpenLabel } from '@/lib/link-views';
 
 export type MailFile = {
   id: number; communication_id: number; filename: string; content_type: string | null;
   byte_size: number | null; deal_file_id: number | null;
 };
 
-export type Receipt = {
-  communication_id: number; opens: number; clicks: number;
-  first_opened_at: string | null; last_opened_at: string | null; last_clicked_at: string | null;
-};
+export type { Receipt };
 
 const chunks = <T,>(xs: T[], n: number) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
 
-/** Files and receipts for the messages on screen, keyed by communication id. */
-export function useMailExtras(ids: number[], tick = 0) {
+/**
+ * Files and receipts for the messages on screen, keyed by communication id.
+ * Receipts are live: an open or a click redraws them (receipts.ts, migration 274).
+ */
+export function useMailExtras(ids: number[], tick = 0, workspaceId: number | null = null) {
   const [files, setFiles] = useState<Map<number, MailFile[]>>(new Map());
-  const [receipts, setReceipts] = useState<Map<number, Receipt>>(new Map());
   const key = useMemo(() => [...ids].sort((a, b) => a - b).join(','), [ids]);
+  const receipts = useEmailReceipts(ids, workspaceId);
 
   useEffect(() => {
     if (!supabase || !key) return;
@@ -39,17 +41,11 @@ export function useMailExtras(ids: number[], tick = 0) {
     let alive = true;
     void (async () => {
       const f = new Map<number, MailFile[]>();
-      const r = new Map<number, Receipt>();
       for (const part of chunks(list, 200)) {
-        const [a, t] = await Promise.all([
-          sb.from('email_attachments').select('id, communication_id, filename, content_type, byte_size, deal_file_id').in('communication_id', part).order('id'),
-          sb.from('email_tracking').select('communication_id, opens, clicks, first_opened_at, last_opened_at, last_clicked_at').in('communication_id', part),
-        ]);
+        const a = await sb.from('email_attachments').select('id, communication_id, filename, content_type, byte_size, deal_file_id').in('communication_id', part).order('id');
         for (const x of (a.data ?? []) as MailFile[]) f.set(x.communication_id, [...(f.get(x.communication_id) ?? []), x]);
-        for (const x of (t.data ?? []) as Receipt[]) r.set(x.communication_id, x);
       }
-      if (!alive) return;
-      setFiles(f); setReceipts(r);
+      if (alive) setFiles(f);
     })();
     return () => { alive = false; };
   }, [key, tick]);
@@ -107,34 +103,27 @@ export function useDealTeam(dealId: number | null, tick = 0) {
   return parties && parties.dealId === dealId ? parties.rows : [];
 }
 
-/** Which folder a deal's stage puts it in. */
-export type DealFolder = 'contract' | 'escrow' | 'marketing' | 'closed' | 'other';
+/**
+ * Which folder a deal's stage puts it in. Only the four stages a deal is live
+ * in get a folder, in pipeline order; Prospect, Closed, Terminated and the
+ * rest stay out of the rail (their mail is still in the inbox and on the deal).
+ */
+export type DealFolder = 'contract' | 'marketing' | 'buyer' | 'escrow' | 'other';
 export const FOLDER_OF: Record<string, DealFolder> = {
   'Under Contract Seller': 'contract',
-  'Buyer Under Contract': 'contract',
-  'In Escrow': 'escrow',
   'Ready To Market': 'marketing',
-  Closed: 'closed',
+  'Buyer Under Contract': 'buyer',
+  'In Escrow': 'escrow',
 };
 export const FOLDERS: { key: DealFolder; label: string }[] = [
   { key: 'contract', label: 'Under contract' },
+  { key: 'marketing', label: 'Ready to market' },
+  { key: 'buyer', label: 'Buyer under contract' },
   { key: 'escrow', label: 'In escrow' },
-  { key: 'marketing', label: 'Active · marketing' },
-  { key: 'closed', label: 'Closed' },
 ];
 
 export const fmtBytes = (n: number | null) =>
   n == null ? '' : n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
 
-/** "Opened 3× · last 2h ago", or null when nothing is known. */
-export function receiptLabel(r: Receipt | undefined): string | null {
-  if (!r) return null;
-  if (!r.opens) return 'Not opened yet';
-  const ago = (iso: string | null) => {
-    if (!iso) return '';
-    const m = Math.round((Date.now() - Date.parse(iso)) / 60_000);
-    return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`;
-  };
-  const opens = `Opened${r.opens > 1 ? ` ${r.opens}×` : ''} · ${ago(r.last_opened_at)}`;
-  return r.clicks ? `${opens} · ${r.clicks} click${r.clicks === 1 ? '' : 's'}` : opens;
-}
+/** "Opened 2:14 PM · 3 opens · 1 click", "Not opened yet", or null when the send was not tracked. */
+export const receiptLabel = (r: Receipt | undefined): string | null => emailOpenLabel(r);

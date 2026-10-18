@@ -15,7 +15,7 @@ export function AgentAvatar({ name, src, size = 32, live, ring }: { name: string
         // A data: SVG or a public bucket URL; an <img> never runs anything inside it.
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt={`${name} avatar`} width={size} height={size}
-          style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', display: 'block', boxShadow: ring ? `0 0 0 2px ${ring}` : '0 1px 2px rgba(15,23,42,.18)', background: '#f4f4f5' }} />
+          style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', display: 'block', boxShadow: ring ? `0 0 0 2px ${ring}` : '0 1px 2px rgba(15,23,42,.18)', background: 'var(--surface-2, #f4f4f5)' }} />
       ) : (
         <span aria-label={`${name} avatar`} role="img"
           style={{

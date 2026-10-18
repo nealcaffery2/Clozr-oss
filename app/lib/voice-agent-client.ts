@@ -24,7 +24,8 @@ async function call<T>(body: Record<string, unknown>, pick: (res: Record<string,
 
 export type PreviewAudio = { audio_base64: string; mime: string; model: string | null };
 export type PreviewOptions = Partial<Tuning> & { tts_model?: string };
-export type TestTarget = { kind: RecordKind; id: number } | { sample: RecordKind | 'me' };
+/** `as` on "me": which side the tester plays, so a buyer-side agent hears a test cash buyer, not a seller. */
+export type TestTarget = { kind: RecordKind; id: number } | { sample: RecordKind | 'me'; as?: RecordKind };
 /** A phone test: the agent rang `to` with this session's brief. */
 export type PhoneTest = TestSession & { note: string; conversation_id: string | null };
 export type SaveDraftResult = { settings: AgentSettings; warnings: string[]; has_unpublished_changes: boolean };
@@ -73,7 +74,7 @@ async function publishCall(body: Record<string, unknown>): Promise<PublishOutcom
   return { ok: false, error: r.error, data: b && (b.checks || b.manual || b.errors) ? normalizePublish(b) : null };
 }
 
-const testBody = (t: TestTarget) => ('sample' in t ? { record_kind: t.sample, sample: true } : { record_kind: t.kind, record_id: t.id });
+const testBody = (t: TestTarget) => ('sample' in t ? { record_kind: t.sample, sample: true, ...(t.as ? { me_as: t.as } : {}) } : { record_kind: t.kind, record_id: t.id });
 const testSession = (r: Record<string, unknown>, key: string, signed: string): TestSession => ({
   signed_url: signed, agent_id: String(r.agent_id ?? ''), agent_key: String(r.agent_key ?? key), live_version: Number(r.live_version) || 0,
   dynamic_variables: (r.dynamic_variables && typeof r.dynamic_variables === 'object' ? r.dynamic_variables : {}) as TestSession['dynamic_variables'],

@@ -20,7 +20,7 @@ export function Genius({ V }: { V: ClozrView }) {
   const demo = useDemoRoute();
   return (
     <section data-screen-label="Genius Mode" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: V.isMobile ? '12px 12px 40px' : '16px 20px 40px', background: '#fafafa' }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: V.isMobile ? '12px 12px 40px' : '16px 20px 40px', background: 'var(--canvas, #fafafa)' }}>
         {V.liveIds ? (
           <GeniusMode standalone workspaceId={V.liveIds.workspaceId} userId={session.user?.id ?? null}
             canWrite={!!V.liveIds.canWrite} isMobile={V.isMobile} onToast={V.showToast} onAdded={V.reloadCrm}
@@ -28,7 +28,7 @@ export function Genius({ V }: { V: ClozrView }) {
         ) : demo ? (
           <GeniusMode standalone workspaceId={null} userId={null} canWrite={false} isMobile={V.isMobile} onToast={V.showToast} seed={{ run: DEMO_GENIUS_RUN, past: DEMO_GENIUS_PAST }} />
         ) : (
-          <div style={{ background: '#fff', border: '1px solid #e4e4e7', borderRadius: '14px', padding: '22px', fontSize: '13px', color: '#71717a', lineHeight: 1.55 }}>
+          <div style={{ background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '14px', padding: '22px', fontSize: '13px', color: 'var(--meta, #71717a)', lineHeight: 1.55 }}>
             Genius Mode finds the flippers, landlords and builders buying around any address from public records. Sign in to a workspace to run it.
           </div>
         )}

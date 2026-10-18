@@ -33,7 +33,7 @@ export function PreviewDrawer({ api, agentKey, settings, sendDraft, onClose, onJ
 
   const groups = load.at === 'ready' ? groupWarnings(load.preview.warnings) : null;
   const row = (w: { code: string; message: string; path: string | null; level: string }, i: number) => (
-    <li key={`${w.code}${i}`} style={{ display: 'flex', gap: 10, padding: '9px 12px', borderTop: i ? '1px solid #f0f0f1' : 'none', background: '#fff' }}>
+    <li key={`${w.code}${i}`} style={{ display: 'flex', gap: 10, padding: '9px 12px', borderTop: i ? '1px solid var(--divider-2, #f0f0f1)' : 'none', background: 'var(--surface, #fff)' }}>
       <span aria-hidden="true" style={{ flex: 'none', marginTop: 2, color: w.level === 'warning' ? '#b45309' : MUTED }}>{w.level === 'warning' ? <AlertTriangle size={15} /> : <Info size={15} />}</span>
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: 'block', fontSize: 12.5, lineHeight: 1.5, color: INK }}>{w.message}</span>
@@ -54,14 +54,14 @@ export function PreviewDrawer({ api, agentKey, settings, sendDraft, onClose, onJ
           <Banner tone="error" action={<button type="button" className="va-btn va-ghost" style={ghost} onClick={() => { setLoad({ at: 'loading' }); setNonce((n) => n + 1); }}>Try again</button>}>
             The prompt could not be built. {load.errors.length ? '' : load.error}
           </Banner>
-          {load.errors.length ? <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: '#b91c1c', lineHeight: 1.6 }}>{load.errors.map((e, i) => <li key={i}>{e}</li>)}</ul> : null}
+          {load.errors.length ? <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: 'var(--tx-red, #b91c1c)', lineHeight: 1.6 }}>{load.errors.map((e, i) => <li key={i}>{e}</li>)}</ul> : null}
         </div>
       ) : (
         <div style={{ display: 'grid', gap: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12.5, color: MUTED }}>
             <span style={{ fontSize: 15, fontWeight: 600, color: INK, fontVariantNumeric: 'tabular-nums' }}>{load.preview.tokens.toLocaleString('en-US')} tokens</span>
             <span>about {(load.preview.prompt.length).toLocaleString('en-US')} characters. Shorter prompts answer faster.</span>
-            {api.demo ? <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#f4f4f5', color: '#52525b' }}>Demo, simplified</span> : null}
+            {api.demo ? <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: 'var(--surface-2, #f4f4f5)', color: 'var(--muted, #52525b)' }}>Demo, simplified</span> : null}
           </div>
 
           {groups && (groups.warnings.length || groups.notes.length) ? (
@@ -85,7 +85,7 @@ export function PreviewDrawer({ api, agentKey, settings, sendDraft, onClose, onJ
               <span style={{ flex: 1, fontSize: 11.5, color: MUTED, fontWeight: 600 }}>The prompt</span>
               <CopyButton value={load.preview.prompt} label="Copy prompt" />
             </div>
-            <pre tabIndex={0} aria-label="Assembled prompt" style={{ ...mono, margin: 0, padding: '12px 14px', border: `1px solid ${LINE}`, borderRadius: 10, background: '#fafafa', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.6, maxHeight: 'none' }}>{load.preview.prompt}</pre>
+            <pre tabIndex={0} aria-label="Assembled prompt" style={{ ...mono, margin: 0, padding: '12px 14px', border: `1px solid ${LINE}`, borderRadius: 10, background: 'var(--canvas, #fafafa)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.6, maxHeight: 'none' }}>{load.preview.prompt}</pre>
           </div>
         </div>
       )}

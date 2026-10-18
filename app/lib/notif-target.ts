@@ -24,6 +24,8 @@ export type NotifRowLike = {
   buyer_id?: number | null;
   deal_id?: number | null;
   phone_key?: string | null;
+  /** The draft a contract request made (migration 270). */
+  contract_id?: number | null;
 };
 
 const FLOOR = new Set(['Badge', 'Leaderboard', 'Wheel', 'Contract']);
@@ -54,6 +56,8 @@ export function notifLink(n: NotifRowLike, dispoSeller: number | null = null): N
   // Lane opens on the file it is about, or on the morning check-in.
   if (cat === 'Lane') return { screen: 'lane', id: sid };
   if (cat === 'Number health') return { screen: 'settings', id: '', tab: 'numbers' };
+  // A contract request opens its draft in Contracts ('k' + contracts.id), or Contracts when there is none yet.
+  if (cat === 'Contract request') return { screen: 'contracts', id: n.contract_id ? 'k' + n.contract_id : '' };
 
   if (sid) {
     if (cat === 'TC') return { screen: 'tc', id: sid, ...deal };

@@ -270,7 +270,17 @@ const SYSTEM_PROPS = {
   called_number: { type: 'string', dynamic_variable: 'system__called_number' },
   agent_id: { type: 'string', dynamic_variable: 'system__agent_id' },
   conversation_id: { type: 'string', dynamic_variable: 'system__conversation_id' },
+  // Ours, not a system variable: a console test says so here (isTestCall), and the tool writes nothing.
+  call_goal: { type: 'string', dynamic_variable: 'call_goal' },
 };
+
+/**
+ * The condition words COMPR's underwrite API takes as condition_self, its condition override
+ * (move_in, cosmetic, medium, heavy, gut). From the caller's own description it sets the
+ * rehab scope when COMPR has no interior photos, and can only raise a photo-graded scope.
+ */
+export const REHAB_LEVELS = ['move-in ready', 'needs paint & carpet', 'needs kitchen or bath', 'needs everything', 'uninhabitable'] as const;
+export type RehabLevel = (typeof REHAB_LEVELS)[number];
 
 const str = (description: string, extra: Record<string, unknown> = {}) => ({ type: 'string', description, ...extra });
 
@@ -305,8 +315,10 @@ const TOOL_DEFS: Record<WriteTool, { description: string; properties: Record<str
     },
   },
   get_compr_offer: {
-    description: 'Get the offer range COMPR underwrote for this seller\'s house. COMPR starts underwriting when the call connects and takes about a minute. Call it once you know the basics (why, timeline, condition, occupancy), before you say any number. If it answers ready: false, keep the conversation going and call it again in about a minute. Never say a price until it answers ready: true, and then only inside offer_low to offer_high.',
+    description: 'Get the offer range COMPR underwrites for the seller\'s house. Ask about the condition first and pass it as rehab_level: COMPR prices the repairs from it, so the offer is accurate. COMPR takes about a minute. Call it once you know the basics (why, timeline, condition, occupancy), before you say any number. If it answers ready: false, keep the conversation going and call it again in about a minute with the same property_address and rehab_level. Never say a price until it answers ready: true, and then only inside offer_low to offer_high.',
     properties: {
+      rehab_level: str('How much work the house needs, from what the caller said about its condition. Pick the closest.', { enum: [...REHAB_LEVELS] }),
+      property_address: str('The full address (street, city, state, and ZIP if they gave it) when the caller names a house that is not the one on file, or when there is no address on file.'),
       contact_name: str("The caller's name, only when several people share the number"),
     },
   },

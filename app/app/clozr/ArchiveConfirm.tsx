@@ -53,22 +53,22 @@ export function ArchiveConfirm({ ask, onAnswer }: { ask: ArchiveAsk; onAnswer: (
       onClick={() => onAnswer(false, alsoDeals)}
       style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(24,24,27,.45)', display: 'grid', placeItems: 'center', padding: '16px' }}>
       <div onClick={(e) => e.stopPropagation()}
-        style={{ width: '100%', maxWidth: '400px', background: '#fff', borderRadius: '14px', padding: '18px', boxShadow: '0 28px 60px -24px rgba(18,22,45,.4)' }}>
-        <div id="archive-ask-title" style={{ fontSize: '15px', fontWeight: 650, color: '#18181b' }}>Archive {who}?</div>
-        <div style={{ fontSize: '12.5px', color: '#52525b', marginTop: '6px', lineHeight: 1.5 }}>
+        style={{ width: '100%', maxWidth: '400px', background: 'var(--surface, #fff)', borderRadius: '14px', padding: '18px', boxShadow: '0 28px 60px -24px rgba(18,22,45,.4)' }}>
+        <div id="archive-ask-title" style={{ fontSize: '15px', fontWeight: 650, color: 'var(--ink, #18181b)' }}>Archive {who}?</div>
+        <div style={{ fontSize: '12.5px', color: 'var(--muted, #52525b)', marginTop: '6px', lineHeight: 1.5 }}>
           {n > 1 ? <>{shown}. </> : null}
           {ask.kind === 'deal'
             ? 'It leaves the Deals board, the deal list and Dispo everywhere, including its dispo campaign lists. Nothing is deleted: Deals → Archived brings it back.'
             : 'They leave every list, but nothing is deleted.'}
         </div>
         {ask.kind === 'deal' && ask.seller ? (
-          <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: '10px', fontSize: '12.5px', color: '#27272a', cursor: 'pointer' }}>
+          <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: '10px', fontSize: '12.5px', color: 'var(--ink-2, #27272a)', cursor: 'pointer' }}>
             <input type="checkbox" data-testid="archive-seller-too" checked={alsoDeals} onChange={(e) => setAlsoDeals(e.target.checked)} style={{ marginTop: '2px' }} />
             <span>Also archive the seller, {ask.seller.name}, in People. This was their last open deal.</span>
           </label>
         ) : null}
         {d > 0 ? (
-          <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: '10px', fontSize: '12.5px', color: '#27272a', cursor: 'pointer' }}>
+          <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: '10px', fontSize: '12.5px', color: 'var(--ink-2, #27272a)', cursor: 'pointer' }}>
             <input type="checkbox" checked={alsoDeals} onChange={(e) => setAlsoDeals(e.target.checked)} style={{ marginTop: '2px' }} />
             <span>
               Also archive {d === 1 ? 'their open deal' : `their ${d} open deals`} ({ask.deals.slice(0, 3).map((x) => x.addr).join(', ')}{d > 3 ? '…' : ''}). Off the Deals board, the deal list and Dispo.
@@ -77,15 +77,15 @@ export function ArchiveConfirm({ ask, onAnswer }: { ask: ArchiveAsk; onAnswer: (
         ) : null}
         <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
           <button ref={noRef} type="button" data-testid="archive-no" onClick={() => onAnswer(false, alsoDeals)} onFocus={() => setPick('no')}
-            style={{ ...btn, border: `2px solid ${pick === 'no' ? '#18181b' : '#e4e4e7'}`, background: '#fff', color: '#18181b' }}>
+            style={{ ...btn, border: `2px solid ${pick === 'no' ? 'var(--ink, #18181b)' : 'var(--divider, #e4e4e7)'}`, background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)' }}>
             No
           </button>
           <button ref={yesRef} type="button" data-testid="archive-yes" onClick={() => onAnswer(true, alsoDeals)} onFocus={() => setPick('yes')}
-            style={{ ...btn, border: `2px solid ${pick === 'yes' ? '#991b1b' : '#fecaca'}`, background: pick === 'yes' ? '#dc2626' : '#fef2f2', color: pick === 'yes' ? '#fff' : '#b91c1c' }}>
+            style={{ ...btn, border: `2px solid ${pick === 'yes' ? '#991b1b' : 'var(--tint-red-2, #fecaca)'}`, background: pick === 'yes' ? '#dc2626' : '#fef2f2', color: pick === 'yes' ? '#fff' : '#b91c1c' }}>
             Yes, archive
           </button>
         </div>
-        <div style={{ fontSize: '11.5px', color: '#71717a', marginTop: '10px', textAlign: 'center' }}>
+        <div style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', marginTop: '10px', textAlign: 'center' }}>
           ← → to choose · Enter to answer · Y / N · Esc is No
         </div>
       </div>

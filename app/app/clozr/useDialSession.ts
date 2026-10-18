@@ -195,7 +195,12 @@ export function useDialSession({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [nonce, setNonce] = useState(0);
-  const refresh = useCallback(() => setNonce((n) => n + 1), []);
+  /** When the session was last asked to re-read, so the end-of-call read can skip one already done. */
+  const lastRefresh = useRef(0);
+  const refresh = useCallback(() => {
+    lastRefresh.current = Date.now();
+    setNonce((n) => n + 1);
+  }, []);
   const [campaignsNonce, setCampaignsNonce] = useState(0);
   const reloadCampaigns = useCallback(() => setCampaignsNonce((n) => n + 1), []);
 
@@ -298,10 +303,10 @@ export function useDialSession({
         return null;
       } finally {
         setBusy(false);
-        setNonce((n) => n + 1);
+        refresh();
       }
     },
-    [],
+    [refresh],
   );
 
   const start = useCallback<DialSession['start']>(
@@ -458,6 +463,9 @@ export function useDialSession({
   // Re-read rather than guess, because progressive advances on the server —
   // and after a beat, because Talkr finalises duration and disposition once
   // the leg has dropped, so reading too early reads a half-written call.
+  // Talkr's stream usually says the call ended first, and useTalkrPhone
+  // re-reads the session for it; when that read already happened after the
+  // hang-up, this one is skipped rather than asking for the same rows again.
   const phase = sp.phase;
   const wasInCall = useRef(false);
   useEffect(() => {
@@ -465,7 +473,11 @@ export function useDialSession({
     if (phase !== 'idle' || !wasInCall.current || !currentId) return;
     wasInCall.current = false;
     setBackground([]);
-    const t = setTimeout(refresh, 1500);
+    const endedAt = Date.now();
+    const t = setTimeout(() => {
+      if (lastRefresh.current >= endedAt) return;
+      refresh();
+    }, 1500);
     return () => clearTimeout(t);
   }, [phase, currentId, refresh]);
 

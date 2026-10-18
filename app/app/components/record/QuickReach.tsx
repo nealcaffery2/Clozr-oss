@@ -50,7 +50,7 @@ export function QuickReach({ V }: { V: ClozrView }) {
 }
 
 /** The sender's side of the merge fields. */
-function useRep(V: ClozrView) {
+export function useRep(V: ClozrView) {
   const session = useSession();
   return {
     repName: session.profile?.full_name || displayName(session),
@@ -138,7 +138,10 @@ function TargetBox({ V, reach }: { V: ClozrView; reach: NonNullable<ReachState> 
 
   const done = (msg: string) => {
     closeReach();
-    V.reloadCrm();
+    // The record it was filed on re-reads; a send on neither (a vendor, a bare number) reloads.
+    if (sellerId != null) V.refreshSellerCrm(sellerId);
+    if (buyerId != null) V.refreshBuyerCrm(buyerId);
+    if (sellerId == null && buyerId == null) V.reloadCrm();
     t.onSent?.();
     V.showToast(msg, 'success');
   };
@@ -152,7 +155,7 @@ function TargetBox({ V, reach }: { V: ClozrView; reach: NonNullable<ReachState> 
     setSending(true);
     if (!isEmail) {
       // textOne renders the merge fields itself, against the same recipient.
-      const r = await textOne(workspaceId, recipient, body, rep);
+      const r = await textOne(workspaceId, recipient, body, { ...rep, carrier: 'reply' });
       setSending(false);
       if (r.error) return V.showToast(sendSummary([r]), 'error');
       return done('Text sent to ' + name);

@@ -10,7 +10,6 @@ import { useRouter } from 'next/navigation';
 import { ClozrMark } from '@/components/ds/ClozrMark';
 import { publicFn } from '@/lib/public-fn';
 import { SIGNING_CSS } from '../sign/signing.css';
-import '../clozr/tokens.css';
 
 type Form = { name: string; intro: string | null; template: { name: string; kind: string }; company: { name: string; address: string; phone: string } };
 

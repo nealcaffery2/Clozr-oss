@@ -26,9 +26,9 @@ export function ColdHealthCard({ workspaceId, demo }: { workspaceId: number | nu
   const bounced = boxes.reduce((n, r) => n + Number(r.bounced_7d ?? 0), 0);
   const replied = boxes.reduce((n, r) => n + Number(r.replied_7d ?? 0), 0);
   return (
-    <div data-testid="cold-health" style={{ margin: '0 16px 12px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 10, padding: '12px 14px' }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#71717A', marginBottom: 4 }}>Cold email, last 7 days</div>
-      <div style={{ fontSize: 13, fontWeight: 500, color: '#18181B' }}>
+    <div data-testid="cold-health" style={{ margin: '0 16px 12px', background: 'var(--surface, #ffffff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: 10, padding: '12px 14px' }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--meta, #71717a)', marginBottom: 4 }}>Cold email, last 7 days</div>
+      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink, #18181b)' }}>
         {boxes.length} {boxes.length === 1 ? 'mailbox' : 'mailboxes'} · {sent} sent · bounce {pct(sent ? bounced / sent : 0)} · reply {pct(sent ? replied / sent : 0)}
       </div>
     </div>

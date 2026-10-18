@@ -22,6 +22,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ClozrView } from '@/app/clozr/view';
 import { useWakeLock } from '@/app/clozr/useWakeLock';
 import { aiTargetFrom, useAiCall } from '@/lib/ai-call';
+import { CallClock } from '@/lib/call-clock';
 import { PHONE_OTHER_TAB } from '@/lib/softphone-lock';
 import { formatPhone, toE164 } from '@/lib/talkr-web/time';
 import { ActiveCall } from './ActiveCall';
@@ -68,19 +69,10 @@ function Handset({ size = 32, down = false }: { size?: number; down?: boolean })
 function DeleteGlyph() {
   return (
     <svg width="33" height="24" viewBox="0 0 33 24" aria-hidden>
-      <path d="M11.2 1.5h18.3a2 2 0 0 1 2 2v17a2 2 0 0 1-2 2H11.2a2 2 0 0 1-1.5-.7L1.8 13.3a2 2 0 0 1 0-2.6l7.9-8.5a2 2 0 0 1 1.5-.7z" fill="#fff" fillOpacity="0.9" />
+      <path d="M11.2 1.5h18.3a2 2 0 0 1 2 2v17a2 2 0 0 1-2 2H11.2a2 2 0 0 1-1.5-.7L1.8 13.3a2 2 0 0 1 0-2.6l7.9-8.5a2 2 0 0 1 1.5-.7z" fill="var(--on-dark, #fff)" fillOpacity="0.9" />
       <path d="M16.5 7.5l9 9m0-9l-9 9" stroke="#000" strokeWidth="2.2" strokeLinecap="round" />
     </svg>
   );
-}
-
-function initialsOf(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter((w) => /[A-Za-z]/.test(w))
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join('');
 }
 
 /**
@@ -281,13 +273,15 @@ function PhoneSurface({ V }: { V: ClozrView }) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      // A tapped key keeps focus; Enter there is a call, not the same digit again.
+      const onPad = !!t?.closest?.('[data-dialpad]');
       if (/^[0-9*#+]$/.test(e.key)) {
         setDigits((cur) => (e.key === '+' ? (cur ? cur : '+') : dialDigits(cur + e.key)));
         e.preventDefault();
       } else if (e.key === 'Backspace') {
         setDigits((cur) => cur.slice(0, -1));
         e.preventDefault();
-      } else if (e.key === 'Enter' && (t === null || t === document.body || t === rootRef.current)) {
+      } else if (e.key === 'Enter' && (t === null || t === document.body || t === rootRef.current || onPad)) {
         callRef.current();
         e.preventDefault();
       }
@@ -360,7 +354,7 @@ function PhoneSurface({ V }: { V: ClozrView }) {
           <span className="inline-flex items-center gap-1.5" style={{ font: '400 13px/1.2 var(--sans)', color: 'rgba(255,255,255,.6)' }}><TalkrMark size={14} color="#fff" />Talkr · incoming call</span>
           <span
             data-testid="incoming-name"
-            style={{ marginTop: 8, font: '600 34px/1.12 var(--sans)', color: '#fff', overflow: 'hidden', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}
+            style={{ marginTop: 8, font: '600 34px/1.12 var(--sans)', color: 'var(--on-dark, #fff)', overflow: 'hidden', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}
           >
             {name}
           </span>
@@ -381,18 +375,7 @@ function PhoneSurface({ V }: { V: ClozrView }) {
             </span>
           )}
         </div>
-        <div className="flex min-h-0 flex-1 items-center justify-center">
-          <span className="phone-tall-only relative inline-flex items-center justify-center" style={{ width: 96, height: 96 }}>
-            <span className="absolute inset-0 rounded-full" style={{ background: 'rgba(61,220,151,.35)', animation: 'ringpulse 1.6s ease-out infinite' }} aria-hidden />
-            <span
-              className="relative inline-flex items-center justify-center rounded-full"
-              style={{ width: 96, height: 96, background: 'rgba(255,255,255,.14)', font: '600 34px/1 var(--sans)', color: '#fff' }}
-              aria-hidden
-            >
-              {initialsOf(name) || <Icon name="user" size={40} />}
-            </span>
-          </span>
-        </div>
+        <div className="min-h-0 flex-1" />
         <div className="flex flex-none justify-between" style={{ padding: '0 max(32px, 11vw)' }}>
           <span className="flex w-[78px] flex-col items-center gap-2">
             <button type="button" className="phone-glass" aria-label="Decline and message" onClick={() => setSheet('decline-message')}>
@@ -567,7 +550,7 @@ function PhoneSurface({ V }: { V: ClozrView }) {
         <div className="grid flex-none items-center" style={{ height: 56, gridTemplateColumns: '1fr auto 1fr', padding: '0 8px' }}>
           {minimise}
           <span className="flex min-w-0 flex-col items-center text-center">
-            <span style={{ font: '400 13px/1.2 var(--sans)', color: 'rgba(255,255,255,.6)' }}>Call ended · {V.callClock}</span>
+            <span style={{ font: '400 13px/1.2 var(--sans)', color: 'rgba(255,255,255,.6)' }}>Call ended · {V.callDuration}</span>
             <span className="max-w-[52vw] truncate" style={{ font: '600 17px/1.25 var(--sans)' }}>
               {V.callTarget?.name ?? 'Wrap-up'}
             </span>
@@ -641,7 +624,7 @@ function PhoneSurface({ V }: { V: ClozrView }) {
                   type="button"
                   onClick={() => sp.deviceAction?.run()}
                   className="mt-2"
-                  style={{ height: 36, padding: '0 14px', borderRadius: 18, border: 0, background: '#fff', color: '#18181b', font: '600 13px/1 var(--sans)' }}
+                  style={{ height: 36, padding: '0 14px', borderRadius: 18, border: 0, background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)', font: '600 13px/1 var(--sans)' }}
                 >
                   {sp.deviceAction.label}
                 </button>
@@ -874,12 +857,12 @@ export function PhoneCallPill({ V }: { V: ClozrView }) {
       onClick={() => V.openPhone()}
       style={{ background: wrap ? '#18181b' : '#0A8560' }}
     >
-      <span aria-hidden className={wrap ? undefined : 'talkr-rec-dot'} style={{ width: 8, height: 8, borderRadius: 999, background: '#fff', flex: 'none' }} />
+      <span aria-hidden className={wrap ? undefined : 'talkr-rec-dot'} style={{ width: 8, height: 8, borderRadius: 999, background: 'var(--surface, #fff)', flex: 'none' }} />
       <span className="min-w-0 flex-1 truncate" style={{ textAlign: 'left' }}>
         {wrap ? `Finish wrap-up · ${name}` : name}
       </span>
       {!wrap && V.muted && <Icon name="mic-off" size={16} />}
-      {!wrap && <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>{V.callClock}</span>}
+      {!wrap && <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}><CallClock timer={V.callTimer} /></span>}
       {wrap && <Icon name="chevron-right" size={16} />}
     </button>
   );

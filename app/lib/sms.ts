@@ -17,6 +17,9 @@ import { getSmsFrom, loadSmsLines } from './sms-from';
 import { sendsAsSelf } from './thread-line';
 import { supabase } from './supabase';
 import { BLACKLIST_MESSAGE, loadBlocked, type BlacklistDb, type BlockedSet } from './blacklist';
+import { fromLine, recordSentText, sentTextRow, signedInRep } from './sms-record';
+import { carrierCheck, carrierReport } from './carrier-safe';
+import { eachLimited } from './each-limited';
 
 /** Who a text is going to, and the values its merge fields can use. */
 export type Recipient = {
@@ -48,6 +51,18 @@ export type SendContext = {
   repName?: string; repPhone?: string; repEmail?: string; company?: string;
   /** The Talkr line to send from. Unset uses the CRM-wide pick (lib/sms-from); null there is the rep's default. */
   fromPhoneNumberId?: string | null;
+  /**
+   * MMS attachments, already uploaded (Talkr's uploadMedia urls; lib/mms has
+   * the limits). They go on the Talkr message and are named in the record copy.
+   */
+  mediaUrls?: string[];
+  /**
+   * How the carrier check treats the words (lib/carrier-safe). 'outreach'
+   * (the default: bulk, templates, offers) swaps trigger wording for safe
+   * wording; 'reply' (a rep typing in a conversation) changes nothing and
+   * only refuses what a carrier would block.
+   */
+  carrier?: 'outreach' | 'reply';
 };
 
 export type SendOutcome = {
@@ -58,6 +73,8 @@ export type SendOutcome = {
   status: string;
   messageId?: string;
   error?: string;
+  /** What the carrier check changed before it went (outreach mode), for the sender to see. */
+  carrierFixed?: string;
 };
 
 /** Talkr caps a message body at 1600 characters. */
@@ -149,34 +166,21 @@ function refusal(err: unknown, to: string): string {
 }
 
 /**
- * Record the sent text on the CLOZR record.
- *
- * Failing to write the row must not read as a failed send — the text is gone
- * either way — so this reports nothing and the outcome stays "sent".
+ * Record the sent text on the CLOZR record: who sent it and the line it left
+ * from (lib/sms-record). `fromId` is the line asked for, so a Talkr that does
+ * not yet say from_number on the message still gets the number.
  */
 async function record(
   workspaceId: number, r: Recipient, to: string, body: string,
-  msg: { id: string; status?: string },
+  msg: { id: string; status?: string; created_by?: string | null; from_number?: string | null },
+  fromId: string | null, mediaUrls: readonly string[] = [],
 ): Promise<void> {
   if (!supabase) return;
-  const repId = (await supabase.auth.getSession()).data.session?.user.id ?? null;
-  const { error } = await supabase.from('communications').insert({
-    workspace_id: workspaceId,
-    seller_id: r.sellerId,
-    buyer_id: r.buyerId ?? null,
-    vendor_id: r.vendorId ?? null,
-    channel: 'sms',
-    direction: 'outbound',
-    occurred_at: new Date().toISOString(),
-    // The rep who sent it, for the leaderboard (migration 85).
-    ...(repId ? { rep_id: repId } : {}),
-    to_phone: to,
-    body,
-    status: msg.status ?? 'queued',
-    source: 'talkr',
-    source_id: 'msg:' + msg.id,
-  });
-  if (error) console.error('text sent but not recorded on the record', error.message);
+  const [repId, lines] = await Promise.all([signedInRep(), loadSmsLines().then((l) => l.lines).catch(() => [])]);
+  await recordSentText(sentTextRow({
+    workspaceId, sellerId: r.sellerId, buyerId: r.buyerId, vendorId: r.vendorId, to, body, mediaUrls, msg,
+    repId, fromPhone: fromLine(msg, fromId, lines),
+  }));
 }
 
 /**
@@ -206,39 +210,50 @@ export async function textOne(
   const check = gate ?? await blockedTexts([r]);
   if (!check.ok) return { sellerId: r.sellerId, name: r.name, to, status: 'blocked', error: check.message };
   if (isBlockedRecipient(r, check.blocked)) return { sellerId: r.sellerId, name: r.name, to, status: 'blocked', error: BLACKLIST_MESSAGE };
-  const text = renderMerge(body, fieldsFor(r, ctx, to));
+  const carrier = carrierCheck(renderMerge(body, fieldsFor(r, ctx, to)), { mode: ctx.carrier });
+  if (carrier.blocked) return { sellerId: r.sellerId, name: r.name, to, status: 'blocked', error: `Not sent: a carrier would block it. ${carrierReport(carrier)}.` };
+  const text = carrier.text;
+  const carrierFixed = carrierReport(carrier, ['fix']) || undefined;
   try {
     let from = ctx.fromPhoneNumberId !== undefined ? ctx.fromPhoneNumberId : getSmsFrom();
     // The TC names her own line: left to Talkr, a number with an open thread
     // went out on whichever rep's line was carrying it (lib/thread-line).
     if (from == null && ctx.fromPhoneNumberId === undefined && sendsAsSelf()) from = (await loadSmsLines()).defaultId;
-    const sent = await talkr.sendMessage({ to_number: to, body: text, ...(from ? { from_phone_number_id: from } : {}) });
-    await record(workspaceId, r, to, text, sent.message);
-    return { sellerId: r.sellerId, name: r.name, to, status: sent.message.status || 'queued', messageId: sent.message.id };
+    const media = ctx.mediaUrls?.filter(Boolean) ?? [];
+    const sent = await talkr.sendMessage({
+      to_number: to, body: text,
+      ...(from ? { from_phone_number_id: from } : {}),
+      ...(media.length ? { media_urls: media } : {}),
+    });
+    // The text is gone once Talkr answers; the record write runs behind the
+    // toast rather than holding it (record() logs its own failure).
+    void record(workspaceId, r, to, text, sent.message, from, media);
+    return { sellerId: r.sellerId, name: r.name, to, status: sent.message.status || 'queued', messageId: sent.message.id, ...(carrierFixed ? { carrierFixed } : {}) };
   } catch (err) {
     return { sellerId: r.sellerId, name: r.name, to, status: 'failed', error: refusal(err, to) };
   }
 }
 
 /**
- * Several texts, a few at a time.
+ * Several texts, six at a time.
  *
  * One at a time makes a list of two hundred crawl; all at once hands Talkr a
- * thundering herd. Order is preserved so results line up with the selection.
+ * thundering herd. A rolling pool: the next text starts as soon as any of the
+ * six is answered, not when the slowest of a group of six is. Order is
+ * preserved so results line up with the selection.
  */
 export async function textMany(
   workspaceId: number, recipients: Recipient[], body: string, ctx: SendContext = {},
+  onProgress?: (done: number) => void,
 ): Promise<SendOutcome[]> {
-  const out: SendOutcome[] = new Array(recipients.length);
   // One read for the whole batch; each textOne then only looks its own row up.
   const gate = await blockedTexts(recipients);
-  const BATCH = 6;
-  for (let i = 0; i < recipients.length; i += BATCH) {
-    await Promise.all(recipients.slice(i, i + BATCH).map(async (r, j) => {
-      out[i + j] = await textOne(workspaceId, r, body, ctx, gate);
-    }));
-  }
-  return out;
+  let done = 0;
+  return eachLimited(recipients, 6, async (r) => {
+    const sent = await textOne(workspaceId, r, body, ctx, gate);
+    onProgress?.(++done);
+    return sent;
+  });
 }
 
 /** One line for the toast: what went out, and what did not. */

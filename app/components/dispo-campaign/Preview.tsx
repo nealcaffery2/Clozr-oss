@@ -24,16 +24,16 @@ export function SmsThread({ messages, tz, now, from, swapKey }: { messages: Plan
         return (
           <React.Fragment key={`${m.kind}:${m.seq}`}>
             {gap ? (
-              <div style={{ textAlign: 'center', fontSize: '10.5px', color: C.muted2, margin: i ? '10px 0 2px' : '0 0 2px' }}>
+              <div style={{ textAlign: 'center', fontSize: '11px', color: C.muted2, margin: i ? '10px 0 2px' : '0 0 2px' }}>
                 <span style={{ fontWeight: 600, color: m.kind === 'followup' ? '#92400e' : C.muted }}>{KIND[m.kind]}</span> · {at(m.send_at, tz, now)}
               </div>
             ) : null}
             <div style={{ display: 'grid' }}>
               <div className={m.kind === 'intro' && swapKey ? 'mk-bubble mk-swap' : 'mk-bubble'} key={m.kind === 'intro' ? swapKey : undefined} data-testid={`bubble-${m.kind}`}>
                 {m.body}
-                {m.media_urls.length ? <span style={{ display: 'block', marginTop: '6px', fontSize: '11px', color: C.muted2 }}>+ photo</span> : null}
+                {m.media_urls.length ? <span style={{ display: 'block', marginTop: '6px', fontSize: '11px', fontWeight: 600 }}>+ photo</span> : null}
               </div>
-              <span className="mk-num" style={{ justifySelf: 'end', fontSize: '10.5px', color: segs > 2 ? '#92400e' : C.subtle, marginTop: '2px' }}>
+              <span className="mk-num" style={{ justifySelf: 'end', fontSize: '11px', color: segs > 2 ? 'var(--tx-amber-deep, #92400e)' : C.subtle, marginTop: '2px' }}>
                 {m.body.length} chars · {segs} segment{segs === 1 ? '' : 's'}
               </span>
             </div>
@@ -58,6 +58,15 @@ export function Scaled({ html }: { html: string }) {
     setH(Math.max(180, Math.min(body.scrollHeight + 8, 2400)));
   };
   useLayoutEffect(() => { measure(); }, [html]);
+  // A frame first drawn hidden (the editor's preview on a phone) measures again once it has a width.
+  useLayoutEffect(() => {
+    const el = frame.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let w = el.clientWidth;
+    const ro = new ResizeObserver(() => { if (el.clientWidth !== w) { w = el.clientWidth; measure(); } });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   return (
     <iframe ref={frame} title="Email preview" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcDoc={emailSrcDoc(html)}
       onLoad={(e) => {
@@ -65,12 +74,12 @@ export function Scaled({ html }: { html: string }) {
         if (doc?.head && !doc.getElementById('mk-fit')) {
           const style = doc.createElement('style');
           style.id = 'mk-fit';
-          style.textContent = 'html,body{margin:0;background:#fff} table{width:100%!important;max-width:100%!important} img{max-width:100%!important;height:auto!important}';
+          style.textContent = 'html,body{margin:0;background:var(--surface, #fff)} table{width:100%!important;max-width:100%!important} img{max-width:100%!important;height:auto!important}';
           doc.head.appendChild(style);
         }
         measure();
       }}
-      style={{ width: '100%', height: `${h}px`, border: `1px solid ${C.line}`, borderRadius: '8px', display: 'block', background: '#fff' }} />
+      style={{ width: '100%', height: `${h}px`, border: `1px solid ${C.line}`, borderRadius: '8px', display: 'block', background: 'var(--surface, #fff)' }} />
   );
 }
 
@@ -80,11 +89,11 @@ export function EmailView({ messages, tz, now, from }: { messages: PlannedMessag
     <div style={{ display: 'grid', gap: '14px' }} data-testid="preview-email">
       {messages.map((m) => (
         <div key={`${m.kind}:${m.seq}`} style={{ display: 'grid', gap: '6px' }}>
-          <div style={{ fontSize: '10.5px', color: C.muted2 }}>
+          <div style={{ fontSize: '11px', color: C.muted2 }}>
             <span style={{ fontWeight: 600, color: m.kind === 'followup' ? '#92400e' : C.muted }}>{KIND[m.kind]}</span> · {at(m.send_at, tz, now)}
           </div>
           <div style={{ border: `1px solid ${C.line}`, borderRadius: '10px', overflow: 'hidden' }}>
-            <div style={{ padding: '8px 10px', borderBottom: `1px solid ${C.line2}`, fontSize: '12px', display: 'grid', gap: '2px', background: '#fafafa' }}>
+            <div style={{ padding: '8px 10px', borderBottom: `1px solid ${C.line2}`, fontSize: '12px', display: 'grid', gap: '2px', background: 'var(--canvas, #fafafa)' }}>
               <span style={{ color: C.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>From {from}</span>
               <b style={{ fontSize: '13px' }} data-testid="preview-subject">{m.subject || '(no subject)'}</b>
             </div>

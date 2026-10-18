@@ -17,16 +17,20 @@ import { ActionsMenu } from '@/app/components/bulk/ActionsMenu';
 import { firstN, inListOrder } from '@/lib/bulk-assign';
 
 type Bulk = ClozrView['buyerBulk'];
-type Mode = null | 'market' | 'rvm' | 'plan' | 'campaign' | 'enroll' | 'unenroll' | 'trace' | 'ai' | 'assign' | 'stage';
+type Mode = null | 'market' | 'email' | 'sms' | 'rvm' | 'plan' | 'campaign' | 'enroll' | 'unenroll' | 'trace' | 'ai' | 'assign' | 'stage';
 
-const btn: React.CSSProperties = { flex: 'none', whiteSpace: 'nowrap', height: '28px', padding: '0 10px', borderRadius: '7px', border: '1px solid rgba(10, 133, 96,.25)', background: '#fff', fontSize: '12px', color: '#18181b', cursor: 'pointer', fontWeight: 500 };
-const field: React.CSSProperties = { height: '30px', borderRadius: '7px', border: '1px solid #e4e4e7', padding: '0 8px', fontSize: '12.5px', background: '#fff' };
-const label: React.CSSProperties = { fontSize: '11.5px', color: '#71717a', fontWeight: 600 };
+const btn: React.CSSProperties = { flex: 'none', whiteSpace: 'nowrap', height: '28px', padding: '0 10px', borderRadius: '7px', border: '1px solid rgba(10, 133, 96,.25)', background: 'var(--surface, #fff)', fontSize: '12px', color: 'var(--ink, #18181b)', cursor: 'pointer', fontWeight: 500 };
+const field: React.CSSProperties = { height: '30px', borderRadius: '7px', border: '1px solid var(--divider, #e4e4e7)', padding: '0 8px', fontSize: '12.5px', background: 'var(--surface, #fff)' };
+const label: React.CSSProperties = { fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600 };
 
 
 /** `compact`: one sideways-scrolling row, for a phone, where fourteen wrapped buttons took half the screen. */
-export function BuyerBulkBar({ bulk, selectedIds, onClear, compact, list = [], onSelect }: {
+export function BuyerBulkBar({ bulk, selectedIds, onClear, compact, list = [], onSelect, compr, onPaymentLink }: {
   bulk: Bulk; selectedIds: string[]; onClear: () => void; compact?: boolean;
+  /** Compr workspace: open the payment link dialog for the selection. */
+  onPaymentLink?: () => void;
+  /** A Compr workspace sells software, not deals: the deal and Genius actions are left out. */
+  compr?: boolean;
   /** The list as shown (sorted, filtered), for "Select [N]" and assigning in list order. */
   list?: { id: string; assigned?: string | null }[];
   /** Replace the selection (Select [N]). */
@@ -82,28 +86,34 @@ export function BuyerBulkBar({ bulk, selectedIds, onClear, compact, list = [], o
 
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', flexWrap: compact ? 'nowrap' : 'wrap', overflowX: compact ? 'auto' : undefined, gap: '6px', padding: compact ? '8px 12px' : '8px 16px', background: '#F0FAF5', borderBottom: '1px solid rgba(10, 133, 96,.2)', animation: 'clozrFade .14s' }}>
-        <span style={{ flex: 'none', fontSize: '12.5px', fontWeight: 600, color: '#08694C', marginRight: '8px', whiteSpace: 'nowrap' }}>{n.toLocaleString('en-US')} selected</span>
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: compact ? 'nowrap' : 'wrap', overflowX: compact ? 'auto' : undefined, gap: '6px', padding: compact ? '8px 12px' : '8px 16px', background: 'var(--c-genius-soft, #f0faf5)', borderBottom: '1px solid rgba(10, 133, 96,.2)', animation: 'clozrFade .14s' }}>
+        <span style={{ flex: 'none', fontSize: '12.5px', fontWeight: 600, color: 'var(--tx-mint-deep, #08694c)', marginRight: '8px', whiteSpace: 'nowrap' }}>{n.toLocaleString('en-US')} selected</span>
         <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'ai' ? null : 'ai')} aria-pressed={mode === 'ai'}
           title="Switch an AI agent on or off for these buyers. VIPs and funds are always skipped."
-          style={{ ...btn, border: '1px solid rgba(10,133,96,.35)', background: mode === 'ai' ? '#E7F5EF' : 'linear-gradient(90deg,#F0FAF5,#ecfdf5)', color: '#08694C', fontWeight: 700 }}>
+          style={{ ...btn, border: '1px solid rgba(10,133,96,.35)', background: mode === 'ai' ? 'var(--c-action-soft, #e7f5ef)' : 'linear-gradient(90deg,var(--c-genius-soft, #f0faf5),var(--tint-green, #ecfdf5))', color: 'var(--tx-mint-deep, #08694c)', fontWeight: 700 }}>
           ✦ AI agent
         </button>
         <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'assign' ? null : 'assign')} aria-pressed={mode === 'assign'}
-          title="Assign to one teammate, or split between several in list order" style={{ ...btn, background: mode === 'assign' ? '#E7F8F1' : '#fff' }}>
+          title="Assign to one teammate, or split between several in list order" style={{ ...btn, background: mode === 'assign' ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)' }}>
           Assign
         </button>
-        <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'market' ? null : 'market')} style={btn}>Send to marketing</button>
+        {compr ? null : <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'market' ? null : 'market')} aria-pressed={mode === 'market'} style={btn}>Send to marketing</button>}
+        {/* Straight to the selection, no deal needed: a note, a check-in, an offer of a demo. */}
+        <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'email' ? null : 'email')} aria-pressed={mode === 'email'} style={btn}>Send email</button>
+        <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'sms' ? null : 'sms')} aria-pressed={mode === 'sms'} style={btn}>Send text</button>
+        {compr && onPaymentLink ? <button className="dc11" disabled={busy} onClick={onPaymentLink} title="Email or text each selected contact a Compr checkout link" style={btn}>Send payment link</button> : null}
+        <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'rvm' ? null : 'rvm')} aria-pressed={mode === 'rvm'} title="Ringless voicemail" style={btn}>Send RVM</button>
         <button className="dc11" disabled={busy} onClick={() => { onClear(); void bulk.addToCallQueue(selectedIds); }} style={btn}>Add to call queue</button>
         {/* Everything else under Actions ▾ (app/components/bulk/ActionsMenu). */}
         <ActionsMenu accent="#0A8560" actions={[
-          { key: 'rvm', label: 'RVM', group: 'Reach out', note: 'ringless voicemail', run: () => setMode('rvm') },
-          { key: 'campaign', label: 'Build campaign', group: 'Reach out', run: () => setMode('campaign') },
-          { key: 'plan', label: 'Enroll for a deal', group: 'Reach out', run: () => setMode('plan') },
+          ...(compr ? [] : [
+            { key: 'campaign', label: 'Build campaign', group: 'Reach out', run: () => setMode('campaign') },
+            { key: 'plan', label: 'Enroll for a deal', group: 'Reach out', run: () => setMode('plan') },
+          ]),
           { key: 'stage', label: 'Move to stage…', group: 'Organize', run: () => setMode('stage') },
           { key: 'tag', label: 'Add tag', group: 'Organize', run: () => retag(true) },
           { key: 'untag', label: 'Remove tag', group: 'Organize', run: () => retag(false) },
-          { key: 'genius', label: 'Tag for Genius', group: 'Organize', run: genius },
+          ...(compr ? [] : [{ key: 'genius', label: 'Tag for Genius', group: 'Organize', run: genius }]),
           { key: 'enroll', label: 'Add to action plan', group: 'Organize', run: () => setMode('enroll') },
           { key: 'pause', label: 'Pause action plans', group: 'Organize', run: () => {
             if (!window.confirm(`Pause the action plan on ${n} buyer${n === 1 ? '' : 's'}?`)) return;
@@ -119,9 +129,9 @@ export function BuyerBulkBar({ bulk, selectedIds, onClear, compact, list = [], o
           { key: 'delete', label: 'Delete', group: 'Remove', danger: true, run: del },
         ].map((a) => ({ ...a, disabled: busy }))} />
         <div style={{ flex: 1 }} />
-        {busy ? <span style={{ fontSize: '12px', color: '#08694C' }}>Working…</span> : null}
+        {busy ? <span style={{ fontSize: '12px', color: 'var(--tx-mint-deep, #08694c)' }}>Working…</span> : null}
         {onSelect && list.length ? <SelectCount listCount={list.length} ownerAware onSelect={selectFirst} /> : null}
-        <button onClick={onClear} style={{ height: '28px', padding: '0 10px', border: 0, background: 'none', fontSize: '12px', color: '#08694C', cursor: 'pointer' }}>Clear</button>
+        <button onClick={onClear} style={{ height: '28px', padding: '0 10px', border: 0, background: 'none', fontSize: '12px', color: 'var(--tx-mint-deep, #08694c)', cursor: 'pointer' }}>Clear</button>
       </div>
       {mode === 'assign' ? (
         <AssignPanel noun={{ one: 'buyer', many: 'buyers' }} team={bulk.team} selectedIds={ordered} listCount={list.length || n}
@@ -129,16 +139,16 @@ export function BuyerBulkBar({ bulk, selectedIds, onClear, compact, list = [], o
           onAssign={async (blocks) => { if (await bulk.assign(blocks)) { setMode(null); onClear(); } }} />
       ) : null}
       {mode === 'stage' ? (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '8px 14px', background: '#fff', borderBottom: '1px solid #e4e4e7' }}>
-          <span style={{ fontSize: '11.5px', color: '#71717a', fontWeight: 600, alignSelf: 'center', marginRight: '4px' }}>Move to</span>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '8px 14px', background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)' }}>
+          <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600, alignSelf: 'center', marginRight: '4px' }}>Move to</span>
           {BUYER_STAGES.map((st) => (
-            <button key={st} type="button" className="dc2" disabled={busy} onClick={() => stage(st)} style={{ ...btn, background: '#fff' }}>{st}</button>
+            <button key={st} type="button" className="dc2" disabled={busy} onClick={() => stage(st)} style={{ ...btn, background: 'var(--surface, #fff)' }}>{st}</button>
           ))}
-          <button type="button" onClick={() => setMode(null)} style={{ height: '28px', padding: '0 8px', border: 0, background: 'none', fontSize: '12px', cursor: 'pointer', color: '#71717a' }}>Cancel</button>
+          <button type="button" onClick={() => setMode(null)} style={{ height: '28px', padding: '0 8px', border: 0, background: 'none', fontSize: '12px', cursor: 'pointer', color: 'var(--meta, #71717a)' }}>Cancel</button>
         </div>
       ) : null}
       {mode === 'market' ? <Market bulk={bulk} selectedIds={selectedIds} onClose={() => setMode(null)} /> : null}
-      {mode === 'rvm' ? <Market bulk={bulk} selectedIds={selectedIds} channel="rvm" onClose={() => setMode(null)} /> : null}
+      {mode === 'email' || mode === 'sms' || mode === 'rvm' ? <Market key={mode} bulk={bulk} selectedIds={selectedIds} channel={mode} direct onClose={() => setMode(null)} /> : null}
       {mode === 'campaign' ? <Campaign bulk={bulk} selectedIds={selectedIds} onClose={() => setMode(null)} /> : null}
       {mode === 'plan' ? <Plan bulk={bulk} selectedIds={selectedIds} onClose={() => setMode(null)} onDone={done} /> : null}
       {mode === 'trace' ? (
@@ -164,11 +174,11 @@ export function BuyerBulkBar({ bulk, selectedIds, onClear, compact, list = [], o
 
 function Panel({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 16px', background: '#fff', borderBottom: '1px solid #e4e4e7' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 16px', background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)' }}>
       <div style={{ display: 'flex', alignItems: 'center' }}>
         <span style={label}>{title}</span>
         <div style={{ flex: 1 }} />
-        <button onClick={onClose} style={{ border: 0, background: 'none', fontSize: '12px', cursor: 'pointer', color: '#71717a' }}>Cancel</button>
+        <button onClick={onClose} style={{ border: 0, background: 'none', fontSize: '12px', cursor: 'pointer', color: 'var(--meta, #71717a)' }}>Cancel</button>
       </div>
       {children}
     </div>
@@ -184,8 +194,12 @@ function DealPick({ bulk, value, onChange }: { bulk: Bulk; value: string; onChan
   );
 }
 
-/** Buyers -> Send to marketing: the shared bulk composer, after they pick which deal (app/components/bulk/BulkCompose.tsx). */
-function Market({ bulk, selectedIds, channel, onClose }: { bulk: Bulk; selectedIds: string[]; channel?: 'sms' | 'rvm'; onClose: () => void }) {
+/**
+ * Buyers -> Send to marketing: the shared bulk composer, after they pick which
+ * deal (app/components/bulk/BulkCompose.tsx). `direct` is Send email, text or
+ * RVM: the same composer on that channel, where a deal is optional.
+ */
+function Market({ bulk, selectedIds, channel, direct, onClose }: { bulk: Bulk; selectedIds: string[]; channel?: 'email' | 'sms' | 'rvm'; direct?: boolean; onClose: () => void }) {
   const session = useSession();
   // The sender's own signature fields: {{rep_phone}} and {{rep_email}} in the dispo templates.
   const rep = { ...bulk.textCtx, repPhone: session.profile?.phone ?? '', repEmail: session.user?.email ?? '' };
@@ -199,7 +213,7 @@ function Market({ bulk, selectedIds, channel, onClose }: { bulk: Bulk; selectedI
       channel={channel}
       people={people}
       deals={bulk.deals}
-      requireDeal
+      requireDeal={!direct}
       workspaceId={bulk.workspaceId}
       canWrite={bulk.canWrite}
       userId={session.user?.id ?? null}
@@ -225,7 +239,7 @@ function Campaign({ bulk, selectedIds, onClose }: { bulk: Bulk; selectedIds: str
         <button className="clozr-genius-btn" disabled={!dealId || !bulk.canWrite} onClick={() => bulk.openCampaign(Number(dealId), selectedIds.flatMap((id) => (bulk.buyers[id] ? [bulk.buyers[id].dbId] : [])))} style={{ ...btn, background: '#0A8560', color: '#fff', border: '1px solid #0A8560' }}>
           Open campaign builder
         </button>
-        {!bulk.canWrite ? <span style={{ fontSize: '12px', color: '#71717a' }}>Sign in to build a campaign.</span> : <span style={{ fontSize: '12px', color: '#71717a' }}>They start ticked in the builder, alongside the deal&apos;s matched buyers.</span>}
+        {!bulk.canWrite ? <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>Sign in to build a campaign.</span> : <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>They start ticked in the builder, alongside the deal&apos;s matched buyers.</span>}
       </div>
     </Panel>
   );
@@ -272,8 +286,8 @@ function Plan({ bulk, selectedIds, onClose, onDone }: { bulk: Bulk; selectedIds:
         </select>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px' }}>
-        {!bulk.canWrite ? <span style={{ color: '#71717a' }}>Sign in to score buyers against a deal.</span>
-          : busy ? <span style={{ color: '#0A8560' }}>Working…</span>
+        {!bulk.canWrite ? <span style={{ color: 'var(--meta, #71717a)' }}>Sign in to score buyers against a deal.</span>
+          : busy ? <span style={{ color: 'var(--tx-mint, #0a8560)' }}>Working…</span>
             : fits ? (
               <>
                 <span><b>{fits.length}</b> of {selectedIds.length} selected buyers fit this deal (match score 55+).</span>
@@ -281,7 +295,7 @@ function Plan({ bulk, selectedIds, onClose, onDone }: { bulk: Bulk; selectedIds:
                   Enroll {fits.length}
                 </button>
               </>
-            ) : <span style={{ color: '#71717a' }}>Pick a deal to see which buyers fit its buy box.</span>}
+            ) : <span style={{ color: 'var(--meta, #71717a)' }}>Pick a deal to see which buyers fit its buy box.</span>}
       </div>
     </Panel>
   );
@@ -331,9 +345,9 @@ function EnrollSimple({ bulk, selectedIds, onClose, onDone }: { bulk: Bulk; sele
           Enroll {n}
         </button>
         {picked && !forBuyers(picked.audience) ? (
-          <span style={{ fontSize: '12px', color: '#b45309' }}>Built for {picked.audience === 'source' ? 'wholesaler sources' : 'sellers'}: check its wording fits a buyer.</span>
+          <span style={{ fontSize: '12px', color: 'var(--tx-amber, #b45309)' }}>Built for {picked.audience === 'source' ? 'wholesaler sources' : 'sellers'}: check its wording fits a buyer.</span>
         ) : picked && !picked.active ? (
-          <span style={{ fontSize: '12px', color: '#71717a' }}>Paused plans still queue their steps as tasks.</span>
+          <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>Paused plans still queue their steps as tasks.</span>
         ) : null}
       </div>
     </Panel>

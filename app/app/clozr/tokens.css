@@ -38,6 +38,48 @@
   --divider:     #e4e4e7;
   --divider-2:   #f0f0f1;
 
+  /* The generated screens' own neutrals, so the theme codemod
+     (tools/theme-codemod.mjs) can move their literals onto tokens with the
+     light value unchanged. Light values are the exact literals they replace. */
+  --canvas:      #fafafa;   /* the screens' off-white page and quiet buttons */
+  --line:        #d4d4d8;   /* a stronger hairline, icon strokes, unchecked boxes */
+  --ink-3:       #3f3f46;   /* DESIGN.md ink-2: secondary row text */
+  --ink-deep:    #1c1d1f;   /* the deepest ink the screens use: Genius figures, the TV board */
+  --ink-4:       #3c4043;   /* the calendar's ink */
+  --surface-1:   #fcfcfd;   /* an open row, a hair above the card */
+  --nav-bg:      #fcfcfc;   /* the main menu (sidenav.css); very dark green in dark */
+  --nav-hover:   #f1f1f2;
+  --line-2:      #dadce0;   /* the calendar's grid line */
+  /* The Tailwind pastels the screens paint status surfaces with. Dark is a
+     translucent tint of the same hue, so the colour still says what it says. */
+  --tint-red:    #fef2f2;  --tint-red-2:    #fecaca;  --tint-amber:    #fffbeb;  --tint-amber-2: #fde68a;
+  --tint-green:  #ecfdf5;  --tint-green-2:  #f0fdf4;  --tint-green-3:  #bbf7d0;  --tint-orange:  #fff7ed;
+  --tint-orange-2: #ffedd5; --tint-orange-3: #fed7aa; --tint-rose:    #fecdd3;  --tint-violet:  #ede9fe;
+  --tint-blue:   #eff6ff;  --tint-blue-2:   #dbeafe;  --tint-sky:      #e0f2fe;  --tint-yellow:  #fef9c3;
+  --meta:        #71717a;   /* DESIGN.md muted: labels, meta, helper text */
+  --on-dark:     #ffffff;   /* text on coloured and fixed-dark fills; white in both themes */
+
+  /* Coloured text shades. Light is the literal; dark lightens each one so it
+     holds 4.5:1 on the dark surfaces (DESIGN.md section 2: fix contrast by
+     lightness, not hue). Fills and borders keep their literal colour; only
+     `color:` moves. */
+  --tx-mint:        #0A8560;  --tx-mint-deep:  #08694C;
+  --tx-green:       #15803d;  --tx-green-deep: #1f7a4d;  --tx-green-2: #0e7a57;
+  --tx-red:         #b91c1c;  --tx-red-deep:   #991b1b;  --tx-hot:     #dc2626;
+  --tx-amber:       #b45309;  --tx-amber-deep: #92400e;
+  --tx-orange:      #c2410c;  --tx-orange-deep: #9a3412;
+  --tx-blue:        #1d4ed8;  --tx-navy:       #07345c;  --tx-cold:    #2563eb;
+  --tx-sky:         #0369a1;  --tx-violet:     #6d28d9;  --tx-teal:    #0f766e;
+  /* Links and focus rings: the accent in light, a lighter mint in dark. */
+  --c-link:      var(--c-action);
+
+  /* Reports and diagrams (RULES.md theme contract): small mono captions and
+     the dotted blueprint grid. `background-image: var(--grid-dot);
+     background-size: var(--grid-size) var(--grid-size)`. */
+  --mono:        ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --grid-dot:    radial-gradient(circle, rgba(20, 30, 55, .14) 1px, transparent 1.5px);
+  --grid-size:   16px;
+
   /* ---- Semantic ------------------------------------------- */
   --positive:      #16a34a;
   --positive-soft: #dcfce7;
@@ -93,7 +135,7 @@
   --c-err:           #b91c1c;
   --c-warn:          #b45309;
   /* Focus rings everywhere (the global :focus-visible below). */
-  --c-focus:         var(--c-action);
+  --c-focus:         var(--c-link);
   --c-btn-bg:        #f8fafc;
   --c-btn-line:      #cbd5e1;
   --c-btn-hover:     var(--c-action-soft);
@@ -113,6 +155,16 @@
   --c-money:         #15803d;
   --c-money-soft:    #dcfce7;
   --c-sms:           #e6142e;
+
+  /* SMS bubbles, iMessage style (DESIGN.md §2): ours blue with white text,
+     theirs light grey with near-black text, on a white thread. The one
+     sanctioned exception to the single-accent rule. iOS blue #007AFF holds
+     only 4.0:1 under white 16px text, so ours is the deeper #0B6FE6 (4.7:1). */
+  --sms-out:      #0B6FE6;
+  --sms-out-text: #ffffff;
+  --sms-in:       #E9E9EB;
+  --sms-in-text:  #18181b;
+  --sms-thread:   #ffffff;
 
   /* Lane (the TC assistant) is pink, so it reads apart from CLOZR's mint. */
   --c-lane:      #db2777;
@@ -195,7 +247,7 @@
   --dur-slow: 0.35s;
 
   /* ---- Type ----------------------------------------------- */
-  --font-sans: 'SF Pro Text', 'SF Pro Display', -apple-system, BlinkMacSystemFont, var(--font-inter), 'Segoe UI', Helvetica, Arial, sans-serif;
+  --font-sans: var(--font-inter), 'Inter', 'SF Pro Text', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
   --font-mono: var(--font-sans);
   --num: 'tnum' 1;
 
@@ -218,10 +270,235 @@
    (DESIGN.md §8). :where() keeps it at zero specificity, so a control
    with its own focus treatment still wins, and nothing is left bare. */
 :where(a, button, input, select, textarea, summary, [role="button"], [role="tab"], [role="menuitem"], [role="option"], [tabindex]):focus-visible {
-  outline: 2px solid var(--c-focus, #0A8560);
+  outline: 2px solid var(--c-focus, #0a8560);
   outline-offset: 2px;
 }
 
 /* Inputs are 16px on phones so iOS does not zoom (DESIGN.md §3). */
 :root { --ds-input-size: 13px; }
 @media (max-width: 640px), (pointer: coarse) { :root { --ds-input-size: 16px; } }
+
+/* ============================================================
+   Dark mode (RULES.md theme contract). Black and white: near-black
+   surfaces, white and grey text and lines. Colour that carries meaning
+   (stage, heat, status, buyer type, logos, SMS bubbles) keeps its hue; only
+   text shades lighten where 4.5:1 would otherwise fail. lib/theme.ts sets
+   `data-theme`; "system" sets nothing, and the media block below follows
+   the OS. The two blocks are the same declarations: keep them identical.
+
+   Contrast on --surface #111113: --ink 17.2, --ink-2 12.8, --muted 7.4,
+   --meta 6.9, --subtle 3.9 (placeholders only), --c-link 7.4.
+   ============================================================ */
+:root[data-theme="dark"] {
+  --surface:     #111113;
+  --surface-2:   #18181b;
+  --surface-3:   #27272a;
+  --ink:         #f4f4f5;
+  --ink-2:       #d4d4d8;
+  --ink-3:       #c4c4cc;
+  --ink-deep:    #f4f4f5;
+  --ink-4:       #c4c4cc;
+  --surface-1:   #141416;
+  --nav-bg:      #0b1b14;
+  --nav-hover:   rgba(95, 217, 176, .10);
+  --line-2:      #3f3f46;
+  --tint-red:    rgba(220, 38, 38, .14);   --tint-red-2:    rgba(220, 38, 38, .28);   --tint-amber:    rgba(217, 119, 6, .14);  --tint-amber-2: rgba(217, 119, 6, .30);
+  --tint-green:  rgba(22, 163, 74, .14);   --tint-green-2:  rgba(22, 163, 74, .12);   --tint-green-3:  rgba(22, 163, 74, .28);  --tint-orange:  rgba(234, 88, 12, .14);
+  --tint-orange-2: rgba(234, 88, 12, .22); --tint-orange-3: rgba(234, 88, 12, .30);  --tint-rose:     rgba(225, 29, 72, .22);  --tint-violet:  rgba(124, 58, 237, .22);
+  --tint-blue:   rgba(37, 99, 235, .14);   --tint-blue-2:   rgba(37, 99, 235, .24);   --tint-sky:      rgba(2, 132, 199, .20);  --tint-yellow:  rgba(202, 138, 4, .22);
+  --muted:       #a1a1aa;
+  --muted-2:     #a6a6ae;
+  --meta:        #9a9aa3;
+  --subtle:      #71717a;
+  --divider:     #27272a;
+  --divider-2:   #1f1f23;
+  --line:        #3f3f46;
+  --canvas:      #0a0a0a;
+  --ink-hero:    #1e1e23;   /* the offer and AI hero panels: one step above the card */
+  --black:       #000000;
+  --cream:       #111113;
+
+  --page:        #0a0a0a;
+  --page-deep:   #000000;
+  --rail:        #0e0e10;
+  --rail-line:   #27272a;
+  --band:        #141416;
+  --band-line:   #27272a;
+  --inset:       #141416;
+  --inset-line:  #27272a;
+  --edge:        #27272a;
+  --edge-hover:  #3f3f46;
+  --trough:      #0e0e10;
+  --trough-line: #27272a;
+
+  --c-link:      #2fb786;
+  --c-btn-bg:    #18181b;
+  --c-btn-line:  #3f3f46;
+  --c-btn-hover: rgba(10, 133, 96, .18);
+  --c-menu-bg:   #18181b;
+  --c-menu-line: #27272a;
+  --c-thead:     #18181b;
+  --c-thead-line: #27272a;
+  --c-well:      #141416;
+  --c-contact:   #7dd3fc;
+  --c-err:       #f87171;
+  --c-warn:      #fbbf24;
+  --c-ok:        #2fb786;
+
+  --mint-dim:      rgba(95, 217, 176, .12);
+  --mint-soft:     rgba(10, 133, 96, .18);
+  --orange-soft:   rgba(255, 122, 69, .14);
+  --c-action-soft: rgba(10, 133, 96, .18);
+  --c-action-line: #1f7a4d;
+  --c-talkr-soft:  rgba(255, 35, 59, .14);
+  --c-genius-soft: rgba(10, 133, 96, .12);
+  --c-money-soft:  rgba(21, 128, 61, .18);
+  --c-lane-soft:   rgba(219, 39, 119, .14);
+  --c-lane-line:   #9d174d;
+  --positive-soft: rgba(22, 163, 74, .16);
+  --negative-soft: rgba(220, 38, 38, .16);
+  --caution-soft:  rgba(217, 119, 6, .16);
+
+  --sms-thread:  #111113;
+  --sms-in:      #27272a;
+  --sms-in-text: #f4f4f5;
+
+  --ok-bg:     rgba(22, 163, 74, .14);   --ok-line:     rgba(22, 163, 74, .40);   --ok-ink:     #5fd9b0;
+  --warn-bg:   rgba(217, 119, 6, .14);   --warn-line:   rgba(217, 119, 6, .40);   --warn-ink:   #fbbf24;
+  --danger-bg: rgba(220, 38, 38, .14);   --danger-line: rgba(220, 38, 38, .40);   --danger-ink: #f87171;
+  --info-bg:   rgba(37, 99, 235, .16);   --info-line:   rgba(37, 99, 235, .40);   --info-ink:   #93c5fd;
+  --chip-ok:   rgba(22, 163, 74, .26);   --chip-warn:   rgba(217, 119, 6, .26);   --chip-danger: rgba(220, 38, 38, .26);  --chip-info: rgba(37, 99, 235, .28);
+
+  --tx-mint:   #2fb786;  --tx-mint-deep:   #34c08f;
+  --tx-green:  #4ade80;  --tx-green-deep:  #4ade80;  --tx-green-2: #2fb786;
+  --tx-red:    #f87171;  --tx-red-deep:    #f87171;  --tx-hot:     #f87171;
+  --tx-amber:  #fbbf24;  --tx-amber-deep:  #fbbf24;
+  --tx-orange: #fb923c;  --tx-orange-deep: #fb923c;
+  --tx-blue:   #93c5fd;  --tx-navy:        #93c5fd;  --tx-cold:    #93c5fd;
+  --tx-sky:    #7dd3fc;  --tx-violet:      #c4b5fd;  --tx-teal:    #5eead4;
+
+  /* Shadows barely read on black; a light hairline does the lifting. */
+  --elev-1: 0 0 0 1px rgba(255, 255, 255, .06), 0 1px 2px rgba(0, 0, 0, .5);
+  --elev-2: 0 0 0 1px rgba(255, 255, 255, .08), 0 10px 24px -6px rgba(0, 0, 0, .6);
+  --elev-3: 0 0 0 1px rgba(255, 255, 255, .10), 0 18px 44px -10px rgba(0, 0, 0, .7);
+  --elev-4: 0 0 0 1px rgba(255, 255, 255, .12), 0 28px 60px -12px rgba(0, 0, 0, .8);
+  --elev-inset: inset 0 1px 2px rgba(0, 0, 0, .5), inset 0 0 0 1px rgba(255, 255, 255, .04);
+  --elev-press: inset 0 1px 3px rgba(0, 0, 0, .6);
+  --elev-rail: inset -1px 0 0 rgba(255, 255, 255, .06);
+  --elev-3-up: 0 0 0 1px rgba(255, 255, 255, .08), 0 -10px 26px -10px rgba(0, 0, 0, .6);
+  --elev-key: inset 0 1px 0 rgba(255, 255, 255, .08), 0 1px 2px rgba(0, 0, 0, .5), 0 4px 10px -3px rgba(0, 0, 0, .5);
+  --shadow-ring: 0 0 0 1px rgba(255, 255, 255, .10), 0 1px 2px -1px rgba(0, 0, 0, .4), 0 2px 4px 0 rgba(0, 0, 0, .3);
+  --shadow-pop:  0 4px 14px rgba(0, 0, 0, .5), 0 12px 40px -8px rgba(0, 0, 0, .6);
+
+  --grid-dot: radial-gradient(circle, rgba(255, 255, 255, .13) 1px, transparent 1.5px);
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface:     #111113;
+    --surface-2:   #18181b;
+    --surface-3:   #27272a;
+    --ink:         #f4f4f5;
+    --ink-2:       #d4d4d8;
+    --ink-3:       #c4c4cc;
+  --ink-deep:    #f4f4f5;
+  --ink-4:       #c4c4cc;
+  --surface-1:   #141416;
+  --nav-bg:      #0b1b14;
+  --nav-hover:   rgba(95, 217, 176, .10);
+  --line-2:      #3f3f46;
+  --tint-red:    rgba(220, 38, 38, .14);   --tint-red-2:    rgba(220, 38, 38, .28);   --tint-amber:    rgba(217, 119, 6, .14);  --tint-amber-2: rgba(217, 119, 6, .30);
+  --tint-green:  rgba(22, 163, 74, .14);   --tint-green-2:  rgba(22, 163, 74, .12);   --tint-green-3:  rgba(22, 163, 74, .28);  --tint-orange:  rgba(234, 88, 12, .14);
+  --tint-orange-2: rgba(234, 88, 12, .22); --tint-orange-3: rgba(234, 88, 12, .30);  --tint-rose:     rgba(225, 29, 72, .22);  --tint-violet:  rgba(124, 58, 237, .22);
+  --tint-blue:   rgba(37, 99, 235, .14);   --tint-blue-2:   rgba(37, 99, 235, .24);   --tint-sky:      rgba(2, 132, 199, .20);  --tint-yellow:  rgba(202, 138, 4, .22);
+    --muted:       #a1a1aa;
+    --muted-2:     #a6a6ae;
+    --meta:        #9a9aa3;
+    --subtle:      #71717a;
+    --divider:     #27272a;
+    --divider-2:   #1f1f23;
+    --line:        #3f3f46;
+    --canvas:      #0a0a0a;
+    --ink-hero:    #1e1e23;   /* the offer and AI hero panels: one step above the card */
+    --black:       #000000;
+    --cream:       #111113;
+
+    --page:        #0a0a0a;
+    --page-deep:   #000000;
+    --rail:        #0e0e10;
+    --rail-line:   #27272a;
+    --band:        #141416;
+    --band-line:   #27272a;
+    --inset:       #141416;
+    --inset-line:  #27272a;
+    --edge:        #27272a;
+    --edge-hover:  #3f3f46;
+    --trough:      #0e0e10;
+    --trough-line: #27272a;
+
+    --c-link:      #2fb786;
+    --c-btn-bg:    #18181b;
+    --c-btn-line:  #3f3f46;
+    --c-btn-hover: rgba(10, 133, 96, .18);
+    --c-menu-bg:   #18181b;
+    --c-menu-line: #27272a;
+    --c-thead:     #18181b;
+    --c-thead-line: #27272a;
+    --c-well:      #141416;
+    --c-contact:   #7dd3fc;
+    --c-err:       #f87171;
+    --c-warn:      #fbbf24;
+    --c-ok:        #2fb786;
+
+    --mint-dim:      rgba(95, 217, 176, .12);
+    --mint-soft:     rgba(10, 133, 96, .18);
+    --orange-soft:   rgba(255, 122, 69, .14);
+    --c-action-soft: rgba(10, 133, 96, .18);
+    --c-action-line: #1f7a4d;
+    --c-talkr-soft:  rgba(255, 35, 59, .14);
+    --c-genius-soft: rgba(10, 133, 96, .12);
+    --c-money-soft:  rgba(21, 128, 61, .18);
+    --c-lane-soft:   rgba(219, 39, 119, .14);
+    --c-lane-line:   #9d174d;
+    --positive-soft: rgba(22, 163, 74, .16);
+    --negative-soft: rgba(220, 38, 38, .16);
+    --caution-soft:  rgba(217, 119, 6, .16);
+
+    --sms-thread:  #111113;
+    --sms-in:      #27272a;
+    --sms-in-text: #f4f4f5;
+
+    --ok-bg:     rgba(22, 163, 74, .14);   --ok-line:     rgba(22, 163, 74, .40);   --ok-ink:     #5fd9b0;
+    --warn-bg:   rgba(217, 119, 6, .14);   --warn-line:   rgba(217, 119, 6, .40);   --warn-ink:   #fbbf24;
+    --danger-bg: rgba(220, 38, 38, .14);   --danger-line: rgba(220, 38, 38, .40);   --danger-ink: #f87171;
+    --info-bg:   rgba(37, 99, 235, .16);   --info-line:   rgba(37, 99, 235, .40);   --info-ink:   #93c5fd;
+    --chip-ok:   rgba(22, 163, 74, .26);   --chip-warn:   rgba(217, 119, 6, .26);   --chip-danger: rgba(220, 38, 38, .26);  --chip-info: rgba(37, 99, 235, .28);
+
+    --tx-mint:   #2fb786;  --tx-mint-deep:   #34c08f;
+    --tx-green:  #4ade80;  --tx-green-deep:  #4ade80;  --tx-green-2: #2fb786;
+    --tx-red:    #f87171;  --tx-red-deep:    #f87171;  --tx-hot:     #f87171;
+    --tx-amber:  #fbbf24;  --tx-amber-deep:  #fbbf24;
+    --tx-orange: #fb923c;  --tx-orange-deep: #fb923c;
+    --tx-blue:   #93c5fd;  --tx-navy:        #93c5fd;  --tx-cold:    #93c5fd;
+    --tx-sky:    #7dd3fc;  --tx-violet:      #c4b5fd;  --tx-teal:    #5eead4;
+
+    /* Shadows barely read on black; a light hairline does the lifting. */
+    --elev-1: 0 0 0 1px rgba(255, 255, 255, .06), 0 1px 2px rgba(0, 0, 0, .5);
+    --elev-2: 0 0 0 1px rgba(255, 255, 255, .08), 0 10px 24px -6px rgba(0, 0, 0, .6);
+    --elev-3: 0 0 0 1px rgba(255, 255, 255, .10), 0 18px 44px -10px rgba(0, 0, 0, .7);
+    --elev-4: 0 0 0 1px rgba(255, 255, 255, .12), 0 28px 60px -12px rgba(0, 0, 0, .8);
+    --elev-inset: inset 0 1px 2px rgba(0, 0, 0, .5), inset 0 0 0 1px rgba(255, 255, 255, .04);
+    --elev-press: inset 0 1px 3px rgba(0, 0, 0, .6);
+    --elev-rail: inset -1px 0 0 rgba(255, 255, 255, .06);
+    --elev-3-up: 0 0 0 1px rgba(255, 255, 255, .08), 0 -10px 26px -10px rgba(0, 0, 0, .6);
+    --elev-key: inset 0 1px 0 rgba(255, 255, 255, .08), 0 1px 2px rgba(0, 0, 0, .5), 0 4px 10px -3px rgba(0, 0, 0, .5);
+    --shadow-ring: 0 0 0 1px rgba(255, 255, 255, .10), 0 1px 2px -1px rgba(0, 0, 0, .4), 0 2px 4px 0 rgba(0, 0, 0, .3);
+    --shadow-pop:  0 4px 14px rgba(0, 0, 0, .5), 0 12px 40px -8px rgba(0, 0, 0, .6);
+
+    --grid-dot: radial-gradient(circle, rgba(255, 255, 255, .13) 1px, transparent 1.5px);
+
+    color-scheme: dark;
+  }
+}

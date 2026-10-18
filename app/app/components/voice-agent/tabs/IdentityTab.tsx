@@ -61,7 +61,7 @@ function FaceAndAudience({ agentKey, workspaceId, detail, canEdit, demo, name, r
               <Sparkles size={14} aria-hidden /> {avatar ? 'Regenerate' : 'Generate with AI'}
             </button>
           </div>
-          <p style={{ margin: '6px 0 0', fontSize: 12, color: '#71717a', lineHeight: 1.5 }}>
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
             Takes a few seconds. Gemini makes it (a realistic headshot of someone who doesn’t exist, or an illustration); without Gemini, Claude draws one.
           </p>
           <div style={{ marginTop: 8 }}>
@@ -74,7 +74,7 @@ function FaceAndAudience({ agentKey, workspaceId, detail, canEdit, demo, name, r
         <span style={eyebrow} id="va-audience-l">Works</span>
         <Segmented<Audience> id="va-audience" label="Works" value={audience} disabled={off || !!busy} onChange={(v) => void pickAudience(v)}
           options={[{ id: 'sellers', label: 'Sellers' }, { id: 'buyers', label: 'Buyers' }, { id: 'both', label: 'Both' }]} />
-        <p style={{ margin: '6px 0 0', fontSize: 12, color: '#71717a', lineHeight: 1.5 }}>VIP buyers and funds are never put on an agent, whatever this says.</p>
+        <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>VIP buyers and funds are never put on an agent, whatever this says.</p>
       </div>
       {!api ? <div style={{ marginTop: 12 }}><Banner tone="info">Pictures and audiences are saved on a live workspace.</Banner></div> : null}
       {msg ? <div style={{ marginTop: 12 }}><Banner tone={msg.tone === 'ok' ? 'ok' : 'error'}>{msg.text}</Banner></div> : null}
@@ -141,7 +141,7 @@ function HandOff({ agentKey, workspaceId, canEdit, demo }: Pick<TabCtx, 'agentKe
 
   return (
     <Section id="va-handoff" title="Hands off to" description="When this agent's stage is done it passes the record on: to the next agent, who picks up with everything it learned, or to a person. One agent works a record at a time.">
-      {agents === null && api ? <span style={{ fontSize: 12.5, color: '#71717a', display: 'inline-flex', gap: 6, alignItems: 'center' }}><Spinner size={12} /> Loading agents…</span> : (
+      {agents === null && api ? <span style={{ fontSize: 12.5, color: 'var(--meta, #71717a)', display: 'inline-flex', gap: 6, alignItems: 'center' }}><Spinner size={12} /> Loading agents…</span> : (
         <>
           <label htmlFor="va-handoff-to" style={eyebrow}>Next</label>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -150,16 +150,16 @@ function HandOff({ agentKey, workspaceId, canEdit, demo }: Pick<TabCtx, 'agentKe
               {others.map((a) => <option key={a.agent_key} value={a.agent_key}>{a.name}{a.role_label || a.role ? ` · ${a.role_label || a.role.replace(/_/g, ' ')}` : ''}</option>)}
             </select>
             {me ? (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: '#52525b' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--muted, #52525b)' }}>
                 <AgentAvatar name={me.name} src={me.avatar_url} size={26} />
-                <ArrowRight size={14} aria-hidden color="#a1a1aa" />
+                <ArrowRight size={14} aria-hidden color="var(--subtle, #a1a1aa)" />
                 {chain.map((a) => (
                   <React.Fragment key={a.agent_key}>
                     <AgentAvatar name={a.name} src={a.avatar_url} size={26} /><b>{a.name}</b>
-                    <ArrowRight size={14} aria-hidden color="#a1a1aa" />
+                    <ArrowRight size={14} aria-hidden color="var(--subtle, #a1a1aa)" />
                   </React.Fragment>
                 ))}
-                <span style={{ color: chain.length ? '#71717a' : undefined, fontWeight: chain.length ? 400 : 700 }}>a person</span>
+                <span style={{ color: chain.length ? 'var(--meta, #71717a)' : undefined, fontWeight: chain.length ? 400 : 700 }}>a person</span>
               </span>
             ) : null}
           </div>
@@ -173,7 +173,7 @@ function HandOff({ agentKey, workspaceId, canEdit, demo }: Pick<TabCtx, 'agentKe
               {!cur.on.length ? <div style={{ marginTop: 8 }}><Banner tone="warn">With both off it never passes a record on by itself: someone ready for a person still goes to the rep, and Hand off now on a record still works.</Banner></div> : null}
             </div>
           ) : null}
-          <p style={{ margin: '8px 0 0', fontSize: 12, color: '#71717a', lineHeight: 1.5 }}>
+          <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
             A hand-off is a line on the record&rsquo;s timeline, the touch count starts again, and the 20-hour gap between touches still holds. An automatic hand-off never sends a record back to an agent that already worked it.
           </p>
         </>
@@ -215,7 +215,7 @@ export function IdentityTab({ form, canEdit, agentKey, workspaceId, detail, demo
         <span style={eyebrow} id="va-introduce-l">Introduction</span>
         <Segmented<'none' | 'virtual_assistant'> id={fieldId('identity.introduce_as')} label="Introduction" value={id.introduce_as} disabled={off} onChange={(v) => set(['identity', 'introduce_as'], v)}
           options={[{ id: 'virtual_assistant', label: 'Virtual assistant' }, { id: 'none', label: 'Just the name' }]} />
-        <p style={{ margin: '8px 0 0', fontSize: 12, color: '#71717a', lineHeight: 1.5 }}>
+        <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
           &ldquo;Virtual assistant&rdquo; opens with &ldquo;this is Sam, a virtual assistant with Acme Homes&rdquo;. Either way the agent always says honestly that it is an AI when someone sincerely asks. That part is locked and lives under Rules.
         </p>
       </Section>
@@ -223,10 +223,10 @@ export function IdentityTab({ form, canEdit, agentKey, workspaceId, detail, demo
       <Section id="va-languages" title="Languages" description="The language codes the agent may speak, like en or es.">
         <label htmlFor={fieldId('identity.languages')} style={eyebrow}>Languages</label>
         <ChipList id={fieldId('identity.languages')} items={id.languages} onChange={(next) => set(['identity', 'languages'], next.length ? next : ['en'])} add={addLanguage} placeholder="en, then Enter" disabled={off} max={LIMITS.languages} />
-        <p style={{ margin: '6px 0 0', fontSize: 12, color: '#71717a', lineHeight: 1.5 }}>
+        <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
           English is always on. More than one language needs a language preset on the ElevenLabs agent, which publishing does not create: it is listed as a manual step. {id.languages.length}/{LIMITS.languages}
         </p>
-        {errors['identity.languages'] ? <p role="alert" style={{ margin: '6px 0 0', fontSize: 12, color: '#b91c1c' }}>{errors['identity.languages']}</p> : null}
+        {errors['identity.languages'] ? <p role="alert" style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--tx-red, #b91c1c)' }}>{errors['identity.languages']}</p> : null}
       </Section>
     </>
   );

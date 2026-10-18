@@ -17,18 +17,19 @@ import { PropertyPhoto } from '@/components/PropertyPhoto';
 import { SearchSelect } from '@/components/SearchSelect';
 import { HandoffCard } from '@/app/components/dispo/HandoffCard';
 import { OfferDesk } from '@/app/components/dispo/OfferDesk';
+import { MentionText } from '@/app/components/record/MentionField';
 import { Walkthroughs } from '@/app/components/dispo/Walkthroughs';
 
 const none = (text: string, pad = "14px 16px") => (
-  <div style={{padding: pad, fontSize: "12.5px", color: "#71717a"}}>{text}</div>
+  <div style={{padding: pad, fontSize: "12.5px", color: "var(--meta, #71717a)"}}>{text}</div>
 );
 
 const field: React.CSSProperties = {
-  width: "100%", height: "34px", padding: "0 10px", border: "1px solid #e4e4e7",
-  borderRadius: "9px", fontSize: "13px", outline: "0", background: "#fafafa", color: "#18181b",
+  width: "100%", height: "34px", padding: "0 10px", border: "1px solid var(--divider, #e4e4e7)",
+  borderRadius: "9px", fontSize: "13px", outline: "0", background: "var(--canvas, #fafafa)", color: "var(--ink, #18181b)",
 };
 const label: React.CSSProperties = {
-  display: "block", fontSize: "11.5px", color: "#71717a", fontWeight: "500", marginBottom: "5px",
+  display: "block", fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "500", marginBottom: "5px",
 };
 const btn = (primary = false): React.CSSProperties => ({
   height: "32px", padding: "0 12px", borderRadius: "8px", fontSize: "12.5px", fontWeight: "600", cursor: "pointer",
@@ -47,7 +48,7 @@ function WalkthroughForm({ V, onBooked }: { V: ClozrView; onBooked: () => void }
     try { if (await V.scheduleWalkthrough({ ...f, buyerId })) { setF({ ...f, day: "" }); onBooked(); } } finally { setBusy(false); }
   };
   return (
-    <div style={{background: "#fff", border: "1px solid #e4e4e7", borderRadius: "12px", padding: "16px", marginBottom: "14px"}}>
+    <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", padding: "16px", marginBottom: "14px"}}>
       <div style={{fontWeight: "600", fontSize: "14px", marginBottom: "10px"}}>
         Schedule a walkthrough
       </div>
@@ -79,26 +80,26 @@ export function DispoProperty({ V }: { V: ClozrView }) {
   const [rvmIds, setRvmIds] = React.useState<string[] | null>(null);
   return (
     <section data-screen-label="Dispo property" style={{flex: "1", minWidth: "0", display: "flex", flexDirection: "column"}}>
-      <div style={{background: "#fff", borderBottom: "1px solid #e4e4e7", padding: "12px 20px 0"}}>
-        <div style={{display: "flex", alignItems: "center", flexWrap: V.isMobile ? "wrap" : "nowrap", rowGap: "4px", gap: "8px", fontSize: "12.5px", color: "#71717a", minWidth: "0"}}>
+      <div style={{background: "var(--surface, #fff)", borderBottom: "1px solid var(--divider, #e4e4e7)", padding: "12px 20px 0"}}>
+        <div style={{display: "flex", alignItems: "center", flexWrap: V.isMobile ? "wrap" : "nowrap", rowGap: "4px", gap: "8px", fontSize: "12.5px", color: "var(--meta, #71717a)", minWidth: "0"}}>
           <BackLink to={V.backFor('dispo')} />
-          <span style={{color: "#d4d4d8", flex: "none"}}>
+          <span style={{color: "var(--line, #d4d4d8)", flex: "none"}}>
             /
           </span>
-          <span style={{color: "#18181b", fontWeight: "600", display: V.isMobile ? "none" : "inline", minWidth: "0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
+          <span style={{color: "var(--ink, #18181b)", fontWeight: "600", display: V.isMobile ? "none" : "inline", minWidth: "0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
             {V.DP.addr}
           </span>
-          <span style={{color: "#d4d4d8", display: V.isMobile ? "none" : "inline", flex: "none"}}>
+          <span style={{color: "var(--line, #d4d4d8)", display: V.isMobile ? "none" : "inline", flex: "none"}}>
             ·
           </span>
-          <button onClick={V.DP.open} style={{background: "none", border: "0", padding: "0", cursor: "pointer", color: "#0A8560", fontSize: "12.5px", minWidth: "0", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left"}}>
+          <button onClick={V.DP.open} style={{background: "none", border: "0", padding: "0", cursor: "pointer", color: "var(--tx-mint, #0a8560)", fontSize: "12.5px", minWidth: "0", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left"}}>
             Seller: {V.DP.seller}
           </button>
           <div style={{flex: "1"}}></div>
           {V.DP.dealDbId ? (
             <button type="button" data-testid="dispo-archive" onClick={() => V.archiveDealDb(V.DP.dealDbId, !V.dealArchivedDb(V.DP.dealDbId))}
               title={V.dealArchivedDb(V.DP.dealDbId) ? 'Put this deal back on Dispo and the Deals board' : 'Archive this deal: it leaves Dispo, the Deals board and the deal list'}
-              style={{height: "28px", padding: "0 10px", borderRadius: "8px", border: "1px solid #e4e4e7", background: "#fff", fontSize: "12px", fontWeight: 600, color: "#52525b", cursor: "pointer", flex: "none"}}>
+              style={{height: "28px", padding: "0 10px", borderRadius: "8px", border: "1px solid var(--divider, #e4e4e7)", background: "var(--surface, #fff)", fontSize: "12px", fontWeight: 600, color: "var(--muted, #52525b)", cursor: "pointer", flex: "none"}}>
               {V.dealArchivedDb(V.DP.dealDbId) ? 'Restore' : 'Archive'}
             </button>
           ) : null}
@@ -116,7 +117,7 @@ export function DispoProperty({ V }: { V: ClozrView }) {
             <h1 style={{margin: "0", fontSize: "22px", fontWeight: "700", letterSpacing: "-0.03em"}}>
               {V.DP.addr}
             </h1>
-            <div style={{fontSize: "12.5px", color: "#71717a", marginTop: "2px"}}>
+            <div style={{fontSize: "12.5px", color: "var(--meta, #71717a)", marginTop: "2px"}}>
               {V.DP.cityLine} · {V.DP.facts} · dispo rep {V.DP.rep}
             </div>
             <div style={{display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "6px", fontSize: "11.5px", fontWeight: "700", color: V.DP.statusColor}}>
@@ -129,7 +130,7 @@ export function DispoProperty({ V }: { V: ClozrView }) {
             {(V.dispoHead || []).map((h, h__i) => (
               <React.Fragment key={h__i}>
               <div style={{minWidth: "0"}}>
-                <div style={{fontSize: "11.5px", color: "#71717a", fontWeight: "600", whiteSpace: V.isMobile ? "normal" : "nowrap", minWidth: "0", overflowWrap: "anywhere"}}>
+                <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600", whiteSpace: V.isMobile ? "normal" : "nowrap", minWidth: "0", overflowWrap: "anywhere"}}>
                   {h.k}
                 </div>
                 <div style={{fontSize: "18px", fontWeight: "700", letterSpacing: "-0.03em", marginTop: "3px", whiteSpace: "nowrap"}}>
@@ -157,17 +158,17 @@ export function DispoProperty({ V }: { V: ClozrView }) {
             <HandoffCard key={dealId ?? "demo"} dealId={dealId} address={V.DP.addr} seller={V.DP.seller} canWrite={!!V.liveIds?.canWrite || demo} isMobile={V.isMobile}
               userId={session.user?.id ?? null} onToast={V.showToast} demo={demo} />
           </div>
-          <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "repeat(2,minmax(0,1fr))" : "repeat(auto-fit,minmax(110px,1fr))", background: "#fff", border: "1px solid #e4e4e7", borderRadius: "12px", overflow: "hidden"}}>
+          <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "repeat(2,minmax(0,1fr))" : "repeat(auto-fit,minmax(110px,1fr))", background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", overflow: "hidden"}}>
             {(V.campaignMetrics || []).map((m, m__i) => (
               <React.Fragment key={m__i}>
-              <div style={{padding: "12px 14px", borderRight: "1px solid #f0f0f1"}}>
-                <div style={{fontSize: "11.5px", color: "#71717a", fontWeight: "600"}}>
+              <div style={{padding: "12px 14px", borderRight: "1px solid var(--divider-2, #f0f0f1)"}}>
+                <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600"}}>
                   {m.k}
                 </div>
                 <div style={{fontSize: "20px", fontWeight: "700", letterSpacing: "-0.03em", marginTop: "4px"}}>
                   {m.v}
                 </div>
-                <div style={{fontSize: "11px", color: "#71717a"}}>
+                <div style={{fontSize: "11px", color: "var(--meta, #71717a)"}}>
                   {m.pct}
                 </div>
               </div>
@@ -176,38 +177,38 @@ export function DispoProperty({ V }: { V: ClozrView }) {
           </div>
           <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "1fr" : "minmax(0,1.5fr) minmax(300px,1fr)", gap: "14px", marginTop: "14px", alignItems: "start"}}>
             <div style={{display: "flex", flexDirection: "column", gap: "14px"}}>
-              <div style={{background: "#fff", border: "1px solid #e4e4e7", borderRadius: "12px", overflow: "hidden"}}>
-                <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid #f0f0f1"}}>
+              <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", overflow: "hidden"}}>
+                <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)"}}>
                   <span style={{fontWeight: "600", fontSize: "14px"}}>
                     Offers received · {V.offerRows.length}
                   </span>
-                  <button onClick={V.goOffersTab} style={{fontSize: "12px", color: "#0A8560", background: "none", border: "0", cursor: "pointer", fontWeight: "500"}}>
+                  <button onClick={V.goOffersTab} style={{fontSize: "12px", color: "var(--tx-mint, #0a8560)", background: "none", border: "0", cursor: "pointer", fontWeight: "500"}}>
                     Offer desk
                   </button>
                 </div>
                 {(V.offerRows || []).map((o, o__i) => (
                   <React.Fragment key={o__i}>
-                  <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "30px minmax(0,1fr)" : "30px minmax(0,1fr) auto auto", gap: V.isMobile ? "4px 10px" : "12px", alignItems: "center", padding: "10px 16px", borderBottom: "1px solid #f0f0f1"}}>
-                    <span style={{width: "30px", height: "30px", borderRadius: "8px", background: "#f4f4f5", display: "grid", placeItems: "center", fontSize: "11px", fontWeight: "700", color: "#52525b"}}>
+                  <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "30px minmax(0,1fr)" : "30px minmax(0,1fr) auto auto", gap: V.isMobile ? "4px 10px" : "12px", alignItems: "center", padding: "10px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)"}}>
+                    <span style={{width: "30px", height: "30px", borderRadius: "8px", background: "var(--surface-2, #f4f4f5)", display: "grid", placeItems: "center", fontSize: "11px", fontWeight: "700", color: "var(--muted, #52525b)"}}>
                       {o.initials}
                     </span>
                     <span>
                       <span style={{display: "block", fontWeight: "600"}}>
                         {o.buyer}
                       </span>
-                      <span style={{display: "block", fontSize: "11.5px", color: "#71717a"}}>
+                      <span style={{display: "block", fontSize: "11.5px", color: "var(--meta, #71717a)"}}>
                         {o.terms} · close {o.closing}
                       </span>
                     </span>
                     <span style={{fontWeight: "700", fontSize: "14px", gridColumn: V.isMobile ? "2" : "auto", whiteSpace: "nowrap"}}>
                       {o.offer}
                       {(V.isMobile && o.net !== '—') ? (
-                        <span style={{fontSize: "11.5px", color: "#0A8560", fontWeight: "600", marginLeft: "8px"}}>
+                        <span style={{fontSize: "11.5px", color: "var(--tx-mint, #0a8560)", fontWeight: "600", marginLeft: "8px"}}>
                           net {o.net}
                         </span>
                       ) : null}
                     </span>
-                    <span style={{display: V.isMobile ? "none" : "block", fontSize: "11.5px", color: "#0A8560", fontWeight: "600", minWidth: "70px", textAlign: "right"}}>
+                    <span style={{display: V.isMobile ? "none" : "block", fontSize: "11.5px", color: "var(--tx-mint, #0a8560)", fontWeight: "600", minWidth: "70px", textAlign: "right"}}>
                       net {o.net}
                     </span>
                   </div>
@@ -215,18 +216,18 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                 ))}
                 {V.offerRows.length ? null : none("No offers on this deal yet.")}
               </div>
-              <div style={{background: "#fff", border: "1px solid #e4e4e7", borderRadius: "12px", overflow: "hidden"}}>
-                <div style={{padding: "12px 16px", borderBottom: "1px solid #f0f0f1", fontWeight: "600", fontSize: "14px"}}>
+              <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", overflow: "hidden"}}>
+                <div style={{padding: "12px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", fontWeight: "600", fontSize: "14px"}}>
                   Buyer engagement · live
                 </div>
                 {V.engagementFeed.length ? null : none("No buyer has been sent this deal yet.")}
                 {(V.engagementFeed || []).map((e, e__i) => (
                   <React.Fragment key={e__i}>
-                  <div style={{display: "grid", gridTemplateColumns: "70px 1fr", gap: "12px", padding: "8px 16px", borderBottom: "1px solid #f0f0f1", fontSize: "12.5px"}}>
-                    <span style={{color: "#71717a"}}>
+                  <div style={{display: "grid", gridTemplateColumns: "70px 1fr", gap: "12px", padding: "8px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", fontSize: "12.5px"}}>
+                    <span style={{color: "var(--meta, #71717a)"}}>
                       {e.t}
                     </span>
-                    <span style={{color: "#27272a"}}>
+                    <span style={{color: "var(--ink-2, #27272a)"}}>
                       {e.text}
                     </span>
                   </div>
@@ -235,18 +236,18 @@ export function DispoProperty({ V }: { V: ClozrView }) {
               </div>
             </div>
             <div style={{display: "flex", flexDirection: "column", gap: "14px"}}>
-              <div style={{background: "#fff", border: "1px solid #e4e4e7", borderRadius: "12px", padding: "16px"}}>
-                <div style={{fontSize: "11.5px", color: "#71717a", fontWeight: "600"}}>
+              <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", padding: "16px"}}>
+                <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600"}}>
                   Top matches
                 </div>
                 {(V.topMatches || []).map((m, m__i) => (
                   <React.Fragment key={m__i}>
-                  <button onClick={m.open} style={{display: "grid", gridTemplateColumns: "1fr auto", gap: "8px", width: "100%", textAlign: "left", padding: "9px 0", border: "0", borderBottom: "1px solid #f0f0f1", background: "none", cursor: "pointer"}}>
+                  <button onClick={m.open} style={{display: "grid", gridTemplateColumns: "1fr auto", gap: "8px", width: "100%", textAlign: "left", padding: "9px 0", border: "0", borderBottom: "1px solid var(--divider-2, #f0f0f1)", background: "none", cursor: "pointer"}}>
                     <span>
-                      <span style={{display: "block", fontWeight: "600", fontSize: "13px", color: "#18181b"}}>
+                      <span style={{display: "block", fontWeight: "600", fontSize: "13px", color: "var(--ink, #18181b)"}}>
                         {m.company}
                       </span>
-                      <span style={{display: "block", fontSize: "11.5px", color: "#71717a"}}>
+                      <span style={{display: "block", fontSize: "11.5px", color: "var(--meta, #71717a)"}}>
                         {m.strategy} · ceiling {m.ceiling} · {m.lastActivity}
                       </span>
                     </span>
@@ -261,19 +262,19 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                   All {V.matchCount} matches
                 </button>
               </div>
-              <div style={{background: "#fff", border: "1px solid #e4e4e7", borderRadius: "12px", padding: "16px"}}>
-                <div style={{fontSize: "11.5px", color: "#71717a", fontWeight: "600"}}>
+              <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", padding: "16px"}}>
+                <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600"}}>
                   Walkthroughs
                 </div>
                 {V.walkRowsHere.length ? null : none("No walkthroughs scheduled.", "8px 0")}
                 {(V.walkRowsHere || []).map((w, w__i) => (
                   <React.Fragment key={w__i}>
-                  <div style={{display: "grid", gridTemplateColumns: "1fr auto", gap: "8px", padding: "8px 0", borderBottom: "1px solid #f0f0f1", fontSize: "12.5px"}}>
+                  <div style={{display: "grid", gridTemplateColumns: "1fr auto", gap: "8px", padding: "8px 0", borderBottom: "1px solid var(--divider-2, #f0f0f1)", fontSize: "12.5px"}}>
                     <span>
                       <span style={{display: "block", fontWeight: "600"}}>
                         {w.buyer}
                       </span>
-                      <span style={{display: "block", fontSize: "11.5px", color: "#71717a"}}>
+                      <span style={{display: "block", fontSize: "11.5px", color: "var(--meta, #71717a)"}}>
                         {w.date} · {w.time}
                       </span>
                     </span>
@@ -287,7 +288,7 @@ export function DispoProperty({ V }: { V: ClozrView }) {
               </div>
               {(V.showAi && !V.isLiveData) ? (
                 <>
-                <div style={{borderRadius: "12px", padding: "14px", background: "#141419", color: "#fff", position: "relative", overflow: "hidden"}}>
+                <div style={{borderRadius: "12px", padding: "14px", background: "var(--ink-hero, #141419)", color: "var(--on-dark, #fff)", position: "relative", overflow: "hidden"}}>
                   <div style={{position: "absolute", inset: "0", pointerEvents: "none", background: "radial-gradient(120% 90% at 90% -10%, rgba(10, 133, 96,0.34), transparent 58%)"}}></div>
                   <div style={{position: "relative"}}>
                     <div style={{fontSize: "11.5px", color: "rgba(255,255,255,.6)", fontWeight: "600"}}>
@@ -310,21 +311,21 @@ export function DispoProperty({ V }: { V: ClozrView }) {
         {(V.isDispoTab.Matches) ? (
           <>
           <div style={{display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "12px"}}>
-            <div style={{display: "flex", alignItems: "center", gap: "8px", height: "32px", padding: "0 10px", border: "1px solid #e4e4e7", borderRadius: "8px", background: "#fff", width: "240px"}}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <div style={{display: "flex", alignItems: "center", gap: "8px", height: "32px", padding: "0 10px", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "8px", background: "var(--surface, #fff)", width: "240px"}}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--meta, #71717a)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
               <input value={V.matchQ} onChange={V.setMatchQ} placeholder="Search buyers" style={{border: "0", outline: "0", fontSize: "13px", width: "100%", background: "none"}} />
             </div>
-            <span style={{fontSize: "12px", color: "#71717a"}}>
+            <span style={{fontSize: "12px", color: "var(--meta, #71717a)"}}>
               {V.matchCount} matched buyers · ranked by fit and engagement
             </span>
             <div style={{flex: "1"}}></div>
-            <button className="dc2" onClick={V.runMatching} title="Score every buyer's buy box against this deal" style={{height: "32px", padding: "0 12px", borderRadius: "8px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "600", cursor: "pointer", color: "#18181b"}}>
+            <button className="dc2" onClick={V.runMatching} title="Score every buyer's buy box against this deal" style={{height: "32px", padding: "0 12px", borderRadius: "8px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "600", cursor: "pointer", color: "var(--ink, #18181b)"}}>
               Run matching
             </button>
-            <button className="dc2" onClick={() => setRvmIds(V.matches.map((m) => m.id))} disabled={!V.matches.length} style={{height: "32px", padding: "0 12px", borderRadius: "8px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "600", cursor: "pointer", color: "#18181b"}}>
+            <button className="dc2" onClick={() => setRvmIds(V.matches.map((m) => m.id))} disabled={!V.matches.length} style={{height: "32px", padding: "0 12px", borderRadius: "8px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "600", cursor: "pointer", color: "var(--ink, #18181b)"}}>
               RVM matches
             </button>
             <button className="dc10" onClick={V.goMarketingTab} style={{height: "32px", padding: "0 12px", borderRadius: "8px", border: "1px solid var(--c-primary)", background: "var(--c-primary)", color: "#fff", fontSize: "12.5px", fontWeight: "600", cursor: "pointer"}}>
@@ -334,7 +335,7 @@ export function DispoProperty({ V }: { V: ClozrView }) {
           <div style={{display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "14px"}}>
             {(V.matchFilters || []).map((f, f__i) => (
               <React.Fragment key={f__i}>
-              <button className="dc23" onClick={f.go} aria-pressed={f.on} style={{height: "28px", padding: "0 10px", borderRadius: "7px", border: `1px solid ${f.on ? "#0A8560" : "#e4e4e7"}`, background: f.on ? "#E7F8F1" : "#fff", fontSize: "11.5px", color: f.on ? "#0A8560" : "#52525b", fontWeight: f.on ? "600" : "400", cursor: "pointer"}}>
+              <button className="dc23" onClick={f.go} aria-pressed={f.on} style={{height: "28px", padding: "0 10px", borderRadius: "7px", border: `1px solid ${f.on ? "#0A8560" : "var(--divider, #e4e4e7)"}`, background: f.on ? "var(--mint-dim, #e7f8f1)" : "var(--surface, #fff)", fontSize: "11.5px", color: f.on ? "var(--tx-mint, #0a8560)" : "var(--muted, #52525b)", fontWeight: f.on ? "600" : "400", cursor: "pointer"}}>
                 {f.label}
               </button>
               </React.Fragment>
@@ -343,10 +344,10 @@ export function DispoProperty({ V }: { V: ClozrView }) {
           <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "1fr" : "repeat(2,minmax(0,1fr))", gap: "12px"}}>
             {(V.matches || []).map((m, m__i) => (
               <React.Fragment key={m__i}>
-              <div className="dc19" style={{background: "#fff", border: "1px solid #e4e4e7", borderRadius: "12px", padding: "16px", display: "grid", gridTemplateColumns: V.isMobile ? "1fr" : "minmax(0,1fr) 190px", gap: "16px", transition: "box-shadow .15s"}}>
+              <div className="dc19" style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", padding: "16px", display: "grid", gridTemplateColumns: V.isMobile ? "1fr" : "minmax(0,1fr) 190px", gap: "16px", transition: "box-shadow .15s"}}>
                 <div style={{minWidth: "0"}}>
                   <div style={{display: "flex", alignItems: "center", gap: "10px"}}>
-                    <span style={{width: "36px", height: "36px", borderRadius: "9px", background: "#f4f4f5", display: "grid", placeItems: "center", fontSize: "11px", fontWeight: "700", color: "#52525b"}}>
+                    <span style={{width: "36px", height: "36px", borderRadius: "9px", background: "var(--surface-2, #f4f4f5)", display: "grid", placeItems: "center", fontSize: "11px", fontWeight: "700", color: "var(--muted, #52525b)"}}>
                       {m.initials}
                     </span>
                     <div style={{minWidth: "0"}}>
@@ -359,14 +360,14 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                           {m.vip}
                         </span>
                       </div>
-                      <div style={{fontSize: "12px", color: "#71717a"}}>
+                      <div style={{fontSize: "12px", color: "var(--meta, #71717a)"}}>
                         {m.name} · {m.markets} · prefers {m.pref}
                       </div>
                     </div>
                   </div>
                   <div style={{display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "8px", marginTop: "12px"}}>
                     <div>
-                      <div style={{fontSize: "11px", color: "#71717a"}}>
+                      <div style={{fontSize: "11px", color: "var(--meta, #71717a)"}}>
                         Ceiling
                       </div>
                       <div style={{fontSize: "12.5px", fontWeight: "600"}}>
@@ -374,7 +375,7 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                       </div>
                     </div>
                     <div>
-                      <div style={{fontSize: "11px", color: "#71717a"}}>
+                      <div style={{fontSize: "11px", color: "var(--meta, #71717a)"}}>
                         Rehab
                       </div>
                       <div style={{fontSize: "12.5px", fontWeight: "600"}}>
@@ -382,7 +383,7 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                       </div>
                     </div>
                     <div>
-                      <div style={{fontSize: "11px", color: "#71717a"}}>
+                      <div style={{fontSize: "11px", color: "var(--meta, #71717a)"}}>
                         Exit
                       </div>
                       <div style={{fontSize: "12.5px", fontWeight: "600"}}>
@@ -390,7 +391,7 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                       </div>
                     </div>
                     <div>
-                      <div style={{fontSize: "11px", color: "#71717a"}}>
+                      <div style={{fontSize: "11px", color: "var(--meta, #71717a)"}}>
                         Last purchase
                       </div>
                       <div style={{fontSize: "12.5px", fontWeight: "600", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>
@@ -401,8 +402,8 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                   <div style={{marginTop: "10px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 12px"}}>
                     {(m.why || []).map((w, w__i) => (
                       <React.Fragment key={w__i}>
-                      <div style={{fontSize: "12px", color: "#27272a", display: "flex", gap: "6px"}}>
-                        <span style={{color: "#0A8560", display: "inline-flex"}}>
+                      <div style={{fontSize: "12px", color: "var(--ink-2, #27272a)", display: "flex", gap: "6px"}}>
+                        <span style={{color: "var(--tx-mint, #0a8560)", display: "inline-flex"}}>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{flex: "none", marginTop: "3px"}}><path d="M20 6 9 17l-5-5" /></svg>
                         </span>
                         {w.w}
@@ -411,7 +412,7 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                     ))}
                   </div>
                   {m.issue ? (
-                  <div style={{marginTop: "8px", fontSize: "12px", color: "#92400e", background: "#fef3c7", borderRadius: "7px", padding: "6px 9px"}}>
+                  <div style={{marginTop: "8px", fontSize: "12px", color: "var(--tx-amber-deep, #92400e)", background: "var(--caution-soft, #fef3c7)", borderRadius: "7px", padding: "6px 9px"}}>
                     <b style={{fontWeight: "600"}}>
                       Potential issue:
                     </b>
@@ -419,10 +420,10 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                   </div>
                   ) : null}
                   <div style={{display: "flex", gap: "5px", marginTop: "10px"}}>
-                    <button className="clozr-talkr-ghost" onClick={m.call} style={{color: "var(--c-talkr)", height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid #fecdd3", background: "var(--c-btn-bg)", fontSize: "12px", fontWeight: "500", cursor: "pointer"}}>
+                    <button className="clozr-talkr-ghost" onClick={m.call} style={{color: "var(--c-talkr)", height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--tint-rose, #fecdd3)", background: "var(--c-btn-bg)", fontSize: "12px", fontWeight: "500", cursor: "pointer"}}>
                       Call
                     </button>
-                    <button className="clozr-talkr-ghost" onClick={m.text} style={{color: "var(--c-talkr)", height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid #fecdd3", background: "var(--c-btn-bg)", fontSize: "12px", fontWeight: "500", cursor: "pointer"}}>
+                    <button className="clozr-talkr-ghost" onClick={m.text} style={{color: "var(--c-talkr)", height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--tint-rose, #fecdd3)", background: "var(--c-btn-bg)", fontSize: "12px", fontWeight: "500", cursor: "pointer"}}>
                       Text
                     </button>
                     <button className="dc6" onClick={m.email} style={{height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12px", fontWeight: "500", cursor: "pointer"}}>
@@ -434,43 +435,43 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                     <button className="dc2" onClick={m.add} style={{height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12px", fontWeight: "500", cursor: "pointer"}}>
                       Add to campaign
                     </button>
-                    <button onClick={m.open} style={{height: "28px", padding: "0 10px", borderRadius: "7px", border: "0", background: "none", fontSize: "12px", fontWeight: "500", cursor: "pointer", color: "#0A8560"}}>
+                    <button onClick={m.open} style={{height: "28px", padding: "0 10px", borderRadius: "7px", border: "0", background: "none", fontSize: "12px", fontWeight: "500", cursor: "pointer", color: "var(--tx-mint, #0a8560)"}}>
                       View buyer
                     </button>
                   </div>
                 </div>
-                <div style={{borderLeft: "1px solid #f0f0f1", paddingLeft: "16px", display: "flex", flexDirection: "column", gap: "10px"}}>
+                <div style={{borderLeft: "1px solid var(--divider-2, #f0f0f1)", paddingLeft: "16px", display: "flex", flexDirection: "column", gap: "10px"}}>
                   <div>
-                    <div style={{fontSize: "11px", color: "#71717a"}}>
+                    <div style={{fontSize: "11px", color: "var(--meta, #71717a)"}}>
                       Match
                     </div>
                     <div style={{display: "flex", alignItems: "baseline", gap: "4px"}}>
                       <span style={{fontSize: "30px", fontWeight: "700", letterSpacing: "-0.04em", color: m.matchColor}}>
                         {m.match}
                       </span>
-                      <span style={{fontSize: "11px", color: "#71717a"}}>
+                      <span style={{fontSize: "11px", color: "var(--meta, #71717a)"}}>
                         / 100
                       </span>
                     </div>
                   </div>
                   <div>
-                    <div style={{display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#71717a"}}>
+                    <div style={{display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--meta, #71717a)"}}>
                       <span>
                         Response
                       </span>
-                      <span style={{fontWeight: "600", color: "#18181b"}}>
+                      <span style={{fontWeight: "600", color: "var(--ink, #18181b)"}}>
                         {m.engagement}
                       </span>
                     </div>
-                    <div style={{height: "5px", background: "#f0f0f1", borderRadius: "3px", marginTop: "4px", overflow: "hidden"}}>
+                    <div style={{height: "5px", background: "var(--divider-2, #f0f0f1)", borderRadius: "3px", marginTop: "4px", overflow: "hidden"}}>
                       <div style={{height: "100%", width: m.engPct, background: m.engColor}}></div>
                     </div>
                   </div>
-                  <div style={{fontSize: "11.5px", color: "#52525b"}}>
+                  <div style={{fontSize: "11.5px", color: "var(--muted, #52525b)"}}>
                     <div>
                       {m.offers}
                     </div>
-                    <div style={{color: "#71717a", marginTop: "2px"}}>
+                    <div style={{color: "var(--meta, #71717a)", marginTop: "2px"}}>
                       Active {m.lastActivity}
                     </div>
                   </div>
@@ -508,18 +509,18 @@ export function DispoProperty({ V }: { V: ClozrView }) {
         ) : null}
         {(V.isDispoTab.Activity) ? (
           <>
-          <div style={{background: "#fff", border: "1px solid #e4e4e7", borderRadius: "12px", overflow: "hidden", maxWidth: "900px"}}>
+          <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", overflow: "hidden", maxWidth: "900px"}}>
             {V.dispoActivity.length ? null : none("No activity on this property yet.")}
             {(V.dispoActivity || []).map((a, a__i) => (
               <React.Fragment key={a__i}>
-              <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "1fr" : "90px 90px 1fr", gap: V.isMobile ? "3px" : "12px", padding: "11px 16px", borderBottom: "1px solid #f0f0f1", fontSize: "12.5px", alignItems: V.isMobile ? "start" : "center"}}>
-                <span style={{color: "#71717a"}}>
+              <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "1fr" : "90px 90px 1fr", gap: V.isMobile ? "3px" : "12px", padding: "11px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", fontSize: "12.5px", alignItems: V.isMobile ? "start" : "center"}}>
+                <span style={{color: "var(--meta, #71717a)"}}>
                   {a.t}
                 </span>
-                <span style={{fontSize: "11.5px", fontWeight: "600", color: "#71717a"}}>
+                <span style={{fontSize: "11.5px", fontWeight: "600", color: "var(--meta, #71717a)"}}>
                   {a.kind}
                 </span>
-                <span style={{color: "#27272a"}}>
+                <span style={{color: "var(--ink-2, #27272a)"}}>
                   {a.text}
                 </span>
               </div>
@@ -534,11 +535,11 @@ export function DispoProperty({ V }: { V: ClozrView }) {
             <span style={{fontWeight: "600", fontSize: "14px"}}>
               Communications
             </span>
-            <span style={{fontSize: "12px", color: "#71717a"}}>
+            <span style={{fontSize: "12px", color: "var(--meta, #71717a)"}}>
               every call, text and email tied to this property and its people
             </span>
             <div style={{flex: "1"}}></div>
-            <span style={{fontSize: "11.5px", color: "#71717a", fontVariantNumeric: "tabular-nums"}}>
+            <span style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontVariantNumeric: "tabular-nums"}}>
               {V.dispoCommsCount}
             </span>
           </div>
@@ -550,12 +551,12 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                 <React.Fragment key={c__i}>
                 <div style={{display: "grid", gridTemplateColumns: "30px minmax(0,1fr)", gap: "12px", paddingBottom: "12px"}}>
                   <div style={{display: "flex", flexDirection: "column", alignItems: "center"}}>
-                    <span style={{width: "30px", height: "30px", borderRadius: "8px", background: "#fff", border: "1px solid #e4e4e7", display: "grid", placeItems: "center", fontSize: "10px", fontWeight: "700", color: "#52525b", flex: "none"}}>
+                    <span style={{width: "30px", height: "30px", borderRadius: "8px", background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", display: "grid", placeItems: "center", fontSize: "10px", fontWeight: "700", color: "var(--muted, #52525b)", flex: "none"}}>
                       {c.initials}
                     </span>
-                    <span style={{flex: "1", width: "1px", background: "#e4e4e7", marginTop: "6px"}}></span>
+                    <span style={{flex: "1", width: "1px", background: "var(--divider, #e4e4e7)", marginTop: "6px"}}></span>
                   </div>
-                  <div style={{background: "#fff", border: "1px solid #e4e4e7", borderRadius: "10px", padding: "11px 14px", minWidth: "0"}}>
+                  <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "10px", padding: "11px 14px", minWidth: "0"}}>
                     <div style={{display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap"}}>
                       <span style={{display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11px", fontWeight: "700", color: c.color}}>
                         <Mark label={c.channel} />
@@ -564,7 +565,7 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                       <span style={{fontSize: "11px", fontWeight: "700", color: c.dirColor}}>
                         {c.dirLabel}
                       </span>
-                      <span style={{fontSize: "12.5px", fontWeight: "600", color: "#18181b"}}>
+                      <span style={{fontSize: "12.5px", fontWeight: "600", color: "var(--ink, #18181b)"}}>
                         {c.party}
                       </span>
                       {(c.isBuyer) ? (
@@ -577,21 +578,21 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                       <span style={{flex: "1"}}></span>
                       {(c.hasDur) ? (
                         <>
-                        <span style={{fontSize: "11px", color: "#71717a", fontVariantNumeric: "tabular-nums"}}>
+                        <span style={{fontSize: "11px", color: "var(--meta, #71717a)", fontVariantNumeric: "tabular-nums"}}>
                           {c.dur}
                         </span>
                         </>
                       ) : null}
-                      <span style={{fontSize: "11px", color: "#71717a", whiteSpace: "nowrap"}}>
+                      <span style={{fontSize: "11px", color: "var(--meta, #71717a)", whiteSpace: "nowrap"}}>
                         {c.time}
                       </span>
                     </div>
-                    <div style={{fontSize: "12.5px", color: "#27272a", marginTop: "5px", lineHeight: "1.5"}}>
-                      {c.preview}
+                    <div style={{fontSize: "12.5px", color: "var(--ink-2, #27272a)", marginTop: "5px", lineHeight: "1.5"}}>
+                      <MentionText text={c.preview} />
                     </div>
                     {(c.hasRep) ? (
                       <>
-                      <div style={{fontSize: "11px", color: "#71717a", marginTop: "5px"}}>
+                      <div style={{fontSize: "11px", color: "var(--meta, #71717a)", marginTop: "5px"}}>
                         {c.rep}
                       </div>
                       </>
@@ -621,31 +622,31 @@ export function DispoProperty({ V }: { V: ClozrView }) {
             <div>
             <WalkthroughForm V={V} onBooked={() => setWalkVersion((n) => n + 1)} />
             {V.isLiveData ? null : (
-            <div style={{background: "#fff", border: "1px solid #e4e4e7", borderRadius: "12px", padding: "16px"}}>
+            <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", padding: "16px"}}>
               <div style={{fontWeight: "600", fontSize: "14px"}}>
                 Fri Sept 5 · 2:30 PM window
               </div>
-              <div style={{fontSize: "12.5px", color: "#71717a", marginTop: "2px"}}>
+              <div style={{fontSize: "12.5px", color: "var(--meta, #71717a)", marginTop: "2px"}}>
                 Group showing · lockbox 4471 · 2 buyers in this window
               </div>
               <div style={{marginTop: "12px", display: "flex", flexDirection: "column", gap: "6px"}}>
-                <div style={{display: "flex", justifyContent: "space-between", padding: "8px 10px", border: "1px solid #e4e4e7", borderRadius: "8px", fontSize: "12.5px"}}>
+                <div style={{display: "flex", justifyContent: "space-between", padding: "8px 10px", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "8px", fontSize: "12.5px"}}>
                   <span style={{fontWeight: "600"}}>
                     Harbor Capital
                   </span>
-                  <span style={{color: "#0A8560", fontWeight: "600"}}>
+                  <span style={{color: "var(--tx-mint, #0a8560)", fontWeight: "600"}}>
                     Confirmed
                   </span>
                 </div>
-                <div style={{display: "flex", justifyContent: "space-between", padding: "8px 10px", border: "1px solid #e4e4e7", borderRadius: "8px", fontSize: "12.5px"}}>
+                <div style={{display: "flex", justifyContent: "space-between", padding: "8px 10px", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "8px", fontSize: "12.5px"}}>
                   <span style={{fontWeight: "600"}}>
                     Blue Mesa Investments
                   </span>
-                  <span style={{color: "#b45309", fontWeight: "600"}}>
+                  <span style={{color: "var(--tx-amber, #b45309)", fontWeight: "600"}}>
                     Requested
                   </span>
                 </div>
-                <button type="button" className="dc26" style={{height: "30px", borderRadius: "8px", border: "1px dashed #d4d4d8", background: "none", fontSize: "12px", color: "#52525b", cursor: "pointer"}} onClick={V.addBuyer}>
+                <button type="button" className="dc26" style={{height: "30px", borderRadius: "8px", border: "1px dashed var(--line, #d4d4d8)", background: "none", fontSize: "12px", color: "var(--muted, #52525b)", cursor: "pointer"}} onClick={V.addBuyer}>
                   Add buyer to window
                 </button>
               </div>
@@ -669,31 +670,31 @@ export function DispoProperty({ V }: { V: ClozrView }) {
         ) : null}
         {(V.isDispoTab.Assignment) ? (
           <>
-          <div style={{maxWidth: "720px", background: "#fff", border: "1px solid #e4e4e7", borderRadius: "12px", padding: "20px"}}>
+          <div style={{maxWidth: "720px", background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", padding: "20px"}}>
             <div style={{fontWeight: "600", fontSize: "14px"}}>
               Assignment
             </div>
             {(V.hasAccepted) ? (
               <>
               <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "1fr 1fr" : "repeat(3,1fr)", gap: "12px", marginTop: "12px"}}>
-                <div style={{border: "1px solid #e4e4e7", borderRadius: "10px", padding: "12px"}}>
-                  <div style={{fontSize: "11.5px", color: "#71717a", fontWeight: "600"}}>
+                <div style={{border: "1px solid var(--divider, #e4e4e7)", borderRadius: "10px", padding: "12px"}}>
+                  <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600"}}>
                     Assignee
                   </div>
                   <div style={{fontWeight: "700", marginTop: "4px"}}>
                     {V.acceptedOffer!.buyer}
                   </div>
                 </div>
-                <div style={{border: "1px solid #e4e4e7", borderRadius: "10px", padding: "12px"}}>
-                  <div style={{fontSize: "11.5px", color: "#71717a", fontWeight: "600"}}>
+                <div style={{border: "1px solid var(--divider, #e4e4e7)", borderRadius: "10px", padding: "12px"}}>
+                  <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600"}}>
                     Assignment fee
                   </div>
                   <div style={{fontWeight: "700", marginTop: "4px"}}>
                     {V.acceptedOffer!.assignment}
                   </div>
                 </div>
-                <div style={{border: "1px solid #e4e4e7", borderRadius: "10px", padding: "12px"}}>
-                  <div style={{fontSize: "11.5px", color: "#71717a", fontWeight: "600"}}>
+                <div style={{border: "1px solid var(--divider, #e4e4e7)", borderRadius: "10px", padding: "12px"}}>
+                  <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600"}}>
                     Buyer EMD
                   </div>
                   <div style={{fontWeight: "700", marginTop: "4px"}}>
@@ -715,9 +716,9 @@ export function DispoProperty({ V }: { V: ClozrView }) {
             ) : null}
             {(V.noAccepted) ? (
               <>
-              <div style={{fontSize: "12.5px", color: "#71717a", marginTop: "6px"}}>
+              <div style={{fontSize: "12.5px", color: "var(--meta, #71717a)", marginTop: "6px"}}>
                 No accepted offer yet. Pick one on the 
-                <button onClick={V.goOffersTab} style={{background: "none", border: "0", padding: "0", color: "#0A8560", cursor: "pointer", fontSize: "12.5px", fontWeight: "500"}}>
+                <button onClick={V.goOffersTab} style={{background: "none", border: "0", padding: "0", color: "var(--tx-mint, #0a8560)", cursor: "pointer", fontSize: "12.5px", fontWeight: "500"}}>
                   Offer desk
                 </button>
                  and the assignment contract, buyer notice and TC file are created from it.

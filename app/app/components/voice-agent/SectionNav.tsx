@@ -47,11 +47,11 @@ export function SectionNav({ sections, active, onSelect, dirty, errors, vertical
         onClick={() => onSelect(s.id)} onKeyDown={(e) => onKey(e, i)}
         style={vertical ? {
           display: 'flex', alignItems: 'center', gap: 8, width: '100%', minHeight: 34, padding: '0 10px', border: 0, borderRadius: 8, cursor: 'pointer', textAlign: 'left',
-          font: '600 13px/1.2 var(--font-sans)', background: on ? '#fff' : 'transparent', color: on ? GREEN : INK,
+          font: '600 13px/1.2 var(--font-sans)', background: on ? 'var(--surface, #fff)' : 'transparent', color: on ? GREEN : INK,
           boxShadow: on ? `inset 3px 0 0 ${GREEN}, var(--elev-1)` : 'none',
         } : {
-          display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none', height: 34, padding: '0 13px', border: `1px solid ${on ? GREEN : '#e4e4e7'}`, borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
-          font: '600 12.5px/1 var(--font-sans)', background: on ? 'var(--ok-bg)' : '#fff', color: on ? GREEN : INK,
+          display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none', height: 34, padding: '0 13px', border: `1px solid ${on ? GREEN : 'var(--divider, #e4e4e7)'}`, borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
+          font: '600 12.5px/1 var(--font-sans)', background: on ? 'var(--ok-bg)' : 'var(--surface, #fff)', color: on ? GREEN : INK,
           boxShadow: on ? '0 0 0 1px var(--ok-line), var(--elev-1)' : 'var(--elev-1)',
         }}>
         <span style={{ flex: vertical ? 1 : undefined }}>{s.label}</span>

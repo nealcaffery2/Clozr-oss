@@ -22,6 +22,7 @@
 
 import { bellFromComms } from './bell-events';
 import { notifLink } from './notif-target';
+import { isReplyCat, replyTone } from './reply-tone';
 import {
   D,
   type ActionPlan, type Buyer, type CalendarDay, type Comp, type Communication, type Deal, type Enrollment, type InboxItem,
@@ -46,6 +47,7 @@ import { isTireKicker } from './tire-kicker';
 import { type KeyCol, type Page, keysetRead } from './keyset';
 import { DELTA_MAX_AGE_MS, type RowCache, mergeDelta, newestStamp, sinceOf } from './delta-rows';
 import { vendorSellersByDeal, type SellerPartyRow } from './vendor-sellers';
+import { chunkIds } from './lead-refresh';
 
 /** The slice of the graph this module can speak for. */
 export type LiveData = {
@@ -189,6 +191,8 @@ type SellerRow = {
   lead_stage: string; stage_entered_at: string | null; notes: string | null; source: string | null;
   created_at: string; created_by: string | null; property_id: number | null;
   assigned_to: string | null; tags: string[] | null;
+  /** Migration 282: when and how the seller was last reached, kept by trigger. On rows from crm_sellers; a paged row has neither. */
+  last_touch_at?: string | null; last_touch_channel?: string | null;
   properties: PropertyRow | null;
 };
 type PropertyRow = {
@@ -212,6 +216,8 @@ type CommRow = {
   ai_notes: { summary?: string | null; next_step?: string | null } | null; score_overall: number | null;
   /** Who sent or took it (migration 153 fills it from the line when the source did not). */
   rep_id?: string | null; to_phone?: string | null;
+  /** Migration 269: the AI agent that sent it, when one did. */
+  ai_agent_key?: string | null;
 };
 type DealRow = {
   /** Migration 118. */
@@ -291,7 +297,7 @@ type VendorRow = {
   /** Migration 91: the source's true count, kept by refresh_vendor_source_stats. */
   deals_brought?: number | null; offers_sent?: number | null; offers_accepted?: number | null; deals_closed?: number | null;
 };
-type NotificationRow = {
+export type NotificationRow = {
   id: number; category: string; title: string; body: string | null;
   seller_id: number | null; buyer_id?: number | null; deal_id?: number | null; read_at: string | null; created_at: string;
   /** Set when addressed to one member (the select is theirs or nobody's). */
@@ -300,9 +306,33 @@ type NotificationRow = {
   phone_key?: string | null;
 };
 type PinRow = { id: number; pinned_at: string | null; pinned_by: string | null };
+
+/**
+ * A notifications row as the bell shows it. `dispoSeller` is the seller of
+ * the row's deal when only the deal is known (a Dispo note keyed by deal).
+ * Also used for a row that arrives live (lib/use-crm), with no deal lookup.
+ */
+export function mapNotificationRow(n: NotificationRow, dispoSeller: number | null = null): Notification {
+  return {
+    id: 'n' + n.id,
+    cat: n.category,
+    // Lane's check-in is long; the bell shows its title and Lane's panel the note.
+    text: n.category === 'Lane' ? n.title : n.body ? `${n.title} — ${n.body}` : n.title,
+    ...(n.category === 'Lane' && n.body ? { body: n.body } : {}),
+    time: relative(n.created_at),
+    unread: !n.read_at,
+    direct: !!n.user_id,
+    // The exact spot: the record's tab, the deal, the thread (lib/notif-target).
+    link: notifLink(n, dispoSeller),
+    // A reply's words say whether it is worth a look (lib/reply-tone).
+    ...(isReplyCat(n.category) ? { tone: replyTone(n.body) } : {}),
+  };
+}
 type ActivityRow = {
   id: number; entity_type: string; entity_id: number; kind: string; title: string;
   body: string | null; actor_id: string | null; occurred_at: string;
+  /** Migration 269: the AI agent behind an 'ai_agent' line. */
+  ai_agent_key?: string | null;
 };
 type PlanRow = {
   id: number; name: string; trigger_event: string | null; active: boolean;
@@ -350,7 +380,8 @@ export function personMarket(dealMarket: string | null | undefined, city: string
   return dealMarketLabel(dealMarket, city, state) || '—';
 }
 
-function mapProperty(p: PropertyRow | null, fallbackAddress: string | null): Property {
+function mapProperty(p: PropertyRow | null | undefined, fallbackAddress: string | null): Property {
+  // A property jsonb_strip_nulls omitted is the same house as one whose embed was null.
   if (!p) return { ...BLANK_PROPERTY, addr: fallbackAddress || '—' };
   // One spelling per place (lib/place-names): a state typed into the city column
   // moves over, "san antonio tx" reads San Antonio, TX. Migration 122 fixes
@@ -359,7 +390,8 @@ function mapProperty(p: PropertyRow | null, fallbackAddress: string | null): Pro
   const place = normalizePlace({ city: p.city, state: p.state, zip: p.zip });
   return {
     propertyId: String(p.id),
-    addr: p.line1,
+    // A missing line1 (stripped null) is the same blank as a stored null.
+    addr: (p.line1 ?? null) as string,
     city: place.city || '',
     st: place.state || '',
     zip: place.zip || '',
@@ -372,6 +404,7 @@ function mapProperty(p: PropertyRow | null, fallbackAddress: string | null): Pro
     // No photo until a source sends one; the screens fall back to a placeholder.
     img: '',
     apn: p.apn || '—',
+    // != null: a key jsonb_strip_nulls dropped (undefined) is the same as a null coordinate.
     ...(p.lat != null && p.lng != null ? { lat: Number(p.lat), lng: Number(p.lng) } : {}),
   };
 }
@@ -458,12 +491,104 @@ export function forgetLineLabels(workspaceId: number): void {
   lineCache.delete(workspaceId);
 }
 
-/** Who an outbound message reads as from: its rep, else the owner or name of the line it went out on. */
+/** An AI agent as the activity log shows it: its name and picture (voice_agent_settings, migration 123). */
+export type AgentFace = { key: string; name: string; avatar: string | null };
+/** The workspace's AI agents by agent_key. Read once per workspace, like the lines. */
+const agentCache = new Map<number, Promise<Map<string, AgentFace>>>();
+export function agentFaces(workspaceId: number): Promise<Map<string, AgentFace>> {
+  let p = agentCache.get(workspaceId);
+  if (!p) {
+    const sb = supabase;
+    type Row = { agent_key: string; name: string | null; avatar_url: string | null; live_name: string | null; draft_name: string | null };
+    p = (sb ? Promise.resolve(sb.from('voice_agent_settings' as never).select('agent_key,name,avatar_url,live_name:live_settings->identity->>name,draft_name:settings->identity->>name').eq('workspace_id', workspaceId)) : Promise.resolve({ data: [] as unknown[], error: null }))
+      .then((r) => {
+        // A failed read is not cached: the next record open asks again.
+        if ('error' in r && r.error) agentCache.delete(workspaceId);
+        return r;
+      })
+      .then((r) => new Map(((r.data ?? []) as Row[]).map((x) => [x.agent_key, {
+        key: x.agent_key,
+        name: (x.name || x.live_name || x.draft_name || x.agent_key.replace(/_/g, ' ')).trim(),
+        avatar: x.avatar_url || null,
+      }] as const)))
+      .catch(() => { agentCache.delete(workspaceId); return new Map<string, AgentFace>(); });
+    agentCache.set(workspaceId, p);
+  }
+  return p;
+}
+
+/** Drop a workspace's cached agents after one is renamed or gets a new picture. */
+export function forgetAgentFaces(workspaceId: number): void {
+  agentCache.delete(workspaceId);
+}
+
+/**
+ * The agent a row names (ai_agent_key), else, for an 'ai_agent' line written
+ * before migration 269, the agent its title names ("AI agent Riley sent a text").
+ */
+function agentOfRow(key: string | null | undefined, agents: Map<string, AgentFace> | undefined, title?: string): AgentFace | null {
+  if (!agents?.size) return null;
+  if (key) return agents.get(key) ?? null;
+  if (!title?.startsWith('AI agent ')) return null;
+  for (const a of agents.values()) if (a.name && title.startsWith(`AI agent ${a.name} `)) return a;
+  return null;
+}
+
+const COMM_COLS = 'id,seller_id,buyer_id,deal_id,channel,direction,occurred_at,body,summary,subject,duration_s,recording_url,from_phone,to_phone,rep_id,status,source,ai_notes,score_overall,from_email,to_email,source_id';
+const ACTIVITY_COLS = 'id,entity_type,entity_id,kind,title,body,actor_id,occurred_at';
+/** False once the database says ai_agent_key is missing (the app shipped before migration 269 ran). */
+let agentColumn = true;
+const commCols = (agent: boolean) => (agent ? COMM_COLS + ',ai_agent_key' : COMM_COLS);
+const activityCols = (agent: boolean) => (agent ? ACTIVITY_COLS + ',ai_agent_key' : ACTIVITY_COLS);
+/** False once the database says tasks.automated is missing (the app shipped before migration 291 ran). */
+let taskAutoColumn = true;
+/** A task read that leaves out automated steps, and reads them all when the column is not there yet. */
+async function withTaskAutoColumn<T extends { error: { message: string } | null }>(make: (auto: boolean) => PromiseLike<T>): Promise<T> {
+  if (taskAutoColumn) {
+    const r = await make(true);
+    if (!r.error || !/automated/.test(r.error.message)) return r;
+    taskAutoColumn = false;
+  }
+  return make(false);
+}
+/** A read that asks for ai_agent_key, and asks again without it when the column is not there yet. */
+async function withAgentColumn<T extends { error: { message: string } | null }>(make: (agent: boolean) => PromiseLike<T>): Promise<T> {
+  if (agentColumn) {
+    const r = await make(true);
+    if (!r.error || !/ai_agent_key/.test(r.error.message)) return r;
+    agentColumn = false;
+  }
+  return make(false);
+}
+
+/**
+ * Who an outbound message reads as from: its rep, else the owner or name of the
+ * line it went out on. `user` is that teammate's id when one resolves, so the
+ * feed can show their photo; a line with only a label credits no one.
+ */
+type SentBy = { name: string | null; user: string | null; line: string | null };
+
+/** "(210) 555-0125" from an E.164 or ten digits; anything else as it came. */
+function phoneText(raw: string | null | undefined): string | null {
+  const d = String(raw ?? '').replace(/\D/g, '');
+  const n = d.length === 11 && d.startsWith('1') ? d.slice(1) : d;
+  return n.length === 10 ? `(${n.slice(0, 3)}) ${n.slice(3, 6)}-${n.slice(6)}` : (raw ? String(raw) : null);
+}
+
 function sentByFor(lines: Map<string, Line>, repName: (id: string | null) => string) {
   const member = (id: string | null | undefined) => { const n = id ? repName(id) : ''; return n && n !== 'CLOZR' ? n : null; };
-  return (c: CommRow): string | null => {
-    const line = lines.get(String(c.from_phone ?? '').replace(/\D/g, '').slice(-10));
-    return member(c.rep_id) ?? member(line?.user_id) ?? line?.label ?? null;
+  return (c: CommRow): SentBy => {
+    // Our side of the message: the line it left from, or the line it reached (an inbound text or call).
+    const ours = c.direction === 'inbound' ? c.to_phone : c.from_phone;
+    const line = lines.get(String(ours ?? '').replace(/\D/g, '').slice(-10));
+    // The number, with the name CLOZR keeps for it, so the feed says which line as well as who.
+    const lineText = c.channel === 'email' || c.channel === 'note' ? null
+      : phoneText(ours) ? [phoneText(ours), line?.label].filter(Boolean).join(' · ') : null;
+    const rep = member(c.rep_id);
+    if (rep) return { name: rep, user: c.rep_id ?? null, line: lineText };
+    const owner = member(line?.user_id);
+    if (owner) return { name: owner, user: line!.user_id, line: lineText };
+    return { name: line?.label ?? null, user: null, line: lineText };
   };
 }
 
@@ -473,36 +598,79 @@ function sentByFor(lines: Map<string, Line>, repName: (id: string | null) => str
  * everyone, so a contact whose history is older (every Podio import, every
  * partner with hundreds of submissions) showed an empty timeline. Merged into
  * the record's feed in useClozr.
+ *
+ * One read of each table serves both the timeline (recordTimelineFrom) and
+ * the record's messages (recordCommsFrom). They used to be two loaders that
+ * each read the same 500 messages, email bodies included, so a record with a
+ * long mail history downloaded its megabytes twice on every open.
  */
-export async function loadRecordTimeline(
-  workspaceId: number, sellerId: number, dealIds: number[], sellerLabel: string, repName: (id: string | null) => string,
-): Promise<TimelineEntry[] | null> {
+export type RecordFeedRows = {
+  sellerId: number;
+  acts: ActivityRow[];
+  comms: CommRow[];
+  lines: Map<string, Line>;
+  agents: Map<string, AgentFace>;
+};
+export async function loadRecordFeedRows(workspaceId: number, sellerId: number, dealIds: number[]): Promise<RecordFeedRows | null> {
   if (!supabase) return null;
   const actOr = [`and(entity_type.eq.seller,entity_id.eq.${sellerId})`, ...(dealIds.length ? [`and(entity_type.eq.deal,entity_id.in.(${dealIds.join(',')}))`] : [])].join(',');
   const commOr = [`seller_id.eq.${sellerId}`, ...(dealIds.length ? [`deal_id.in.(${dealIds.join(',')})`] : [])].join(',');
-  const [acts, comms, lines] = await Promise.all([
-    supabase.from('activity').select('id,entity_type,entity_id,kind,title,body,actor_id,occurred_at')
-      .eq('workspace_id', workspaceId).or(actOr).order('occurred_at', { ascending: false }).limit(500),
-    supabase.from('communications')
-      .select('id,seller_id,buyer_id,deal_id,channel,direction,occurred_at,body,summary,subject,duration_s,recording_url,from_phone,to_phone,rep_id,status,source,ai_notes,score_overall,from_email,to_email,source_id')
-      .eq('workspace_id', workspaceId).or(commOr).order('occurred_at', { ascending: false }).limit(500),
+  const [acts, comms, lines, agents] = await Promise.all([
+    withAgentColumn((a) => supabase!.from('activity').select(activityCols(a))
+      .eq('workspace_id', workspaceId).or(actOr).order('occurred_at', { ascending: false }).limit(500)),
+    withAgentColumn((a) => supabase!.from('communications')
+      .select(commCols(a))
+      .eq('workspace_id', workspaceId).or(commOr).order('occurred_at', { ascending: false }).limit(500)),
     lineLabels(workspaceId),
+    agentFaces(workspaceId),
   ]);
-  const sentBy = sentByFor(lines, repName);
   if (acts.error || comms.error) return null;
+  return {
+    sellerId,
+    acts: (acts.data ?? []) as unknown as ActivityRow[],
+    comms: (comms.data ?? []) as unknown as CommRow[],
+    lines,
+    agents,
+  };
+}
+
+/** The record's timeline from its feed rows: activity and messages, newest first. */
+export function recordTimelineFrom(rows: RecordFeedRows, sellerLabel: string, repName: (id: string | null) => string): TimelineEntry[] {
+  const { sellerId, agents } = rows;
+  const sentBy = sentByFor(rows.lines, repName);
   const names = new Map([[sellerId, sellerLabel]]);
-  const commRows = (comms.data ?? []) as unknown as CommRow[];
-  const callNotes = linkCallNotes(commRows);
+  const callNotes = linkCallNotes(rows.comms);
   return [
-    ...((acts.data ?? []) as unknown as ActivityRow[]).map((a) => ({ at: a.occurred_at, e: mapActivity(a, repName) })),
-    ...commRows.map((c) => {
-      const base = commTimeline(c, names, undefined, sentBy);
+    ...rows.acts.map((a) => ({ at: a.occurred_at, e: mapActivity(a, repName, agents) })),
+    ...rows.comms.map((c) => {
+      const base = commTimeline(c, names, undefined, sentBy, agents);
       const notes = callNotes.notesByCall.get(c.id);
       const e = notes ? { ...base, callNote: notes.join('\n\n') } : callNotes.placed.has(c.id) ? { ...base, underCall: true } : base;
       // Every message read here is about this contact or one of its deals.
       return { at: c.occurred_at, e: { ...e, entity: e.entity && e.entity.startsWith('s') ? e.entity : sid(sellerId) } };
     }),
   ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).map((x) => ({ ...x.e, at: x.at }));
+}
+
+/** The record's messages from its feed rows, for the Calls, Texts and Email tabs. */
+export function recordCommsFrom(rows: RecordFeedRows, sellerLabel: string): Communication[] {
+  const { sellerId } = rows;
+  const names = new Map([[sellerId, sellerLabel]]);
+  return (rows.comms as (CommRow & { from_email?: string | null; to_email?: string | null })[]).map((c) => {
+    const m = mapCommunication(c, names);
+    // Someone other than the seller (a buyer, the title company): name them
+    // by the address on the email rather than "Unknown".
+    const other = c.seller_id !== sellerId ? (c.direction === 'inbound' ? c.from_email : c.to_email) : null;
+    return { ...m, personId: sid(sellerId), ...(other ? { party: other } : {}) };
+  });
+}
+
+/** loadRecordFeedRows and recordTimelineFrom in one call. */
+export async function loadRecordTimeline(
+  workspaceId: number, sellerId: number, dealIds: number[], sellerLabel: string, repName: (id: string | null) => string,
+): Promise<TimelineEntry[] | null> {
+  const rows = await loadRecordFeedRows(workspaceId, sellerId, dealIds);
+  return rows ? recordTimelineFrom(rows, sellerLabel, repName) : null;
 }
 
 /**
@@ -515,22 +683,23 @@ export async function loadBuyerTimeline(
   workspaceId: number, buyerId: number, repName: (id: string | null) => string,
 ): Promise<TimelineEntry[] | null> {
   if (!supabase) return null;
-  const [acts, comms, lines] = await Promise.all([
-    supabase.from('activity').select('id,entity_type,entity_id,kind,title,body,actor_id,occurred_at')
+  const [acts, comms, lines, agents] = await Promise.all([
+    withAgentColumn((a) => supabase!.from('activity').select(activityCols(a))
       .eq('workspace_id', workspaceId).eq('entity_type', 'buyer').eq('entity_id', buyerId)
-      .order('occurred_at', { ascending: false }).limit(500),
-    supabase.from('communications')
-      .select('id,seller_id,buyer_id,deal_id,channel,direction,occurred_at,body,summary,subject,duration_s,recording_url,from_phone,to_phone,rep_id,status,source,ai_notes,score_overall,from_email,to_email,source_id')
-      .eq('workspace_id', workspaceId).eq('buyer_id', buyerId).order('occurred_at', { ascending: false }).limit(500),
+      .order('occurred_at', { ascending: false }).limit(500)),
+    withAgentColumn((a) => supabase!.from('communications')
+      .select(commCols(a))
+      .eq('workspace_id', workspaceId).eq('buyer_id', buyerId).order('occurred_at', { ascending: false }).limit(500)),
     lineLabels(workspaceId),
+    agentFaces(workspaceId),
   ]);
   if (acts.error || comms.error) return null;
   const sentBy = sentByFor(lines, repName);
   const entity = 'b' + buyerId;
   return [
-    ...((acts.data ?? []) as unknown as ActivityRow[]).map((a) => ({ at: a.occurred_at, e: mapActivity(a, repName) })),
+    ...((acts.data ?? []) as unknown as ActivityRow[]).map((a) => ({ at: a.occurred_at, e: mapActivity(a, repName, agents) })),
     // A message on a seller's deal that also names this buyer still belongs on the buyer's feed.
-    ...((comms.data ?? []) as unknown as CommRow[]).map((c) => ({ at: c.occurred_at, e: { ...commTimeline(c, new Map(), undefined, sentBy), entity } })),
+    ...((comms.data ?? []) as unknown as CommRow[]).map((c) => ({ at: c.occurred_at, e: { ...commTimeline(c, new Map(), undefined, sentBy, agents), entity } })),
   ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).map((x) => ({ ...x.e, at: x.at }));
 }
 
@@ -571,26 +740,15 @@ export function mergeThread<T extends PhoneText>(thread: T[], other: PhoneText[]
   return [...thread, ...extra].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 }
 
+/** loadRecordFeedRows and recordCommsFrom in one call. */
 export async function loadRecordComms(
   workspaceId: number,
   sellerId: number,
   dealIds: number[],
   sellerLabel: string,
 ): Promise<Communication[] | null> {
-  if (!supabase) return null;
-  const or = [`seller_id.eq.${sellerId}`, ...(dealIds.length ? [`deal_id.in.(${dealIds.join(',')})`] : [])].join(',');
-  const { data, error } = await supabase.from('communications')
-    .select('id,seller_id,buyer_id,deal_id,channel,direction,occurred_at,body,summary,subject,duration_s,recording_url,from_phone,to_phone,rep_id,status,source,ai_notes,score_overall,from_email,to_email,source_id')
-    .eq('workspace_id', workspaceId).or(or).order('occurred_at', { ascending: false }).limit(500);
-  if (error || !data) return null;
-  const names = new Map([[sellerId, sellerLabel]]);
-  return (data as (CommRow & { from_email?: string | null; to_email?: string | null })[]).map((c) => {
-    const m = mapCommunication(c, names);
-    // Someone other than the seller (a buyer, the title company): name them
-    // by the address on the email rather than "Unknown".
-    const other = c.seller_id !== sellerId ? (c.direction === 'inbound' ? c.from_email : c.to_email) : null;
-    return { ...m, personId: sid(sellerId), ...(other ? { party: other } : {}) };
-  });
+  const rows = await loadRecordFeedRows(workspaceId, sellerId, dealIds);
+  return rows ? recordCommsFrom(rows, sellerLabel) : null;
 }
 
 /**
@@ -631,7 +789,7 @@ function linkCallNotes(comms: CommRow[]): { notesByCall: Map<number, string[]>; 
  * communication is an event on the record; it belongs on the same feed, and
  * its type matches what the Texts and Calls filters already look for.
  */
-function commTimeline(c: CommRow, sellerName: Map<number, string>, ours: Set<string> = new Set(), sentBy?: (c: CommRow) => string | null): TimelineEntry {
+function commTimeline(c: CommRow, sellerName: Map<number, string>, ours: Set<string> = new Set(), sentBy?: (c: CommRow) => SentBy, agents?: Map<string, AgentFace>): TimelineEntry {
   const from = (c.from_email ?? '').trim().toLowerCase();
   const inbound = c.channel === 'email' && from && ours.size ? !ours.has(from) : c.direction === 'inbound';
   const type = c.channel === 'sms'
@@ -640,9 +798,16 @@ function commTimeline(c: CommRow, sellerName: Map<number, string>, ours: Set<str
   // An outbound row credits the rep who sent it (rep_id, or the line's owner
   // or name, migration 153), else the system that carried it; an inbound one
   // was the seller.
+  // An AI agent's text, email, voicemail or call is the agent's, not the rep it went out as (migration 269).
   const src = c.source || 'system';
+  const agent = !inbound ? agentOfRow(c.ai_agent_key, agents) : null;
+  const by = !inbound && !agent ? sentBy?.(c) : undefined;
+  // An inbound text or call names the rep whose line it reached, so the feed
+  // shows which teammate a seller was talking to.
+  const reached = inbound && c.channel !== 'email' && c.channel !== 'note' ? sentBy?.(c) : undefined;
   const who = c.channel === 'email' && inbound && from ? from
-    : !inbound ? (sentBy?.(c) || (src === 'clozr' ? 'CLOZR' : src.charAt(0).toUpperCase() + src.slice(1)))
+    : agent ? agent.name
+    : !inbound ? (by?.name || (src === 'clozr' ? 'CLOZR' : src.charAt(0).toUpperCase() + src.slice(1)))
     : c.seller_id ? sellerName.get(c.seller_id) || 'Unknown' : c.from_phone || 'Unknown';
   // A text we sent says how far it got; "failed" is the word that has to reach
   // the person who sent it, so it goes in the title rather than a badge. A
@@ -662,10 +827,13 @@ function commTimeline(c: CommRow, sellerName: Map<number, string>, ours: Set<str
   return {
     id: 'ct' + c.id,
     type: isTc ? 'tc' : type,
-    user: null,
+    user: by?.user ?? null,
     who,
+    ...(agent ? { agent } : {}),
     time: relative(c.occurred_at),
     title,
+    ...(reached?.name ? { toRep: reached.name } : {}),
+    ...((by ?? reached)?.line ? { line: (by ?? reached)!.line! } : {}),
     // What the AI heard beats the disposition line, which beats a raw body.
     ...(c.ai_notes?.summary || c.body || c.summary ? { body: c.ai_notes?.summary || c.summary || c.body || '' } : {}),
     ...(c.seller_id ? { entity: sid(c.seller_id) } : c.buyer_id ? { entity: 'b' + c.buyer_id } : {}),
@@ -686,6 +854,20 @@ function commTimeline(c: CommRow, sellerName: Map<number, string>, ours: Set<str
 
 /** A seller's most recent communication: what "Last contact" and "never contacted" read. */
 type LastComm = { channel: string; occurred_at: string };
+
+/** Drop null object fields, recursively. A missing key and a null are the same fact. */
+function withoutNulls(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(withoutNulls);
+  if (v && typeof v === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      if (val === null) continue;
+      out[k] = withoutNulls(val);
+    }
+    return out;
+  }
+  return v;
+}
 
 function mapPerson(s: SellerRow, last: LastComm | null, nextTask: TaskRow | undefined, deal: DealRow | undefined): Person {
   return {
@@ -724,10 +906,39 @@ function mapPerson(s: SellerRow, last: LastComm | null, nextTask: TaskRow | unde
     asking: money(s.asking_price) || '—',
     desiredClose: s.desired_close || '—',
     decisionMakers: s.decision_makers || '—',
-    intake: s.intake && typeof s.intake === 'object' && !Array.isArray(s.intake) ? s.intake : {},
+    // Null keys inside intake are stripped on the wire (migration 284). Dropping
+    // them here makes a full row and a stripped row the same answers.
+    intake: s.intake && typeof s.intake === 'object' && !Array.isArray(s.intake)
+      ? withoutNulls(s.intake) as Record<string, unknown>
+      : {},
     // The hero is COMPR's front photo of the subject when a run has left one on
     // the deal; without it the record falls back to Street View (useClozr).
     property: { ...mapProperty(s.properties, s.property_address), img: deal?.hero_image_url || '' },
+  };
+}
+
+/** The seller a list row becomes, with no deal and no last touch folded in. The slim-payload check runs real rows through this. */
+export function mapSellerRow(s: SellerRow): Person {
+  return mapPerson(s, null, undefined, undefined);
+}
+
+/**
+ * One row from people_page (migration 358): the seller columns crm_sellers
+ * carries, plus the next open task and the best deal the function picked
+ * (crm.ts dealRank), so a paged row maps the same way a full-load row does.
+ */
+export type PagedSellerRow = SellerRow & {
+  underwriter_id?: string | null;
+  next_task?: { title: string; due_at: string | null } | null;
+  deal?: Pick<DealRow, 'id' | 'stage' | 'offer_amount' | 'owner_id' | 'market' | 'hero_image_url' | 'close_date' | 'underwriting_url' | 'arv'> | null;
+};
+
+/** A people_page row as the People list draws it (lib/people-page.ts). */
+export function mapPagedSeller(row: PagedSellerRow): Person {
+  const last = row.last_touch_at ? { channel: row.last_touch_channel || 'note', occurred_at: row.last_touch_at } : null;
+  return {
+    ...mapPerson(row, last, (row.next_task ?? undefined) as TaskRow | undefined, (row.deal ?? undefined) as DealRow | undefined),
+    underwriter: row.underwriter_id ?? null,
   };
 }
 
@@ -778,7 +989,7 @@ function mapDeal(d: DealRow, staleDays: number, prop?: { line1: string; city: st
     facts: {
       earnest: n(d.earnest_money ?? null), condition: d.condition_notes ?? null, occupancy: d.occupancy_notes ?? null,
       dispoRep: d.dispo_rep_id ?? null, tcRep: d.tc_rep_id ?? null,
-      titleVendor: d.title_vendor_id != null, titleContact: d.title_contact ?? null, titleEmail: d.title_email ?? null, titlePhone: d.title_phone ?? null,
+      titleVendor: d.title_vendor_id != null, titleVendorId: d.title_vendor_id != null ? 'v' + d.title_vendor_id : null, titleContact: d.title_contact ?? null, titleEmail: d.title_email ?? null, titlePhone: d.title_phone ?? null,
       marketingStarted: d.marketing_started_on ?? null,
     },
     ...(d.buyer_id ? { buyerId: bid(d.buyer_id) } : {}),
@@ -1008,13 +1219,16 @@ function mapTask(t: TaskRow, sellerOfDeal?: (dealId: number) => number | null | 
 }
 
 /** Stage moves, offers and automation — the events a communication is not. */
-function mapActivity(a: ActivityRow, repName: (id: string | null) => string): TimelineEntry {
+function mapActivity(a: ActivityRow, repName: (id: string | null) => string, agents?: Map<string, AgentFace>): TimelineEntry {
+  // An agent's line is the agent's, even when a rep switched it on (the rep is named in the title).
+  const agent = a.kind === 'ai_agent' ? agentOfRow(a.ai_agent_key, agents, a.title) : null;
   return {
     id: 'a' + a.id,
     type: a.kind,
-    user: a.actor_id,
+    user: agent ? null : a.actor_id,
+    ...(agent ? { agent } : {}),
     // No actor means a webhook or automation wrote it; name the source.
-    who: a.actor_id ? repName(a.actor_id)
+    who: agent ? agent.name : a.actor_id ? repName(a.actor_id)
       : /pandadoc/i.test(a.title + (a.body ?? '')) ? 'PandaDoc'
         : a.kind === 'ai_agent' ? 'AI agent' : a.kind === 'contract' ? 'E-sign' : a.kind === 'email' ? 'Gmail' : a.kind === 'task' ? 'Automation' : a.kind === 'tc' ? (/^Lane\b/.test(a.title) ? 'Lane' : 'TC') : 'System',
     time: relative(a.occurred_at),
@@ -1304,6 +1518,25 @@ async function all<T extends Page>(
 type CachedRow = { id: number; updated_at?: string | null };
 const rowCaches = new Map<string, RowCache<CachedRow>>();
 const ok200 = <T,>(data: unknown[]) => ({ data, error: null, count: null, status: 200, statusText: 'OK' }) as unknown as T;
+/** A table function's delta (migration 280): every live id, and the rows changed since. For a full read `ids` is null. */
+type TableDelta = { ids: number[] | null; rows: CachedRow[] };
+/** The caches a table function filled, so their rows carry the side columns (underwriter_id, assigned_to, archived_at, the offer bands). */
+const rpcFilled = new Set<string>();
+/**
+ * One call to a table function (migration 280) in place of a page per
+ * thousand rows. Null when the database has no such function, the caller is
+ * not a member of the workspace, or the call failed: the caller then pages
+ * the table as before, where RLS answers as it always has.
+ */
+async function tableRpc<T>(name: string, args: Record<string, unknown>): Promise<T | null> {
+  if (!supabase) return null;
+  const rpc = supabase.rpc.bind(supabase) as unknown as (fn: string, a: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null; status: number }>;
+  const r = await again(async () => {
+    const x = await rpc(name, args);
+    return { data: x.error || x.data == null ? null : [x.data], error: x.error, status: x.status } as Page;
+  });
+  return r.error || !r.data ? null : (r.data[0] as T);
+}
 
 /**
  * A big table read for a reload: the cached rows plus what changed since
@@ -1315,29 +1548,51 @@ const ok200 = <T,>(data: unknown[]) => ({ data, error: null, count: null, status
  */
 async function cachedRead<T extends Page>(name: string, ws: number, q: {
   full: () => Promise<T>;
-  ids: () => PromiseLike<Page>;
-  since: (iso: string) => PromiseLike<Page>;
+  /** The table function (migration 280): the whole table with `since` null, else the ids and the rows changed since. Null means page instead. */
+  one?: (since: string | null) => Promise<TableDelta | null>;
+  ids?: () => PromiseLike<Page>;
+  since?: (iso: string) => PromiseLike<Page>;
   byIds: (ids: number[]) => PromiseLike<Page>;
   extraIds?: (iso: string) => Promise<number[]>;
   order: (a: CachedRow, b: CachedRow) => number;
 }): Promise<T> {
   const c = rowCaches.get(name);
   const readAll = async () => {
-    const r = await q.full();
+    const one = await q.one?.(null);
+    const r = one ? ok200<T>(one.rows) : await q.full();
     const rows = (r.data ?? []) as CachedRow[];
     if (!r.error) rowCaches.set(name, { ws, at: Date.now(), cursor: newestStamp(rows), rows: new Map(rows.map((x) => [x.id, x] as const)) });
     else rowCaches.delete(name);
+    if (!r.error && one) rpcFilled.add(name); else rpcFilled.delete(name);
     return r;
   };
   const since = c && c.ws === ws && Date.now() - c.at < DELTA_MAX_AGE_MS ? sinceOf(c.cursor) : null;
   if (!c || !since) return readAll();
-  const [idsQ, changedQ, extra] = await Promise.all([q.ids(), q.since(since), q.extraIds?.(since) ?? Promise.resolve([])]);
-  if (idsQ.error || changedQ.error) return readAll();
-  const ids = ((idsQ.data ?? []) as CachedRow[]).map((r) => r.id);
-  const changed = (changedQ.data ?? []) as CachedRow[];
+  // The function's delta only over a cache the function filled, and the
+  // paged delta only over one the pages filled: the two row shapes differ.
+  const viaOne = !!q.one && rpcFilled.has(name);
+  let ids: number[];
+  let changed: CachedRow[];
+  let extra: number[] = [];
+  if (viaOne) {
+    const one = await q.one!(since);
+    if (!one?.ids) return readAll();
+    ids = one.ids;
+    changed = one.rows;
+  } else if (q.ids && q.since) {
+    const [idsQ, changedQ, ex] = await Promise.all([q.ids(), q.since(since), q.extraIds?.(since) ?? Promise.resolve([])]);
+    if (idsQ.error || changedQ.error) return readAll();
+    ids = ((idsQ.data ?? []) as CachedRow[]).map((r) => r.id);
+    changed = (changedQ.data ?? []) as CachedRow[];
+    extra = ex;
+  } else {
+    return readAll();
+  }
   const { rows, missing } = mergeDelta(c.rows, ids, changed);
   const seen = new Set(changed.map((r) => r.id));
   const refetch = [...new Set([...missing, ...extra.filter((id) => rows.has(id) && !seen.has(id))])];
+  // byIds selects lack the side columns a function-filled cache carries.
+  if (viaOne && refetch.length) return readAll();
   for (let i = 0; i < refetch.length; i += 200) {
     const r = await q.byIds(refetch.slice(i, i + 200));
     if (r.error) return readAll();
@@ -1352,10 +1607,26 @@ async function cachedRead<T extends Page>(name: string, ws: number, q: {
 const idsOf = (r: Page) => (r.error ? [] : ((r.data ?? []) as { id: number }[]).map((x) => x.id));
 
 /**
- * One row per seller: channel and time of their latest communication.
- * Migration 113 returns the whole set as one jsonb value (one round trip,
- * ~50ms). A database without that function falls back to the embedded read,
- * which is the same answer spread across a page per thousand sellers.
+ * Rows from crm_sellers on a database with migration 282 carry the seller's
+ * last touch (last_touch_at, last_touch_channel), so there is nothing more to
+ * read. A paged row, or a database before 282, has no such key and the
+ * one-shot read below runs. No rows: nothing to look up either way.
+ */
+const rowsCarryLastTouch = (r: Page) => {
+  const rows = (r.data ?? []) as { last_touch_at?: unknown }[];
+  // jsonb_strip_nulls drops a null last_touch_at, so the newest seller often
+  // has no key even when crm_sellers selected the column. Missing means null.
+  // A PostgREST page never selects it, so no row has the key and the fallback runs.
+  return rows.length === 0 || rows.some((row) => 'last_touch_at' in row);
+};
+
+/**
+ * One row per seller: channel and time of their latest communication, for
+ * sellers whose rows did not carry it (rowsCarryLastTouch). Migration 113/167
+ * returns the whole set as one jsonb value; since 282 it reads two columns
+ * of sellers instead of probing communications once per seller. A database
+ * without the function falls back to the embedded read, which is the same
+ * answer spread across a page per thousand sellers.
  */
 async function loadLastTouch(workspaceId: number): Promise<Map<number, LastComm>> {
   const out = new Map<number, LastComm>();
@@ -1393,6 +1664,8 @@ const BUYER_COLS = 'id,name,company,email,phone,markets,max_purchase_price,buy_b
 
 const DEAL_COLS ='id,seller_id,property_id,lead_stage,asking_price,submitted_at,target_assignment,marketing_headline,marketing_description,marketing_url,garage_spaces,stage,stage_entered_at,offer_amount,arv,rehab,mao,wholesale_offer,institutional_offer,assignment_fee,hero_image_url,photos_url,buyer_report_url,compr_cma_url,contract_date,close_date,option_ends_on,buyer_option_ends_on,owner_id,market,updated_at,buyer_id,underwriting_url,compr_report_url,title_vendor_id,title_contact,title_email,title_phone,earnest_money,condition_notes,occupancy_notes,dispo_rep_id,tc_rep_id,marketing_started_on,tracker_no,closed_on,sold_price,price_drop,marketed_price,marketed_fee,dispo_upsell,dispo_fee,transaction_type,contract_status,lead_source,acq_agent,dispo_agent,lead_manager,coordinator,created_at,archived_at,archived_reason,properties(line1,city,state,zip,lat,lng)';
 
+const TASK_COLS = 'id,seller_id,deal_id,buyer_id,title,task_type,priority,due_at,assigned_to,done,notes,completed_at,created_at';
+
 /** A workspace with nothing in it: what a failed load shows. */
 export function emptyLiveData(): LiveData {
   return {
@@ -1407,14 +1680,78 @@ export function emptyLiveData(): LiveData {
   };
 }
 
+/** The reads the shell and the full load make alike, by the name loadWorkspace gives each answer. */
+export type SharedReads = Record<'commsQ' | 'notifsQ' | 'activityQ' | 'plansQ' | 'membersQ' | 'pinCommsQ' | 'pinActsQ' | 'rosterQ' | 'mailboxesQ', Page>;
+
+/**
+ * The newest messages and activity, my notifications, the plans, the team,
+ * the pins and our own addresses: the same reads with the same filters in
+ * the shell and the full load. On first paint they are asked for once and
+ * handed to both (lib/use-crm.ts).
+ */
+export async function loadSharedReads(workspaceId: number): Promise<SharedReads> {
+  // loadWorkspace returns before it reads these when there is no client.
+  if (!supabase) return {} as SharedReads;
+  const w = workspaceId;
+  // A mention is addressed to one teammate; everything else is workspace-wide.
+  const uid = (await supabase.auth.getSession()).data.session?.user.id;
+  const [commsQ, notifsQ, activityQ, plansQ, membersQ, pinCommsQ, pinActsQ, rosterQ, mailboxesQ] = await Promise.all([
+    again(() => withAgentColumn((a) => supabase!.from('communications')
+      .select(commCols(a))
+      .eq('workspace_id', w).order('occurred_at', { ascending: false }).limit(500))),
+    supabase.from('notifications')
+      .select('*')
+      // Only what is addressed to me: a row with no recipient is nobody's, not everybody's.
+      .eq('workspace_id', w).eq('user_id', uid ?? '00000000-0000-0000-0000-000000000000').order('created_at', { ascending: false }).limit(100),
+    again(() => withAgentColumn((a) => supabase!.from('activity')
+      .select(activityCols(a))
+      .eq('workspace_id', w).order('occurred_at', { ascending: false }).limit(300))),
+    supabase.from('action_plans')
+      .select('id,name,description,trigger_event,active,settings,action_plan_steps(id,position,channel,delay_hours,title,body)')
+      .eq('workspace_id', w).order('name'),
+    supabase.from('workspace_members').select('user_id,role,profiles(full_name,title,avatar_url,email)').eq('workspace_id', w),
+    // Pins (migration 43) are their own reads, so a database without the
+    // columns yet loses the Pinned section and nothing else.
+    // Newest PINS_CAP of each, on a partial index (migration 227): unbounded and
+    // unindexed, these read every message and every activity row in the workspace.
+    supabase.from('communications').select('id,pinned_at,pinned_by').eq('workspace_id', w).not('pinned_at', 'is', null)
+      .order('pinned_at', { ascending: false }).limit(PINS_CAP),
+    supabase.from('activity').select('id,pinned_at,pinned_by').eq('workspace_id', w).not('pinned_at', 'is', null)
+      .order('pinned_at', { ascending: false }).limit(PINS_CAP),
+    // Our own addresses: an email from one of these was sent by us, whatever
+    // the stored direction says (see `ours` in loadWorkspace).
+    supabase.from('workspace_roster').select('email').eq('workspace_id', w),
+    supabase.from('google_accounts').select('email').eq('workspace_id', w),
+  ]);
+  return { commsQ, notifsQ, activityQ, plansQ, membersQ, pinCommsQ, pinActsQ, rosterQ, mailboxesQ };
+}
+
+/**
+ * The shell's shared reads, for the full load of the same first paint. Any
+ * failure (or a throw) reads them all again, as the full load used to ask
+ * for each itself.
+ */
+export function reuseShared<T extends Record<string, { error: unknown }>>(given: Promise<T>, read: () => Promise<T>): Promise<T> {
+  return given.then((r) => (Object.values(r).some((q) => q.error) ? read() : r), () => read());
+}
+
+/** Pages read side by side as one answer. One failed page fails it, as the single read it replaces did. */
+export function joinPages(pages: Page[]): Page {
+  return pages.find((p) => p.error) ?? { data: pages.flatMap((p) => p.data ?? []), error: null };
+}
+
 /**
  * `shell`: the first screen's read. The newest PAGE sellers and what Home,
- * Today and the menus need (tasks, the latest messages and activity, the
- * team, notifications), with every other table left empty. It paints in one
- * round of reads instead of after every page of every table; the full read
- * runs beside it and replaces it when it lands (lib/use-crm.ts).
+ * Today and the menus need (the soonest PAGE open tasks, the latest messages
+ * and activity, the team, notifications), with every other table left empty.
+ * It paints in one round of reads instead of after every page of every
+ * table; the full read runs beside it and replaces it when it lands
+ * (lib/use-crm.ts).
+ *
+ * `shared`: loadSharedReads already asked for on this first paint. The shell
+ * takes the answers as they come; the full load reuses them (reuseShared).
  */
-export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean } = {}): Promise<{ ok: boolean; data: LiveData }> {
+export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean; shared?: Promise<SharedReads> } = {}): Promise<{ ok: boolean; data: LiveData }> {
   const shell = !!opts.shell;
   /** A read the shell leaves for the full load: an empty answer, no request. */
   const full = <T,>(read: () => PromiseLike<T>): Promise<T> =>
@@ -1422,25 +1759,33 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
   const empty = emptyLiveData();
   if (!supabase) return { ok: false, data: empty };
   const w = workspaceId;
-  // A mention is addressed to one teammate; everything else is workspace-wide.
-  const uid = (await supabase.auth.getSession()).data.session?.user.id;
+  const sharedP = !opts.shared ? loadSharedReads(w) : shell ? opts.shared : reuseShared(opts.shared, () => loadSharedReads(w));
+  // Cached per workspace; started now so they are in by the time the rows are.
+  const linesP = lineLabels(w);
+  const agentsP = agentFaces(w);
 
   // Photos, offer gaps, and the reporting history load after this returns
   // (enrichWorkspace). They are not on the first screen, and waiting on them
   // kept People, Buyers, and Deals blank.
-  const [
-    sellersQ, commsQ, dealsQ, tasksQ, buyersQ, vendorsQ,
-    notifsQ, activityQ, plansQ, enrollQ, membersQ, offersQ, apptsQ, matchesQ, txQ, contractsQ,
-    pinCommsQ, pinActsQ, rosterQ, mailboxesQ, lastTouch,
-    underwriterQ, buyerOwnerQ, dealUnderwriterQ, buyerArchivedQ, podioSubsQ, dealMovesQ, sellerPartiesQ, bandSetQ,
-    buyerScoresQ,
-  ] = await Promise.all([
-    shell
+  //
+  // Sellers, buyers and deals come through their table functions (migration
+  // 280, lib/crm.ts tableRpc): one call for the whole table, or for the ids
+  // and the rows changed since the last read, in place of a page per
+  // thousand rows. The deals call also carries the Podio ledger and the
+  // submission moves. A database without the functions pages as before.
+  const extra: { deals: { podio: unknown[]; moves: unknown[] } | null } = { deals: null };
+  const pageMatches = () => all(() => supabase!.from('deal_buyer_matches').select('id,deal_id,buyer_id,score,reasons,status,sent_at,viewed_at,replied_at,updated_at').eq('workspace_id', w).order('score', { ascending: false }).order('id'),
+    Number.POSITIVE_INFINITY, [{ col: 'score', asc: false }, { col: 'id', asc: true }]);
+  // The sellers read stands alone so the last-touch read can wait on it: a
+  // row from crm_sellers (migration 282) carries the seller's last touch, and
+  // only a paged row still needs seller_last_touch(ws) after it.
+  const sellersP = shell
       ? all(() => supabase!.from('sellers')
         .select(SELLER_COLS)
         .eq('workspace_id', w).is('archived_at', null).order('created_at', { ascending: false }).order('id', { ascending: false }),
       PAGE, [{ col: 'created_at', asc: false }, { col: 'id', asc: false }])
       : cachedRead('sellers', w, {
+        one: (since) => tableRpc<TableDelta>('crm_sellers', { p_ws: w, p_since: since }),
         full: () => all(() => supabase!.from('sellers').select(SELLER_COLS + ',updated_at')
           .eq('workspace_id', w).is('archived_at', null).order('created_at', { ascending: false }).order('id', { ascending: false }),
         Number.POSITIVE_INFINITY, [{ col: 'created_at', asc: false }, { col: 'id', asc: false }]),
@@ -1461,22 +1806,43 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
           const x = String((a as { created_at?: string }).created_at ?? ''), y = String((b as { created_at?: string }).created_at ?? '');
           return x === y ? b.id - a.id : x < y ? 1 : -1;
         },
-      }),
-    again(() => supabase!.from('communications')
-      .select('id,seller_id,buyer_id,deal_id,channel,direction,occurred_at,body,summary,subject,duration_s,recording_url,from_phone,to_phone,rep_id,status,source,ai_notes,score_overall,from_email,to_email,source_id')
-      .eq('workspace_id', w).order('occurred_at', { ascending: false }).limit(500)),
-    full(() => all(() => supabase!.from('deals')
-      .select(DEAL_COLS)
-      .eq('workspace_id', w).order('id'), Number.POSITIVE_INFINITY, BY_ID)),
-    all(() => supabase!.from('tasks')
-      .select('id,seller_id,deal_id,buyer_id,title,task_type,priority,due_at,assigned_to,done,notes,completed_at,created_at')
-      .eq('workspace_id', w).order('due_at', { ascending: true, nullsFirst: false }).order('id'),
-      Number.POSITIVE_INFINITY, [{ col: 'due_at', asc: true, nullable: true }, { col: 'id', asc: true }]),
+      });
+  const [
+    sellersQ, dealsQ, tasksQ, buyersQ, vendorsQ,
+    enrollQ, offersQ, apptsQ, matchesQ, txQ, contractsQ,
+    lastTouch, sellerPartiesQ, buyerScoresQ, shared,
+  ] = await Promise.all([
+    sellersP,
+    full(() => cachedRead('deals', w, {
+      one: async (since) => {
+        const r = await tableRpc<TableDelta & { podio?: unknown[]; moves?: unknown[] }>('crm_deals', { p_ws: w, p_since: since });
+        if (!r) return null;
+        extra.deals = { podio: r.podio ?? [], moves: r.moves ?? [] };
+        return r;
+      },
+      full: () => all(() => supabase!.from('deals')
+        .select(DEAL_COLS)
+        .eq('workspace_id', w).order('id'), Number.POSITIVE_INFINITY, BY_ID),
+      // No paged delta: deals.updated_at is kept by a trigger only from
+      // migration 280 on, and without the function the whole table is read.
+      byIds: (ids) => again(() => supabase!.from('deals').select(DEAL_COLS).in('id', ids)),
+      order: (a, b) => a.id - b.id,
+    })),
+    // Not the steps an action plan sends by itself (tasks.automated, migration
+    // 291): nobody has to do those, and a Compr plan queues thousands.
+    // The shell takes one request: the soonest PAGE open tasks, in the full
+    // read's order, which is what Today and each lead's next step read.
+    withTaskAutoColumn((auto) => all(() => {
+      const q0 = supabase!.from('tasks').select(TASK_COLS).eq('workspace_id', w);
+      const q = shell ? q0.eq('done', false) : q0;
+      return (auto ? q.eq('automated', false) : q).order('due_at', { ascending: true, nullsFirst: false }).order('id');
+    }, shell ? PAGE : Number.POSITIVE_INFINITY, shell ? undefined : [{ col: 'due_at', asc: true, nullable: true }, { col: 'id', asc: true }])),
     // The free-agent corpus is six figures of rows in both tables. The shell
     // works the people we actually market to. Buyers › Realtors pages that
     // corpus through search_free_agent_buyers. isDistinct matches the partial
     // shell indexes; paging the corpus is what timed the request out.
     full(() => cachedRead('buyers', w, {
+      one: (since) => tableRpc<TableDelta>('crm_buyers', { p_ws: w, p_since: since }),
       full: () => all(() => supabase!.from('buyers').select(BUYER_COLS)
         .eq('workspace_id', w).isDistinct('source', BULK_BUYER_SOURCE).order('name').order('id'), Number.POSITIVE_INFINITY, BY_NAME),
       ids: () => all(() => supabase!.from('buyers').select('id').eq('workspace_id', w).isDistinct('source', BULK_BUYER_SOURCE).order('id'), Number.POSITIVE_INFINITY, BY_ID),
@@ -1492,26 +1858,17 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
       .select('id,business_name,contact_name,email,phone,service_type,markets,status,notes,city,state,office_address,is_main_poc,deals_brought,offers_sent,offers_accepted,deals_closed')
       .eq('workspace_id', w).neq('status', 'archived').isDistinct('source', BULK_BUYER_SOURCE).order('business_name').order('id'),
       Number.POSITIVE_INFINITY, [{ col: 'business_name', asc: true }, { col: 'id', asc: true }])),
-    supabase.from('notifications')
-      .select('*')
-      // Only what is addressed to me: a row with no recipient is nobody's, not everybody's.
-      .eq('workspace_id', w).eq('user_id', uid ?? '00000000-0000-0000-0000-000000000000').order('created_at', { ascending: false }).limit(50),
-    again(() => supabase!.from('activity')
-      .select('id,entity_type,entity_id,kind,title,body,actor_id,occurred_at')
-      .eq('workspace_id', w).order('occurred_at', { ascending: false }).limit(300)),
-    supabase.from('action_plans')
-      .select('id,name,description,trigger_event,active,settings,action_plan_steps(id,position,channel,delay_hours,title,body)')
-      .eq('workspace_id', w).order('name'),
     full(() => all(() => supabase!.from('enrollments').select('id,plan_id,seller_id,buyer_id,status,step_index').eq('workspace_id', w).order('id'), Number.POSITIVE_INFINITY, BY_ID)),
-    supabase.from('workspace_members').select('user_id,role,profiles(full_name,title,avatar_url,email)').eq('workspace_id', w),
     full(() => all(() => supabase!.from('offers').select('id,deal_id,buyer_id,amount,status,sent_at,terms').eq('workspace_id', w).order('sent_at', { ascending: false }).order('id'),
       Number.POSITIVE_INFINITY, [{ col: 'sent_at', asc: false }, { col: 'id', asc: true }])),
     // Every appointment, oldest first, by keyset pages: one read stopped at
     // PostgREST's 1,000 rows and, oldest first, dropped the newest.
     full(() => all(() => supabase!.from('appointments').select('id,seller_id,buyer_id,title,kind,starts_at,assigned_to,source,created_at,deleted_at')
       .eq('workspace_id', w).order('starts_at').order('id'), Number.POSITIVE_INFINITY, [{ col: 'starts_at', asc: true }, { col: 'id', asc: true }])),
-    full(() => all(() => supabase!.from('deal_buyer_matches').select('id,deal_id,buyer_id,score,reasons,status,sent_at,viewed_at,replied_at,updated_at').eq('workspace_id', w).order('score', { ascending: false }).order('id'),
-      Number.POSITIVE_INFINITY, [{ col: 'score', asc: false }, { col: 'id', asc: true }])),
+    full(async () => {
+      const rows = await tableRpc<unknown[]>('crm_matches', { p_ws: w });
+      return rows ? ok200<Awaited<ReturnType<typeof pageMatches>>>(rows) : pageMatches();
+    }),
     full(() => all(() => supabase!.from('transactions')
       .select('id,deal_id,property_id,seller_id,buyer_id,title_company,escrow_officer,title_email,title_phone,emd_amount,emd_received_at,option_ends_on,close_date,status,created_at,deal_type,contract_date,ctc_target,checklist,hud,tc_review,signoff,buyer_financing,lender,structure')
       .eq('workspace_id', w).order('close_date', { ascending: true, nullsFirst: false }).order('id'),
@@ -1519,69 +1876,67 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
     full(() => all(() => supabase!.from('contracts').select('id,deal_id,seller_id,kind,name,status,sent_at,viewed_at,completed_at,created_at,provider')
       .eq('workspace_id', w).order('created_at', { ascending: false }).order('id', { ascending: false }),
       Number.POSITIVE_INFINITY, [{ col: 'created_at', asc: false }, { col: 'id', asc: false }])),
-    // Pins (migration 43) are their own reads, so a database without the
-    // columns yet loses the Pinned section and nothing else.
-    // Newest PINS_CAP of each, on a partial index (migration 227): unbounded and
-    // unindexed, these read every message and every activity row in the workspace.
-    supabase.from('communications').select('id,pinned_at,pinned_by').eq('workspace_id', w).not('pinned_at', 'is', null)
-      .order('pinned_at', { ascending: false }).limit(PINS_CAP),
-    supabase.from('activity').select('id,pinned_at,pinned_by').eq('workspace_id', w).not('pinned_at', 'is', null)
-      .order('pinned_at', { ascending: false }).limit(PINS_CAP),
-    // Our own addresses: an email from one of these was sent by us, whatever
-    // the stored direction says (see ourAddresses below).
-    supabase.from('workspace_roster').select('email').eq('workspace_id', w),
-    supabase.from('google_accounts').select('email').eq('workspace_id', w),
     // Latest touch per seller, so a lead last reached before the newest 500
-    // messages does not read "No contact yet".
-    shell ? Promise.resolve(new Map<number, LastComm>()) : loadLastTouch(w),
-    // Underwriters (migration 122) are their own read, so a database without
-    // the column yet loses the Underwriter line and nothing else.
-    full(() => all(() => supabase!.from('sellers').select('id,underwriter_id')
-      .eq('workspace_id', w).is('archived_at', null).not('underwriter_id', 'is', null).order('id'), Number.POSITIVE_INFINITY, BY_ID)),
-    // Who each buyer is assigned to (migration 128): its own read, so a
-    // database without the column yet loses the Owner line and nothing else.
-    full(() => all(() => supabase!.from('buyers').select('id,assigned_to')
-      .eq('workspace_id', w).isDistinct('source', BULK_BUYER_SOURCE).not('assigned_to', 'is', null).order('id'), Number.POSITIVE_INFINITY, BY_ID)),
-    // A submission's own underwriter (migration 130), read alone for the same reason.
-    full(() => all(() => supabase!.from('deals').select('id,underwriter_id')
-      .eq('workspace_id', w).not('underwriter_id' as never, 'is', null).order('id'), Number.POSITIVE_INFINITY, BY_ID)),
-    // Archived buyers (migration 131), read alone for the same reason: they
-    // leave every list. A database without the column archives nobody.
-    // Only the shell's buyers can be hidden by it, so the corpus is left out
-    // here too (it was paged through for nothing).
-    full(() => all(() => supabase!.from('buyers').select('id')
-      .eq('workspace_id', w).isDistinct('source', BULK_BUYER_SOURCE).not('archived_at' as never, 'is', null).order('id'), Number.POSITIVE_INFINITY, BY_ID)),
-    // Podio's Submissions items (migration 132's ledger), so the Submissions
-    // counts are Podio's own. A database without the table counts deals instead.
-    full(() => all(() => supabase!.from('podio_items' as never).select('item_id,deal_id,podio_stage,created_on,note')
-      .eq('workspace_id' as never, w as never).eq('app_key' as never, 'submissions' as never).order('item_id' as never),
-      Number.POSITIVE_INFINITY, [{ col: 'item_id', asc: true }])),
-    // The submission stage moves a person made (migration 125's stage_events,
-    // changed_by set): CLOZR never writes them back to Podio, so these say
-    // which Podio items CLOZR has moved on since.
-    full(() => all(() => supabase!.from('stage_events' as never).select('id,entity_id,to_stage,changed_at')
-      .eq('workspace_id' as never, w as never).eq('entity_type' as never, 'deal' as never).eq('field' as never, 'lead_stage' as never)
-      .not('changed_by' as never, 'is', null).order('changed_at' as never).order('id' as never),
-      Number.POSITIVE_INFINITY, [{ col: 'changed_at', asc: true }, { col: 'id', asc: true }])),
+    // messages does not read "No contact yet". Only when the seller rows did
+    // not bring it (migration 282).
+    shell ? Promise.resolve(new Map<number, LastComm>())
+      : sellersP.then((r) => (rowsCarryLastTouch(r) ? new Map<number, LastComm>() : loadLastTouch(w))),
     // Vendors attached as the seller (role seller + vendor_id). A miss leaves
     // those names off the submission; it does not fail the rest of the load.
     full(() => all(() => supabase!.from('deal_parties').select('id,deal_id,vendor_id,role,name,company,email,phone')
       .eq('workspace_id', w).eq('role', 'seller').not('vendor_id', 'is', null).order('id'), Number.POSITIVE_INFINITY, BY_ID)),
-    // Low / high offers a person set (migration 184), read alone for the same
-    // reason: a database without the columns treats every band as COMPR's.
-    full(() => all(() => supabase!.from('deals').select('id,offer_low_set_at,offer_high_set_at' as never)
-      .eq('workspace_id', w).or('offer_low_set_at.not.is.null,offer_high_set_at.not.is.null').order('id'), Number.POSITIVE_INFINITY, BY_ID)),
     // Response rate and its counts from buyer-score (migration 106), read from
     // each buyer's whole history. The comms above are only the newest 500, so
     // the list cannot work a reply rate out from them.
     full(() => all(() => supabase!.from('buyer_scores').select('buyer_id,response_rate,stats')
       .eq('workspace_id', w).order('buyer_id'), Number.POSITIVE_INFINITY, [{ col: 'buyer_id', asc: true }])),
+    sharedP,
   ]);
+  const { commsQ, notifsQ, activityQ, plansQ, membersQ, pinCommsQ, pinActsQ, rosterQ, mailboxesQ } = shared;
 
   const ok = ![sellersQ, commsQ, dealsQ, tasksQ, buyersQ, vendorsQ, notifsQ, activityQ, plansQ, enrollQ, membersQ, offersQ, apptsQ]
     .some((q) => q.error);
 
-  const sellers = (sellersQ.data ?? []) as unknown as SellerRow[];
+  // The side columns ride on a table function's rows. Without the function
+  // (or on the shell) each is its own read, so a database without a column
+  // yet loses that one line and nothing else.
+  const viaRpc = (name: string) => !shell && rpcFilled.has(name) && rowCaches.get(name)?.ws === w;
+  const sellersViaRpc = viaRpc('sellers');
+  const buyersViaRpc = viaRpc('buyers');
+  const dealsViaRpc = viaRpc('deals');
+  const none = <T,>() => Promise.resolve(ok200<T>([]));
+  const [underwriterQ, buyerOwnerQ, dealUnderwriterQ, buyerArchivedQ, bandSetQ, podioSubsQ, dealMovesQ] = await Promise.all([
+    // Underwriters (migration 122).
+    sellersViaRpc ? none<Page>() : full(() => all(() => supabase!.from('sellers').select('id,underwriter_id')
+      .eq('workspace_id', w).is('archived_at', null).not('underwriter_id', 'is', null).order('id'), Number.POSITIVE_INFINITY, BY_ID)),
+    // Who each buyer is assigned to (migration 128).
+    buyersViaRpc ? none<Page>() : full(() => all(() => supabase!.from('buyers').select('id,assigned_to')
+      .eq('workspace_id', w).isDistinct('source', BULK_BUYER_SOURCE).not('assigned_to', 'is', null).order('id'), Number.POSITIVE_INFINITY, BY_ID)),
+    // A submission's own underwriter (migration 130).
+    dealsViaRpc ? none<Page>() : full(() => all(() => supabase!.from('deals').select('id,underwriter_id')
+      .eq('workspace_id', w).not('underwriter_id' as never, 'is', null).order('id'), Number.POSITIVE_INFINITY, BY_ID)),
+    // Archived buyers (migration 131): they leave every list. Only the
+    // shell's buyers can be hidden by it, so the corpus is left out here too.
+    buyersViaRpc ? none<Page>() : full(() => all(() => supabase!.from('buyers').select('id')
+      .eq('workspace_id', w).isDistinct('source', BULK_BUYER_SOURCE).not('archived_at' as never, 'is', null).order('id'), Number.POSITIVE_INFINITY, BY_ID)),
+    // Low / high offers a person set (migration 184): without the columns every band is COMPR's.
+    dealsViaRpc ? none<Page>() : full(() => all(() => supabase!.from('deals').select('id,offer_low_set_at,offer_high_set_at' as never)
+      .eq('workspace_id', w).or('offer_low_set_at.not.is.null,offer_high_set_at.not.is.null').order('id'), Number.POSITIVE_INFINITY, BY_ID)),
+    // Podio's Submissions items (migration 132's ledger), so the Submissions
+    // counts are Podio's own. A database without the table counts deals instead.
+    extra.deals ? ok200<Page>(extra.deals.podio) : full(() => all(() => supabase!.from('podio_items' as never).select('item_id,deal_id,podio_stage,created_on,note')
+      .eq('workspace_id' as never, w as never).eq('app_key' as never, 'submissions' as never).order('item_id' as never),
+      Number.POSITIVE_INFINITY, [{ col: 'item_id', asc: true }])),
+    // The submission stage moves a person made (migration 125's stage_events,
+    // changed_by set): CLOZR never writes them back to Podio, so these say
+    // which Podio items CLOZR has moved on since.
+    extra.deals ? ok200<Page>(extra.deals.moves) : full(() => all(() => supabase!.from('stage_events' as never).select('id,entity_id,to_stage,changed_at')
+      .eq('workspace_id' as never, w as never).eq('entity_type' as never, 'deal' as never).eq('field' as never, 'lead_stage' as never)
+      .not('changed_by' as never, 'is', null).order('changed_at' as never).order('id' as never),
+      Number.POSITIVE_INFINITY, [{ col: 'changed_at', asc: true }, { col: 'id', asc: true }])),
+  ]);
+
+  const sellers = (sellersQ.data ?? []) as unknown as (SellerRow & { underwriter_id?: string | null })[];
   const comms = (commsQ.data ?? []) as unknown as CommRow[];
   const deals = (dealsQ.data ?? []) as unknown as DealRow[];
   // Oldest first, so each deal ends on its latest move by a person.
@@ -1589,8 +1944,11 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
     .map((r) => [Number(r.entity_id), r.to_stage] as const));
   const leadStageById = new Map(deals.map((d) => [d.id, d.lead_stage] as const));
   const taskRows = (tasksQ.data ?? []) as unknown as TaskRow[];
-  const archivedBuyers = new Set(((buyerArchivedQ.data ?? []) as unknown as { id: number }[]).map((r) => r.id));
-  const buyers = ((buyersQ.data ?? []) as unknown as BuyerRow[]).filter((b) => !archivedBuyers.has(b.id));
+  const buyerRows = (buyersQ.data ?? []) as unknown as (BuyerRow & { assigned_to?: string | null; archived_at?: string | null })[];
+  const archivedBuyers = new Set(buyersViaRpc
+    ? buyerRows.filter((b) => b.archived_at).map((b) => b.id)
+    : ((buyerArchivedQ.data ?? []) as unknown as { id: number }[]).map((r) => r.id));
+  const buyers = buyerRows.filter((b) => !archivedBuyers.has(b.id));
   const vendors = (vendorsQ.data ?? []) as unknown as VendorRow[];
   const notifs = (notifsQ.data ?? []) as unknown as NotificationRow[];
   const acts = (activityQ.data ?? []) as unknown as ActivityRow[];
@@ -1620,13 +1978,14 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
       name,
       initials: initialsOf(name),
       role: m.profiles?.title || (m.role === 'tc' ? 'Transaction coordinator' : m.role === 'owner' ? 'Owner' : 'Member'),
-      dept: m.role === 'tc' ? 'TC' : m.role === 'dispositions' ? 'Dispo' : m.role === 'partnerships' ? 'Partnerships' : 'Acquisitions',
+      dept: m.role === 'tc' ? 'TC' : m.role === 'dispositions' ? 'Dispo' : m.role === 'partnerships' ? 'Partnerships' : m.role === 'sdr' ? 'SDR' : 'Acquisitions',
       memberRole: m.role,
       ...(m.profiles?.avatar_url ? { avatar: m.profiles.avatar_url } : {}),
+      ...(m.profiles?.email ? { email: m.profiles.email } : {}),
     };
   }
   const repName = (id: string | null) => (id && team[id] ? team[id].name : 'CLOZR');
-  const lines = await lineLabels(w);
+  const [lines, agents] = await Promise.all([linesP, agentsP]);
   const sentBy = sentByFor(lines, repName);
   // Whose conversation a message is: the rep on it, else the owner of the line it came in or went out on.
   const commOwner = (c: CommRow): string | null => {
@@ -1644,18 +2003,24 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
 
   const sellerName = new Map<number, string>(sellers.map((s) => [s.id, s.name]));
 
-  // Latest contact per seller: the one-shot read, else the timeline's newest
-  // 500, whichever is later. comms arrive newest-first.
+  // Latest contact per seller: the columns on the row (migration 282), else
+  // the one-shot read, then the timeline's newest 500, whichever is later.
+  // comms arrive newest-first.
   const lastBySeller = new Map<number, LastComm>(lastTouch);
+  for (const s of sellers) {
+    if (s.last_touch_at) lastBySeller.set(s.id, { channel: s.last_touch_channel || 'note', occurred_at: s.last_touch_at });
+  }
   for (const c of comms) {
     if (c.seller_id == null) continue;
     const cur = lastBySeller.get(c.seller_id);
     if (!cur || Date.parse(c.occurred_at) > Date.parse(cur.occurred_at)) lastBySeller.set(c.seller_id, c);
   }
-  const underwriterBySeller = new Map(((underwriterQ.data ?? []) as unknown as { id: number; underwriter_id: string }[])
-    .map((r) => [r.id, r.underwriter_id]));
-  const buyerOwner = new Map(((buyerOwnerQ.data ?? []) as unknown as { id: number; assigned_to: string }[])
-    .map((r) => [r.id, r.assigned_to]));
+  const underwriterBySeller = new Map<number, string>(sellersViaRpc
+    ? sellers.filter((s) => s.underwriter_id).map((s) => [s.id, s.underwriter_id!] as const)
+    : ((underwriterQ.data ?? []) as unknown as { id: number; underwriter_id: string }[]).map((r) => [r.id, r.underwriter_id] as const));
+  const buyerOwner = new Map<number, string>(buyersViaRpc
+    ? buyerRows.filter((b) => b.assigned_to).map((b) => [b.id, b.assigned_to!] as const)
+    : ((buyerOwnerQ.data ?? []) as unknown as { id: number; assigned_to: string }[]).map((r) => [r.id, r.assigned_to] as const));
   // Tasks arrive soonest-due first, so the first open task per seller is the next one.
   const nextTaskBySeller = new Map<number, TaskRow>();
   for (const t of taskRows) {
@@ -1672,17 +2037,23 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
   // means those submissions open their deal sheet, as before.
   const loaded = new Set(sellers.map((s) => s.id));
   const missingSellers = [...new Set(deals.filter((d) => !d.archived_at && d.seller_id != null && !loaded.has(d.seller_id)).map((d) => d.seller_id!))];
+  // LEAD_CHUNK ids a request, side by side, so no URL carries hundreds of ids.
   const archivedQ = missingSellers.length && !shell
-    ? await supabase!.from('sellers').select(SELLER_COLS).eq('workspace_id', w).in('id', missingSellers)
+    ? joinPages(await Promise.all(chunkIds(missingSellers).map((ids) => withSlot(() => supabase!.from('sellers').select(SELLER_COLS).eq('workspace_id', w).in('id', ids)))))
     : null;
   const archivedPeople = ((archivedQ && !archivedQ.error ? archivedQ.data ?? [] : []) as unknown as SellerRow[]).map((s) => ({
     ...mapPerson(s, lastBySeller.get(s.id) ?? null, nextTaskBySeller.get(s.id), dealBySeller.get(s.id)),
     underwriter: underwriterBySeller.get(s.id) ?? null,
   }));
-  const underwriterByDeal = new Map(((dealUnderwriterQ.data ?? []) as unknown as { id: number; underwriter_id: string }[])
-    .map((r) => [r.id, r.underwriter_id]));
-  const bandSetByDeal = new Map(((bandSetQ.error ? [] : bandSetQ.data ?? []) as unknown as { id: number; offer_low_set_at: string | null; offer_high_set_at: string | null }[])
-    .map((r) => [r.id, { lowSet: !!r.offer_low_set_at, highSet: !!r.offer_high_set_at }]));
+  type DealSide = { id: number; underwriter_id?: string | null; offer_low_set_at?: string | null; offer_high_set_at?: string | null };
+  const dealSides = deals as unknown as DealSide[];
+  const underwriterByDeal = new Map<number, string>(dealsViaRpc
+    ? dealSides.filter((d) => d.underwriter_id).map((d) => [d.id, d.underwriter_id!] as const)
+    : ((dealUnderwriterQ.data ?? []) as unknown as { id: number; underwriter_id: string }[]).map((r) => [r.id, r.underwriter_id] as const));
+  const bandSetByDeal = new Map((dealsViaRpc
+    ? dealSides.filter((d) => d.offer_low_set_at || d.offer_high_set_at)
+    : (bandSetQ.error ? [] : bandSetQ.data ?? []) as unknown as DealSide[])
+    .map((r) => [r.id, { lowSet: !!r.offer_low_set_at, highSet: !!r.offer_high_set_at }] as const));
   const sellersOnDeal = vendorSellersByDeal(
     (sellerPartiesQ.error ? [] : sellerPartiesQ.data ?? []) as SellerPartyRow[],
     vendors,
@@ -1788,10 +2159,10 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
       // One feed: what was done to the record (activity) and what was said on
       // it (communications), newest first.
       timeline: [
-        ...acts.map((a) => ({ at: a.occurred_at, e: pinned(mapActivity(a, repName)) })),
+        ...acts.map((a) => ({ at: a.occurred_at, e: pinned(mapActivity(a, repName, agents)) })),
         // An email Gmail matched to a seller and a buyer lands on both records.
         ...comms.flatMap((c) => {
-          const base = pinned(commTimeline(c, sellerName, ours, sentBy));
+          const base = pinned(commTimeline(c, sellerName, ours, sentBy, agents));
           const notes = callNotes.notesByCall.get(c.id);
           const e = notes ? { ...base, callNote: notes.join('\n\n') } : callNotes.placed.has(c.id) ? { ...base, underCall: true } : base;
           const rows = e.entity ? [{ at: c.occurred_at, e }] : [];
@@ -1810,18 +2181,7 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
         // buyer, where the reply thread is; one with only a deal opens that
         // deal's dispo property, which is keyed by the deal's seller.
         const dispoSeller = n.category === 'Dispo' && n.deal_id ? deals.find((d) => d.id === n.deal_id)?.seller_id ?? null : null;
-        return {
-          id: 'n' + n.id,
-          cat: n.category,
-          // Lane's check-in is long; the bell shows its title and Lane's panel the note.
-          text: n.category === 'Lane' ? n.title : n.body ? `${n.title} — ${n.body}` : n.title,
-          ...(n.category === 'Lane' && n.body ? { body: n.body } : {}),
-          time: relative(n.created_at),
-          unread: !n.read_at,
-          direct: !!n.user_id,
-          // The exact spot: the record's tab, the deal, the thread (lib/notif-target).
-          link: notifLink(n, dispoSeller),
-        };
+        return mapNotificationRow(n, dispoSeller);
       }).concat(bellFromComms(communications.map((c, i) => ({
         owner: commOwner(comms[i]),
         id: c.id,
@@ -2077,45 +2437,245 @@ export async function loadSellerSlice(workspaceId: number, sellerId: number): Pr
 }
 
 /**
+ * A seller's last touch for a re-read: the later of the row's (migration 282)
+ * and their newest message. The full load takes the later of the row and the
+ * workspace's newest 500 messages; the seller's own newest message is never
+ * older than any of those, so a re-read never shows an older touch.
+ */
+export function lastTouchOf(row: { last_touch_at?: string | null; last_touch_channel?: string | null }, newest: LastComm | null | undefined): LastComm | null {
+  const own = row.last_touch_at ? { channel: row.last_touch_channel || 'note', occurred_at: row.last_touch_at } : null;
+  if (!newest?.occurred_at) return own;
+  return !own || Date.parse(newest.occurred_at) > Date.parse(own.occurred_at) ? newest : own;
+}
+
+/**
+ * Several sellers in three reads per 200 ids (the seller rows, their deals,
+ * their open tasks), for a realtime burst or a bulk write (lib/use-crm.ts
+ * refreshSellers). Null when a read failed. The person is the one the full
+ * load maps: last touch (lastTouchOf), the underwriter, the next task the
+ * full load would pick. A save on one record still uses loadSellerSlice.
+ */
+export async function loadSellerSlices(workspaceId: number, ids: number[]): Promise<SellerSlice[] | null> {
+  if (!supabase) return null;
+  const unique = [...new Set(ids.filter((n) => Number.isFinite(n)))];
+  if (!unique.length) return [];
+  const w = workspaceId;
+  const out: SellerSlice[] = [];
+  for (let i = 0; i < unique.length; i += 200) {
+    const chunk = unique.slice(i, i + 200);
+    const [sellerQ, dealsQ, tasksQ] = await Promise.all([
+      // Each row with its newest message (communications_seller_idx), for lastTouchOf.
+      supabase.from('sellers').select(SELLER_COLS + ',archived_at,last_touch_at,last_touch_channel,underwriter_id,communications!communications_seller_id_fkey(channel,occurred_at)')
+        .eq('workspace_id', w).in('id', chunk)
+        .order('occurred_at', { referencedTable: 'communications', ascending: false })
+        .limit(1, { referencedTable: 'communications' }),
+      // A partner contact can own more deals than one page holds.
+      all(() => supabase!.from('deals').select(DEAL_COLS).eq('workspace_id', w).in('seller_id', chunk).order('id'), Number.POSITIVE_INFINITY, BY_ID),
+      // Soonest due first, as the full load reads them, so the first per seller is the next one.
+      withTaskAutoColumn((auto) => all(() => {
+        const q = supabase!.from('tasks').select(TASK_COLS).eq('workspace_id', w).in('seller_id', chunk).eq('done', false);
+        return (auto ? q.eq('automated', false) : q).order('due_at', { ascending: true, nullsFirst: false }).order('id');
+      }, Number.POSITIVE_INFINITY, [{ col: 'due_at', asc: true, nullable: true }, { col: 'id', asc: true }])),
+    ]);
+    if (sellerQ.error || dealsQ.error || tasksQ.error) return null;
+    const deals = (dealsQ.data ?? []) as unknown as DealRow[];
+    const bySeller = new Map<number, DealRow[]>();
+    for (const d of deals) {
+      if (d.seller_id == null) continue;
+      const list = bySeller.get(d.seller_id) ?? [];
+      list.push(d);
+      bySeller.set(d.seller_id, list);
+    }
+    const nextTask = new Map<number, TaskRow>();
+    for (const t of (tasksQ.data ?? []) as unknown as TaskRow[]) {
+      if (t.seller_id != null && !nextTask.has(t.seller_id)) nextTask.set(t.seller_id, t);
+    }
+    for (const row of (sellerQ.data ?? []) as unknown as (SellerRow & { archived_at?: string | null; underwriter_id?: string | null; communications?: LastComm[] | null })[]) {
+      const theirs = bySeller.get(row.id) ?? [];
+      let best: DealRow | undefined;
+      for (const d of theirs) if (!best || dealRank(d) > dealRank(best)) best = d;
+      const last = lastTouchOf(row, row.communications?.[0]);
+      out.push({
+        sellerId: row.id,
+        person: row.archived_at ? null : { ...mapPerson(row, last, nextTask.get(row.id), best), underwriter: row.underwriter_id ?? null },
+        deals: theirs.map((d) => {
+          const m = mapDeal(d, Math.floor((minutesAgo(d.updated_at) ?? 0) / (60 * 24)), dealProperty(d.properties));
+          return m.heroUrl ? { ...m, photoUrl: m.heroUrl } : m;
+        }),
+      });
+    }
+  }
+  return out;
+}
+
+/**
  * The loaded workspace with one seller's slice in place: their person row
  * replaced (or added at the top, for a lead that just arrived), each of their
  * deals replaced field by field. What the slice does not read (photos, the
  * listing, amendments, the underwriter and vendor sellers on a deal) stays as
  * the last full load left it. A deal the slice no longer returns is left
  * alone: a move to another seller is rare and the next full load settles it.
+ * A seller archived with a deal still open moves to archivedPeople, as the
+ * full load keeps them for that deal's record.
  */
-export function mergeSlice<T extends { people: Person[]; deals: Deal[] }>(data: T, slice: SellerSlice): T {
+export function mergeSlice<T extends { people: Person[]; deals: Deal[]; archivedPeople?: Person[] }>(data: T, slice: SellerSlice): T {
   const pid = sid(slice.sellerId);
   let people = data.people;
   const at = people.findIndex((p) => p.id === pid);
+  const wasArchived = !!data.archivedPeople?.some((p) => p.id === pid);
+  const keepArchived = !slice.person && slice.deals.some((d) => !d.archived);
+  let archivedPeople = data.archivedPeople;
+  if (wasArchived && !keepArchived) archivedPeople = archivedPeople!.filter((p) => p.id !== pid);
+  else if (!wasArchived && keepArchived && at >= 0) archivedPeople = [...(archivedPeople ?? []), people[at]];
   if (!slice.person) {
     if (at >= 0) people = people.filter((p) => p.id !== pid);
   } else if (at >= 0) {
-    people = people.slice();
-    people[at] = { ...people[at], ...slice.person };
+    const next = { ...people[at], ...slice.person };
+    if (!sameJson(next, people[at])) { people = people.slice(); people[at] = next; }
   } else {
     people = [slice.person, ...people];
   }
   const fresh = new Map(slice.deals.map((d) => [d.id, d]));
   const seen = new Set<string>();
+  let dealsChanged = false;
   let deals = data.deals.map((d) => {
     const f = fresh.get(d.id);
     if (!f) return d;
     seen.add(d.id);
-    return {
+    const next = {
       ...d, ...f,
       // The gallery and the source links were sorted by enrichWorkspace; the slice's are raw.
       ...(d.photos && !f.photos ? { photos: d.photos } : {}),
       ...(d.sourcePhotos ? { sourcePhotos: d.sourcePhotos } : {}),
       ...(d.photoUrl && !f.heroUrl ? { photoUrl: d.photoUrl } : {}),
     };
+    if (sameJson(next, d)) return d;
+    dealsChanged = true;
+    return next;
   });
   const added = slice.deals.filter((d) => !seen.has(d.id));
-  if (added.length) deals = [...deals, ...added];
-  return { ...data, people, deals };
+  if (added.length) { deals = [...deals, ...added]; dealsChanged = true; }
+  // A re-read that found nothing new hands back the same object, so nothing
+  // downstream rebuilds.
+  if (people === data.people && !dealsChanged && archivedPeople === data.archivedPeople) return data;
+  return { ...data, people, deals: dealsChanged ? deals : data.deals, ...(archivedPeople !== data.archivedPeople ? { archivedPeople } : {}) };
+}
+const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * One buyer as the workspace load would map them, after a save on that
+ * record: the row, their matches, offers, deals and response score in five
+ * small reads (lib/use-crm.ts refreshBuyer). The call, text and email counts
+ * come from the newest 500 messages, which this does not read: mergeBuyerSlice
+ * keeps the last full load's. Null when the read failed; the caller falls
+ * back to a full reload. A buyer who is gone or archived comes back with
+ * `buyer` null and leaves the list.
+ */
+export type BuyerSlice = { buyerId: number; buyer: (Buyer & { assigned: string | null }) | null };
+export async function loadBuyerSlice(workspaceId: number, buyerId: number): Promise<BuyerSlice | null> {
+  return (await loadBuyerSlices(workspaceId, [buyerId]))?.[0] ?? null;
+}
+
+/** Several buyers the same way, five reads per 200 ids, for a bulk write (lib/use-crm.ts refreshBuyers). One slice per id asked. */
+export async function loadBuyerSlices(workspaceId: number, ids: number[]): Promise<BuyerSlice[] | null> {
+  if (!supabase) return null;
+  const unique = [...new Set(ids.filter((n) => Number.isFinite(n)))];
+  const w = workspaceId;
+  const out: BuyerSlice[] = [];
+  for (let i = 0; i < unique.length; i += 200) {
+    const chunk = unique.slice(i, i + 200);
+    const [rowQ, matchQ, offerQ, dealQ, scoreQ] = await Promise.all([
+      supabase.from('buyers').select(BUYER_COLS + ',assigned_to,archived_at').eq('workspace_id', w).in('id', chunk),
+      all(() => supabase!.from('deal_buyer_matches').select('id,deal_id,buyer_id,score,reasons,status,sent_at,viewed_at,replied_at,updated_at').eq('workspace_id', w).in('buyer_id', chunk).order('id'), Number.POSITIVE_INFINITY, BY_ID),
+      all(() => supabase!.from('offers').select('id,deal_id,buyer_id,amount,status,sent_at,terms').eq('workspace_id', w).in('buyer_id', chunk).order('id'), Number.POSITIVE_INFINITY, BY_ID),
+      all(() => supabase!.from('deals').select('id,buyer_id,stage,closed_on,close_date').eq('workspace_id', w).in('buyer_id', chunk).order('id'), Number.POSITIVE_INFINITY, BY_ID),
+      supabase.from('buyer_scores').select('buyer_id,response_rate,stats').eq('workspace_id', w).in('buyer_id', chunk),
+    ]);
+    if (rowQ.error) return null;
+    const rows = new Map(((rowQ.data ?? []) as unknown as (BuyerRow & { assigned_to?: string | null; archived_at?: string | null })[]).map((r) => [r.id, r] as const));
+    const matches = byBuyer((matchQ.error ? [] : matchQ.data ?? []) as unknown as MatchRow[], (m) => m.buyer_id);
+    const offers = byBuyer((offerQ.error ? [] : offerQ.data ?? []) as unknown as OfferRowDb[], (o) => o.buyer_id);
+    const deals = byBuyer((dealQ.error ? [] : dealQ.data ?? []) as unknown as DealRow[], (d) => d.buyer_id);
+    const scores = new Map(((scoreQ.error ? [] : scoreQ.data ?? []) as unknown as ResponseScore[]).map((r) => [Number(r.buyer_id), r] as const));
+    for (const buyerId of chunk) {
+      const row = rows.get(buyerId);
+      out.push(!row || row.archived_at ? { buyerId, buyer: null } : {
+        buyerId,
+        buyer: {
+          ...mapBuyer(row, matches.get(buyerId) ?? [], offers.get(buyerId) ?? [], [], deals.get(buyerId) ?? [], scores.get(buyerId) ?? null),
+          assigned: row.assigned_to ?? null,
+        },
+      });
+    }
+  }
+  return out;
+}
+
+/** The loaded workspace with one buyer's slice in place: replaced field by field, added where their name sorts, or gone. The same object when nothing changed. */
+export function mergeBuyerSlice<T extends { buyers: Buyer[] }>(data: T, slice: BuyerSlice): T {
+  const id = bid(slice.buyerId);
+  const at = data.buyers.findIndex((b) => b.id === id);
+  if (!slice.buyer) return at < 0 ? data : { ...data, buyers: data.buyers.filter((b) => b.id !== id) };
+  const buyers = data.buyers.slice();
+  if (at >= 0) {
+    const old = buyers[at];
+    buyers[at] = { ...old, ...slice.buyer, activity: { ...slice.buyer.activity, calls: old.activity.calls, texts: old.activity.texts, emails: old.activity.emails } };
+    if (sameJson(buyers[at], old)) return data;
+  } else {
+    const after = buyers.findIndex((b) => (b.name || '').localeCompare(slice.buyer!.name || '') > 0);
+    buyers.splice(after < 0 ? buyers.length : after, 0, slice.buyer);
+  }
+  return { ...data, buyers };
+}
+
+/** Several buyer slices, for buyers already on the list only: a realtor from the corpus page is not in the workspace load. The same object when nothing changed. */
+export function mergeBuyerSlices<T extends { buyers: Buyer[] }>(data: T, slices: BuyerSlice[]): T {
+  const listed = new Set(data.buyers.map((b) => b.id));
+  return slices.reduce((acc, s) => (listed.has(bid(s.buyerId)) ? mergeBuyerSlice(acc, s) : acc), data);
+}
+
+/**
+ * One task row after it was made or changed (lib/use-crm.ts refreshTask).
+ * Null when the task is gone; undefined when the read failed, which the
+ * caller answers with a full reload.
+ */
+export async function loadTaskRow(workspaceId: number, taskId: number): Promise<TaskRow | null | undefined> {
+  if (!supabase) return undefined;
+  const q = await supabase.from('tasks').select(TASK_COLS).eq('workspace_id', workspaceId).eq('id', taskId).maybeSingle();
+  if (q.error) return undefined;
+  return (q.data ?? null) as unknown as TaskRow | null;
+}
+
+/**
+ * The loaded workspace with one task in place: replaced, added where its due
+ * time falls (soonest first, undated last), or gone; the calendar is rebuilt
+ * around it from the rows the load kept. The seller's own next task stays as
+ * it was: a save on a record re-reads that with refreshSeller.
+ */
+export function mergeTaskRow<T extends Pick<LiveData, 'deals' | 'tasks' | 'calendar' | 'reporting'>>(data: T, taskId: number, row: TaskRow | null): T {
+  const id = kid(taskId);
+  let tasks = data.tasks.filter((t) => t.id !== id);
+  const raw = data.reporting.raw;
+  let rawTasks = raw ? ((raw.tasks ?? []) as TaskRow[]).filter((t) => t.id !== taskId) : null;
+  if (row) {
+    const sellerByDeal = new Map(data.deals.map((d) => [Number(d.id.slice(1)), /^s\d+$/.test(d.personId) ? Number(d.personId.slice(1)) : null] as const));
+    const mapped = mapTask(row, (dealId) => sellerByDeal.get(dealId));
+    const key = (due: string | null | undefined) => due ?? '\uffff';
+    const at = tasks.findIndex((t) => key(t.dueAt) > key(mapped.dueAt));
+    tasks = at < 0 ? [...tasks, mapped] : [...tasks.slice(0, at), mapped, ...tasks.slice(at)];
+    if (rawTasks) rawTasks = [...rawTasks, row];
+  }
+  if (!raw || !rawTasks) return { ...data, tasks };
+  return { ...data, tasks, calendar: buildCalendar((raw.appointments ?? []) as AppointmentRow[], rawTasks), reporting: { ...data.reporting, raw: { ...raw, tasks: rawTasks } } };
 }
 
 async function loadReportComms(workspaceId: number) {
+  // Migration 276: the whole read as one jsonb value, the workspace checked
+  // once. Paging it ran the row policy's can_read_email() on every email row
+  // for anyone who is not owner/admin/tc — half a second a page, ten pages,
+  // on every open and after every save.
+  const rpc = await supabase!.rpc('report_comms', { p_ws: workspaceId, p_limit: REPORT_COMMS_CAP });
+  if (!rpc.error && Array.isArray(rpc.data)) return { data: rpc.data as unknown[], error: null };
   const cols = 'id,seller_id,buyer_id,rep_id,from_phone,to_phone,channel,direction,occurred_at,duration_s,status';
   const q = await all(() => supabase!.from('communications').select(cols)
     .eq('workspace_id', workspaceId).order('occurred_at', { ascending: false }).order('id', { ascending: false }), REPORT_COMMS_CAP, BY_OCCURRED);
@@ -2223,35 +2783,61 @@ export function withGallery(d: Deal, rows: DealPhotoRow[]): Deal {
  * Photos, price amendments, offer gaps, and the reporting history.
  * Called after the shell is on screen. A failed read leaves that slice as the
  * shell already drew it.
+ *
+ * The five reporting reads (offer gaps, the long communications history, and
+ * the deal and offer columns Reporting needs) run only when `opts.reporting`
+ * is set. Home keeps the 500-row communications read from the shell. Until
+ * Reporting or the leaderboard has loaded them, `partial` stays `loading`.
  */
-export async function enrichWorkspace(workspaceId: number, data: LiveData, reuse?: LiveData | null): Promise<LiveData> {
+/**
+ * The slices of an enriched load worth keeping between reloads: the offer
+ * gaps and the reporting history. lib/use-crm.ts used to keep the whole
+ * LiveData for this, which pinned a second copy of every seller, buyer and
+ * deal (the previous load's) in memory until the next heavy read, ten
+ * minutes later. A workspace the size of Acme Homes is ~30 MB of rows a copy.
+ */
+export type ReuseSlices = Pick<LiveData, 'offerGaps' | 'offerGapPeople' | 'reporting'>;
+
+/** What of an enriched load the next one may reuse (ReuseSlices). */
+export function reuseSlicesOf(d: LiveData): ReuseSlices {
+  return { offerGaps: d.offerGaps, offerGapPeople: d.offerGapPeople, reporting: d.reporting };
+}
+
+export async function enrichWorkspace(
+  workspaceId: number, data: LiveData, reuse?: ReuseSlices | null, opts?: { reporting?: boolean },
+): Promise<LiveData> {
   if (!supabase) return data;
   const w = workspaceId;
   // Offer gaps and the reporting history are the heavy reads and change
   // slowly; `reuse` (the last enriched load) stands in for them between
   // refreshes. Photos, links and price changes follow every write.
   const skip = Promise.resolve({ data: null, error: { message: 'reused' } });
-  const heavy = !reuse;
+  const heavy = !!opts?.reporting && !reuse;
+  // Source photo links (Podio Photos, a Drive folder, a listing). Separate from
+  // the image read so a folder is not crowded out of the 5,000-photo page.
+  const pageLinks = () => all(() => supabase!.from('deal_files')
+    .select('deal_id,url,category,name')
+    .eq('workspace_id', w).eq('kind', 'link').not('url', 'is', null)
+    .or('category.eq.photos,name.ilike.photos')
+    .order('id'), Number.POSITIVE_INFINITY, BY_ID);
+  // Both offer-gap views in one call (migration 280); a database without it pages each.
+  const pageGaps = () => all(() => supabase!.from('offer_gaps')
+    .select('deal_id,seller_id,vendor_id,company,contact,address,lead_stage,asking_price,offer_amount,uw_high,gap_to_offer,gap_to_high,closest_gap,updated_at')
+    .eq('workspace_id', w).order('closest_gap').order('deal_id'));
+  const pageGapPeople = () => all(() => supabase!.from('offer_gap_people')
+    .select('party_kind,party_id,company,contact,email,phone,offers,close_calls,closest_gap,closest_gap_to_offer,closest_gap_to_high,declined,won,last_offer_at')
+    .eq('workspace_id', w).order('close_calls', { ascending: false }).order('party_id'));
+  const gapsOne = heavy ? tableRpc<{ gaps: unknown[]; people: unknown[] }>('crm_offer_gaps', { p_ws: w }) : Promise.resolve(null);
   const [photoQ, photoLinkQ, linksQ, amendQ, gapsQ, gapPeopleQ, reportDealsQ, reportCommsQ, reportOffersQ] = await Promise.all([
     loadCoverPhotos(w),
-    // Source photo links (Podio Photos, a Drive folder, a listing). Separate from
-    // the image read so a folder is not crowded out of the 5,000-photo page.
-    all(() => supabase!.from('deal_files')
-      .select('deal_id,url,category,name')
-      .eq('workspace_id', w).eq('kind', 'link').not('url', 'is', null)
-      .or('category.eq.photos,name.ilike.photos')
-      .order('id'), Number.POSITIVE_INFINITY, BY_ID),
+    tableRpc<unknown[]>('crm_photo_links', { p_ws: w }).then((rows) => (rows ? ok200<Awaited<ReturnType<typeof pageLinks>>>(rows) : pageLinks())),
     supabase.from('deal_public_links').select('deal_id, slug').eq('workspace_id', w).eq('active', true),
     all(() => supabase!.from('deal_price_changes')
       .select('deal_id,field,old_value,new_value,delta,changed_by,changed_at')
       .eq('workspace_id', w).order('changed_at', { ascending: false }).order('id', { ascending: false }), 2000,
       [{ col: 'changed_at', asc: false }, { col: 'id', asc: false }]),
-    heavy ? all(() => supabase!.from('offer_gaps')
-      .select('deal_id,seller_id,vendor_id,company,contact,address,lead_stage,asking_price,offer_amount,uw_high,gap_to_offer,gap_to_high,closest_gap,updated_at')
-      .eq('workspace_id', w).order('closest_gap').order('deal_id')) : skip,
-    heavy ? all(() => supabase!.from('offer_gap_people')
-      .select('party_kind,party_id,company,contact,email,phone,offers,close_calls,closest_gap,closest_gap_to_offer,closest_gap_to_high,declined,won,last_offer_at')
-      .eq('workspace_id', w).order('close_calls', { ascending: false }).order('party_id')) : skip,
+    heavy ? gapsOne.then((r) => (r ? ok200<Awaited<ReturnType<typeof pageGaps>>>(r.gaps) : pageGaps())) : skip,
+    heavy ? gapsOne.then((r) => (r ? ok200<Awaited<ReturnType<typeof pageGapPeople>>>(r.people) : pageGapPeople())) : skip,
     heavy ? all(() => supabase!.from('deals')
       .select('id,seller_id,buyer_id,stage,created_at,stage_entered_at,contract_date,close_date,closed_on,marketing_started_on,owner_id,dispo_rep_id,offer_amount,arv,mao,assignment_fee,dispo_fee,sold_price,wholesale_fee,total_cogs,team_commissions_paid,deal_net_profit,final_profit,lead_source,market,marketed_price,coordinator')
       .eq('workspace_id', w).order('id'), Number.POSITIVE_INFINITY, BY_ID) : skip,
@@ -2269,9 +2855,11 @@ export async function enrichWorkspace(workspaceId: number, data: LiveData, reuse
   }
   const raw = data.reporting.raw;
   const failed = (q: { error: { message: string } | null }) => !!q.error && q.error.message !== 'reused';
-  const partial: ReportRaw['partial'] = heavy
-    ? (failed(reportDealsQ) || failed(reportCommsQ) || failed(reportOffersQ) ? 'failed' : undefined)
-    : reuse?.reporting.raw?.partial;
+  // A reload that did not ask for reporting must not clear `loading`, or Home
+  // would show zero offers. A reused load keeps the partial it already had.
+  let partial: ReportRaw['partial'] = raw?.partial;
+  if (heavy) partial = failed(reportDealsQ) || failed(reportCommsQ) || failed(reportOffersQ) ? 'failed' : undefined;
+  else if (reuse?.reporting.raw) partial = reuse.reporting.raw.partial;
   return {
     ...data,
     deals: attachSourcePhotos(

@@ -9,6 +9,7 @@ import { BULK_BUYER_SOURCE } from './prospect-lists';
 import { BLACKLIST_MESSAGE, loadBlocked, type BlacklistDb } from './blacklist';
 import { supabase } from './supabase';
 import { talkr, TalkrError, toE164 } from './talkr';
+import { carrierCheck, carrierReport } from './carrier-safe';
 import type {
   BuyerAutomationRuleRow, DispoCampaignRow, DispoMessageRow, DispoRecipientRow, Json,
 } from './database.types';
@@ -403,11 +404,14 @@ export async function sendDueTexts(workspaceId: number, campaign: DispoCampaignR
     if (m.buyer_id != null && gate.blocked.buyers.has(m.buyer_id)) { await sb.from('dispo_campaign_messages').update({ status: 'skipped', last_error: BLACKLIST_MESSAGE }).eq('id', m.id); continue; }
     const to = toE164(r.phone);
     if (!to) { await sb.from('dispo_campaign_messages').update({ status: 'failed', last_error: 'no textable number' }).eq('id', m.id); continue; }
+    // The carrier check (lib/carrier-safe): reworded, or skipped with the reason when a carrier would block it.
+    const carrier = carrierCheck(m.body);
+    if (carrier.blocked) { await sb.from('dispo_campaign_messages').update({ status: 'skipped', last_error: `carrier would block it: ${carrierReport(carrier)}` }).eq('id', m.id); continue; }
     try {
-      const res = await talkr.sendMessage({ to_number: to, body: m.body, ...(m.media_urls?.length ? { media_urls: m.media_urls } : {}), ...(campaign.from_phone_number_id ? { from_phone_number_id: campaign.from_phone_number_id } : {}) });
+      const res = await talkr.sendMessage({ to_number: to, body: carrier.text, ...(m.media_urls?.length ? { media_urls: m.media_urls } : {}), ...(campaign.from_phone_number_id ? { from_phone_number_id: campaign.from_phone_number_id } : {}) });
       const { data: comm } = await sb.from('communications').upsert({
         workspace_id: workspaceId, buyer_id: m.buyer_id, channel: 'sms', direction: 'outbound', occurred_at: new Date().toISOString(),
-        to_phone: to, body: m.body, status: res.message.status || 'queued', source: 'talkr', source_id: 'msg:' + res.message.id,
+        to_phone: to, body: carrier.text, status: res.message.status || 'queued', source: 'talkr', source_id: 'msg:' + res.message.id,
       }, { onConflict: 'workspace_id,source,source_id' }).select('id').maybeSingle();
       await sb.rpc('dispo_message_sent', { p_message_id: m.id, p_provider_id: res.message.id, p_communication_id: comm?.id ?? null, p_status: 'sent', p_conversation_id: res.conversation_id });
       sent++;

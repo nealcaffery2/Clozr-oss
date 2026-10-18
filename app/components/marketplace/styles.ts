@@ -7,7 +7,7 @@ export const MARKET_CSS = `
   --lg:0 2.8px 2.2px rgba(0,0,0,.034),0 6.7px 5.3px rgba(0,0,0,.048),0 12.5px 10px rgba(0,0,0,.06),0 22.3px 17.9px rgba(0,0,0,.072),0 41.8px 33.4px rgba(0,0,0,.086),0 100px 80px rgba(0,0,0,.12);
   --ease:cubic-bezier(.23,1,.32,1);
   position:fixed;inset:0;display:flex;flex-direction:column;background:#fafafa;color:var(--ink);
-  font:500 13px/1.45 -apple-system,BlinkMacSystemFont,'SF Pro Text',var(--font-inter),'Segoe UI',sans-serif;
+  font:500 13px/1.45 var(--font-inter),'Inter',-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif;
   -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 :where(.hp) a{color:inherit}
 :where(.hp) :where(button,input,select,textarea){font:inherit;color:inherit}
@@ -224,13 +224,13 @@ export const MARKET_CSS = `
 .mk-pin-wrap{background:transparent !important;border:0 !important}
 .mk-pin{position:absolute;left:0;top:0;transform:translate(-50%,calc(-100% - 7px));white-space:nowrap}
 .mk-pin>span{position:relative;display:block;height:26px;padding:0 9px;border-radius:8px;background:var(--navy);color:#fff;
-  font:650 12px/26px -apple-system,BlinkMacSystemFont,'SF Pro Text',var(--font-inter),'Segoe UI',sans-serif;font-variant-numeric:tabular-nums;
+  font:650 12px/26px var(--font-inter),'Inter',-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif;font-variant-numeric:tabular-nums;
   box-shadow:0 0 0 1.5px #fff,0 2px 8px -1px rgba(0,0,0,.3);transform-origin:50% 100%;transition:transform 140ms var(--ease)}
 .mk-pin>span::after{content:'';position:absolute;left:50%;bottom:-5px;width:9px;height:9px;margin-left:-4.5px;background:inherit;transform:rotate(45deg);border-radius:0 0 2px 0;box-shadow:1.5px 1.5px 0 0 #fff}
 .mk-pin.is-pending>span{background:#52525b}
 .mk-pin.is-on>span{background:var(--brand);transform:scale(1.08)}
 .mk-cluster{position:absolute;left:0;top:0;transform:translate(-50%,-50%);display:grid;place-items:center;border-radius:50%;background:var(--brand);color:#fff;
-  font:700 12.5px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text',var(--font-inter),'Segoe UI',sans-serif;font-variant-numeric:tabular-nums;
+  font:700 12.5px/1 var(--font-inter),'Inter',-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif;font-variant-numeric:tabular-nums;
   box-shadow:0 0 0 4px rgba(194,65,12,.25),0 0 0 1.5px #fff inset,0 2px 8px rgba(0,0,0,.25);cursor:pointer;transition:transform 140ms var(--ease)}
 .leaflet-marker-icon:has(.mk-pin.is-on){z-index:1000 !important}
 

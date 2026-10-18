@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isBrowserLegError, RELOAD_AND_TRY } from './browser-leg';
+import { everyWhileVisible } from './visible-timer';
 import { createEngine, engineKindOf, type EngineAudio, type EngineCall, type SoftphoneEngine } from './softphone-engine';
 import {
   callWhileLockedElsewhere, createSoftphoneLock, mayAutoAcquirePhone, PHONE_OTHER_TAB, USE_PHONE_HERE, type SoftphoneLock,
@@ -27,7 +28,7 @@ import { readyDropUrl } from './busy-drop';
 import { TalkrError, talkr, type CallDto, type ParticipantDto } from './talkr';
 import { probeTracksToStop } from './mic-release';
 import {
-  getAudioPrefs, isBenignHangupError, isTouchPhone, micConstraints, playEvent, primeRemoteCallAudio,
+  getAudioPrefs, isBellCategoryMuted, isBenignHangupError, isTouchPhone, micConstraints, playEvent, primeRemoteCallAudio,
   remoteHasLiveAudio, setCarrierHeard, startOutgoingRing, startRing, stopRing, subscribeAudioPrefs, yieldLocalRingToCarrier,
 } from './phone-audio';
 import { applyCallRoute, getCallRoute, releaseCallAudioSession, resetCallRoute } from './call-route';
@@ -48,6 +49,8 @@ export type Softphone = {
   call: CallDto | null;
   /** When the far end picked up; drives the clock. */
   startedAt: number | null;
+  /** When the leg ended, so the wrap-up shows the call's length; null while it runs. */
+  endedAt: number | null;
   muted: boolean;
   onHold: boolean;
   participants: ParticipantDto[];
@@ -178,6 +181,7 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
   const [phase, setPhase] = useState<CallPhase>('idle');
   const [call, setCall] = useState<CallDto | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [endedAt, setEndedAt] = useState<number | null>(null);
   const [muted, setMuted] = useState(false);
   const [participants, setParticipants] = useState<ParticipantDto[]>([]);
   const [incoming, setIncoming] = useState<IncomingInfo | null>(null);
@@ -259,6 +263,7 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
       setCarrierHeard(true);
       stopRing();
       setStartedAt(Date.now());
+      setEndedAt(null);
       setPhase('in_call');
       engineRef.current?.primePlayback?.();
       playEvent('connected');
@@ -285,6 +290,7 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
       setTimeout(() => void release(), 0);
       setTimeout(() => void release(), 300);
       callRef.current = null;
+      setEndedAt(Date.now());
       playEvent('ended');
       if (vmDropGo.current) {
         vmDropGo.current = false;
@@ -426,13 +432,13 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
               if (action === 'drop' && dropUrl) {
                 void playDropOnLeg(leg, dropUrl).catch(() => {
                   setCalledBack(leg.from ?? 'Unknown');
-                  playEvent('missed');
+                  if (!isBellCategoryMuted('Call')) playEvent('missed');
                   try { leg.disconnect(); } catch { leg.reject(); }
                 });
                 return;
               }
               setCalledBack(leg.from ?? 'Unknown');
-              playEvent('missed');
+              if (!isBellCategoryMuted('Call')) playEvent('missed');
               leg.reject();
               return;
             }
@@ -447,7 +453,7 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
             };
             // The caller hung up (or routing moved on) before anyone here answered.
             leg.on('cancel', () => {
-              if (incomingRef.current === leg) playEvent('missed');
+              if (incomingRef.current === leg && !isBellCategoryMuted('Call')) playEvent('missed');
               clear();
             });
             leg.on('disconnect', clear);
@@ -653,6 +659,7 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
         if (cancelledRef.current && !existing) throw cancelled();
         setPhase('connecting');
         setStartedAt(null);
+        setEndedAt(null);
         let record: CallDto;
         try {
           record = await obtain();
@@ -814,15 +821,15 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
 
   useEffect(() => {
     if (deviceError !== PHONE_OTHER_TAB) return;
-    const timer = setInterval(() => {
-      // A background tab must not pick the phone up the moment the row goes stale.
-      if (!mayAutoAcquirePhone(typeof document === 'undefined' ? null : document)) return;
+    // A background tab must not pick the phone up. Visible and focused tabs
+    // retry every 30s; showing the tab tries immediately (the wake effect above).
+    return everyWhileVisible(() => {
+      if (!mayAutoAcquirePhone(document)) return;
       if (lockRef.current?.tryHold() !== 'ok') return;
       setErr(null);
       setDeviceAction(null);
       setDeviceState('off');
-    }, 2000);
-    return () => clearInterval(timer);
+    }, 30_000);
   }, [deviceError, setErr]);
 
   const placeCall = useCallback<Softphone['placeCall']>(
@@ -862,6 +869,7 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
     };
     attach(leg, placeholder);
     setStartedAt(Date.now());
+    setEndedAt(null);
     setPhase('in_call');
     leg.accept();
     if (info.talkrCallId) {
@@ -928,6 +936,7 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
     setRingOut(null);
     setCall(null);
     setStartedAt(null);
+    setEndedAt(null);
     setParticipants([]);
     setMuted(false);
     setPhase('idle');
@@ -956,6 +965,7 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
       phase,
       call,
       startedAt,
+      endedAt,
       muted,
       onHold,
       participants,
@@ -985,7 +995,7 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
       dropVoicemail,
     }),
     [
-      enabled, deviceState, deviceError, deviceAction, carrier, phase, call, startedAt, muted, onHold, participants, incoming, calledBack, clearCalledBack, controlError, ringOut,
+      enabled, deviceState, deviceError, deviceAction, carrier, phase, call, startedAt, endedAt, muted, onHold, participants, incoming, calledBack, clearCalledBack, controlError, ringOut,
       initDevice, phoneInOtherTab, releaseDevice, placeCall, connectToCall, acceptIncoming, rejectIncoming, hangup, toggleMute, sendDigits, toggleHold, addParticipant,
       transfer, completeTransfer, getStreams, finishWrapup, getAudio, dropVoicemail,
     ],

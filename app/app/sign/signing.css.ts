@@ -70,7 +70,7 @@ export const SIGNING_CSS = `
 
 /* ------------------------------------------------------------------ card */
 .cz-card {
-  background: #fff; border: 1px solid var(--cz-line); border-radius: 14px;
+  background: var(--surface, #fff); border: 1px solid var(--cz-line); border-radius: 14px;
   padding: 18px 20px; box-shadow: var(--cz-shadow);
 }
 .cz-card + .cz-card { margin-top: 14px; }
@@ -78,7 +78,7 @@ export const SIGNING_CSS = `
 .cz-lede { margin: 6px 0 0; font-size: 16px; line-height: 1.55; color: var(--cz-ink-2); max-width: 68ch; }
 .cz-note {
   margin: 14px 0 0; padding: 12px 14px; border-radius: 10px;
-  background: #fafafa; border: 1px solid var(--cz-line);
+  background: var(--canvas, #fafafa); border: 1px solid var(--cz-line);
   font-size: 14px; color: #2c2c33; white-space: pre-wrap;
 }
 .cz-note-from { display: block; font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--cz-mute); margin-bottom: 4px; }
@@ -92,23 +92,23 @@ export const SIGNING_CSS = `
   background: #ececed; color: #71717a;
 }
 .cz-dot.is-done { background: var(--cz-go); color: #fff; }
-.cz-dot.is-me { background: #fff; color: var(--cz-go-dark); box-shadow: inset 0 0 0 2px var(--cz-go); }
+.cz-dot.is-me { background: var(--surface, #fff); color: var(--cz-go-dark); box-shadow: inset 0 0 0 2px var(--cz-go); }
 .cz-party-who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cz-party-role { color: var(--cz-mute); font-size: 12.5px; }
 
 /* ------------------------------------------------------------- document */
 .cz-paper {
-  margin-top: 14px; background: #fff; border: 1px solid var(--cz-line);
+  margin-top: 14px; background: var(--surface, #fff); border: 1px solid var(--cz-line);
   border-radius: 14px; box-shadow: var(--cz-shadow); overflow: hidden;
 }
 .cz-paper-top {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 18px; border-bottom: 1px solid var(--cz-line);
-  font-size: 12px; color: var(--cz-mute); background: #fcfcfd;
+  font-size: 12px; color: var(--cz-mute); background: var(--surface-1, #fcfcfd);
 }
 .doc {
   font: 15px/1.7 Georgia, 'Times New Roman', serif;
-  color: #1a1a1f; background: #fff; padding: 44px 52px;
+  color: #1a1a1f; background: var(--surface, #fff); padding: 44px 52px;
 }
 .doc h1 {
   font: 680 19px/1.3 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -131,7 +131,7 @@ export const SIGNING_CSS = `
 /* signature blocks inside the document */
 .doc .sig {
   border: 1px solid var(--cz-line); border-radius: 12px;
-  padding: 14px 16px; margin: 18px 0; background: #fcfcfd;
+  padding: 14px 16px; margin: 18px 0; background: var(--surface-1, #fcfcfd);
   scroll-margin-top: 88px;
 }
 .doc .sig.mine { border-color: var(--cz-go); background: var(--cz-go-soft); }
@@ -199,8 +199,8 @@ export const SIGNING_CSS = `
 .cz-btn:disabled { cursor: not-allowed; opacity: .55; }
 .cz-btn-primary { background: var(--cz-go); color: #fff; border-color: var(--cz-go); }
 .cz-btn-primary:hover:not(:disabled) { background: var(--cz-go-dark); }
-.cz-btn-ghost { background: #fff; color: var(--cz-ink); border-color: var(--cz-line); }
-.cz-btn-ghost:hover { background: #fafafa; }
+.cz-btn-ghost { background: var(--surface, #fff); color: var(--cz-ink); border-color: var(--cz-line); }
+.cz-btn-ghost:hover { background: var(--canvas, #fafafa); }
 .cz-btn-sm { height: 38px; padding: 0 14px; font-size: 13.5px; border-radius: 9px; }
 .cz-linkbtn {
   appearance: none; background: none; border: 0; cursor: pointer; padding: 0;
@@ -210,7 +210,7 @@ export const SIGNING_CSS = `
 
 /* ----------------------------------------------------------- adopt sheet */
 .cz-sheet {
-  width: 100%; max-width: 560px; background: #fff;
+  width: 100%; max-width: 560px; background: var(--surface, #fff);
   border-radius: 18px 18px 0 0; padding: 10px 0 0;
   max-height: 92dvh; overflow-y: auto;
   box-shadow: 0 -8px 40px rgba(16,16,20,.28);
@@ -221,7 +221,7 @@ export const SIGNING_CSS = `
 .cz-sheet-foot {
   position: sticky; bottom: 0; margin-top: 18px;
   display: flex; gap: 10px; padding: 14px 22px calc(18px + env(safe-area-inset-bottom));
-  background: linear-gradient(to bottom, rgba(255,255,255,0), #fff 22%);
+  background: linear-gradient(to bottom, rgba(255,255,255,0), var(--surface, #fff) 22%);
 }
 
 .cz-label {
@@ -230,7 +230,7 @@ export const SIGNING_CSS = `
 }
 .cz-input {
   width: 100%; height: 46px; padding: 0 14px; font-size: 16px; color: var(--cz-ink);
-  border: 1px solid #d6d6dc; border-radius: 10px; background: #fff; outline: 0;
+  border: 1px solid #d6d6dc; border-radius: 10px; background: var(--surface, #fff); outline: 0;
 }
 .cz-input:focus { border-color: var(--cz-go); box-shadow: 0 0 0 3px rgba(10, 133, 96,.14); }
 
@@ -239,12 +239,12 @@ export const SIGNING_CSS = `
   flex: 1; appearance: none; border: 0; cursor: pointer; height: 34px; border-radius: 8px;
   font-size: 13.5px; font-weight: 650; color: var(--cz-mute); background: transparent;
 }
-.cz-seg-btn.is-on { background: #fff; color: var(--cz-ink); box-shadow: 0 1px 2px rgba(16,16,20,.12); }
+.cz-seg-btn.is-on { background: var(--surface, #fff); color: var(--cz-ink); box-shadow: 0 1px 2px rgba(16,16,20,.12); }
 
 .cz-hands { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
 .cz-hand {
   position: relative; appearance: none; cursor: pointer; text-align: center;
-  border: 1px solid #d6d6dc; border-radius: 12px; background: #fff;
+  border: 1px solid #d6d6dc; border-radius: 12px; background: var(--surface, #fff);
   padding: 14px 10px; min-height: 78px; display: grid; place-items: center; overflow: hidden;
 }
 .cz-hand.is-on { border-color: var(--cz-go); box-shadow: 0 0 0 3px rgba(10, 133, 96,.13); background: #fbfffd; }

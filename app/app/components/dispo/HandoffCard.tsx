@@ -76,9 +76,9 @@ const VIA_SHEET = new Set(['transaction_type', 'contract_status', 'close_date'])
 
 const TONE: Record<CheckState, { color: string; tint: string; word: string }> = {
   ok: { color: GREEN, tint: '#e7f6f0', word: 'Done' },
-  due: { color: '#b45309', tint: '#fef3c7', word: 'Due' },
-  late: { color: RED, tint: '#fee2e2', word: 'Late' },
-  missing: { color: '#b45309', tint: '#fef3c7', word: 'Missing' },
+  due: { color: 'var(--tx-amber, #b45309)', tint: 'var(--caution-soft, #fef3c7)', word: 'Due' },
+  late: { color: RED, tint: 'var(--negative-soft, #fee2e2)', word: 'Late' },
+  missing: { color: 'var(--tx-amber, #b45309)', tint: 'var(--caution-soft, #fef3c7)', word: 'Missing' },
 };
 
 /** Sample handoff for /demo: a vacant house with a lockbox, comps a week old. */
@@ -155,7 +155,7 @@ export function HandoffCard({ dealId, address, seller, canWrite, readOnlyReason,
   ] : [];
 
   return (
-    <section data-gx data-testid="dispo-handoff" aria-labelledby="handoff-title" style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'hidden' }}>
+    <section data-gx data-testid="dispo-handoff" aria-labelledby="handoff-title" style={{ background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'hidden' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: '12px 16px', borderBottom: `1px solid ${HAIR}` }}>
         <h2 id="handoff-title" style={{ margin: 0, fontSize: '13.5px', fontWeight: 650, color: INK }}>Acquisitions handoff</h2>
         <span style={{ fontSize: '11.5px', color: MUTED, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${address} · ${seller}`}>
@@ -164,10 +164,10 @@ export function HandoffCard({ dealId, address, seller, canWrite, readOnlyReason,
         <span style={{ flex: 1 }} />
         {timing.dom == null
           ? <Badge title="Days on market start when the deal reaches Ready To Market">Not on market yet</Badge>
-          : <Badge color={timing.mlsDue ? RED : INK} tint={timing.mlsDue ? '#fee2e2' : '#f4f4f5'} title={`Marketing started ${str('marketing_started_on')}`}>
+          : <Badge color={timing.mlsDue ? RED : INK} tint={timing.mlsDue ? 'var(--negative-soft, #fee2e2)' : 'var(--surface-2, #f4f4f5)'} title={`Marketing started ${str('marketing_started_on')}`}>
               <span style={{ fontVariantNumeric: 'tabular-nums' }}>{timing.dom} day{timing.dom === 1 ? '' : 's'} on market</span>
             </Badge>}
-        {timing.mlsDue ? <Badge color={RED} tint="#fee2e2" title={`Unsold after ${MLS_AFTER_DAYS} days: list it on the MLS`}>MLS now</Badge> : null}
+        {timing.mlsDue ? <Badge color={RED} tint="var(--negative-soft, #fee2e2)" title={`Unsold after ${MLS_AFTER_DAYS} days: list it on the MLS`}>MLS now</Badge> : null}
       </header>
 
       {state === 'loading' ? <div role="status" style={{ padding: '14px 16px', fontSize: '12.5px', color: MUTED }}>Loading the handoff…</div> : null}

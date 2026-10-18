@@ -16,7 +16,7 @@ import {
   sha256Hex, signUrl, storePdf, toPdf, varsFor,
 } from './docs.ts';
 import {
-  type ContractField, type FieldDef, type PageBox, bindToSigners, missingRequired, normalizeField, planFlatten, signingDay, validateValue,
+  type ContractField, type FieldDef, type PageBox, bindToSigners, effectiveReadOnly, missingRequired, normalizeField, planFlatten, signingDay, validateValue,
 } from './pdf-fields.ts';
 import { allSigned, appendTcCc, pending, sendTo, turn, type OrderMode, type ReminderPolicy } from './signing-order.ts';
 
@@ -243,7 +243,7 @@ export async function signerFields(admin: SupabaseClient, row: Record<string, An
     if (!mine && !(f.value ?? '').trim()) return [];
     return [{
       id: f.id, type: f.type, page: f.page, x: f.x, y: f.y, w: f.w, h: f.h,
-      required: mine ? f.required : false, read_only: mine ? f.read_only : true,
+      required: mine ? f.required : false, read_only: mine ? effectiveReadOnly(f as ContractField) : true,
       label: f.label, options: mine ? f.options : null, validation: mine ? f.validation : null,
       value: f.value, filled_at: f.filled_at, mine,
       // PandaDoc parity: the signing page evaluates groups, conditions and formulas with these.
@@ -274,7 +274,7 @@ export async function saveSignerValues(
   for (const v of values) {
     const f = byId.get(Number(v.id));
     if (!f || f.signer_id !== signer.id) return { ok: false, error: 'That field is not yours to fill.', field_id: Number(v.id) };
-    if (f.read_only || f.type === 'date_signed') return { ok: false, error: `${f.label || 'That field'} is filled in for you.`, field_id: f.id };
+    if (effectiveReadOnly(f) || f.type === 'date_signed') return { ok: false, error: `${f.label || 'That field'} is filled in for you.`, field_id: f.id };
     const r = validateValue(f, v.value);
     if (!r.ok) return { ok: false, error: r.error, field_id: f.id };
     if ((f.value ?? null) !== r.value) changes.push({ f, value: r.value });

@@ -57,7 +57,7 @@ function PropertyPhotoFrame({ photo, street, alt, empty, fit, eager }: {
     else if (eager) fail();
   }, [src]);
   const box = (label: string) => (
-    <span style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', fontSize: '12px', color: '#71717a', textAlign: 'center', padding: '0 8px', background: '#e4e4e7' }}>
+    <span style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', fontSize: '12px', color: 'var(--meta, #71717a)', textAlign: 'center', padding: '0 8px', background: 'var(--divider, #e4e4e7)' }}>
       {label}
     </span>
   );

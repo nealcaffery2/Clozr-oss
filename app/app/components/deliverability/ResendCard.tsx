@@ -98,7 +98,7 @@ export function ResendCard({ workspaceId, admin, overview, onChange }: { workspa
         title="Buyer blasts (Resend)"
         why="Sends deal blasts to your buyer list from a separate domain, so a blast can never hurt your main address or a rep's Gmail. Add this workspace's Resend key and a sender on a sending subdomain to turn it on."
         how={how}
-        action={admin ? <SenderSetup workspaceId={workspaceId} data={data} onSaved={applied} /> : <p style={{ margin: 0, fontSize: '12.5px', color: '#71717a' }}>An owner or admin sets the Resend key and blast sender.</p>}
+        action={admin ? <SenderSetup workspaceId={workspaceId} data={data} onSaved={applied} /> : <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>An owner or admin sets the Resend key and blast sender.</p>}
       />
     );
   }
@@ -111,16 +111,16 @@ export function ResendCard({ workspaceId, admin, overview, onChange }: { workspa
       how={how}
       actions={(
         <>
-          {fields.name ? <span style={{ fontSize: '12.5px', color: '#3f3f46', minWidth: 0, overflowWrap: 'anywhere' }}>{fields.name}</span> : null}
+          {fields.name ? <span style={{ fontSize: '12.5px', color: 'var(--ink-3, #3f3f46)', minWidth: 0, overflowWrap: 'anywhere' }}>{fields.name}</span> : null}
           {status === 'verified' ? <Badge tone="good">Domain verified</Badge> : <Badge tone="warn">{status ? `Domain ${status}` : 'Waiting on DNS'}</Badge>}
-          {fields.region ? <span title="Resend region" style={{ fontSize: '12.5px', color: '#71717a' }}>{fields.region}</span> : null}
+          {fields.region ? <span title="Resend region" style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>{fields.region}</span> : null}
           <button type="button" style={ghost} disabled={busy} onClick={() => void load()}>{busy ? 'Loading…' : 'Refresh'}</button>
           {admin && <button type="button" style={ghost} disabled={busy} onClick={() => void verify()}>{status === 'verified' ? 'Re-check' : 'Verify domain'}</button>}
         </>
       )}
     >
       {pool.length > 0 && (
-        <div style={{ borderTop: '1px solid #f0f0f1' }}>
+        <div style={{ borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
           {[...groups.values()].map((list) => {
             const head = list[0];
             const sent = list.reduce((n, s) => n + s.sent_today, 0);
@@ -130,23 +130,23 @@ export function ResendCard({ workspaceId, admin, overview, onChange }: { workspa
             const groupKey = textValue(head.user_id) || textValue(head.reply_to) || textValue(head.from_email) || label;
             // One line per rep; the rep's individual addresses fold away.
             return (
-              <details key={groupKey} style={{ padding: '6px 0', borderBottom: '1px solid #f0f0f1', fontSize: '12.5px' }}>
+              <details key={groupKey} style={{ padding: '6px 0', borderBottom: '1px solid var(--divider-2, #f0f0f1)', fontSize: '12.5px' }}>
                 <summary style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', minHeight: '28px', borderRadius: '6px' }}>
-                  <span style={{ color: '#71717a', display: 'inline-flex' }}><Icon name="chevron" size={14} /></span>
+                  <span style={{ color: 'var(--meta, #71717a)', display: 'inline-flex' }}><Icon name="chevron" size={14} /></span>
                   <strong style={{ fontWeight: 600 }}>{label}</strong>
-                  <span style={{ color: '#52525b', fontVariantNumeric: 'tabular-nums' }}>{list.length} {list.length === 1 ? 'address' : 'addresses'} · {sent} of {allowance} sent today</span>
+                  <span style={{ color: 'var(--muted, #52525b)', fontVariantNumeric: 'tabular-nums' }}>{list.length} {list.length === 1 ? 'address' : 'addresses'} · {sent} of {allowance} sent today</span>
                   {paused ? <Badge tone="bad">{paused} paused</Badge> : null}
-                  {textValue(head.reply_to) ? <span style={{ color: '#71717a', overflowWrap: 'anywhere' }}>replies go to {textValue(head.reply_to)}</span> : null}
+                  {textValue(head.reply_to) ? <span style={{ color: 'var(--meta, #71717a)', overflowWrap: 'anywhere' }}>replies go to {textValue(head.reply_to)}</span> : null}
                 </summary>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px', margin: '6px 0 2px 22px' }}>
                   {list.map((s) => (
                     <span key={s.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '2px 0' }}>
                       <span style={{ ...mono, wordBreak: 'normal' }}>{textValue(s.from_email).split('@')[0]}</span>
-                      <span style={{ color: '#71717a', fontVariantNumeric: 'tabular-nums' }}>{s.sent_today}/{s.allowance}</span>
+                      <span style={{ color: 'var(--meta, #71717a)', fontVariantNumeric: 'tabular-nums' }}>{s.sent_today}/{s.allowance}</span>
                       {s.settings.paused ? <Badge tone="bad">paused</Badge> : null}
                       {admin && (s.settings.paused
                         ? <button type="button" style={{ ...ghost, height: '26px' }} disabled={busy} onClick={() => void pause(true, s.id)}>Resume</button>
-                        : <button type="button" style={{ ...ghost, height: '26px', color: '#b91c1c' }} disabled={busy} onClick={() => void pause(false, s.id)}>Pause</button>)}
+                        : <button type="button" style={{ ...ghost, height: '26px', color: 'var(--tx-red, #b91c1c)' }} disabled={busy} onClick={() => void pause(false, s.id)}>Pause</button>)}
                     </span>
                   ))}
                 </div>
@@ -155,7 +155,7 @@ export function ResendCard({ workspaceId, admin, overview, onChange }: { workspa
           })}
         </div>
       )}
-      {!data?.webhook_secret_set ? <p style={{ margin: '10px 0 0', fontSize: '12px', color: '#92400e' }}>Bounces and spam complaints are not coming back from Resend yet, so bad addresses stay on the list. Open Setup details below and add the webhook.</p> : null}
+      {!data?.webhook_secret_set ? <p style={{ margin: '10px 0 0', fontSize: '12px', color: 'var(--tx-amber-deep, #92400e)' }}>Bounces and spam complaints are not coming back from Resend yet, so bad addresses stay on the list. Open Setup details below and add the webhook.</p> : null}
       {records.length > 0 && (
         <div style={{ ...row, marginTop: '10px' }}>
           <div style={{ fontSize: '12.5px', fontWeight: 600, marginBottom: '6px' }}>Add these at the DNS host for {fields.name}</div>
@@ -164,19 +164,19 @@ export function ResendCard({ workspaceId, admin, overview, onChange }: { workspa
               <span style={{ fontWeight: 700 }}>{textValue(rec.type)}</span>
               <span style={{ minWidth: 0 }}>
                 <span style={{ display: 'block', ...mono }}>{textValue(rec.name)}</span>
-                <span style={{ display: 'block', color: '#52525b', ...mono, fontSize: '11px', marginTop: '2px' }}>{textValue(rec.value)}</span>
+                <span style={{ display: 'block', color: 'var(--muted, #52525b)', ...mono, fontSize: '11px', marginTop: '2px' }}>{textValue(rec.value)}</span>
               </span>
               <Copy text={textValue(rec.value)} />
             </div>
           ))}
         </div>
       )}
-      {textValue(data?.error) ? <p role="alert" style={{ margin: '10px 0 0', fontSize: '12.5px', color: '#b91c1c' }}>Resend: {textValue(data?.error)}</p> : null}
+      {textValue(data?.error) ? <p role="alert" style={{ margin: '10px 0 0', fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)' }}>Resend: {textValue(data?.error)}</p> : null}
       <details style={{ marginTop: '12px' }}>
-        <summary style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', minHeight: '24px', fontSize: '12px', fontWeight: 600, color: '#0A8560' }}><Icon name="chevron" size={13} />Setup details: Resend account, more capacity and the bounce webhook</summary>
+        <summary style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', minHeight: '24px', fontSize: '12px', fontWeight: 600, color: 'var(--tx-mint, #0a8560)' }}><Icon name="chevron" size={13} />Setup details: Resend account, more capacity and the bounce webhook</summary>
         <div style={row}>
           <div style={{ fontSize: '12.5px', fontWeight: 600, marginBottom: '6px' }}>Resend account and sender</div>
-          <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#52525b', lineHeight: 1.5 }}>
+          <p style={{ margin: '0 0 8px', fontSize: '12px', color: 'var(--muted, #52525b)', lineHeight: 1.5 }}>
             {data?.own_key ? 'This workspace sends with its own Resend key.' : data?.key_source === 'project' ? 'This workspace sends with the project Resend key (RESEND_API_KEY). Add its own key to keep its mail on its own account.' : 'No Resend key yet.'}
             {' '}{data?.own_from ? `Blasts go out as ${textValue(data.own_from)}.` : data?.from ? `Blasts go out as ${textValue(data.from)}, the project sender.` : ''}
           </p>
@@ -185,14 +185,14 @@ export function ResendCard({ workspaceId, admin, overview, onChange }: { workspa
         <MoreCapacity workspaceId={workspaceId} admin={admin} reps={groups.size} onChange={() => { onChange(); void load(); }} />
         <div style={row}>
           <div style={{ fontSize: '12.5px', fontWeight: 600, marginBottom: '6px' }}>Resend webhook</div>
-          <p style={{ margin: '0 0 6px', fontSize: '12px', color: '#52525b', lineHeight: 1.5 }}>
+          <p style={{ margin: '0 0 6px', fontSize: '12px', color: 'var(--muted, #52525b)', lineHeight: 1.5 }}>
             In {data?.own_key ? "this workspace's" : 'the'} Resend account, under Webhooks, subscribe to email.bounced, email.failed and email.complained. Paste this URL, then save the signing secret{data?.own_key ? ' below' : <> on the project as <code>RESEND_WEBHOOK_SECRET</code> (or below, for this workspace only)</>}.
           </p>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ flex: '1 1 200px', minWidth: 0, padding: '8px 10px', border: '1px solid #e4e4e7', borderRadius: '8px', background: '#fafafa', ...mono }}>{hook || 'Supabase is not configured'}</span>
+            <span style={{ flex: '1 1 200px', minWidth: 0, padding: '8px 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', background: 'var(--canvas, #fafafa)', ...mono }}>{hook || 'Supabase is not configured'}</span>
             {hook ? <Copy text={hook} /> : null}
           </div>
-          <p style={{ margin: '6px 0 0', fontSize: '12px', color: data?.webhook_secret_set ? '#08694C' : '#92400e' }}>
+          <p style={{ margin: '6px 0 0', fontSize: '12px', color: data?.webhook_secret_set ? 'var(--tx-mint-deep, #08694c)' : '#92400e' }}>
             {data?.webhook_secret_set ? (data?.own_webhook_secret ? "This workspace's signing secret is saved." : 'Signing secret is set on the project.') : 'No signing secret yet, so bounces will not suppress until one is saved.'}
           </p>
           {admin ? <WebhookSecret workspaceId={workspaceId} saved={!!data?.own_webhook_secret} onSaved={(next) => applied(next)} /> : null}
@@ -260,12 +260,12 @@ function MoreCapacity({ workspaceId, admin, reps, onChange }: { workspaceId: num
   };
   const per = Math.max(1, Math.min(25, Math.floor(Number(perRep) || 10)));
   const domainCount = 1 + (domains?.length ?? 0);
-  const field: React.CSSProperties = { height: '30px', padding: '0 9px', border: '1px solid #e4e4e7', borderRadius: '8px', fontSize: '12.5px' };
+  const field: React.CSSProperties = { height: '30px', padding: '0 9px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', fontSize: '12.5px' };
 
   return (
     <div style={row}>
       <div style={{ fontSize: '12.5px', fontWeight: 600, marginBottom: '6px' }}>More sending capacity</div>
-      <p style={{ margin: '0 0 6px', fontSize: '12px', color: '#52525b', lineHeight: 1.5 }}>
+      <p style={{ margin: '0 0 6px', fontSize: '12px', color: 'var(--muted, #52525b)', lineHeight: 1.5 }}>
         Once warm, each rep can send about {(per * domainCount * 100).toLocaleString('en-US')} a day ({per} addresses × {domainCount} domain{domainCount === 1 ? '' : 's'} × 100){reps ? `; ${(per * domainCount * 100 * reps).toLocaleString('en-US')} across ${reps} rep${reps === 1 ? '' : 's'}` : ''}. For more, add another sending subdomain (for example offers.yourdomain.com) rather than piling addresses on one: each domain carries its own reputation, so one flagged domain does not stop the rest.
       </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
@@ -273,19 +273,19 @@ function MoreCapacity({ workspaceId, admin, reps, onChange }: { workspaceId: num
           const label = resendDomainFields(d).name || textValue(d);
           if (!label) return null;
           return (
-            <span key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '3px 8px', border: '1px solid #e4e4e7', borderRadius: '8px' }}>
+            <span key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '3px 8px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px' }}>
               {label}
-              {admin ? <button type="button" style={{ ...ghost, color: '#b91c1c' }} disabled={busy} onClick={() => void remove(typeof d === 'string' ? d : label)}>Remove</button> : null}
+              {admin ? <button type="button" style={{ ...ghost, color: 'var(--tx-red, #b91c1c)' }} disabled={busy} onClick={() => void remove(typeof d === 'string' ? d : label)}>Remove</button> : null}
             </span>
           );
         })}
-        {!domains?.length ? <span style={{ fontSize: '12px', color: '#71717a' }}>No extra domains yet.</span> : null}
+        {!domains?.length ? <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>No extra domains yet.</span> : null}
       </div>
       {admin ? (
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
           <input aria-label="Extra blast domain" value={adding} onChange={(e) => setAdding(e.target.value)} placeholder="offers.yourdomain.com" style={{ ...field, flex: '1 1 200px' }} />
           <button type="button" style={primary} disabled={busy || !adding.trim()} onClick={() => void add()}>Add domain</button>
-          <span style={{ fontSize: '12px', color: '#52525b' }}>Addresses per rep</span>
+          <span style={{ fontSize: '12px', color: 'var(--muted, #52525b)' }}>Addresses per rep</span>
           <input aria-label="Addresses per rep" value={perRep} onChange={(e) => setPerRep(e.target.value)} inputMode="numeric" style={{ ...field, width: '56px' }} />
           <button type="button" style={ghost} disabled={busy} onClick={() => void savePerRep()}>Save</button>
         </div>

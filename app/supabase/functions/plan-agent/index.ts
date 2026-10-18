@@ -40,7 +40,7 @@ import { phoneE164 } from '../_shared/docs-people.ts';
 import { withOptOut } from '../_shared/sms-compliance.ts';
 import { CAPABILITY_LABEL, cleanAllowed, decideTool, parseDecision, parseRoute, runSummary, type ActionResult, type Decision } from '../_shared/plan-agent-rules.ts';
 import { historyText } from '../../../lib/lead-memory.ts';
-import { isDoNotEngage } from '../../../lib/blacklist.ts';
+import { BLACKLIST_UNREAD, isDoNotEngage } from '../../../lib/blacklist.ts';
 import { SELLER_STAGE_LABELS } from '../../../lib/stages.ts';
 import { callWindow, zoneForNumber } from '../../../lib/talkr-web/time.ts';
 
@@ -82,7 +82,7 @@ type Run = { id: number; workspace_id: number; enrollment_id: number | null; tas
 /** Prior plans and open tasks, which gatherHistory does not carry. */
 async function planContext(admin: SupabaseClient, ws: number, sellerId: number, skipTask: number | null): Promise<string> {
   const [plans, tasks] = await Promise.all([
-    admin.from('enrollments').select('status, stopped_reason, enrolled_at, completed_at, routed_reason, action_plans(name)')
+    admin.from('enrollments').select('status, stopped_reason, enrolled_at, completed_at, routed_reason, action_plans!enrollments_plan_id_fkey(name)')
       .eq('workspace_id', ws).eq('seller_id', sellerId).order('enrolled_at', { ascending: false }).limit(12),
     admin.from('tasks').select('id, title, task_type, due_at').eq('workspace_id', ws).eq('seller_id', sellerId).eq('done', false)
       .order('due_at', { ascending: true }).limit(12),
@@ -117,11 +117,14 @@ async function finish(admin: SupabaseClient, run: Run, status: 'done' | 'skipped
 async function decide(admin: SupabaseClient, client: Anthropic | null, run: Run): Promise<string> {
   const allowed = cleanAllowed(run.allowed);
   const { data: en } = run.enrollment_id
-    ? await admin.from('enrollments').select('id, created_by, status, action_plans(name)').eq('id', run.enrollment_id).maybeSingle()
+    ? await admin.from('enrollments').select('id, created_by, status, action_plans!enrollments_plan_id_fkey(name)').eq('id', run.enrollment_id).maybeSingle()
     : { data: null };
   const planName = (en as Any)?.action_plans?.name ?? 'an action plan';
   if (!en || (en as Any).status !== 'active') {
-    await admin.from('plan_agent_runs').update({ status: 'skipped', reason: 'The plan is no longer running for this lead.', finished_at: new Date().toISOString() }).eq('id', run.id);
+    // A finished run is never claimed again, so a paused plan's step would be
+    // stuck when it resumes. Drop the claim instead: plan_agent_claim only
+    // picks tasks on an active enrolment, so this cannot loop.
+    await admin.from('plan_agent_runs').delete().eq('id', run.id);
     return 'skipped';
   }
   if (!run.seller_id) { await finish(admin, run, 'skipped', { reason: 'decide-once AI steps work seller leads only' }, planName); return 'skipped'; }
@@ -182,6 +185,11 @@ async function decide(admin: SupabaseClient, client: Anthropic | null, run: Run)
   if (decision.send_sms) {
     const body = textedBefore ? decision.send_sms.body : withOptOut(decision.send_sms.body);
     const sent = await textRecipient(admin, { workspace_id: run.workspace_id, created_by: owner }, { phone: (seller as Any).phone, seller_id: run.seller_id }, body, owner, { contractsLine: false });
+    if (!sent.ok && sent.reason === BLACKLIST_UNREAD) {
+      // Nothing went out and nothing else was done yet: leave the run to be claimed again, like a model outage.
+      await admin.from('plan_agent_runs').update({ reason: 'Could not check the blacklist; it will be tried again.' }).eq('id', run.id);
+      return 'retry';
+    }
     actions.push(sent.ok ? { kind: 'send_sms', ok: true, detail: `"${body}"` } : { kind: 'send_sms', ok: false, detail: sent.reason });
   }
   if (decision.create_task) {
@@ -276,7 +284,7 @@ Deno.serve(async (req) => {
       }
     }
     const { data: pending } = await admin.from('enrollments')
-      .select('id, workspace_id, seller_id, plan_id, stopped_reason, action_plans(name)')
+      .select('id, workspace_id, seller_id, plan_id, stopped_reason, action_plans!enrollments_plan_id_fkey(name)')
       .eq('route_state', 'pending').order('id', { ascending: true }).limit(10);
     for (const e of (pending ?? []) as Any[]) {
       try { count(await route(admin, client, e)); } catch (err) {

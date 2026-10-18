@@ -159,10 +159,10 @@ export function VoicePicker({ api, admin, agentKey, settings, selected, onSelect
             const isPlaying = playing === v.voice_id;
             const busy = fetching === v.voice_id;
             return (
-              <div key={v.voice_id} style={{ display: 'flex', alignItems: 'stretch', gap: 8, borderRadius: 10, border: `1px solid ${on ? GREEN : LINE}`, background: on ? '#E7F8F1' : '#fff', boxShadow: on ? `0 0 0 1px ${GREEN}` : 'none' }}>
+              <div key={v.voice_id} style={{ display: 'flex', alignItems: 'stretch', gap: 8, borderRadius: 10, border: `1px solid ${on ? GREEN : LINE}`, background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', boxShadow: on ? `0 0 0 1px ${GREEN}` : 'none' }}>
                 <button type="button" className="va-btn" onClick={() => void play(v)} aria-label={isPlaying ? `Stop ${v.name}` : `Play a sample of ${v.name}`}
                   style={{ width: 44, flex: 'none', display: 'grid', placeItems: 'center', border: 0, background: 'transparent', color: isPlaying ? GREEN : INK, cursor: 'pointer', borderRadius: '10px 0 0 10px' }}>
-                  <span style={{ display: 'grid', placeItems: 'center', width: 30, height: 30, borderRadius: 999, background: isPlaying ? '#fff' : '#f4f4f5', boxShadow: isPlaying ? `inset 0 0 0 1px ${GREEN}` : 'none' }}>
+                  <span style={{ display: 'grid', placeItems: 'center', width: 30, height: 30, borderRadius: 999, background: isPlaying ? 'var(--surface, #fff)' : 'var(--surface-2, #f4f4f5)', boxShadow: isPlaying ? `inset 0 0 0 1px ${GREEN}` : 'none' }}>
                     {busy ? <Spinner size={14} /> : isPlaying ? <Square size={12} fill="currentColor" aria-hidden="true" /> : <Play size={13} fill="currentColor" aria-hidden="true" style={{ marginLeft: 2 }} />}
                   </span>
                 </button>
@@ -173,9 +173,9 @@ export function VoicePicker({ api, admin, agentKey, settings, selected, onSelect
                     <span style={{ display: 'block', marginTop: 1, fontSize: 12, color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{voiceTraits(v) || 'No description'}</span>
                   </span>
                   {v.category && v.category !== 'premade' ? (
-                    <span style={{ textTransform: 'capitalize', fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: '#f4f4f5', color: '#52525b', flex: 'none' }}>{v.category}</span>
+                    <span style={{ textTransform: 'capitalize', fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: 'var(--surface-2, #f4f4f5)', color: 'var(--muted, #52525b)', flex: 'none' }}>{v.category}</span>
                   ) : null}
-                  <span aria-hidden="true" style={{ width: 20, height: 20, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 999, background: on ? GREEN : 'transparent', color: '#fff', border: on ? 0 : `1px solid ${LINE}` }}>
+                  <span aria-hidden="true" style={{ width: 20, height: 20, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 999, background: on ? GREEN : 'transparent', color: 'var(--on-dark, #fff)', border: on ? 0 : `1px solid ${LINE}` }}>
                     {on ? <Check size={13} strokeWidth={3} /> : null}
                   </span>
                 </button>

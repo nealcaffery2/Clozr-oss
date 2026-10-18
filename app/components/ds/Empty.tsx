@@ -24,10 +24,10 @@ export function Empty({
   if (failed) {
     return (
       <div style={{ padding: compact ? '20px 16px' : '40px 20px', textAlign: 'center' }}>
-        <div style={{ fontSize: '13px', fontWeight: 600, color: '#b91c1c' }}>
+        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--tx-red, #b91c1c)' }}>
           Couldn&rsquo;t load your workspace
         </div>
-        <div style={{ margin: '5px auto 0', maxWidth: '380px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.55 }}>
+        <div style={{ margin: '5px auto 0', maxWidth: '380px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.55 }}>
           This is a connection problem, not an empty CRM — your records are still there.
         </div>
         {onRetry ? (
@@ -36,8 +36,8 @@ export function Empty({
             onClick={onRetry}
             style={{
               marginTop: '14px', height: '32px', padding: '0 14px', borderRadius: '9px',
-              border: '1px solid #e4e4e7', background: '#fff', fontSize: '12.5px',
-              fontWeight: 600, color: '#18181b', cursor: 'pointer',
+              border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12.5px',
+              fontWeight: 600, color: 'var(--ink, #18181b)', cursor: 'pointer',
             }}
           >
             Try again
@@ -49,9 +49,9 @@ export function Empty({
 
   return (
     <div style={{ padding: compact ? '22px 16px' : '44px 20px', textAlign: 'center' }}>
-      <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#3f3f46' }}>{title}</div>
+      <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--ink-3, #3f3f46)' }}>{title}</div>
       {hint ? (
-        <div style={{ margin: '5px auto 0', maxWidth: '400px', fontSize: '12.5px', color: '#a1a1aa', lineHeight: 1.55 }}>
+        <div style={{ margin: '5px auto 0', maxWidth: '400px', fontSize: '12.5px', color: 'var(--subtle, #a1a1aa)', lineHeight: 1.55 }}>
           {hint}
         </div>
       ) : null}
@@ -61,7 +61,7 @@ export function Empty({
           onClick={action}
           style={{
             marginTop: '14px', height: '32px', padding: '0 14px', borderRadius: '9px',
-            border: `1px solid ${MINT}`, background: MINT, color: '#fff',
+            border: `1px solid ${MINT}`, background: MINT, color: 'var(--on-dark, #fff)',
             fontSize: '12.5px', fontWeight: 600, cursor: 'pointer',
           }}
         >

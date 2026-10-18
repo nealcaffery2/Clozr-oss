@@ -58,7 +58,7 @@ import { corsFor, fence, jsonWith, rateLimit, serverError, tooMany, UNTRUSTED_RU
 import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
 import { gatherHistory } from '../_shared/lead-memory.ts';
 import { historyText } from '../../../lib/lead-memory.ts';
-import { isDoNotEngage } from '../../../lib/blacklist.ts';
+import { BLACKLIST_UNREAD, isDoNotEngage } from '../../../lib/blacklist.ts';
 import { textRecipient } from '../_shared/docs-flow.ts';
 import { phoneE164 } from '../_shared/docs-people.ts';
 import { withOptOut } from '../_shared/sms-compliance.ts';
@@ -67,7 +67,7 @@ import { SCOPE, accessFor, has, messageIdOf, sendMail, textToHtml, type Account 
 import { guardSend, release, unsubscribeToken, unsubscribeUrl } from '../_shared/mailguard.ts';
 import { phoneKey, resolveCaller } from '../_shared/voice-agent.ts';
 import { initiationFor, loadCandidates, missingRelation } from '../_shared/voice-agent-db.ts';
-import { agentSwitchedOff, outboundAllowedNow } from '../_shared/voice-agent-calls.ts';
+import { DIAL_FAILURE_LIMIT, DIAL_RETRY_HOURS, agentSwitchedOff, dialFailure, dialFailureStreak, dialedTag, outboundAllowedNow } from '../_shared/voice-agent-calls.ts';
 import { cleanText, settingsFromRow, type AgentSettings } from '../_shared/voice-agent-settings.ts';
 import { ROLE_LABEL } from '../_shared/voice-agent-prompt.ts';
 import { EL_BASE, ElevenError, elJson } from '../_shared/voice-agent-admin.ts';
@@ -89,6 +89,7 @@ import {
   readPlan, sanitizeSvg, svgDataUri, cleanTriggers, handoffDue, handoffTarget, mayQualify, relayPatch, prettyPhone,
   type ActionRow, type Channel, type ChatTurn, type Decision, type HandoffTrigger, type NextStage, type Persona, type Plan, type Reach, type RecordKind,
 } from '../_shared/ai-agent.ts';
+import { lanes, pool } from './pool.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
@@ -100,6 +101,21 @@ const READ = ['agents', 'status', 'log', 'report', 'autopilot'];
 const WRITE = ['chat', 'start', 'stop', 'handoff', 'bulk_start', 'bulk_stop', 'generate_avatar', 'set_audience', 'set_handoff', 'set_autopilot', 'run_reactivation', 'test_call'];
 const ADMIN_ONLY = ['generate_avatar', 'set_audience', 'set_handoff', 'set_autopilot', 'run_reactivation', 'test_call'];
 const NOT_MIGRATED = 'AI agents are not set up: apply migration 123 (ai_agent_enrollments).';
+/** How the agent opens a call (migration 258): a first call, or a follow-up where we know it's them. */
+type Contact = 'first' | 'known';
+const contactOf = (v: unknown): Contact | null => (v === 'first' || v === 'known' ? v : null);
+/** Read on its own so a database without migration 258 still works (null: the agent decides from the history). */
+async function readContact(admin: SupabaseClient, enrollmentId: number): Promise<Contact | null> {
+  const { data, error } = await admin.from('ai_agent_enrollments').select('contact').eq('id', enrollmentId).maybeSingle();
+  return error ? null : contactOf((data as Any)?.contact);
+}
+/** What the toggle starts on: a follow-up once they have called or texted us, or we have had a real call with them. */
+async function suggestedContact(admin: SupabaseClient, ws: number, kind: RecordKind, id: number): Promise<Contact> {
+  const { data } = await admin.from('communications').select('id').eq('workspace_id', ws).eq(kind === 'seller' ? 'seller_id' : 'buyer_id', id)
+    .or('direction.eq.inbound,duration_s.gte.30').limit(1);
+  return (data ?? []).length ? 'known' : 'first';
+}
+
 const ENROLL_COLS = 'id, workspace_id, record_kind, record_id, agent_key, status, mode, instructions, channels, plan, chat, touches, max_touches, next_action_at, last_action_at, last_inbound_seen_at, claimed_at, stop_reason, started_by, started_at, stopped_by, stopped_at, updated_at';
 /** ENROLL_COLS plus the autopilot program (migration 146). */
 const ENROLL_COLS_146 = `${ENROLL_COLS}, program, autopilot`;
@@ -271,12 +287,34 @@ async function record(admin: SupabaseClient, i: {
     conversation_id: i.conversationId ?? null, actor_id: i.actorId ?? null,
   });
   if (error) console.error('ai-agent ledger', error.message);
+  // The text, email or voicemail itself names the agent that sent it (migration
+  // 269), so the activity log shows the agent's face on it instead of the rep's.
+  const agentKey = i.agent.agent_key;
+  if (i.communicationId) await stampAgent(admin, 'communications', i.communicationId, agentKey);
+  const dropId = Number(i.detail?.rvm_drop_id);
+  if (i.channel === 'rvm' && dropId > 0) await stampAgent(admin, 'rvm_drops', dropId, agentKey);
   if (i.timeline === false) return;
+  // A sent text or email is already on the timeline as the message, under the
+  // agent; a second "AI agent sent a text" line would only repeat it. The why
+  // stays in the agent's own log (ai_agent_actions).
+  if (i.communicationId && (i.status ?? 'done') === 'done' && (i.action === 'sms_sent' || i.action === 'email_sent')) return;
   const line = activityLine(i.agent.name, i.status === 'failed' ? 'failed' : i.status === 'skipped' && i.action !== 'stopped' ? 'skipped' : i.action, i.summary, i.actorName);
-  const { error: aErr } = await admin.from('activity').insert({
-    workspace_id: i.ws, entity_type: i.kind, entity_id: i.id, kind: 'ai_agent', title: line.title, body: line.body || null, actor_id: i.actorId ?? null,
-  });
+  const row: Record<string, unknown> = {
+    workspace_id: i.ws, entity_type: i.kind, entity_id: i.id, kind: 'ai_agent', title: line.title, body: line.body || null, actor_id: i.actorId ?? null, ai_agent_key: agentKey,
+  };
+  let { error: aErr } = await admin.from('activity').insert(row);
+  if (aErr && /ai_agent_key/.test(aErr.message)) {
+    // Before migration 269: keep the line, lose only the agent's face.
+    delete row.ai_agent_key;
+    ({ error: aErr } = await admin.from('activity').insert(row));
+  }
   if (aErr) console.error('ai-agent activity', aErr.message);
+}
+
+/** Name the agent on a message or a queued voicemail. Best effort: before migration 269 the column is missing and the row keeps the rep. */
+async function stampAgent(admin: SupabaseClient, table: 'communications' | 'rvm_drops', id: number, agentKey: string): Promise<void> {
+  const { error } = await admin.from(table).update({ ai_agent_key: agentKey }).eq('id', id);
+  if (error && !/ai_agent_key/.test(error.message)) console.error('ai-agent stamp', table, error.message);
 }
 
 const planText = (p: Plan) => [p.summary, p.goal ? `Goal: ${p.goal}` : '', ...p.steps.map((s) => `Day ${s.day} · ${s.channel === 'sms' ? 'text' : s.channel === 'rvm' ? 'voicemail' : s.channel}: ${s.purpose}`), p.stop_when ? `Stops when: ${p.stop_when}` : ''].filter(Boolean).join('\n');
@@ -372,7 +410,15 @@ Deno.serve(async (req) => {
     const goal = cleanText(String(body.call_goal ?? ''), 2000, true) || 'Tell them about the deal we just got under contract and ask if they want the details.';
     const decision: Decision = { action: 'call', body: '', subject: '', call_goal: goal, next_check_hours: 24, reason: `Dispo campaign ${Number(body.campaign_id) || ''} for deal ${Number(body.deal_id) || ''}`.trim() };
     const r = await placeCall(admin, ws, agent, rec, decision, persona);
-    if (!r.ok) return json({ error: r.reason, retry_hours: r.retryHours, stop: !!r.stop }, r.stop ? 409 : 503);
+    if (!r.ok) {
+      const stop = !!r.stop || !!r.deadNumber;
+      // A busy or dead line goes in the agent's log, so the next campaign's call to this buyer counts it.
+      if (r.deadNumber || dialFailure(r.reason)) {
+        await record(admin, { ws, agent: { agent_key: agent.agent_key, name: agent.name }, enrollmentId: null, kind: 'buyer', id: buyerId, channel: 'call', action: 'call_placed', status: callStatus(r), summary: `Call not placed: ${r.reason}.` }).catch((e) => console.error('ai-agent deal_call record', String(e)));
+        if (r.deadNumber?.justNow) await flagDeadNumber(admin, ws, rec, agent.name, r.deadNumber.phone);
+      }
+      return json({ error: r.reason, retry_hours: r.retryHours, stop }, stop ? 409 : 503);
+    }
     await record(admin, { ws, agent: { agent_key: agent.agent_key, name: agent.name }, enrollmentId: null, kind: 'buyer', id: buyerId, channel: 'call', action: 'call_placed', summary: `Calling ${rec.phone} about deal ${Number(body.deal_id) || ''}: ${goal.slice(0, 300)}`, conversationId: r.conversationId, detail: { goal, campaign_id: Number(body.campaign_id) || null, deal_id: Number(body.deal_id) || null, from_number: r.from.phone, from_market: r.from.market } }).catch((e) => console.error('ai-agent deal_call record', String(e)));
     return json({ ok: true, agent_key: agent.agent_key, conversation_id: r.conversationId, from: r.from });
   }
@@ -435,7 +481,9 @@ Deno.serve(async (req) => {
         const current = e ? agents.find((a) => a.agent_key === e.agent_key) ?? null : serving[0] ?? null;
         const channels = cleanChannels(e?.channels);
         const el = eligibility({ kind, record: rec, dnc: dncOf(rec), audience: current?.audience ?? (kind === 'buyer' ? 'buyers' : 'sellers'), channels: [...CHANNELS], reach: reachOf(rec, current) });
+        const [contact, contactSuggested] = await Promise.all([e ? readContact(admin, Number(e.id)) : Promise.resolve(null), suggestedContact(admin, ws, kind, id)]);
         return json({
+          contact, contact_suggested: contactSuggested,
           ok: true, enrollment: enrollmentOut(e), agents: serving.map((a) => agentOut(a)), agent: current ? agentOut(current) : null,
           eligible: el.ok ? { ok: true } : { ok: false, reason: el.reason, code: el.code }, reach: reachOf(rec, current), channels,
           record: { kind, id, name: rec.name }, actions: acts ?? [],
@@ -482,7 +530,10 @@ Deno.serve(async (req) => {
           const pl = await rateLimit(admin, `ai-agent-plan:${userId}`, 120, 3600);
           if (!pl.allowed) return tooMany(CORS, pl);
           const persona = await personaFor(admin, ws, agent, e?.started_by ?? rec.assigned_to ?? userId);
-          const drafted = await draftPlan(anthropic(), { persona, kind, agent, history: await historyFor(admin, ws, kind, id), chat, mode, channels, reach: reachOf(rec, agent), tz: tzOf(agent) });
+          const said = contactOf(body.contact);
+          const contactLine = said === 'known' ? "The rep says this is a follow-up: we have talked with them before and know it's them. Do not open as a first contact.\n\n"
+            : said === 'first' ? 'The rep says this is a first contact (a new lead or a cold call): they have never talked with us, so the first touch introduces us and why we are reaching out.\n\n' : '';
+          const drafted = await draftPlan(anthropic(), { persona, kind, agent, history: contactLine + await historyFor(admin, ws, kind, id), chat, mode, channels, reach: reachOf(rec, agent), tz: tzOf(agent) });
           plan = drafted.plan; reply = drafted.reply;
           chat = appendChat(chat, { role: 'agent', text: reply, at: new Date().toISOString() });
         }
@@ -508,6 +559,12 @@ Deno.serve(async (req) => {
         }
         e = saved as Any;
         if (fresh) await clearRelayed(admin, Number(e.id));
+        // First call or follow-up, as the rep set it; saved on its own so a database without migration 258 still starts.
+        const contact = body.contact === null ? null : contactOf(body.contact);
+        if (contact || body.contact === null) {
+          const { error: ce } = await admin.from('ai_agent_enrollments').update({ contact }).eq('id', e.id);
+          if (ce) console.error('ai-agent contact', ce.message);
+        }
         const actorName = await myName();
         if (turningOn) {
           await record(admin, { ws, agent, enrollmentId: e.id, kind, id, channel: 'system', action: 'started', summary: `${mode === 'auto' ? 'Deciding from the record history' : `Instructions: ${instructionsFrom(chat, 600)}`}\nChannels: ${channels.map((c) => (c === 'sms' ? 'text' : c)).join(', ')}\n\n${planText(plan)}`, detail: { mode, channels }, actorId: userId, actorName });
@@ -855,68 +912,137 @@ async function makeAvatar(admin: SupabaseClient, ws: number, key: string, prompt
 const TICK_BATCH = 12;
 const TICK_BUDGET_MS = 110_000;
 const LEASE_MS = 10 * 60_000;
+/** Enrollments worked at once. Each one is still claimed before it is worked; one person's turns share a lane. */
+const TICK_PARALLEL = 3;
+
+type Due = { id: number; workspace_id: number; record_kind: RecordKind; record_id: number; agent_key: string };
+
+/**
+ * What puts two due enrollments in one lane of the pool: the record, every
+ * phone and email it is reached on (a stop on one record blocks a call to the
+ * same number on another). One read per table for the batch; a failed read puts
+ * everything in one lane, one at a time as before the pool.
+ */
+async function laneKeys(admin: SupabaseClient, due: Due[]): Promise<(d: Due) => string[]> {
+  const idsOf = (k: RecordKind) => [...new Set(due.filter((d) => d.record_kind === k).map((d) => Number(d.record_id)))];
+  const sellerIds = idsOf('seller'); const buyerIds = idsOf('buyer');
+  const none = Promise.resolve({ data: [] as Any[], error: null });
+  const [sellers, buyers, phones] = await Promise.all([
+    sellerIds.length ? admin.from('sellers').select('id, phone, email').in('id', sellerIds) : none,
+    buyerIds.length ? admin.from('buyers').select('id, phone, email').in('id', buyerIds) : none,
+    buyerIds.length ? admin.from('buyer_phones').select('buyer_id, phone').in('buyer_id', buyerIds) : none,
+  ]);
+  const failed = sellers.error ?? buyers.error ?? phones.error;
+  if (failed) {
+    console.error('ai-agent lanes', failed.message);
+    return () => ['all'];
+  }
+  const reach = new Map<string, string[]>();
+  const add = (rk: string, ...keys: (string | null)[]) => reach.set(rk, [...(reach.get(rk) ?? []), ...keys.filter((k): k is string => !!k)]);
+  const phone = (p: unknown) => { const k = phoneKey(String(p ?? '')); return k ? `phone:${k}` : null; };
+  const email = (v: unknown) => { const m = String(v ?? '').trim().toLowerCase(); return m ? `email:${m}` : null; };
+  for (const r of (sellers.data ?? []) as Any[]) add(`seller:${r.id}`, phone(r.phone), email(r.email));
+  for (const r of (buyers.data ?? []) as Any[]) add(`buyer:${r.id}`, phone(r.phone), email(r.email));
+  for (const r of (phones.data ?? []) as Any[]) add(`buyer:${r.buyer_id}`, phone(r.phone));
+  return (d) => {
+    const rk = `${d.record_kind}:${d.record_id}`;
+    return [rk, ...(reach.get(rk) ?? [])];
+  };
+}
 
 async function tick(admin: SupabaseClient): Promise<Record<string, number>> {
   const started = Date.now();
   const tally = { looked: 0, texts: 0, emails: 0, calls: 0, voicemails: 0, waits: 0, finished: 0, stopped: 0, failed: 0, relayed: 0, capped: 0 };
-  const { data: due, error } = await admin.from('ai_agent_enrollments').select('id').eq('status', 'active').lte('next_action_at', new Date().toISOString())
+  const { data: due, error } = await admin.from('ai_agent_enrollments').select('id, workspace_id, record_kind, record_id, agent_key').eq('status', 'active').lte('next_action_at', new Date().toISOString())
     .order('next_action_at').limit(TICK_BATCH * 2);
   if (error) throw error;
   const client = anthropic();
   // The workspace's daily spend ceiling (AI Autopilot, limits): today's texts, emails, calls and steps.
-  const spend = new Map<number, { limits: AutopilotSettings['limits']; today: SpendToday; tz: string; noted: boolean }>();
-  const spendFor = async (ws: number) => {
+  // One read per workspace, shared by its lanes; `inflight` is the steps being worked right now, so
+  // three at once never pass the ceiling together.
+  type Spend = { limits: AutopilotSettings['limits']; today: SpendToday; tz: string; noted: boolean; inflight: number };
+  const spend = new Map<number, Promise<Spend>>();
+  const spendFor = (ws: number) => {
     let g = spend.get(ws);
-    if (g) return g;
-    const tz = DEFAULT_TZ;
-    const since = localMidnightIso(tz);
-    const [{ settings }, touches, steps] = await Promise.all([
-      loadAutopilot(admin, ws),
-      admin.from('ai_agent_actions').select('id', { count: 'exact', head: true }).eq('workspace_id', ws).eq('status', 'done').in('action', ['call_placed', 'sms_sent', 'email_sent', 'rvm_sent']).gte('created_at', since),
-      admin.from('ai_agent_actions').select('id', { count: 'exact', head: true }).eq('workspace_id', ws).neq('channel', 'system').gte('created_at', since),
-    ]);
-    g = { limits: settings.limits, today: { touches: touches.count ?? 0, steps: steps.count ?? 0 }, tz, noted: false };
-    spend.set(ws, g);
+    if (!g) {
+      g = (async () => {
+        const tz = DEFAULT_TZ;
+        const since = localMidnightIso(tz);
+        const [{ settings }, touches, steps] = await Promise.all([
+          loadAutopilot(admin, ws),
+          admin.from('ai_agent_actions').select('id', { count: 'exact', head: true }).eq('workspace_id', ws).eq('status', 'done').in('action', ['call_placed', 'sms_sent', 'email_sent', 'rvm_sent']).gte('created_at', since),
+          admin.from('ai_agent_actions').select('id', { count: 'exact', head: true }).eq('workspace_id', ws).neq('channel', 'system').gte('created_at', since),
+        ]);
+        // A failed count is not a zero: nothing goes out on it.
+        const failed = touches.error ?? steps.error;
+        if (failed) throw new Error(`ai_agent_actions count: ${failed.message}`);
+        return { limits: settings.limits, today: { touches: touches.count ?? 0, steps: steps.count ?? 0 }, tz, noted: false, inflight: 0 };
+      })();
+      spend.set(ws, g);
+    }
     return g;
   };
-  for (const { id } of (due ?? []) as Any[]) {
-    if (Date.now() - started > TICK_BUDGET_MS || tally.looked >= TICK_BATCH) break;
-    // The lease: only one tick works a record at a time, and a crashed one frees it after ten minutes.
-    const claim = (cols: string) => admin.from('ai_agent_enrollments').update({ claimed_at: new Date().toISOString() })
-      .eq('id', id).eq('status', 'active').lte('next_action_at', new Date().toISOString())
-      .or(`claimed_at.is.null,claimed_at.lt.${new Date(Date.now() - LEASE_MS).toISOString()}`)
-      .select(cols).maybeSingle();
-    // With migration 146 the row carries its autopilot program; before it, the plain columns.
-    let r = await claim(has146 === false ? ENROLL_COLS : ENROLL_COLS_146);
-    if (r.error && lacks146(r.error)) { has146 = false; r = await claim(ENROLL_COLS); }
-    const claimed = r.data;
-    if (!claimed) continue;
-    tally.looked++;
-    const e = claimed as Any;
-    const g = await spendFor(Number(e.workspace_id));
-    const gate = spendCheck(g.limits, g.today);
-    if (!gate.ok) {
-      // Over the daily ceiling: no Claude call, no text; it waits for tomorrow morning.
-      tally.capped++;
-      await admin.from('ai_agent_enrollments').update({ claimed_at: null, next_action_at: new Date(nextMorningMs(Date.now(), g.tz)).toISOString() }).eq('id', e.id);
-      if (!g.noted) {
-        g.noted = true;
-        console.log('ai-agent daily limit', { ws: e.workspace_id, ...g.today, limit: gate.outcome });
+  /** Let go of a claimed row without working it; it is still due, so the next tick looks again. */
+  const free = (id: number) => admin.from('ai_agent_enrollments').update({ claimed_at: null }).eq('id', id);
+  const rows = (due ?? []) as Due[];
+  await pool(lanes(rows, await laneKeys(admin, rows)), TICK_PARALLEL, async (lane) => {
+    for (const { id } of lane) {
+      if (Date.now() - started > TICK_BUDGET_MS || tally.looked >= TICK_BATCH) return;
+      // Counted before the claim's await, so the lanes never look at more than TICK_BATCH between them.
+      tally.looked++;
+      // The lease: only one tick works a record at a time, and a crashed one frees it after ten minutes.
+      const claim = (cols: string) => admin.from('ai_agent_enrollments').update({ claimed_at: new Date().toISOString() })
+        .eq('id', id).eq('status', 'active').lte('next_action_at', new Date().toISOString())
+        .or(`claimed_at.is.null,claimed_at.lt.${new Date(Date.now() - LEASE_MS).toISOString()}`)
+        .select(cols).maybeSingle();
+      // With migration 146 the row carries its autopilot program; before it, the plain columns.
+      let r = await claim(has146 === false ? ENROLL_COLS : ENROLL_COLS_146);
+      if (r.error && lacks146(r.error)) { has146 = false; r = await claim(ENROLL_COLS); }
+      const claimed = r.data;
+      if (!claimed) { tally.looked--; continue; }
+      const e = claimed as Any;
+      let g: Spend;
+      try {
+        g = await spendFor(Number(e.workspace_id));
+      } catch (err) {
+        tally.failed++;
+        console.error('ai-agent daily limit read', e.workspace_id, String(err));
+        await free(e.id);
+        continue;
       }
-      continue;
+      const gate = spendCheck(g.limits, g.today);
+      if (!gate.ok) {
+        // Over the daily ceiling: no Claude call, no text; it waits for tomorrow morning.
+        tally.capped++;
+        await admin.from('ai_agent_enrollments').update({ claimed_at: null, next_action_at: new Date(nextMorningMs(Date.now(), g.tz)).toISOString() }).eq('id', e.id);
+        if (!g.noted) {
+          g.noted = true;
+          console.log('ai-agent daily limit', { ws: e.workspace_id, ...g.today, limit: gate.outcome });
+        }
+        continue;
+      }
+      if (!spendCheck(g.limits, { touches: g.today.touches + g.inflight, steps: g.today.steps + g.inflight }).ok) {
+        // At the ceiling only if every step in flight sends: hold it, and the next tick decides on the real count.
+        tally.capped++;
+        await free(e.id);
+        continue;
+      }
+      g.inflight++;
+      try {
+        const outcome = await work(admin, client, e);
+        tally[outcome]++;
+        g.today.steps++;
+        if (outcome === 'texts' || outcome === 'emails' || outcome === 'calls' || outcome === 'voicemails') g.today.touches++;
+      } catch (err) {
+        tally.failed++;
+        console.error('ai-agent work', e.id, String(err));
+        await admin.from('ai_agent_enrollments').update({ claimed_at: null, next_action_at: new Date(Date.now() + 3_600_000).toISOString() }).eq('id', e.id);
+        await record(admin, { ws: e.workspace_id, agent: { agent_key: e.agent_key, name: e.agent_key }, enrollmentId: e.id, kind: e.record_kind, id: Number(e.record_id), channel: 'system', action: 'failed', status: 'failed', summary: 'Something went wrong on this step; it will try again in an hour.', detail: { error: String(err).slice(0, 300) }, timeline: false });
+      } finally {
+        g.inflight--;
+      }
     }
-    try {
-      const outcome = await work(admin, client, e);
-      tally[outcome]++;
-      g.today.steps++;
-      if (outcome === 'texts' || outcome === 'emails' || outcome === 'calls' || outcome === 'voicemails') g.today.touches++;
-    } catch (err) {
-      tally.failed++;
-      console.error('ai-agent work', e.id, String(err));
-      await admin.from('ai_agent_enrollments').update({ claimed_at: null, next_action_at: new Date(Date.now() + 3_600_000).toISOString() }).eq('id', e.id);
-      await record(admin, { ws: e.workspace_id, agent: { agent_key: e.agent_key, name: e.agent_key }, enrollmentId: e.id, kind: e.record_kind, id: Number(e.record_id), channel: 'system', action: 'failed', status: 'failed', summary: 'Something went wrong on this step; it will try again in an hour.', detail: { error: String(err).slice(0, 300) }, timeline: false });
-    }
-  }
+  });
   return tally;
 }
 
@@ -1144,11 +1270,19 @@ async function work(admin: SupabaseClient, client: Anthropic | null, e: Any): Pr
       return 'voicemails';
     }
     case 'call': {
-      const r = await placeCall(admin, ws, agent, rec, decision, persona);
+      const r = await placeCall(admin, ws, agent, rec, decision, persona, { contact: await readContact(admin, Number(e.id)) });
       if (!r.ok) {
+        await record(admin, { ...base, channel: 'call', action: 'call_placed', status: callStatus(r), summary: `Call not placed: ${r.reason}.` });
+        if (r.stop) { await save({ last_inbound_seen_at: seenAt }); await end('stopped', r.reason); return 'stopped'; }
+        if (r.deadNumber) {
+          // The number is done: calls come off this record and the agent keeps going on what is left, or stops when nothing is.
+          await flagDeadNumber(admin, ws, rec, agent.name, r.deadNumber.phone);
+          const rest = channels.filter((c) => c !== 'call');
+          if (!rest.length) { await save({ last_inbound_seen_at: seenAt }); await end('stopped', r.reason); return 'stopped'; }
+          await save({ channels: rest, next_action_at: nextLookAt(now, 1, tz), last_inbound_seen_at: seenAt });
+          return 'failed';
+        }
         await save({ next_action_at: nextLookAt(now, r.retryHours, tz), last_inbound_seen_at: seenAt });
-        await record(admin, { ...base, channel: 'call', action: 'call_placed', status: 'failed', summary: `Call not placed: ${r.reason}.` });
-        if (r.stop) { await end('stopped', r.reason); return 'stopped'; }
         return 'failed';
       }
       // An autopilot call is read and scored within minutes of ending (review_call), whatever the plan's next step says.
@@ -1258,8 +1392,12 @@ async function callerNumberFor(admin: SupabaseClient, ws: number, to: string | n
  * same initiation data /personalize would give plus why we are calling. The
  * number is checked like an inbound call: a do-not-engage match stops it.
  * The post-call webhook files the transcript on the record as usual.
+ * A number that was busy or never answered by the carrier DIAL_FAILURE_LIMIT
+ * times in a row is not dialled again: `deadNumber` says so (`justNow` on the
+ * attempt that reached the limit), and a busy or dead line waits a day, not six
+ * hours, between tries.
  */
-async function placeCall(admin: SupabaseClient, ws: number, a: AgentLite, rec: Rec, d: Decision, p: Persona, opts: { leadWindowChecked?: boolean } = {}): Promise<{ ok: true; conversationId: string | null; from: { market: string | null; phone: string | null } } | { ok: false; reason: string; retryHours: number; stop?: boolean }> {
+async function placeCall(admin: SupabaseClient, ws: number, a: AgentLite, rec: Rec, d: Decision, p: Persona, opts: { leadWindowChecked?: boolean; contact?: Contact | null } = {}): Promise<{ ok: true; conversationId: string | null; from: { market: string | null; phone: string | null } } | { ok: false; reason: string; retryHours: number; stop?: boolean; deadNumber?: DeadNumber }> {
   const apiKey = Deno.env.get('ELEVENLABS_API_KEY');
   if (!apiKey || !a.agent_id || !a.live || !a.live.channels.phone_number_id) return { ok: false, reason: 'the agent has no published ElevenLabs agent and phone number id (Settings, AI Agent, Handling)', retryHours: 24 };
   if (!a.live.channels.outbound) return { ok: false, reason: 'outbound calls are switched off for this agent (Settings, AI Agent, Handling)', retryHours: 24 };
@@ -1270,10 +1408,13 @@ async function placeCall(admin: SupabaseClient, ws: number, a: AgentLite, rec: R
   if (!rec.phone || !key) return { ok: false, reason: 'no phone number', retryHours: 24 };
   const res = resolveCaller(await loadCandidates(admin, ws, key));
   if (res.status === 'blocked') return { ok: false, reason: 'this number is on a do-not-contact list', retryHours: 24, stop: true };
+  const streak = await dialStreak(admin, ws, rec, key);
+  if (streak >= DIAL_FAILURE_LIMIT) return { ok: false, reason: deadNumberReason(rec.phone, streak), retryHours: 24 * 7, deadNumber: { phone: rec.phone, justNow: false } };
   const match = res.status === 'one' ? res.match : res.status === 'many' ? res.matches.find((c) => c.kind === rec.kind && c.id === rec.id) : undefined;
   const rn = a.live.rules.compliance.recording_notice;
   const init = await initiationFor(admin, ws, match ? { status: 'one', match } : { status: 'none' }, { direction: 'outbound', ours: '', theirs: key }, {
     agentName: p.name, company: p.company, introduceAs: a.live.identity.introduce_as, recordingNotice: rn.enabled ? rn.text : null,
+    ...(opts.contact ? { contact: opts.contact } : {}),
   }, a.live, d.call_goal);
   try {
     const from = await callerNumberFor(admin, ws, rec.phone, a.live.channels.phone_number_id);
@@ -1282,11 +1423,50 @@ async function placeCall(admin: SupabaseClient, ws: number, a: AgentLite, rec: R
       agent_id: a.agent_id, agent_phone_number_id: from.id, to_number: rec.phone,
       conversation_initiation_client_data: { dynamic_variables: init.dynamic_variables, conversation_config_override: init.conversation_config_override },
     });
-    if (r.success === false) return { ok: false, reason: `ElevenLabs: ${String(r.message ?? 'refused').slice(0, 200)}`, retryHours: 6 };
+    if (r.success === false) return dialRefused(`ElevenLabs: ${String(r.message ?? 'refused').slice(0, 200)}`, rec.phone, key, streak);
     return { ok: true, conversationId: r.conversation_id ?? null, from: { market: from.market, phone: from.phone } };
   } catch (e) {
-    return { ok: false, reason: e instanceof ElevenError ? `ElevenLabs: ${e.message}` : 'could not reach ElevenLabs', retryHours: 6 };
+    return dialRefused(e instanceof ElevenError ? `ElevenLabs: ${e.message}` : 'could not reach ElevenLabs', rec.phone, key, streak);
   }
+}
+
+type DeadNumber = { phone: string; justNow: boolean };
+
+/** Dial failures in a row on this record's number (voice-agent-calls dialFailureStreak). */
+async function dialStreak(admin: SupabaseClient, ws: number, rec: Rec, key: string): Promise<number> {
+  const { data } = await admin.from('ai_agent_actions').select('status, summary').eq('workspace_id', ws).eq('record_kind', rec.kind).eq('record_id', rec.id)
+    .eq('channel', 'call').eq('action', 'call_placed').order('created_at', { ascending: false }).limit(20);
+  return dialFailureStreak((data ?? []) as { status: string; summary: string | null }[], key);
+}
+
+// Worded so dialFailure() does not read it as one more failed dial.
+const deadNumberReason = (phone: string, n: number) =>
+  `${phone} did not connect on the last ${n} tries, so the agent stopped calling it; a rep should check the number`;
+
+/** A call that was refused before dialling (the number is already done) is logged as skipped, so it does not count as another try. */
+const callStatus = (r: { deadNumber?: DeadNumber }): 'failed' | 'skipped' => (r.deadNumber && !r.deadNumber.justNow ? 'skipped' : 'failed');
+
+/** Tells the record's rep, once, that the agent gave up on a number: a call task to check it, and the bell. */
+async function flagDeadNumber(admin: SupabaseClient, ws: number, rec: Rec, agentName: string, phone: string): Promise<void> {
+  const who = rec.assigned_to;
+  const link = { seller_id: rec.kind === 'seller' ? rec.id : null, buyer_id: rec.kind === 'buyer' ? rec.id : null };
+  const name = rec.name || `this ${rec.kind}`;
+  const title = `Check ${name}'s number ${phone}: ${agentName} could not get through`.slice(0, 200);
+  const note = [
+    `${agentName} called ${phone} ${DIAL_FAILURE_LIMIT} times in a row and it never connected. The line refused the call or the carrier never put it through, which usually means a call blocker, a disconnected line or a wrong number.`,
+    `Find a better number or email and update the record. Once the number is fixed, turn calls back on for ${agentName} on this record.`,
+  ].join('\n');
+  const { error } = await admin.from('tasks').insert({ workspace_id: ws, ...link, title, task_type: 'call', priority: 'high', due_at: new Date().toISOString(), assigned_to: who, created_by: who, notes: note });
+  if (error) console.error('ai-agent dead number task', error.message);
+  if (who) await admin.from('notifications').insert({ workspace_id: ws, user_id: who, category: 'AI agent', title: title.slice(0, 120), body: note.slice(0, 500), ...link });
+}
+
+/** A failed dial. A busy or dead line is tagged with the number and waits a day; the try that reaches the limit says the number is done. */
+function dialRefused(reason: string, phone: string, key: string, prior: number): { ok: false; reason: string; retryHours: number; deadNumber?: DeadNumber } {
+  if (!dialFailure(reason)) return { ok: false, reason, retryHours: 6 };
+  const tagged = `${reason} ${dialedTag(key)}`;
+  if (prior + 1 < DIAL_FAILURE_LIMIT) return { ok: false, reason: tagged, retryHours: DIAL_RETRY_HOURS };
+  return { ok: false, reason: `${tagged}. ${deadNumberReason(phone, prior + 1)}`, retryHours: 24 * 7, deadNumber: { phone, justNow: true } };
 }
 
 // ---- AI Autopilot (migration 146) -------------------------------------------------------------
@@ -1335,16 +1515,6 @@ async function autopilotSender(admin: SupabaseClient, ws: number, s: AutopilotSe
 const canCallNow = (a: AgentLite) => a.can_call && !!a.live?.channels.outbound;
 const decisionFor = (i: Partial<Decision>): Decision => ({ action: 'wait', body: '', subject: '', call_goal: '', next_check_hours: 24, reason: '', ...i });
 const transferOn = (a: AgentLite) => !!a.live && a.live.live_transfer.enabled && a.live.live_transfer.destinations.length > 0;
-
-/** Run `fn` over `items`, at most `n` at a time. */
-async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let next = 0;
-  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
-    while (next < items.length) { const i = next++; out[i] = await fn(items[i]!); }
-  }));
-  return out;
-}
 
 const SPEED_BATCH = 25;
 const SPEED_INFLIGHT = 50;
@@ -1468,7 +1638,8 @@ async function speedTouch(admin: SupabaseClient, i: {
       await record(admin, { ...base, channel: 'call', action: 'call_placed', summary: `Speed to lead: calling ${rec.phone} ${Math.round(minutesOld * 60)} seconds after the lead came in.`, conversationId: r.conversationId, detail: { program: 'speed', from_number: r.from.phone, from_market: r.from.market } });
       return touched('call', { autopilot: { ...ap, phase: 'await_call', conversation_id: r.conversationId, call_at: new Date().toISOString() }, next_action_at: new Date(Date.now() + s.speed.fallback_minutes * 60_000).toISOString() });
     }
-    await record(admin, { ...base, channel: 'call', action: 'call_placed', status: 'failed', summary: `Speed call not placed: ${r.reason}. Texting instead.`, detail: { program: 'speed' } });
+    await record(admin, { ...base, channel: 'call', action: 'call_placed', status: callStatus(r), summary: `Speed call not placed: ${r.reason}. Texting instead.`, detail: { program: 'speed' } });
+    if (r.deadNumber?.justNow) await flagDeadNumber(admin, ws, rec, agent.name, r.deadNumber.phone);
   }
   // A text: the first touch, the after-hours one, or the stand-in for a call that could not be placed.
   if ((ft.now === 'sms' || ft.now === 'call') && rec.phone && channels.includes('sms')) {
@@ -1601,8 +1772,10 @@ async function speedPhase(admin: SupabaseClient, i: {
     const sent = await textRecipient(admin, { workspace_id: ws, created_by: sender }, { phone: rec.phone, seller_id: rec.id }, body, sender, { contractsLine: false });
     if (!sent.ok) {
       await record(admin, { ...base, channel: 'sms', action: 'sms_sent', status: 'failed', summary: `Text not sent: ${sent.reason}.`, detail: { body, program: 'speed' } });
-      if (/quiet hours/.test(sent.reason)) {
-        await save({ autopilot: { ...ap, phase: 'text_at_open', text_kind: kind }, next_action_at: new Date(nextWindowOpen(now + 60_000, tz, s.speed.window)).toISOString(), last_inbound_seen_at: i.seenAt });
+      if (/quiet hours/.test(sent.reason) || sent.reason === BLACKLIST_UNREAD) {
+        // Not a no: the same text waits for the window, or five minutes for the blacklist to read.
+        const at = sent.reason === BLACKLIST_UNREAD ? now + 5 * 60_000 : nextWindowOpen(now + 60_000, tz, s.speed.window);
+        await save({ autopilot: { ...ap, phase: 'text_at_open', text_kind: kind }, next_action_at: new Date(at).toISOString(), last_inbound_seen_at: i.seenAt });
         return 'failed';
       }
       return toFollowup(false);
@@ -1629,7 +1802,8 @@ async function speedPhase(admin: SupabaseClient, i: {
       const minutesOld = (now - Date.parse(String(ap.lead_created_at ?? e.started_at))) / 60_000;
       const r = await placeCall(admin, ws, agent, rec, decisionFor({ action: 'call', call_goal: speedCallGoal({ source: f.source, minutesOld, transferOn: transferOn(agent) }) }), persona, { leadWindowChecked: true });
       if (!r.ok) {
-        await record(admin, { ...base, channel: 'call', action: 'call_placed', status: 'failed', summary: `Call not placed: ${r.reason}.`, detail: { program: 'speed' } });
+        await record(admin, { ...base, channel: 'call', action: 'call_placed', status: callStatus(r), summary: `Call not placed: ${r.reason}.`, detail: { program: 'speed' } });
+        if (r.deadNumber?.justNow) await flagDeadNumber(admin, ws, rec, agent.name, r.deadNumber.phone);
         return ap.texted ? toFollowup(false) : text('first');
       }
       await record(admin, { ...base, channel: 'call', action: 'call_placed', summary: `Speed to lead: calling ${rec.phone} as the calling window opens.`, conversationId: r.conversationId, detail: { program: 'speed', from_number: r.from.phone, from_market: r.from.market } });

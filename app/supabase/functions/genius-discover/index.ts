@@ -48,7 +48,7 @@ import {
   type Any, type Candidate, type Filters, type Hit, type KnownBuyer, type SkipHit, type Source, type Subject,
   type SkipProvider, type SkipRequest,
   type Purchase,
-  addressKey, applyDetail, at, attomOwnerName, attomType, buildBuyers, mapAttom, mapHit, mapSkipBatch, mapSkipReapi, matchKnown, mergeAttom, parseFilters, searchPlans, skipTarget, subjectFrom, tagSources,
+  addressKey, applyDetail, at, attomOwnerName, attomType, buildBuyers, mapAttom, mapHit, mapSkipBatch, mapSkipReapi, matchKnown, mergeAttom, mergeSkipHits, parseFilters, searchPlans, skipTarget, subjectFrom, tagSources,
   isEntity, miles, ownerFrom, ownerKey,
 } from '../_shared/genius-core.ts';
 import {
@@ -244,7 +244,7 @@ async function cachedContacts(ctx: Ctx): Promise<Map<string, { hits: SkipHit[]; 
 
 type TraceIn = Pick<Candidate, 'key' | 'owner_name' | 'corporate' | 'people' | 'mail_parts' | 'mailing' | 'purchases'>;
 
-/** Skip trace each target: the workspace's 90-day cache first, then individuals on RealEstateAPI and LLCs on BatchData. */
+/** Skip trace each target: cache first, then RealEstateAPI for everyone; LLCs also BatchData, merged. */
 async function trace(ctx: Ctx, targets: TraceIn[]): Promise<Record<string, { hits: SkipHit[]; cached: boolean; at: string } | { error: string }>> {
   const since = new Date(Date.now() - SKIP_TTL_DAYS * 864e5).toISOString();
   const plans = targets.map((t) => ({ t, plan: skipTarget(t) }));
@@ -254,57 +254,75 @@ async function trace(ctx: Ctx, targets: TraceIn[]): Promise<Record<string, { hit
     : { data: [] };
   const cache = new Map((hit ?? []).map((r: Any) => [r.owner_key as string, r]));
   const out: Record<string, { hits: SkipHit[]; cached: boolean; at: string } | { error: string }> = {};
-  // One request per owner_key, however many targets share it.
-  type Todo = [string, { ts: TraceIn[]; provider: SkipProvider; body: SkipRequest; reapi: Record<string, string> }];
-  const todo = new Map<string, Todo[1]>();
+  type Work = { ts: TraceIn[]; useBatch: boolean; body: SkipRequest; reapi: Record<string, string>; reapiHits?: SkipHit[]; reapiErr?: string | null };
+  const todo = new Map<string, Work>();
   for (const { t, plan } of plans) {
     if (!plan) { out[t.key] = { error: 'No address to trace this owner at.' }; continue; }
     const c = cache.get(plan.owner_key);
     if (c) { out[t.key] = { hits: c.hits, cached: true, at: c.fetched_at }; continue; }
     const q = todo.get(plan.owner_key);
-    if (q) q.ts.push(t); else todo.set(plan.owner_key, { ts: [t], provider: plan.provider, body: plan.body, reapi: plan.reapi });
+    if (q) q.ts.push(t);
+    else todo.set(plan.owner_key, { ts: [t], useBatch: plan.useBatch, body: plan.body, reapi: plan.reapi });
   }
   if (!todo.size) return out;
 
-  // Only real answers (hits or a genuine no-match) are cached; a failed call is an
-  // error on that owner, never "no contact found".
   const at = new Date().toISOString();
   const rows: Any[] = [];
   let paid = 0; let stop: Error | null = null;
-  const settle = (q: Todo[1], r: { hits: SkipHit[]; cached: boolean; at: string } | { error: string }) => { for (const t of q.ts) out[t.key] = r; };
-  const keep = ([owner_key, q]: Todo, hits: SkipHit[], provider: SkipProvider) => {
+  const settle = (q: Work, r: { hits: SkipHit[]; cached: boolean; at: string } | { error: string }) => { for (const t of q.ts) out[t.key] = r; };
+  const keep = (owner_key: string, q: Work, hits: SkipHit[], provider: SkipProvider) => {
     rows.push({ workspace_id: ctx.ws, owner_key, owner_name: q.ts[0].owner_name, hits, provider, fetched_at: at, fetched_by: ctx.userId });
     settle(q, { hits, cached: false, at });
   };
   const owners = [...todo.entries()];
   try {
-    // 1 · Individuals on RealEstateAPI ($0.05 a hit), four at a time. If RealEstateAPI
-    //     can't serve at all (no credits, no key), the rest go to BatchData instead.
-    const toBatch: Todo[] = owners.filter(([, q]) => q.provider === 'batchdata');
     let reapiOut = false;
-    await pool(owners.filter(([, q]) => q.provider === 'reapi'), 4, async (o) => {
-      if (reapiOut) { toBatch.push(o); return; }
-      if (stop) { settle(o[1], { error: stop.message }); return; }
+    // 1 · RealEstateAPI for every owner (LLCs: mail/property address, no names).
+    await pool(owners, 4, async ([owner_key, q]) => {
+      if (stop) { q.reapiErr = stop.message; return; }
+      if (reapiOut) return;
       try {
-        const j = await reapi('SkipTrace', o[1].reapi);
+        const j = await reapi('SkipTrace', q.reapi);
         paid++;
-        keep(o, mapSkipReapi(j), 'reapi');
+        q.reapiHits = mapSkipReapi(j);
       } catch (e) {
-        if (e instanceof ReapiError && (e.status === 402 || e.status === 503)) { reapiOut = true; toBatch.push(o); return; }
+        if (e instanceof ReapiError && (e.status === 402 || e.status === 503)) { reapiOut = true; return; }
         if (e instanceof ReapiError && e.status === 429 && !stop) stop = e;
-        settle(o[1], { error: (e as Error).message });
+        q.reapiErr = (e as Error).message;
       }
     });
 
-    // 2 · LLCs and other entities — and any individual RealEstateAPI couldn't take — batched on BatchData.
-    if (toBatch.length) {
-      const { answers, billed } = await skipTrace(toBatch.map(([, q]) => q.body));
+    const batchQueue = owners.filter(([_, q]) => q.useBatch || reapiOut || !(q.reapiHits?.length));
+    const reapiOnly = owners.filter(([_, q]) => !q.useBatch && !reapiOut && q.reapiHits !== undefined);
+
+    for (const [owner_key, q] of reapiOnly) {
+      if (stop && !q.reapiHits?.length) { settle(q, { error: stop.message }); continue; }
+      if (q.reapiErr && !q.reapiHits?.length) { settle(q, { error: q.reapiErr }); continue; }
+      keep(owner_key, q, q.reapiHits ?? [], 'reapi');
+    }
+
+    // 2 · BatchData for LLCs (always, merged with RealEstateAPI) and individuals RealEstateAPI missed.
+    if (batchQueue.length) {
+      const { answers, billed } = await skipTrace(batchQueue.map(([, q]) => q.body));
       paid += billed;
-      toBatch.forEach((o, i) => {
+      batchQueue.forEach(([owner_key, q], i) => {
         const d = answers[i];
-        if (d instanceof BatchDataError) { settle(o[1], { error: d.message }); if (fatal(d) && !stop) stop = d; }
-        else if (d?.meta?.error) settle(o[1], { error: 'BatchData could not trace this owner. Try again later.' });
-        else keep(o, mapSkipBatch(d), 'batchdata');
+        if (d instanceof BatchDataError) {
+          if (q.reapiHits?.length) keep(owner_key, q, q.reapiHits, 'reapi');
+          else { settle(q, { error: d.message }); if (fatal(d) && !stop) stop = d; }
+          return;
+        }
+        if (d?.meta?.error) {
+          if (q.reapiHits?.length) keep(owner_key, q, q.reapiHits, 'reapi');
+          else settle(q, { error: 'BatchData could not trace this owner. Try again later.' });
+          return;
+        }
+        const batchHits = mapSkipBatch(d);
+        const merged = mergeSkipHits(q.reapiHits ?? [], batchHits);
+        const provider: SkipProvider = batchHits.length ? 'batchdata' : 'reapi';
+        if (merged.length || !q.reapiErr) keep(owner_key, q, merged, provider);
+        else if (q.reapiErr) settle(q, { error: q.reapiErr });
+        else keep(owner_key, q, [], provider);
       });
     }
   } finally {

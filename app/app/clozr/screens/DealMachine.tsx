@@ -38,16 +38,16 @@ import { parseDollars } from '@/lib/money';
 const TABS = ['Overview', 'Log', 'Buyers lists', 'Results', 'Masterlist', 'Settings'] as const;
 type Tab = (typeof TABS)[number];
 
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '14px', padding: '16px 18px', marginBottom: '12px' };
-const h2: React.CSSProperties = { margin: '0 0 4px', fontSize: '14px', fontWeight: 600, color: '#18181b' };
-const sub: React.CSSProperties = { margin: '0 0 12px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.45 };
-const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: '#71717a', fontWeight: 600, marginBottom: '6px' };
-const code: React.CSSProperties = { fontSize: '11.5px', background: '#f4f4f5', padding: '2px 6px', borderRadius: '4px', wordBreak: 'break-all', fontVariantNumeric: 'tabular-nums' };
-const input: React.CSSProperties = { height: '34px', padding: '0 10px', borderRadius: '9px', border: '1px solid #d4d4d8', background: '#fff', fontSize: '13px', color: '#18181b', width: '100%', outline: 'none' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '14px', padding: '16px 18px', marginBottom: '12px' };
+const h2: React.CSSProperties = { margin: '0 0 4px', fontSize: '14px', fontWeight: 600, color: 'var(--ink, #18181b)' };
+const sub: React.CSSProperties = { margin: '0 0 12px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.45 };
+const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600, marginBottom: '6px' };
+const code: React.CSSProperties = { fontSize: '11.5px', background: 'var(--surface-2, #f4f4f5)', padding: '2px 6px', borderRadius: '4px', wordBreak: 'break-all', fontVariantNumeric: 'tabular-nums' };
+const input: React.CSSProperties = { height: '34px', padding: '0 10px', borderRadius: '9px', border: '1px solid var(--line, #d4d4d8)', background: 'var(--surface, #fff)', fontSize: '13px', color: 'var(--ink, #18181b)', width: '100%', outline: 'none' };
 const textarea: React.CSSProperties = { ...input, height: 'auto', minHeight: '72px', padding: '8px 10px', fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.4 };
-const muted: React.CSSProperties = { fontSize: '12.5px', color: '#71717a' };
-const thStyle: React.CSSProperties = { textAlign: 'left', fontSize: '11.5px', color: '#71717a', fontWeight: 600, padding: '8px 10px', background: 'var(--c-thead)', borderBottom: '1px solid var(--c-thead-line)', whiteSpace: 'nowrap' };
-const tdStyle: React.CSSProperties = { padding: '9px 10px', fontSize: '12.5px', borderBottom: '1px solid #f0f0f1', color: '#18181b', verticalAlign: 'middle' };
+const muted: React.CSSProperties = { fontSize: '12.5px', color: 'var(--meta, #71717a)' };
+const thStyle: React.CSSProperties = { textAlign: 'left', fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600, padding: '8px 10px', background: 'var(--c-thead)', borderBottom: '1px solid var(--c-thead-line)', whiteSpace: 'nowrap' };
+const tdStyle: React.CSSProperties = { padding: '9px 10px', fontSize: '12.5px', borderBottom: '1px solid var(--divider-2, #f0f0f1)', color: 'var(--ink, #18181b)', verticalAlign: 'middle' };
 
 type BtnKind = 'primary' | 'machine' | 'ghost' | 'danger' | 'dark';
 function Btn({ kind = 'ghost', small, disabled, onClick, children, title, style }: {
@@ -56,14 +56,14 @@ function Btn({ kind = 'ghost', small, disabled, onClick, children, title, style 
   const base: React.CSSProperties = {
     height: small ? '28px' : '34px', padding: small ? '0 10px' : '0 14px', borderRadius: '9px', fontSize: small ? '12px' : '12.5px', fontWeight: 600,
     cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1, display: 'inline-flex', alignItems: 'center', gap: '7px', whiteSpace: 'nowrap',
-    border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', color: '#18181b', transition: 'background .12s, border-color .12s',
+    border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', color: 'var(--ink, #18181b)', transition: 'background .12s, border-color .12s',
   };
   const kinds: Record<BtnKind, [string, React.CSSProperties]> = {
     ghost: ['dc2', {}],
     primary: ['dc10', { background: 'var(--c-primary)', borderColor: 'var(--c-primary)', color: '#fff' }],
-    machine: ['clozr-dm-btn', { background: DEAL_MACHINE, borderColor: DEAL_MACHINE, color: '#fff' }],
+    machine: ['clozr-dm-btn', { background: DEAL_MACHINE, borderColor: DEAL_MACHINE, color: 'var(--on-dark, #fff)' }],
     danger: ['dc36', { background: '#dc2626', borderColor: '#dc2626', color: '#fff' }],
-    dark: ['dc6', { background: '#fff', borderColor: '#d4d4d8', color: '#18181b' }],
+    dark: ['dc6', { background: 'var(--surface, #fff)', borderColor: 'var(--line, #d4d4d8)', color: 'var(--ink, #18181b)' }],
   };
   const [cls, extra] = kinds[kind];
   return (
@@ -75,30 +75,30 @@ function Btn({ kind = 'ghost', small, disabled, onClick, children, title, style 
 
 function Toggle({ on, onChange, disabled, children, warn }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean; children: React.ReactNode; warn?: boolean }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '10px 0', borderTop: '1px solid #f0f0f1', cursor: disabled ? 'default' : 'pointer' }}>
+    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '10px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)', cursor: disabled ? 'default' : 'pointer' }}>
       <span
         role="switch" aria-checked={on}
         onClick={(e) => { e.preventDefault(); if (!disabled) onChange(!on); }}
         style={{ flex: 'none', marginTop: '1px', width: '34px', height: '20px', borderRadius: '999px', background: on ? (warn ? '#d97706' : 'var(--c-primary)') : '#d4d4d8', position: 'relative', transition: 'background .15s', opacity: disabled ? 0.6 : 1 }}
       >
-        <span style={{ position: 'absolute', top: '2px', left: on ? '16px' : '2px', width: '16px', height: '16px', borderRadius: '50%', background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,.2)', transition: 'left .15s' }} />
+        <span style={{ position: 'absolute', top: '2px', left: on ? '16px' : '2px', width: '16px', height: '16px', borderRadius: '50%', background: 'var(--surface, #fff)', boxShadow: '0 1px 2px rgba(0,0,0,.2)', transition: 'left .15s' }} />
       </span>
-      <span style={{ fontSize: '13px', color: '#18181b', lineHeight: 1.4 }}>{children}</span>
+      <span style={{ fontSize: '13px', color: 'var(--ink, #18181b)', lineHeight: 1.4 }}>{children}</span>
     </label>
   );
 }
 
 function Stat({ n, k, color }: { n: number | string; k: string; color?: string }) {
   return (
-    <div style={{ flex: '1 1 0', minWidth: '90px', padding: '12px 14px', borderRadius: '12px', background: '#fafafa', border: '1px solid #f0f0f1' }}>
-      <div style={{ fontSize: '24px', fontWeight: 800, letterSpacing: '-0.03em', color: color ?? '#18181b', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{n}</div>
+    <div style={{ flex: '1 1 0', minWidth: '90px', padding: '12px 14px', borderRadius: '12px', background: 'var(--canvas, #fafafa)', border: '1px solid var(--divider-2, #f0f0f1)' }}>
+      <div style={{ fontSize: '24px', fontWeight: 800, letterSpacing: '-0.03em', color: color ?? 'var(--ink, #18181b)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{n}</div>
       <div style={{ ...label, marginBottom: 0, marginTop: '6px' }}>{k}</div>
     </div>
   );
 }
 
 function Pill({ tone, children }: { tone: 'green' | 'amber' | 'red' | 'zinc' | 'orange' | 'blue'; children: React.ReactNode }) {
-  const c = { green: ['#dcfce7', '#15803d'], amber: ['#fef3c7', '#b45309'], red: ['#fee2e2', '#b91c1c'], zinc: ['#f4f4f5', '#52525b'], orange: [DEAL_MACHINE_TINT, '#c2410c'], blue: ['#eef2ff', '#3730a3'] }[tone];
+  const c = { green: ['var(--positive-soft, #dcfce7)', '#15803d'], amber: ['var(--caution-soft, #fef3c7)', '#b45309'], red: ['var(--negative-soft, #fee2e2)', '#b91c1c'], zinc: ['var(--surface-2, #f4f4f5)', 'var(--muted, #52525b)'], orange: [DEAL_MACHINE_TINT, '#c2410c'], blue: ['#eef2ff', '#3730a3'] }[tone];
   return <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 9px', borderRadius: '999px', background: c[0], color: c[1], fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap' }}>{children}</span>;
 }
 
@@ -107,7 +107,7 @@ function Dot({ color }: { color: string }) {
 }
 
 const Empty = ({ children }: { children: React.ReactNode }) => (
-  <div style={{ padding: '22px 14px', textAlign: 'center', color: '#71717a', fontSize: '12.5px', background: '#fafafa', borderRadius: '10px', border: '1px dashed #e4e4e7' }}>{children}</div>
+  <div style={{ padding: '22px 14px', textAlign: 'center', color: 'var(--meta, #71717a)', fontSize: '12.5px', background: 'var(--canvas, #fafafa)', borderRadius: '10px', border: '1px dashed var(--divider, #e4e4e7)' }}>{children}</div>
 );
 
 // ---- the screen ----------------------------------------------------------------
@@ -175,8 +175,8 @@ export function DealMachine({ V }: { V: ClozrView }) {
     if (state.offline) return <Pill tone="zinc">Sample</Pill>;
     if (!state.key) return <Pill tone="amber"><Dot color="#d97706" />No key</Pill>;
     if (cloudOn && state.apifyConnected === false) return <Pill tone="amber"><Dot color="#d97706" />Cloud · no Apify token</Pill>;
-    if (cloudOn && !online) return <Pill tone="zinc"><Dot color="#a1a1aa" />Cloud · checking in</Pill>;
-    if (!online) return <Pill tone="zinc"><Dot color="#a1a1aa" />Extension off · seen {since(device?.lastSeenAt)}</Pill>;
+    if (cloudOn && !online) return <Pill tone="zinc"><Dot color="var(--subtle, #a1a1aa)" />Cloud · checking in</Pill>;
+    if (!online) return <Pill tone="zinc"><Dot color="var(--subtle, #a1a1aa)" />Extension off · seen {since(device?.lastSeenAt)}</Pill>;
     if (runState === 'paused') return <Pill tone="amber"><Dot color="#d97706" />Paused</Pill>;
     if (runState === 'stopping') return <Pill tone="amber"><Dot color="#d97706" />Stopping</Pill>;
     if (runState === 'running') return <Pill tone="green"><Dot color="#16a34a" />Running</Pill>;
@@ -185,24 +185,24 @@ export function DealMachine({ V }: { V: ClozrView }) {
 
   return (
     <section data-screen-label="Deal Machine" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      <style>{`.clozr-dm-btn:hover{background:#c2410c !important;border-color:#c2410c !important}.clozr-dm-tab:hover{color:#18181b !important}.clozr-dm-row:hover{background:#fafafa}`}</style>
-      <div style={{ background: '#fff', borderBottom: '1px solid #e4e4e7', padding: V.isMobile ? '10px 12px 0' : '12px 20px 0' }}>
+      <style>{`.clozr-dm-btn:hover{background:#c2410c !important;border-color:#c2410c !important}.clozr-dm-tab:hover{color:var(--ink, #18181b) !important}.clozr-dm-row:hover{background:var(--canvas, #fafafa)}`}</style>
+      <div style={{ background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)', padding: V.isMobile ? '10px 12px 0' : '12px 20px 0' }}>
         <div data-head style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', rowGap: '8px' }}>
           <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: DEAL_MACHINE, flex: 'none' }} />
           <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em' }}>Deal Machine</h1>
-          <span style={{ fontSize: '12px', color: '#71717a' }}>{cloudOn ? 'Running in CLOZR · InvestorLift · Facebook groups' : 'InvestorLift · Facebook groups · RealEstateBees · buyers lists'}</span>
+          <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>{cloudOn ? 'Running in CLOZR · InvestorLift · Facebook groups' : 'InvestorLift · Facebook groups · RealEstateBees · buyers lists'}</span>
           <div style={{ flex: 1 }} />
           {headStatus}
-          {device ? <span style={{ fontSize: '11.5px', color: '#71717a' }}>{device.label ?? device.deviceId.slice(0, 8)}{device.version ? ` · v${device.version}` : ''}</span> : null}
+          {device ? <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>{device.label ?? device.deviceId.slice(0, 8)}{device.version ? ` · v${device.version}` : ''}</span> : null}
         </div>
         <div data-tabs style={{ display: 'flex', gap: '2px', marginTop: '10px', overflow: 'auto' }}>
           {TABS.map((t) => {
             const on = t === tab;
             const badge = t === 'Log' && activeRun ? '●' : t === 'Buyers lists' && state ? state.totals.optedIn : t === 'Results' && state ? state.totals.deals : null;
             return (
-              <button key={t} type="button" className="clozr-dm-tab" onClick={() => setTab(t)} style={{ height: '36px', padding: '0 11px', border: 0, borderBottom: `2px solid ${on ? DEAL_MACHINE : 'transparent'}`, background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 500, color: on ? '#18181b' : '#71717a', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <button key={t} type="button" className="clozr-dm-tab" onClick={() => setTab(t)} style={{ height: '36px', padding: '0 11px', border: 0, borderBottom: `2px solid ${on ? DEAL_MACHINE : 'transparent'}`, background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 500, color: on ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                 {t}
-                {badge !== null && badge !== 0 ? <span style={{ fontSize: '10.5px', fontWeight: 700, color: on ? DEAL_MACHINE : '#a1a1aa', ...(badge === '●' ? { color: '#16a34a' } : {}) }}>{badge}</span> : null}
+                {badge !== null && badge !== 0 ? <span style={{ fontSize: '10.5px', fontWeight: 700, color: on ? DEAL_MACHINE : 'var(--subtle, #a1a1aa)', ...(badge === '●' ? { color: '#16a34a' } : {}) }}>{badge}</span> : null}
               </button>
             );
           })}
@@ -212,7 +212,7 @@ export function DealMachine({ V }: { V: ClozrView }) {
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: V.isMobile ? '12px 12px 40px' : '16px 20px 40px' }}>
         <div style={{ maxWidth: tab === 'Log' || tab === 'Results' ? '1100px' : '860px' }}>
           {note ? (
-            <div role="status" style={{ ...card, padding: '11px 13px', background: note.ok ? '#dcfce7' : '#fee2e2', borderColor: note.ok ? '#bbf7d0' : '#fecaca', color: note.ok ? '#15803d' : '#b91c1c', fontSize: '12.5px' }}>{note.text}</div>
+            <div role="status" style={{ ...card, padding: '11px 13px', background: note.ok ? 'var(--positive-soft, #dcfce7)' : 'var(--negative-soft, #fee2e2)', borderColor: note.ok ? 'var(--tint-green-3, #bbf7d0)' : 'var(--tint-red-2, #fecaca)', color: note.ok ? 'var(--tx-green, #15803d)' : '#b91c1c', fontSize: '12.5px' }}>{note.text}</div>
           ) : null}
 
           {!state ? <p style={muted}>Reading…</p> : state.offline ? (
@@ -275,15 +275,15 @@ function Overview({ V, state, cloudOn, device, online, runState, activeRun, pend
           <Btn disabled={disabled || runState !== 'paused' || queued('resume')} onClick={() => cmd('resume')}>▶ Resume</Btn>
           <Btn kind="dark" disabled={disabled || !isRunning || queued('stop')} onClick={() => cmd('stop')}>⏹ Stop</Btn>
           <div style={{ flex: 1 }} />
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: '#18181b', cursor: canOperate ? 'pointer' : 'default' }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: 'var(--ink, #18181b)', cursor: canOperate ? 'pointer' : 'default' }}>
             <input type="checkbox" checked={state.settings.dryRun} disabled={!canOperate} onChange={(e) => void onDryRun(e.target.checked)} style={{ width: '15px', height: '15px', accentColor: DEAL_MACHINE }} />
             Dry run <span style={muted}>(log only, submit nothing)</span>
           </label>
         </div>
-        <div style={{ marginTop: '14px', height: '6px', borderRadius: '999px', background: '#f4f4f5', overflow: 'hidden' }}>
+        <div style={{ marginTop: '14px', height: '6px', borderRadius: '999px', background: 'var(--surface-2, #f4f4f5)', overflow: 'hidden' }}>
           <div style={{ height: '100%', width: `${pct}%`, borderRadius: '999px', background: runState === 'paused' ? '#d97706' : DEAL_MACHINE, transition: 'width .5s cubic-bezier(.4,0,.2,1)' }} />
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', marginTop: '8px', fontSize: '12px', color: '#71717a', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', marginTop: '8px', fontSize: '12px', color: 'var(--meta, #71717a)', flexWrap: 'wrap' }}>
           <span>
             {!state.key ? 'Issue the key under Settings → Integrations to enable the controls.'
               : cloudOn && state.apifyConnected === false ? 'Cloud is on but has no Apify token. An owner or admin pastes it under Settings → Cloud.'
@@ -292,10 +292,10 @@ function Overview({ V, state, cloudOn, device, online, runState, activeRun, pend
               : activeRun ? (device?.step ?? activeRun.step ?? `${KIND_LABELS[activeRun.kind] ?? activeRun.kind} running…`)
               : `Idle · ${KIND_LABELS[lastDone?.kind ?? ''] ?? 'last run'} ${lastDone ? since(lastDone.endedAt ?? lastDone.startedAt) : 'never'}`}
           </span>
-          <span style={{ fontWeight: 700, fontSize: '11.5px', color: runState === 'running' ? '#15803d' : runState === 'paused' || runState === 'stopping' ? '#b45309' : '#a1a1aa' }}>{runState}</span>
+          <span style={{ fontWeight: 700, fontSize: '11.5px', color: runState === 'running' ? '#15803d' : runState === 'paused' || runState === 'stopping' ? '#b45309' : 'var(--subtle, #a1a1aa)' }}>{runState}</span>
         </div>
         {pending.length ? (
-          <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #f0f0f1', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--divider-2, #f0f0f1)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {pending.map((p) => (
               <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '12.5px' }}>
                 <Pill tone={p.status === 'acked' ? 'green' : 'amber'}>{p.status === 'acked' ? 'picked up' : 'queued'}</Pill>
@@ -317,19 +317,19 @@ function Overview({ V, state, cloudOn, device, online, runState, activeRun, pend
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <Stat n={counts.scraped ?? 0} k="Scraped" color="#2d5bff" />
           <Stat n={counts.valid ?? 0} k="Valid" />
-          <Stat n={counts.qualified ?? 0} k="Qualified" color="#15803d" />
+          <Stat n={counts.qualified ?? 0} k="Qualified" color="var(--tx-green, #15803d)" />
           <Stat n={counts.clozr ?? counts.submitted ?? 0} k="To CLOZR" color={DEAL_MACHINE} />
-          <Stat n={counts.optedIn ?? 0} k="Opted in" color="#0A8560" />
+          <Stat n={counts.optedIn ?? 0} k="Opted in" color="var(--tx-mint, #0a8560)" />
         </div>
-        {shown?.error ? <p style={{ ...muted, color: '#b91c1c', marginTop: '10px', marginBottom: 0 }}>{shown.error}</p> : null}
+        {shown?.error ? <p style={{ ...muted, color: 'var(--tx-red, #b91c1c)', marginTop: '10px', marginBottom: 0 }}>{shown.error}</p> : null}
         {diag ? (
-          <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #f0f0f1', fontSize: '12.5px', color: '#52525b', display: 'grid', gridTemplateColumns: V.isMobile ? '1fr' : '1fr 1fr', gap: '4px 18px' }}>
+          <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--divider-2, #f0f0f1)', fontSize: '12.5px', color: 'var(--muted, #52525b)', display: 'grid', gridTemplateColumns: V.isMobile ? '1fr' : '1fr 1fr', gap: '4px 18px' }}>
             {(['investorlift', 'facebook', 'reb', 'email'] as const).map((k) => {
               const d = diag[k] as Record<string, number> | undefined;
               if (!d) return null;
               const name = { investorlift: 'InvestorLift', facebook: 'Facebook', reb: 'RealEstateBees', email: 'Email' }[k];
               const errs = Array.isArray((d as unknown as { errors?: unknown[] }).errors) ? (d as unknown as { errors: unknown[] }).errors.length : Number(d.errors ?? 0);
-              return <span key={k}><strong style={{ color: '#18181b' }}>{name}</strong> · valid {d.valid ?? 0} · scraped {d.scraped ?? 0}{errs ? <span style={{ color: '#b91c1c' }}> · {errs} error{errs === 1 ? '' : 's'}</span> : ''}</span>;
+              return <span key={k}><strong style={{ color: 'var(--ink, #18181b)' }}>{name}</strong> · valid {d.valid ?? 0} · scraped {d.scraped ?? 0}{errs ? <span style={{ color: 'var(--tx-red, #b91c1c)' }}> · {errs} error{errs === 1 ? '' : 's'}</span> : ''}</span>;
             })}
             <span>Address {Number(diag.withAddress ?? 0)} · ARV {Number(diag.withArv ?? 0)} · Asking {Number(diag.withAskingPrice ?? 0)}</span>
           </div>
@@ -341,9 +341,9 @@ function Overview({ V, state, cloudOn, device, online, runState, activeRun, pend
         <p style={sub}>{cloudOn ? 'Scrape only runs in the cloud like RUN. The buyers-list bot, InvestorLift ETL and Blitz still need the Chrome extension (they fill forms in a logged-in browser) and queue for it.' : 'Each one is the same pipeline with parts left out. They queue like RUN and never overlap: the extension refuses a second job while one is on.'}</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
           <Btn disabled={runDisabled || isRunning || queued('scrape')} onClick={() => cmd('scrape')}>Scrape only</Btn>
-          <Btn disabled={disabled || isRunning || queued('buyers_list')} onClick={() => cmd('buyers_list')} style={{ borderColor: '#A7DCC5', color: '#08694C', background: '#F0FAF5' }}>Buyers list only</Btn>
+          <Btn disabled={disabled || isRunning || queued('buyers_list')} onClick={() => cmd('buyers_list')} style={{ borderColor: 'var(--c-action-line, #a7dcc5)', color: 'var(--tx-mint-deep, #08694c)', background: 'var(--c-genius-soft, #f0faf5)' }}>Buyers list only</Btn>
           <Btn disabled={disabled || isRunning || queued('il_etl')} onClick={() => cmd('il_etl')}>InvestorLift ETL</Btn>
-          <Btn disabled={disabled || isRunning || queued('blitz')} onClick={() => cmd('blitz')} title="Opt into every market's buyers lists now, ignoring the daily pacing" style={{ borderColor: '#fecaca', color: '#b91c1c', background: '#fef2f2' }}>Blitz: all markets</Btn>
+          <Btn disabled={disabled || isRunning || queued('blitz')} onClick={() => cmd('blitz')} title="Opt into every market's buyers lists now, ignoring the daily pacing" style={{ borderColor: 'var(--tint-red-2, #fecaca)', color: 'var(--tx-red, #b91c1c)', background: 'var(--tint-red, #fef2f2)' }}>Blitz: all markets</Btn>
           <div style={{ flex: 1 }} />
           <Btn kind="danger" small disabled={!canOperate || busy || !state.key || queued('force_reset')} onClick={() => cmd('force_reset')} title="Clears a run the extension thinks is still going after Chrome crashed">Force reset stuck run</Btn>
         </div>
@@ -353,7 +353,7 @@ function Overview({ V, state, cloudOn, device, online, runState, activeRun, pend
         <h2 style={h2}>Recent runs</h2>
         <p style={sub}>What the cloud and the extension reported, newest first. Open the Log tab for the line-by-line.</p>
         {state.runs.length === 0 ? <Empty>No runs yet. Press RUN, or switch on scheduled runs under Settings → General.</Empty> : (
-          <div style={{ overflowX: 'auto', border: '1px solid #e4e4e7', borderRadius: '10px' }}>
+          <div style={{ overflowX: 'auto', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>{['Started', 'Job', 'Trigger', 'Status', 'Scraped', 'Valid', 'Qualified', 'To CLOZR', 'Took'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
               <tbody>
@@ -381,8 +381,8 @@ function Overview({ V, state, cloudOn, device, online, runState, activeRun, pend
           <h2 style={h2}>Runtimes</h2>
           <p style={sub}>CLOZR Cloud and every Chrome that has checked in with this workspace’s key. One at a time runs a job; the others stay in reserve.</p>
           {state.devices.map((d) => (
-            <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderTop: '1px solid #f0f0f1', fontSize: '12.5px' }}>
-              <Dot color={d.online ? '#16a34a' : '#a1a1aa'} />
+            <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)', fontSize: '12.5px' }}>
+              <Dot color={d.online ? '#16a34a' : 'var(--subtle, #a1a1aa)'} />
               <span style={{ fontWeight: 600 }}>{d.label ?? d.deviceId.slice(0, 12)}</span>
               <span style={muted}>{d.version ? `v${d.version} · ` : ''}{d.online ? (d.isRunning ? d.step ?? 'running' : 'idle') : `last seen ${since(d.lastSeenAt)}`}</span>
               <div style={{ flex: 1 }} />
@@ -398,7 +398,7 @@ function Overview({ V, state, cloudOn, device, online, runState, activeRun, pend
 // ---- Log ------------------------------------------------------------------------
 
 const LEVEL_ORDER = { error: 3, warn: 2, info: 1, debug: 0 } as const;
-const LEVEL_COLOR = { error: '#b91c1c', warn: '#b45309', info: '#18181b', debug: '#71717a' } as const;
+const LEVEL_COLOR = { error: '#b91c1c', warn: '#b45309', info: 'var(--ink, #18181b)', debug: 'var(--meta, #71717a)' } as const;
 
 function LogTab({ workspaceId, runs, activeRun, toast }: { workspaceId: number | null; runs: DealMachineState['runs']; activeRun: DealMachineState['runs'][number] | null; toast: (m: string) => void }) {
   const [lines, setLines] = useState<DmLogLine[]>([]);
@@ -454,17 +454,17 @@ function LogTab({ workspaceId, runs, activeRun, toast }: { workspaceId: number |
           <option value="all">All runs</option>
           {runs.slice(0, 20).map((r) => <option key={r.id} value={r.id}>{KIND_LABELS[r.kind] ?? r.kind} · {new Date(r.startedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</option>)}
         </select>
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#52525b' }}><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> follow</label>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--muted, #52525b)' }}><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> follow</label>
         <Btn small onClick={() => navigator.clipboard?.writeText(text()).then(() => toast('Log copied'))}>Copy</Btn>
         <Btn small onClick={download}>Download</Btn>
       </div>
       <div ref={boxRef} style={{ flex: 1, minHeight: '50vh', overflow: 'auto', background: '#0c0d10', color: '#e4e4e7', borderRadius: '10px', padding: '10px 12px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: '11.5px', lineHeight: 1.55 }}>
-        {shown.length === 0 ? <span style={{ color: '#71717a' }}>{lines.length ? 'Nothing matches the filter.' : 'No log lines yet. The extension ships its log every few seconds while it runs.'}</span> : shown.map((l) => (
+        {shown.length === 0 ? <span style={{ color: 'var(--meta, #71717a)' }}>{lines.length ? 'Nothing matches the filter.' : 'No log lines yet. The extension ships its log every few seconds while it runs.'}</span> : shown.map((l) => (
           <div key={l.id} style={{ display: 'flex', gap: '10px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-            <span style={{ color: '#71717a', flex: 'none' }}>{l.ts.slice(11, 19)}</span>
-            <span style={{ color: l.level === 'error' ? '#f87171' : l.level === 'warn' ? '#fbbf24' : l.level === 'debug' ? '#71717a' : '#a1a1aa', flex: 'none', width: '38px', fontSize: '11px', paddingTop: '2px' }}>{l.level}</span>
+            <span style={{ color: 'var(--meta, #71717a)', flex: 'none' }}>{l.ts.slice(11, 19)}</span>
+            <span style={{ color: l.level === 'error' ? '#f87171' : l.level === 'warn' ? '#fbbf24' : l.level === 'debug' ? 'var(--meta, #71717a)' : 'var(--subtle, #a1a1aa)', flex: 'none', width: '38px', fontSize: '11px', paddingTop: '2px' }}>{l.level}</span>
             <span style={{ color: '#fdba74', flex: 'none' }}>[{l.tag ?? 'bg'}]</span>
-            <span style={{ color: l.level === 'error' ? '#fca5a5' : '#e4e4e7' }}>{l.msg}</span>
+            <span style={{ color: l.level === 'error' ? '#fca5a5' : 'var(--divider, #e4e4e7)' }}>{l.msg}</span>
           </div>
         ))}
       </div>
@@ -500,7 +500,7 @@ function BuyersLists({ state, canOperate, busy, cmd }: { state: DealMachineState
           <Stat n={state.totals.optedIn} k="Opted in" color="#0A8560" />
           <Stat n={state.optins.length} k="Visited" />
           <Stat n={runs} k="Runs" />
-          <Stat n={failed.length} k="No form" color={failed.length ? '#b45309' : undefined} />
+          <Stat n={failed.length} k="No form" color={failed.length ? 'var(--tx-amber, #b45309)' : undefined} />
           <Stat n={state.totals.wholesalers} k="Wholesalers captured" color="#15803d" />
         </div>
       </div>
@@ -508,16 +508,16 @@ function BuyersLists({ state, canOperate, busy, cmd }: { state: DealMachineState
         <h2 style={h2}>Where it has been</h2>
         <p style={sub}>One row per domain, latest outcome. A domain that once opted in stays opted in.</p>
         {state.optins.length === 0 ? <Empty>No opt-ins yet. Run the bot, or press RUN — it is step 4 of the full pipeline.</Empty> : (
-          <div style={{ overflowX: 'auto', border: '1px solid #e4e4e7', borderRadius: '10px' }}>
+          <div style={{ overflowX: 'auto', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>{['Domain', 'Status', 'Method', 'Detail', 'Tries', 'Last'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
               <tbody>
                 {state.optins.map((o) => (
                   <tr key={o.id} className="clozr-dm-row">
-                    <td style={tdStyle}>{o.url ? <a href={o.url} target="_blank" rel="noreferrer" style={{ color: '#0369a1', textDecoration: 'none' }}>{o.domain}</a> : o.domain}</td>
+                    <td style={tdStyle}>{o.url ? <a href={o.url} target="_blank" rel="noreferrer" style={{ color: 'var(--tx-sky, #0369a1)', textDecoration: 'none' }}>{o.domain}</a> : o.domain}</td>
                     <td style={tdStyle}><Pill tone={o.status === 'opted_in' ? 'green' : o.status === 'queued' ? 'blue' : o.status === 'skipped' ? 'zinc' : 'amber'}>{o.status.replace('_', ' ')}</Pill></td>
                     <td style={tdStyle}>{o.method ?? '—'}</td>
-                    <td style={{ ...tdStyle, maxWidth: '320px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#52525b' }} title={o.detail ?? ''}>{o.detail ?? '—'}</td>
+                    <td style={{ ...tdStyle, maxWidth: '320px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--muted, #52525b)' }} title={o.detail ?? ''}>{o.detail ?? '—'}</td>
                     <td style={{ ...tdStyle, fontVariantNumeric: 'tabular-nums' }}>{o.attempts}</td>
                     <td style={tdStyle}>{since(o.lastAt)}</td>
                   </tr>
@@ -553,9 +553,9 @@ function Results({ V, state }: { V: ClozrView; state: DealMachineState }) {
           <p style={{ ...sub, margin: '4px 0 0' }}>Every deal Deal Machine landed, from the cloud or the extension, newest first, as real CLOZR records. Clears means asking ≤ {pct}% of ARV − rehab − $20k.</p>
         </div>
         <div style={{ flex: 1 }} />
-        <div style={{ display: 'inline-flex', border: '1px solid #e4e4e7', borderRadius: '9px', overflow: 'hidden' }}>
+        <div style={{ display: 'inline-flex', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', overflow: 'hidden' }}>
           {(['all', 'clears', 'misses'] as const).map((k) => (
-            <button key={k} type="button" onClick={() => setOnly(k)} style={{ height: '30px', padding: '0 12px', border: 0, background: only === k ? '#18181b' : '#fff', color: only === k ? '#fff' : '#52525b', fontSize: '12px', fontWeight: 600, cursor: 'pointer', textTransform: 'capitalize' }}>{k}</button>
+            <button key={k} type="button" onClick={() => setOnly(k)} style={{ height: '30px', padding: '0 12px', border: 0, background: only === k ? 'var(--ink, #18181b)' : 'var(--surface, #fff)', color: only === k ? 'var(--surface, #fff)' : 'var(--muted, #52525b)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', textTransform: 'capitalize' }}>{k}</button>
           ))}
         </div>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search address, city, source" style={{ ...input, width: '240px', height: '30px' }} />
@@ -563,17 +563,17 @@ function Results({ V, state }: { V: ClozrView; state: DealMachineState }) {
       {rows.length === 0 ? <Empty>{state.landed.length ? 'Nothing matches.' : state.key ? 'Nothing yet. Deals land here when a run finds something in the buy box.' : 'Nothing yet — there is no Deal Machine key to land finds under.'}</Empty> : (
         <div style={{ display: 'grid', gridTemplateColumns: V.isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))', gap: '10px' }}>
           {rows.map(({ d, mao, clears }) => (
-            <button key={d.id} type="button" className="dc37" onClick={() => V.openLandedDeal(d.id, d.sellerId)} style={{ textAlign: 'left', border: '1px solid #e4e4e7', borderRadius: '12px', background: '#fff', padding: 0, cursor: 'pointer', overflow: 'hidden', display: 'flex', flexDirection: 'column', transition: 'box-shadow .15s, border-color .15s' }}>
+            <button key={d.id} type="button" className="dc37" onClick={() => V.openLandedDeal(d.id, d.sellerId)} style={{ textAlign: 'left', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', background: 'var(--surface, #fff)', padding: 0, cursor: 'pointer', overflow: 'hidden', display: 'flex', flexDirection: 'column', transition: 'box-shadow .15s, border-color .15s' }}>
               <div style={{ height: '110px', background: d.heroImageUrl ? `#e4e4e7 url(${d.heroImageUrl}) center/cover no-repeat` : `linear-gradient(135deg, ${DEAL_MACHINE_TINT}, #fde8d3)`, position: 'relative' }}>
                 <span style={{ position: 'absolute', top: '8px', left: '8px' }}><Pill tone="orange">{srcLabel(d.leadSource)}</Pill></span>
                 {clears !== null ? <span style={{ position: 'absolute', top: '8px', right: '8px' }}><Pill tone={clears ? 'green' : 'amber'}>{clears ? 'clears' : 'misses'}</Pill></span> : null}
               </div>
               <div style={{ padding: '10px 12px 12px' }}>
-                <div style={{ fontSize: '13.5px', fontWeight: 700, color: '#18181b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.address ?? d.sourceId ?? `Deal ${d.id}`}</div>
+                <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--ink, #18181b)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.address ?? d.sourceId ?? `Deal ${d.id}`}</div>
                 <div style={{ ...muted, marginTop: '2px' }}>{[d.city, d.state].filter(Boolean).join(', ') || '—'} · {d.stage} · {since(d.createdAt)}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px', marginTop: '10px' }}>
                   {([['Asking', d.asking], ['ARV', d.arv], ['Rehab', d.rehab], ['MAO', mao]] as [string, number | null][]).map(([k, v]) => (
-                    <span key={k}><span style={{ ...label, marginBottom: '2px' }}>{k}</span><span style={{ fontSize: '12.5px', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: k === 'MAO' ? DEAL_MACHINE : '#18181b' }}>{money(v)}</span></span>
+                    <span key={k}><span style={{ ...label, marginBottom: '2px' }}>{k}</span><span style={{ fontSize: '12.5px', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: k === 'MAO' ? DEAL_MACHINE : 'var(--ink, #18181b)' }}>{money(v)}</span></span>
                   ))}
                 </div>
               </div>
@@ -595,8 +595,8 @@ function Masterlist({ V, state, setTab }: { V: ClozrView; state: DealMachineStat
         <p style={sub}>Everything the extension has ever put into this workspace. Unlike the popup’s masterlist these are records, not a local cache: they survive a reinstall and every rep sees the same list.</p>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <Stat n={state.totals.deals} k="Deals" color="#2d5bff" />
-          <Stat n={state.totals.buyers} k="Buyers captured" color="#15803d" />
-          <Stat n={state.totals.wholesalers} k="Wholesalers" color="#0A8560" />
+          <Stat n={state.totals.buyers} k="Buyers captured" color="var(--tx-green, #15803d)" />
+          <Stat n={state.totals.wholesalers} k="Wholesalers" color="var(--tx-mint, #0a8560)" />
           <Stat n={state.totals.optedIn} k="Buyers lists" color={DEAL_MACHINE} />
           <Stat n={state.totals.groups} k="FB groups in Buyr" />
         </div>
@@ -610,11 +610,11 @@ function Masterlist({ V, state, setTab }: { V: ClozrView; state: DealMachineStat
       <div style={card}>
         <h2 style={h2}>Recent deals</h2>
         {state.landed.length === 0 ? <Empty>Nothing yet.</Empty> : state.landed.slice(0, 10).map((d, i) => (
-          <button key={d.id} type="button" className="dc15" onClick={() => V.openLandedDeal(d.id, d.sellerId)} style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '9px 6px', border: 0, borderTop: i === 0 ? '1px solid #f0f0f1' : '1px solid #f0f0f1', background: 'none', textAlign: 'left', cursor: 'pointer', borderRadius: '6px' }}>
+          <button key={d.id} type="button" className="dc15" onClick={() => V.openLandedDeal(d.id, d.sellerId)} style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '9px 6px', border: 0, borderTop: i === 0 ? '1px solid var(--divider-2, #f0f0f1)' : '1px solid var(--divider-2, #f0f0f1)', background: 'none', textAlign: 'left', cursor: 'pointer', borderRadius: '6px' }}>
             <span style={{ color: DEAL_MACHINE, display: 'inline-flex' }}><Mark label={'Deal Machine'} /></span>
             <span style={{ minWidth: 0, flex: 1 }}>
-              <span style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#18181b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.address ?? d.sourceId ?? `Deal ${d.id}`}</span>
-              <span style={{ display: 'block', fontSize: '12px', color: '#71717a', marginTop: '1px' }}>{d.stage} · ARV {money(d.arv)} · rehab {money(d.rehab)} · MAO {money(d.mao ?? maoOf(d.arv, d.rehab, state.settings.deal.maoPct))} · {since(d.createdAt)}</span>
+              <span style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--ink, #18181b)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.address ?? d.sourceId ?? `Deal ${d.id}`}</span>
+              <span style={{ display: 'block', fontSize: '12px', color: 'var(--meta, #71717a)', marginTop: '1px' }}>{d.stage} · ARV {money(d.arv)} · rehab {money(d.rehab)} · MAO {money(d.mao ?? maoOf(d.arv, d.rehab, state.settings.deal.maoPct))} · {since(d.createdAt)}</span>
             </span>
           </button>
         ))}
@@ -624,7 +624,7 @@ function Masterlist({ V, state, setTab }: { V: ClozrView; state: DealMachineStat
         {state.optins.filter((o) => o.status === 'opted_in').length === 0 ? <Empty>None yet.</Empty> : (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
             {state.optins.filter((o) => o.status === 'opted_in').slice(0, 60).map((o) => (
-              <a key={o.id} href={o.url ?? `https://${o.domain}`} target="_blank" rel="noreferrer" style={{ fontSize: '12px', padding: '4px 9px', borderRadius: '999px', background: '#F0FAF5', color: '#08694C', textDecoration: 'none', border: '1px solid #A7DCC5' }}>{o.domain}</a>
+              <a key={o.id} href={o.url ?? `https://${o.domain}`} target="_blank" rel="noreferrer" style={{ fontSize: '12px', padding: '4px 9px', borderRadius: '999px', background: 'var(--c-genius-soft, #f0faf5)', color: 'var(--tx-mint-deep, #08694c)', textDecoration: 'none', border: '1px solid var(--c-action-line, #a7dcc5)' }}>{o.domain}</a>
             ))}
           </div>
         )}
@@ -736,7 +736,7 @@ function SettingsTab({ V, state, workspaceId, admin, canOperate, reload, setNote
     <>
       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
         {SECTIONS.map((sct) => (
-          <button key={sct} type="button" onClick={() => setSection(sct)} style={{ height: '30px', padding: '0 12px', borderRadius: '999px', border: `1px solid ${section === sct ? '#18181b' : '#e4e4e7'}`, background: section === sct ? '#18181b' : '#fff', color: section === sct ? '#fff' : '#52525b', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>{sct}</button>
+          <button key={sct} type="button" onClick={() => setSection(sct)} style={{ height: '30px', padding: '0 12px', borderRadius: '999px', border: `1px solid ${section === sct ? 'var(--ink, #18181b)' : 'var(--divider, #e4e4e7)'}`, background: section === sct ? 'var(--ink, #18181b)' : 'var(--surface, #fff)', color: section === sct ? 'var(--surface, #fff)' : 'var(--muted, #52525b)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>{sct}</button>
         ))}
         <div style={{ flex: 1 }} />
         {dirty ? <Btn kind="machine" disabled={saving || ro} onClick={() => void save()}>{saving ? 'Saving…' : 'Save settings'}</Btn> : <span style={{ ...muted, alignSelf: 'center' }}>v{state.settingsVersion} · {state.devices.every((d) => !d.online || (d.settingsVersion ?? 0) >= state.settingsVersion) ? 'applied on every online extension' : 'waiting for an extension to sync'}</span>}
@@ -783,7 +783,7 @@ function SettingsTab({ V, state, workspaceId, admin, canOperate, reload, setNote
             <h2 style={h2}>What lands in CLOZR</h2>
             <p style={sub}>Every find is judged; this decides which verdicts become deals (stage Prospect, source Deal Machine). The rest are counted on the run and listed in the Log with the reason.</p>
             {LAND_POLICIES.map(([k, t, d]) => (
-              <label key={k} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '9px 0', borderTop: '1px solid #f0f0f1', cursor: ro ? 'default' : 'pointer' }}>
+              <label key={k} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '9px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)', cursor: ro ? 'default' : 'pointer' }}>
                 <input type="radio" name="dm-land" checked={draft.cloud.land === k} disabled={ro} onChange={() => patch('cloud', { land: k })} style={{ marginTop: '3px', accentColor: DEAL_MACHINE }} />
                 <span style={{ fontSize: '13px', lineHeight: 1.4 }}><strong>{t}</strong> <span style={muted}>— {d}</span></span>
               </label>
@@ -858,7 +858,7 @@ function SettingsTab({ V, state, workspaceId, admin, canOperate, reload, setNote
             {minted ? (
               <div style={{ marginBottom: '12px', padding: '11px 13px', background: DEAL_MACHINE_TINT, border: `1px solid ${DEAL_MACHINE}33`, borderRadius: '9px' }}>
                 <span style={label}>The key — shown once</span>
-                <code style={{ ...code, background: '#fff' }}>{minted.key}</code>
+                <code style={{ ...code, background: 'var(--surface, #fff)' }}>{minted.key}</code>
                 <Btn small onClick={() => copy(minted.key, 'Key')} style={{ marginLeft: '8px' }}>Copy</Btn>
                 <p style={{ ...muted, margin: '8px 0 0' }}>CLOZR stores a hash of this, never the key itself. Paste it into the extension’s Settings → Integrations → CLOZR. Lose it and you issue a new one rather than recover this.</p>
               </div>
@@ -866,9 +866,9 @@ function SettingsTab({ V, state, workspaceId, admin, canOperate, reload, setNote
             <div>
               <span style={label}>Key</span>
               {key ? (
-                <span style={{ fontSize: '12.5px', color: '#18181b' }}>
+                <span style={{ fontSize: '12.5px', color: 'var(--ink, #18181b)' }}>
                   <code style={code}>{key.key_prefix}…</code>
-                  <span style={{ color: '#71717a', marginLeft: '8px' }}>issued {since(key.created_at)} · {key.active ? `last used ${since(key.last_used_at)}` : 'disabled'}</span>
+                  <span style={{ color: 'var(--meta, #71717a)', marginLeft: '8px' }}>issued {since(key.created_at)} · {key.active ? `last used ${since(key.last_used_at)}` : 'disabled'}</span>
                 </span>
               ) : <span style={muted}>{admin ? 'No key has been issued, so anything the extension sends is refused.' : 'No key is visible to your role. An owner or admin issues it.'}</span>}
             </div>

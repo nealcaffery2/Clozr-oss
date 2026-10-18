@@ -36,7 +36,7 @@ export function PofField({ value, onChange, error, inputStyle }: {
           </>
         )}
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', color: INK, cursor: 'pointer', minHeight: '28px' }}>
-          <input type="checkbox" checked={value.verified} onChange={(e) => onChange({ ...value, verified: e.target.checked })} style={{ width: '15px', height: '15px', accentColor: '#0A8560' }} />
+          <input type="checkbox" checked={value.verified} onChange={(e) => onChange({ ...value, verified: e.target.checked })} style={{ width: '15px', height: '15px', accentColor: 'var(--tx-mint, #0a8560)' }} />
           Verified
         </label>
       </div>

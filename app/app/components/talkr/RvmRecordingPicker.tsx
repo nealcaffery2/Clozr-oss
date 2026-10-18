@@ -17,9 +17,9 @@ const MUTED = 'var(--muted, #71717a)';
 const GREEN = '#0A8560';
 const btn: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 11px', borderRadius: 8, border: `1px solid ${LINE}`,
-  background: '#fff', font: '600 12.5px/1 var(--sans, inherit)', color: 'inherit', cursor: 'pointer',
+  background: 'var(--surface, #fff)', font: '600 12.5px/1 var(--sans, inherit)', color: 'inherit', cursor: 'pointer',
 };
-const primary: React.CSSProperties = { ...btn, background: GREEN, borderColor: GREEN, color: '#fff' };
+const primary: React.CSSProperties = { ...btn, background: GREEN, borderColor: GREEN, color: 'var(--on-dark, #fff)' };
 
 const Mic = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -117,7 +117,7 @@ export function RvmRecordingPicker({ workspaceId, value, onChange, disabled, lab
   const cancel = () => { setTake(null); setPhase('pick'); setErr(null); };
 
   return (
-    <div data-testid="rvm-picker" style={{ display: 'grid', gap: 8, padding: '10px 12px', border: `1px solid ${LINE}`, borderRadius: 10, background: '#fff' }}>
+    <div data-testid="rvm-picker" style={{ display: 'grid', gap: 8, padding: '10px 12px', border: `1px solid ${LINE}`, borderRadius: 10, background: 'var(--surface, #fff)' }}>
       <span style={{ font: '600 12.5px/1.2 var(--sans, inherit)' }}>{label}</span>
       {!signedIn ? (
         <span style={{ font: '400 12px/1.4 var(--sans, inherit)', color: MUTED }}>Sign in to a workspace to pick or record a voicemail.</span>
@@ -146,7 +146,7 @@ export function RvmRecordingPicker({ workspaceId, value, onChange, disabled, lab
         <div style={{ display: 'grid', gap: 8 }}>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             <select value={chosen ? String(chosen.id) : ''} onChange={(e) => pick(e.target.value)} disabled={disabled} aria-label="Saved recording" data-testid="rvm-pick-select"
-              style={{ flex: '1 1 200px', minWidth: 0, height: 30, border: `1px solid ${LINE}`, borderRadius: 8, padding: '0 8px', font: '500 12.5px/1 var(--sans, inherit)', background: '#fff' }}>
+              style={{ flex: '1 1 200px', minWidth: 0, height: 30, border: `1px solid ${LINE}`, borderRadius: 8, padding: '0 8px', font: '500 12.5px/1 var(--sans, inherit)', background: 'var(--surface, #fff)' }}>
               <option value="">{clips.length ? 'Choose a saved recording…' : 'No saved recordings yet'}</option>
               {clips.map((c) => <option key={c.id} value={String(c.id)}>{c.name}{c.seconds ? ` · ${clipClock(c.seconds)}` : ''}</option>)}
             </select>
@@ -158,7 +158,7 @@ export function RvmRecordingPicker({ workspaceId, value, onChange, disabled, lab
           {chosen ? <span style={{ font: '600 11.5px/1.3 var(--sans, inherit)', color: GREEN }}>Every drop plays “{chosen.name}”.</span> : null}
         </div>
       )}
-      {err || lib.error ? <span role="alert" style={{ font: '500 12px/1.4 var(--sans, inherit)', color: '#b91c1c' }}>{err || lib.error}</span> : null}
+      {err || lib.error ? <span role="alert" style={{ font: '500 12px/1.4 var(--sans, inherit)', color: 'var(--tx-red, #b91c1c)' }}>{err || lib.error}</span> : null}
     </div>
   );
 }

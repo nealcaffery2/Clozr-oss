@@ -20,6 +20,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import {
   ApiError,
   api,
@@ -37,7 +38,7 @@ import {
 } from '@/lib/talkr-web/api';
 import { Icon, type IconName } from './Icon';
 import { Mark } from '@/components/ds/mark';
-import { Avatar, Button, Card, EmptyState, Eyebrow, FIELD, Input, Labeled, Notice, Select, StatusMarker } from './ui';
+import { Button, Card, EmptyState, Eyebrow, FIELD, Input, Labeled, Notice, Select, StatusMarker } from './ui';
 import { IosSegmented } from './ios';
 import {
   BAND_COLOR,
@@ -89,6 +90,10 @@ export interface ClozrRecord {
   facts: Array<[string, string]>;
   openTasks: Array<{ title: string; due: string }>;
   open: () => void;
+  /** Database ids and email, for the in-call meeting invite. Absent on the sample graph. */
+  sellerId?: number | null;
+  buyerId?: number | null;
+  email?: string;
 }
 
 export const CALL_CONTEXT_TABS: Array<{ value: CallContextTab; label: string }> = [
@@ -129,6 +134,8 @@ export interface CallContextProps {
   record?: ClozrRecord | null;
   /** CLOZR: content for a fourth "Live" tab (transcript + seller intelligence). */
   liveSlot?: ReactNode;
+  /** CLOZR: one more action beside Text and Open record (Request contract). */
+  extraAction?: ReactNode;
 }
 
 const MODE_LABEL: Record<CallContextMode, string> = {
@@ -150,6 +157,7 @@ export function CallContext({
   onUpdated,
   record = null,
   liveSlot,
+  extraAction,
 }: CallContextProps) {
   const key = callContextKey(params);
   const paramsRef = useRef(params);
@@ -166,8 +174,7 @@ export function CallContext({
 
   useEffect(() => {
     setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(t);
+    return everyWhileVisible(() => setNow(Date.now()), 30_000);
   }, []);
 
   // Load on every change of party. A typed number settles for 300ms first
@@ -298,6 +305,7 @@ export function CallContext({
         onCreated={onCreated}
         record={record}
         dealFacts={!!record && tab !== 'lead' && mode !== 'precall'}
+        extraAction={extraAction}
       />
 
       {controlledTab === undefined && (
@@ -384,6 +392,7 @@ function HeaderCard({
   onCreated,
   record,
   dealFacts = false,
+  extraAction,
 }: {
   ctx: CallContextDto | null;
   phone: string | null;
@@ -397,6 +406,7 @@ function HeaderCard({
   record: ClozrRecord | null;
   /** On a call, off the Lead tab: the record's deal facts under the name, so they are up without a click. */
   dealFacts?: boolean;
+  extraAction?: ReactNode;
 }) {
   const c = ctx?.contact ?? null;
   const lead = ctx?.lead ?? null;
@@ -408,7 +418,6 @@ function HeaderCard({
   return (
     <Card className="flex flex-col gap-3">
       <div className="flex items-start gap-3">
-        <Avatar name={c?.display_name ?? record?.name ?? (phone ? formatPhone(phone) : '?')} size={44} />
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="truncate" style={{ font: '700 15px/1.1 var(--sans)', letterSpacing: '-0.01em', maxWidth: '100%' }}>
@@ -499,6 +508,7 @@ function HeaderCard({
               Call
             </Button>
           )}
+          {extraAction}
           {onText && phone && (
             <Button tone="ghost" onClick={() => onText(phone)} style={{ padding: '7px 10px', font: '600 11.5px/1 var(--sans)' }}>
               <Icon name="msg" size={13} />

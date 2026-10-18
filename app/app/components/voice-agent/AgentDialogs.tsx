@@ -63,7 +63,7 @@ export function NewAgentDialog({ api, taken, onClose, onCreated }: { api: Api; t
                 const on = o.id === choice;
                 return (
                   <button key={o.id} type="button" role="radio" aria-checked={on} className="va-btn" data-autofocus={i === 0 ? true : undefined} onClick={() => setChoice(o.id)}
-                    style={{ textAlign: 'left', padding: '11px 13px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${on ? GREEN : LINE}`, background: on ? '#E7F8F1' : '#fff', boxShadow: on ? `0 0 0 1px ${GREEN}` : 'none' }}>
+                    style={{ textAlign: 'left', padding: '11px 13px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${on ? GREEN : LINE}`, background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', boxShadow: on ? `0 0 0 1px ${GREEN}` : 'none' }}>
                     <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: on ? GREEN : INK }}>{o.label}</span>
                     <span style={{ display: 'block', marginTop: 2, fontSize: 12.5, color: MUTED, lineHeight: 1.45 }}>{o.hint}</span>
                   </button>
@@ -78,9 +78,9 @@ export function NewAgentDialog({ api, taken, onClose, onCreated }: { api: Api; t
         </Field>
 
         {picked && picked.items.length ? (
-          <div style={{ padding: '10px 12px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: '#92400e' }}>Yours to confirm before it goes live</div>
-            <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, color: '#92400e', lineHeight: 1.55 }}>{picked.items.map((t, i) => <li key={i}>{t}</li>)}</ul>
+          <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--tint-amber, #fffbeb)', border: '1px solid var(--tint-amber-2, #fde68a)' }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx-amber-deep, #92400e)' }}>Yours to confirm before it goes live</div>
+            <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, color: 'var(--tx-amber-deep, #92400e)', lineHeight: 1.55 }}>{picked.items.map((t, i) => <li key={i}>{t}</li>)}</ul>
           </div>
         ) : null}
         {error ? <Banner tone="error">{error}</Banner> : null}

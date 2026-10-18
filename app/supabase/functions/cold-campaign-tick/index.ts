@@ -26,18 +26,40 @@ import { dayStartUtc, domainOf, localParts } from '../_shared/deliverability-rul
 import { unsubscribeToken, unsubscribeUrl, verificationBlock } from '../_shared/mailguard.ts';
 import {
   blockedSendingDomains, coldDailyAllowance, coldDeliverability, coldMessageId, coldSendRoom, composeColdText, countsAsComplaint, createWarmupProvider,
-  mailboxDayStart, mailboxGapSeconds, oooResumeAt, placementPausesRamp, plainHtml, planColdSend, poolPauseReason, prospectReply,
-  recipientCompanyDomain, recipientProvider, replyOwner, rewriteTrackedLinks, poolAlerts, stateOf, warmupGateOn, WARMUP_GATE_MIN_SCORE, withOpenPixel, zoneForState, type ColdDeliverability, type ColdDomain, type ColdMailbox, type ColdStep,
+  mailboxDayStart, oooResumeAt, placementPausesRamp, plainHtml, planColdSend, poolPauseReason, prospectReply,
+  assignOnReply, recipientCompanyDomain, recipientProvider, replyOwner, rewriteTrackedLinks, poolAlerts, stateOf, warmupGateOn, WARMUP_GATE_MIN_SCORE, withOpenPixel, zoneForState, type ColdDeliverability, type ColdDomain, type ColdMailbox, type ColdStep,
 } from '../_shared/cold-campaign.ts';
 import { pollPool, sendPool, textToHtml, type Polled } from '../_shared/cold-transport.ts';
 import { syncWarmup } from '../_shared/cold-warmup.ts';
 import { sendResend, transactionalFrom } from '../_shared/resend.ts';
 import { checkDomain } from '../deliverability/dns.ts';
+import { advancePatch, claimEnrollment, claimGap, countSend, healthFromRows, healthPass, healthSlot, memo, must, priorSend, type Health, type Pool } from './tick.ts';
 
 type Any = any;
 const json = jsonWith({});
 const MAX_SENDS = 25;
 const MAX_POLLS = 5;
+
+/**
+ * Read once per tick, not once per row: the campaign and its steps, the
+ * workspace settings, and the pool (read right after the health pass).
+ * A send counts itself into the pool (countSend), so every later plan in
+ * the tick sees it. Suppression, verification and the recipient's other
+ * sequences are still read per row; the campaign status and the planned
+ * mailbox's pause, status and domain pause are read again before a send.
+ */
+type Tick = {
+  campaigns: Map<string, Promise<Any>>;
+  steps: Map<string, Promise<ColdStep[]>>;
+  settings: Map<string, Promise<WorkspaceCold>>;
+  pools: Map<string, Promise<Pool>>;
+  /** Workspaces this tick claimed a send in or recorded a reply in: their health pass runs at the end. */
+  touched: Set<number>;
+  /** Rotation cursor after this tick's sends, written once per workspace. */
+  cursors: Map<number, number>;
+};
+
+const settingsOf = (admin: SupabaseClient, ws: number, tick: Tick) => memo(tick.settings, String(ws), () => workspaceSettings(admin, ws));
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
@@ -52,79 +74,105 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { body = null; }
   if (body?.action === 'warmup_sync') return json(await warmupSyncAll(admin));
   const tally = { sent: 0, waited: 0, stopped: 0, failed: 0, replies: 0, paused: 0 };
+  const tick: Tick = { campaigns: new Map(), steps: new Map(), settings: new Map(), pools: new Map(), touched: new Set(), cursors: new Map() };
 
-  const { data: due } = await admin.from('cold_enrollments')
+  const { data: due, error: dueErr } = await admin.from('cold_enrollments')
     .select('id, workspace_id, campaign_id, buyer_id, email, state, status, step_position, next_send_at, last_sent_at, enrolled_at, thread_message_id, provider_thread_id, mailbox_id')
     .eq('status', 'active').lte('next_send_at', now.toISOString()).order('next_send_at').limit(MAX_SENDS);
+  if (dueErr) console.error('cold due', dueErr.message);
 
+  // Serial on purpose: each plan depends on the send before it (rotation cursor, gap, caps).
   const seenWs = new Set<number>();
   for (const row of (due ?? []) as Any[]) {
     seenWs.add(Number(row.workspace_id));
     try {
-      await sendOne(admin, row, now, tally);
+      await sendOne(admin, row, now, tally, tick);
     } catch (err) {
       tally.failed++;
       console.error('cold send', row.id, err instanceof Error ? err.message : err);
       await admin.from('cold_enrollments').update({ next_send_at: new Date(now.getTime() + 15 * 60_000).toISOString() }).eq('id', row.id);
     }
   }
+  for (const [ws, cursor] of tick.cursors) {
+    const { error } = await admin.from('cold_workspace_settings').update({ rotation_cursor: cursor }).eq('workspace_id', ws);
+    if (error) console.error('cold cursor', ws, error.message);
+  }
 
-  const { data: pollBoxes } = await admin.from('cold_mailboxes')
+  const { data: pollBoxes, error: pollErr } = await admin.from('cold_mailboxes')
     .select('id, workspace_id')
     .in('status', ['active', 'warming']).eq('paused', false)
     .or(`last_polled_at.is.null,last_polled_at.lt.${new Date(now.getTime() - 5 * 60_000).toISOString()}`)
     .order('last_polled_at', { ascending: true, nullsFirst: true })
     .limit(MAX_POLLS);
-  for (const box of (pollBoxes ?? []) as Any[]) {
-    seenWs.add(Number(box.workspace_id));
+  if (pollErr) console.error('cold poll list', pollErr.message);
+  // Up to MAX_POLLS mailboxes at once: each poll is its own inbox, its own sends and its own stamp.
+  await Promise.all(((pollBoxes ?? []) as Any[]).map(async (box) => {
+    const ws = Number(box.workspace_id);
+    seenWs.add(ws);
     try {
-      tally.replies += await pollOne(admin, Number(box.id), Number(box.workspace_id));
+      const n = await pollOne(admin, Number(box.id), ws, tick);
+      tally.replies += n;
+      if (n) tick.touched.add(ws);
     } catch (err) {
       console.error('cold poll', box.id, err instanceof Error ? err.message : err);
       await admin.from('cold_mailboxes').update({ last_error: 'Reply check failed. It will be tried again.', last_polled_at: now.toISOString() }).eq('id', box.id);
     }
-  }
+  }));
 
-  for (const ws of seenWs) tally.paused += await pauseUnhealthy(admin, ws);
+  // The health pass: before a workspace's first send (in sendOne), after a tick that sent or recorded a
+  // reply there, and otherwise once every 15 minutes. A pass that fails gives the slot back (healthPass),
+  // so the next tick runs it again.
+  for (const ws of seenWs) {
+    if (!tick.touched.has(ws) && !(await healthSlot(admin, ws, now))) continue;
+    tally.paused += await healthPass(admin, ws, now, () => pauseUnhealthy(admin, ws, tick));
+  }
 
   return json({ ok: true, ...tally });
 });
 
-async function sendOne(admin: SupabaseClient, row: Any, now: Date, tally: { sent: number; waited: number; stopped: number; failed: number }): Promise<void> {
+async function sendOne(admin: SupabaseClient, row: Any, now: Date, tally: { sent: number; waited: number; stopped: number; failed: number; paused: number }, tick: Tick): Promise<void> {
   const ws = Number(row.workspace_id);
-  const campaign = (await admin.from('cold_campaigns').select('*').eq('id', row.campaign_id).eq('workspace_id', ws).maybeSingle()).data as Any;
+  const campaign = await memo(tick.campaigns, `${ws}:${row.campaign_id}`, async () =>
+    must(await admin.from('cold_campaigns').select('*').eq('id', row.campaign_id).eq('workspace_id', ws).maybeSingle(), 'cold campaign') as Any);
   if (!campaign) return;
-  const { data: stepRows } = await admin.from('cold_steps').select('*').eq('campaign_id', campaign.id).eq('workspace_id', ws).order('position');
-  const steps: ColdStep[] = ((stepRows ?? []) as Any[]).map(asStep);
-  const settings = await workspaceSettings(admin, ws);
+  const steps = await memo(tick.steps, String(campaign.id), async () =>
+    ((must(await admin.from('cold_steps').select('*').eq('campaign_id', campaign.id).eq('workspace_id', ws).order('position'), 'cold steps') ?? []) as Any[]).map(asStep));
+  const settings = await settingsOf(admin, ws, tick);
   const buyer = row.buyer_id
-    ? (await admin.from('buyers').select('id, name, company, email, markets, email_safe_to_send, email_status').eq('id', row.buyer_id).eq('workspace_id', ws).maybeSingle()).data as Any
+    ? must(await admin.from('buyers').select('id, name, company, email, markets, email_safe_to_send, email_status').eq('id', row.buyer_id).eq('workspace_id', ws).maybeSingle(), 'cold buyer') as Any
     : null;
   const email = String(row.email).toLowerCase();
-  const { data: sup } = await admin.from('email_suppressions').select('email').eq('workspace_id', ws).eq('email', email).maybeSingle();
-  const gate = await verificationBlock(admin, ws, [email], 'bulk');
+  const sup = must(await admin.from('email_suppressions').select('email').eq('workspace_id', ws).eq('email', email).maybeSingle(), 'cold suppression');
+  const gate = await verificationBlock(admin, ws, [email], 'bulk', { requireVerified: settings.require_verified });
   // verificationBlock is the mailguard gate (suppressions are checked below
   // as well). An unverified address, when the workspace requires it, stops
-  // with that gate's own reason rather than the generic unsafe wording.
+  // with that gate's own reason rather than the generic unsafe wording. A
+  // failed read throws, so the row waits 15 minutes (the loop's catch).
   if (gate) {
     await stopEnrollment(admin, row, 'stopped', gate.message);
     tally.stopped++;
     return;
   }
-  const pool = await loadPool(admin, ws, now, warmupGateOn(settings.warmup_provider));
-  const { data: otherSeq } = await admin.from('cold_enrollments').select('id').eq('workspace_id', ws).eq('email', email).eq('status', 'active').neq('id', row.id).limit(1);
+  // The health pass runs before the workspace's first send of the tick, then the pool is read once.
+  // A failed pass is logged and given back for the next tick (healthPass); it never holds back the sends.
+  const pool = await memo(tick.pools, String(ws), async () => {
+    tally.paused += await healthPass(admin, ws, now, () => pauseUnhealthy(admin, ws, tick));
+    return loadPool(admin, ws, now, warmupGateOn(settings.warmup_provider));
+  });
+  const otherSeq = must(await admin.from('cold_enrollments').select('id').eq('workspace_id', ws).eq('email', email).eq('status', 'active').neq('id', row.id).limit(1), 'cold other sequence');
   const company = recipientCompanyDomain(email);
   const recipientDay = dayStartUtc(now, settings.fallback_timezone).toISOString();
   let recipientDomainSentToday = 0;
   if (company) {
-    const { count } = await admin.from('cold_sends').select('id', { count: 'exact', head: true })
+    const { count, error } = await admin.from('cold_sends').select('id', { count: 'exact', head: true })
       .eq('workspace_id', ws).gte('sent_at', recipientDay).neq('status', 'failed').like('to_email', `%@${company}`);
+    if (error) throw new Error(`cold recipient domain: ${error.message}`);
     recipientDomainSentToday = count ?? 0;
   }
   const state = row.state || stateOf(null, buyer?.markets ?? []);
   const sinceCopy = new Date(now.getTime() - settings.policy.bodyRepeatWindowMinutes * 60_000).toISOString();
-  const { data: recentRows } = await admin.from('cold_sends').select('body_hash, sent_at').eq('workspace_id', ws).gte('sent_at', sinceCopy).not('body_hash', 'is', null).limit(300);
-  const plan = planColdSend({
+  const recentRows = must(await admin.from('cold_sends').select('body_hash, sent_at').eq('workspace_id', ws).gte('sent_at', sinceCopy).not('body_hash', 'is', null).limit(300), 'cold recent copy');
+  const planNow = () => planColdSend({
     now,
     enrollment: {
       id: Number(row.id), status: String(row.status), email, state,
@@ -146,6 +194,18 @@ async function sendOne(admin: SupabaseClient, row: Any, now: Date, tally: { sent
     recentBodies: ((recentRows ?? []) as Any[]).map((r) => ({ hash: String(r.body_hash), sentAt: String(r.sent_at) })),
     recipientDomainSentToday,
   });
+  let plan = planNow();
+  if (plan.action === 'send') {
+    // A person can pause the campaign mid-tick: its status is read again before a send.
+    const fresh = must(await admin.from('cold_campaigns').select('status').eq('id', campaign.id).eq('workspace_id', ws).maybeSingle(), 'cold campaign status') as Any;
+    if (!fresh) return;
+    if (fresh.status !== campaign.status) {
+      campaign.status = fresh.status;
+      plan = planNow();
+    }
+  }
+  // Each pass marks the planned mailbox or its domain off in the pool, so this ends.
+  while (plan.action === 'send' && await mailboxOff(admin, pool, plan.mailboxId, warmupGateOn(settings.warmup_provider))) plan = planNow();
   if (plan.action === 'stop') {
     await stopEnrollment(admin, row, plan.status, plan.reason);
     tally.stopped++;
@@ -176,8 +236,14 @@ async function sendOne(admin: SupabaseClient, row: Any, now: Date, tally: { sent
   });
   const warmupDaily = mailbox.warmup_daily == null ? settings.policy.warmupDaily : Number(mailbox.warmup_daily);
   const allowance = coldSendRoom(rampAllowance, warmupDaily, settings.policy.combinedDailyCeiling);
-  const plannedBox = pool.mailboxes.find((m) => m.id === plan.mailboxId);
-  const gapSeconds = plannedBox ? mailboxGapSeconds(plannedBox, now, settings.policy) : settings.policy.gapMinSeconds;
+  const gapSeconds = claimGap(pool.mailboxes.find((m) => m.id === plan.mailboxId), now, settings.policy);
+  // Take the row first: an overlapping run that read the same row loses here and sends nothing. Every path
+  // below that does not send leaves the row waiting until retryAt, as before.
+  const retryAt = new Date(now.getTime() + 15 * 60_000).toISOString();
+  if (!(await claimEnrollment(admin, row, retryAt))) {
+    tally.waited++;
+    return;
+  }
   const { data: claim, error } = await admin.rpc('cold_send_claim', {
     p_workspace: ws, p_mailbox: mailbox.id, p_domain: domain.id, p_campaign: campaign.id, p_enrollment: row.id,
     p_step: plan.stepPosition, p_to: email, p_from: plan.from, p_subject: plan.subject, p_variant: plan.variant,
@@ -188,10 +254,16 @@ async function sendOne(admin: SupabaseClient, row: Any, now: Date, tally: { sent
     p_recipient_day_start: company ? recipientDay : null,
   });
   if (error || !claim?.ok) {
-    await admin.from('cold_enrollments').update({ next_send_at: new Date(now.getTime() + 900_000).toISOString() }).eq('id', row.id);
+    // This step went out on an earlier claim whose write below did not land: move on, never send it twice.
+    const prior = error ? null : priorSend(claim, now);
+    if (prior) {
+      console.error('cold send', row.id, `step ${plan.stepPosition} already sent; moved on`);
+      await admin.from('cold_enrollments').update(advancePatch(row, steps, plan.stepPosition, { ...prior, threadId: null }, now)).eq('id', row.id);
+    }
     tally.waited++;
     return;
   }
+  tick.touched.add(ws);
   try {
     const sent = await sendPool(admin, mailbox, {
       from: plan.from, fromName: mailbox.display_name, to: email, subject: plan.subject, text, html,
@@ -199,46 +271,59 @@ async function sendOne(admin: SupabaseClient, row: Any, now: Date, tally: { sent
       inReplyTo: plan.inReplyTo, threadId: row.provider_thread_id, messageId,
       headers: { 'List-Unsubscribe': `<${link}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
     });
+    countSend(pool, plan.mailboxId, plan.recipientProvider, new Date().toISOString());
     const rfc = sent.rfcMessageId ?? messageId;
     await admin.from('cold_sends').update({ status: 'sent', rfc_message_id: rfc, provider_message_id: sent.providerId }).eq('id', claim.id);
-    const next = steps.find((s) => s.position === plan.stepPosition + 1);
-    await admin.from('cold_enrollments').update({
-      last_sent_at: now.toISOString(),
-      mailbox_id: row.mailbox_id ?? mailbox.id,
-      thread_message_id: row.thread_message_id ?? rfc,
-      provider_thread_id: sent.threadId ?? row.provider_thread_id,
-      step_position: next ? next.position : plan.stepPosition,
-      status: next ? 'active' : 'completed',
-      stop_reason: next ? null : 'Sequence finished.',
-      stopped_at: next ? null : now.toISOString(),
-      next_send_at: next ? new Date(now.getTime() + 60_000).toISOString() : now.toISOString(),
-    }).eq('id', row.id);
-    if (next) {
-      // The planner applies the business-day delay on the next tick from last_sent_at.
-      await admin.from('cold_enrollments').update({ step_position: next.position, next_send_at: now.toISOString() }).eq('id', row.id);
-    }
+    // If this write fails, the row comes due on this step in 15 minutes and cold_send_claim refuses it (352): moved on above.
+    await admin.from('cold_enrollments').update(advancePatch(row, steps, plan.stepPosition, {
+      at: now.toISOString(), mailboxId: mailbox.id, rfc, threadId: sent.threadId ?? null,
+    }, now)).eq('id', row.id);
     await admin.from('communications').upsert({
       workspace_id: ws, buyer_id: row.buyer_id, channel: 'email', direction: 'outbound', occurred_at: now.toISOString(),
       subject: plan.subject, body: text.slice(0, 20_000), from_email: plan.from, to_email: email, status: 'sent',
       source: 'cold', source_id: `cold-send:${claim.id}`,
     }, { onConflict: 'workspace_id,source,source_id' });
-    await admin.from('cold_workspace_settings').update({ rotation_cursor: settings.rotation_cursor + 1 }).eq('workspace_id', ws);
+    settings.rotation_cursor += 1;
+    tick.cursors.set(ws, settings.rotation_cursor);
     tally.sent++;
   } catch (err) {
-    await admin.from('cold_sends').delete().eq('id', claim.id);
+    const { error: kept } = await admin.from('cold_sends').delete().eq('id', claim.id);
+    // A claim row that could not be deleted still counts toward the caps, in the database and here.
+    if (kept) countSend(pool, plan.mailboxId, plan.recipientProvider, new Date().toISOString());
     await admin.from('cold_mailboxes').update({ last_error: err instanceof Error ? err.message.slice(0, 240) : 'Send failed' }).eq('id', mailbox.id);
-    await admin.from('cold_enrollments').update({ next_send_at: new Date(now.getTime() + 15 * 60_000).toISOString() }).eq('id', row.id);
     tally.failed++;
   }
 }
 
-async function pollOne(admin: SupabaseClient, mailboxId: number, ws: number): Promise<number> {
+/**
+ * Reads the planned mailbox's pause and status and its domain's pause again,
+ * so a pause made after the pool was read (by a person, the health pass, or a
+ * failed token) holds as it did when the pool was read per send. True, and
+ * the pool marked, when it cannot send now. Only ever marks off.
+ */
+async function mailboxOff(admin: SupabaseClient, pool: Pool, mailboxId: number, gateOn: boolean): Promise<boolean> {
+  const m = pool.mailboxes.find((x) => x.id === mailboxId);
+  if (!m) return false;
+  const fresh = must(await admin.from('cold_mailboxes').select('paused, status, cold_domains(paused)').eq('id', mailboxId).maybeSingle(), 'cold mailbox') as Any;
+  const domainPaused = !!fresh?.cold_domains?.paused;
+  const sendable = !!fresh && !fresh.paused && (fresh.status === 'active' || (fresh.status === 'warming' && !gateOn));
+  if (sendable && !domainPaused) return false;
+  m.paused = true;
+  const raw = pool.raw.find((x) => Number(x.id) === mailboxId);
+  if (raw) raw.paused = true;
+  const d = pool.domains.find((x) => x.id === m.domainId);
+  if (d && domainPaused) d.paused = true;
+  return true;
+}
+
+async function pollOne(admin: SupabaseClient, mailboxId: number, ws: number, tick: Tick): Promise<number> {
   const mailbox = (await admin.from('cold_mailboxes').select('*').eq('id', mailboxId).eq('workspace_id', ws).maybeSingle()).data as Any;
   if (!mailbox) return 0;
+  // Read before the poll: a failed read throws here, and the next poll fetches the same unseen mail (BODY.PEEK).
+  const settings = await settingsOf(admin, ws, tick);
+  const sends = must(await admin.from('cold_sends').select('id, to_email, rfc_message_id, enrollment_id, workspace_id').eq('mailbox_id', mailboxId).eq('workspace_id', ws).order('sent_at').limit(500), 'cold poll sends');
   const messages = await pollPool(admin, mailbox);
   await admin.from('cold_mailboxes').update({ last_polled_at: new Date().toISOString(), last_error: null }).eq('id', mailboxId);
-  const settings = await workspaceSettings(admin, ws);
-  const { data: sends } = await admin.from('cold_sends').select('id, to_email, rfc_message_id, enrollment_id, workspace_id').eq('mailbox_id', mailboxId).eq('workspace_id', ws).order('sent_at').limit(500);
   const refs = ((sends ?? []) as Any[]).map((s) => ({ id: Number(s.id), toEmail: String(s.to_email), rfcMessageId: s.rfc_message_id as string | null, enrollmentId: Number(s.enrollment_id) }));
   let n = 0;
   for (const msg of messages) {
@@ -254,23 +339,34 @@ async function recordReply(admin: SupabaseClient, mailbox: Any, ws: number, msg:
   }, refs, settings.instantly_warmup_tag);
   if (!decision.stop) return false;
   const hit = decision.send;
-  const { data: existing } = await admin.from('cold_replies').select('id').eq('mailbox_id', mailbox.id).eq('provider_message_id', msg.providerId).maybeSingle();
+  // Every read here comes before the first write: a failed one throws, nothing is half written, and the
+  // message is read again on the next poll.
+  const existing = must(await admin.from('cold_replies').select('id').eq('mailbox_id', mailbox.id).eq('provider_message_id', msg.providerId).maybeSingle(), 'cold reply seen');
   if (existing) return false;
-  const enrollment = (await admin.from('cold_enrollments').select('id, buyer_id, status, email, state').eq('id', hit.enrollmentId).eq('workspace_id', ws).maybeSingle()).data as Any;
+  const enrollment = must(await admin.from('cold_enrollments').select('id, buyer_id, status, email, state').eq('id', hit.enrollmentId).eq('workspace_id', ws).maybeSingle(), 'cold reply enrollment') as Any;
   if (!enrollment) return false;
   const classification = decision.classification;
   const complaint = countsAsComplaint({ from: msg.from, subject: msg.subject, body: msg.body });
   const hold = classification === 'out_of_office' && !complaint;
   const status = classification === 'bounce' ? 'bounced' : classification === 'unsubscribe' ? 'unsubscribed' : 'replied';
   const buyerRow = enrollment.buyer_id
-    ? (await admin.from('buyers').select('assigned_to, owner_id, name').eq('id', enrollment.buyer_id).eq('workspace_id', ws).maybeSingle()).data as Any
+    ? must(await admin.from('buyers').select('assigned_to, owner_id, name').eq('id', enrollment.buyer_id).eq('workspace_id', ws).maybeSingle(), 'cold reply buyer') as Any
     : null;
-  const workspace = (await admin.from('workspaces').select('owner_id').eq('id', ws).maybeSingle()).data as Any;
+  const workspace = must(await admin.from('workspaces').select('owner_id').eq('id', ws).maybeSingle(), 'cold reply workspace') as Any;
+  const mailboxUserId: string | null = mailbox.user_id ?? null;
   const owner = replyOwner({
     buyerAssignedTo: buyerRow?.assigned_to ?? null,
+    mailboxUserId,
     buyerOwnerId: buyerRow?.owner_id ?? null,
     workspaceOwnerId: workspace?.owner_id ?? null,
   });
+  // A person answered and nobody had them: they are the inbox rep's now (migration 268).
+  const assignTo = assignOnReply({ buyerAssignedTo: buyerRow?.assigned_to ?? null, mailboxUserId, classification, complaint });
+  if (assignTo && enrollment.buyer_id) {
+    const { error: assignErr } = await admin.from('buyers').update({ assigned_to: assignTo })
+      .eq('id', enrollment.buyer_id).eq('workspace_id', ws).is('assigned_to', null);
+    if (assignErr) console.error('cold reply assign', assignErr.message);
+  }
   const { data: comm } = await admin.from('communications').upsert({
     workspace_id: ws, buyer_id: enrollment.buyer_id, channel: 'email', direction: 'inbound', occurred_at: msg.receivedAt,
     subject: msg.subject, body: msg.body.slice(0, 20_000), from_email: msg.from, to_email: mailbox.email, status: 'received',
@@ -312,45 +408,27 @@ async function recordReply(admin: SupabaseClient, mailbox: Any, ws: number, msg:
   return true;
 }
 
-async function pauseUnhealthy(admin: SupabaseClient, ws: number): Promise<number> {
-  const settings = await workspaceSettings(admin, ws);
-  const since7 = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  const since30 = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  const { data: sends } = await admin.from('cold_sends').select('mailbox_id, status, sent_at, bounced_at, replied_at, complained_at').eq('workspace_id', ws).gte('sent_at', since30).limit(5000);
-  const { data: unsubRows } = await admin.from('cold_replies').select('mailbox_id').eq('workspace_id', ws).eq('classification', 'unsubscribe').gte('received_at', since30).limit(5000);
-  const { data: boxes } = await admin.from('cold_mailboxes').select('id, domain_id, email, paused').eq('workspace_id', ws);
-  const rows = (sends ?? []) as Any[];
-  const unsubByBox = new Map<number, number>();
-  for (const r of (unsubRows ?? []) as Any[]) unsubByBox.set(Number(r.mailbox_id), (unsubByBox.get(Number(r.mailbox_id)) ?? 0) + 1);
+async function pauseUnhealthy(admin: SupabaseClient, ws: number, tick: Tick): Promise<number> {
+  const settings = await settingsOf(admin, ws, tick);
+  const health = await poolHealth(admin, ws);
   let paused = 0;
-  const byBox = new Map<number, Any[]>();
-  for (const s of rows) {
-    const list = byBox.get(Number(s.mailbox_id)) ?? [];
-    list.push(s);
-    byBox.set(Number(s.mailbox_id), list);
-  }
-  for (const box of (boxes ?? []) as Any[]) {
+  for (const box of health.mailboxes) {
     if (box.paused) continue;
-    const mine = byBox.get(Number(box.id)) ?? [];
-    const reason = poolPauseReason({ ...counts(mine, since7, unsubByBox.get(Number(box.id)) ?? 0), policy: settings.policy });
+    const reason = poolPauseReason({ ...box, policy: settings.policy });
     if (!reason) continue;
     await admin.from('cold_mailboxes').update({ paused: true, paused_auto: true, paused_reason: `Auto-paused: ${reason}.`, paused_at: new Date().toISOString() }).eq('id', box.id);
     box.paused = true;
     paused++;
   }
-  const { data: domains } = await admin.from('cold_domains').select('id, paused').eq('workspace_id', ws);
-  for (const d of (domains ?? []) as Any[]) {
+  for (const d of health.domains) {
     if (d.paused) continue;
-    const ids = new Set(((boxes ?? []) as Any[]).filter((b) => Number(b.domain_id) === Number(d.id)).map((b) => Number(b.id)));
-    const mine = rows.filter((s) => ids.has(Number(s.mailbox_id)));
-    const unsub = [...ids].reduce((n, id) => n + (unsubByBox.get(id) ?? 0), 0);
-    const reason = poolPauseReason({ ...counts(mine, since7, unsub), policy: settings.policy });
+    const reason = poolPauseReason({ ...d, policy: settings.policy });
     if (!reason) continue;
     await admin.from('cold_domains').update({ paused: true, paused_auto: true, paused_reason: `Auto-paused: ${reason}.`, paused_at: new Date().toISOString() }).eq('id', d.id);
     paused++;
   }
   const vendor = createWarmupProvider({ provider: settings.warmup_provider, apiBase: settings.warmup_api_base });
-  for (const box of (boxes ?? []) as Any[]) {
+  for (const box of health.mailboxes) {
     if (box.paused) continue;
     const place = await vendor.placement({ id: Number(box.id), email: String(box.email ?? 'pool@workspace'), rampDay: 0, allowance: settings.policy.dailyCeiling });
     const why = placementPausesRamp(place, settings.policy.primaryRateFloor);
@@ -361,18 +439,23 @@ async function pauseUnhealthy(admin: SupabaseClient, ws: number): Promise<number
   return paused;
 }
 
-function counts(rows: Any[], since7: string, unsub30d: number) {
-  const week = rows.filter((r) => r.sent_at >= since7 && r.status !== 'failed');
-  const last50 = [...rows].sort((a, b) => String(b.sent_at).localeCompare(String(a.sent_at))).slice(0, 50);
-  return {
-    sent7d: week.length,
-    bounced7d: week.filter((r) => r.status === 'bounced' || r.bounced_at).length,
-    hardInLast50: last50.filter((r) => r.status === 'bounced' || r.bounced_at).length,
-    bulk30d: rows.filter((r) => r.status !== 'failed').length,
-    unsub30d,
-    complaints7d: week.filter((r) => r.complained_at).length,
-    replied7d: week.filter((r) => r.status === 'replied' || r.replied_at).length,
-  };
+/**
+ * Per mailbox and per domain: 7-day sends, bounces, complaints and replies,
+ * hard bounces in the last 50 sends, 30-day bulk sends and unsubscribes.
+ * One aggregate (cold_pool_health, migration 333) instead of reading up to
+ * 5,000 sends and 5,000 replies; until 333 is applied, those reads as before.
+ */
+async function poolHealth(admin: SupabaseClient, ws: number): Promise<Health> {
+  const since7 = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const since30 = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const { data, error } = await admin.rpc('cold_pool_health', { p_workspace: ws, p_since7: since7, p_since30: since30 });
+  if (!error) return data as Health;
+  if (!/PGRST202|could not find the function/i.test(`${error.code ?? ''} ${error.message}`)) throw new Error(`cold health: ${error.message}`);
+  const sends = must(await admin.from('cold_sends').select('mailbox_id, status, sent_at, bounced_at, replied_at, complained_at').eq('workspace_id', ws).gte('sent_at', since30).limit(5000), 'cold health sends');
+  const unsubs = must(await admin.from('cold_replies').select('mailbox_id').eq('workspace_id', ws).eq('classification', 'unsubscribe').gte('received_at', since30).limit(5000), 'cold health replies');
+  const boxes = must(await admin.from('cold_mailboxes').select('id, domain_id, email, paused').eq('workspace_id', ws), 'cold health mailboxes');
+  const domains = must(await admin.from('cold_domains').select('id, paused').eq('workspace_id', ws), 'cold health domains');
+  return healthFromRows((sends ?? []) as Any[], (unsubs ?? []) as Any[], (boxes ?? []) as Any[], (domains ?? []) as Any[], since7);
 }
 
 type WorkspaceCold = {
@@ -383,16 +466,19 @@ type WorkspaceCold = {
   warmup_api_base: string | null;
   instantly_warmup_tag: string | null;
   policy: ColdDeliverability;
+  /** workspaces.settings.require_verified_email, for verificationBlock. */
+  require_verified: boolean;
 };
 
 async function workspaceSettings(admin: SupabaseClient, ws: number): Promise<WorkspaceCold> {
   const cols = 'blocked_extra, fallback_timezone, rotation_cursor, warmup_provider, warmup_api_base, instantly_warmup_tag, physical_address, deliverability';
-  let row = (await admin.from('cold_workspace_settings').select(cols).eq('workspace_id', ws).maybeSingle()).data as Any;
+  // A failed read throws: defaults here would mean the wrong timezone, cursor or warmup tag.
+  let row = must(await admin.from('cold_workspace_settings').select(cols).eq('workspace_id', ws).maybeSingle(), 'cold settings') as Any;
   if (!row) {
     await admin.from('cold_workspace_settings').upsert({ workspace_id: ws }, { onConflict: 'workspace_id', ignoreDuplicates: true });
-    row = (await admin.from('cold_workspace_settings').select(cols).eq('workspace_id', ws).maybeSingle()).data as Any;
+    row = must(await admin.from('cold_workspace_settings').select(cols).eq('workspace_id', ws).maybeSingle(), 'cold settings') as Any;
   }
-  const { data: wsRow } = await admin.from('workspaces').select('settings').eq('id', ws).maybeSingle();
+  const wsRow = must(await admin.from('workspaces').select('settings').eq('id', ws).maybeSingle(), 'workspace settings') as Any;
   const fallback = row?.fallback_timezone || (wsRow?.settings as Any)?.timezone || 'America/Chicago';
   const tag = String(row?.instantly_warmup_tag ?? '').trim();
   return {
@@ -403,6 +489,7 @@ async function workspaceSettings(admin: SupabaseClient, ws: number): Promise<Wor
     warmup_api_base: row?.warmup_api_base ?? null,
     instantly_warmup_tag: tag.length >= 4 ? tag : null,
     policy: coldDeliverability(row?.deliverability, row?.physical_address),
+    require_verified: (wsRow?.settings as Any)?.require_verified_email === true,
   };
 }
 
@@ -489,11 +576,11 @@ async function warmupSyncAll(admin: SupabaseClient): Promise<Record<string, unkn
   return { ok: true, action: 'warmup_sync', workspaces: results };
 }
 
-async function loadPool(admin: SupabaseClient, ws: number, now: Date, gateOn = false): Promise<{ mailboxes: ColdMailbox[]; domains: ColdDomain[]; raw: Any[] }> {
-  const { data: domains } = await admin.from('cold_domains').select('*').eq('workspace_id', ws);
-  const { data: boxes } = await admin.from('cold_mailboxes').select('*').eq('workspace_id', ws).order('id');
+async function loadPool(admin: SupabaseClient, ws: number, now: Date, gateOn = false): Promise<Pool> {
+  const domains = must(await admin.from('cold_domains').select('*').eq('workspace_id', ws), 'cold pool domains');
+  const boxes = must(await admin.from('cold_mailboxes').select('*').eq('workspace_id', ws).order('id'), 'cold pool mailboxes');
   const dayAgo = new Date(now.getTime() - 26 * 3_600_000).toISOString();
-  const { data: sends } = await admin.from('cold_sends').select('mailbox_id, sent_at, status, to_email').eq('workspace_id', ws).gte('sent_at', dayAgo).neq('status', 'failed');
+  const sends = must(await admin.from('cold_sends').select('mailbox_id, sent_at, status, to_email').eq('workspace_id', ws).gte('sent_at', dayAgo).neq('status', 'failed'), 'cold pool sends');
   const sent = (sends ?? []) as Any[];
   const domainSent = new Map<number, number>();
   const raw = (boxes ?? []) as Any[];

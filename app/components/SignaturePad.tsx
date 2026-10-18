@@ -49,12 +49,12 @@ export function SignaturePad({ onChange, height = 150 }: { onChange: (png: strin
 
   return (
     <div>
-      <div style={{ position: 'relative', border: '1px dashed #c4c4c8', borderRadius: '10px', background: '#fff', overflow: 'hidden' }}>
+      <div style={{ position: 'relative', border: '1px dashed #c4c4c8', borderRadius: '10px', background: 'var(--surface, #fff)', overflow: 'hidden' }}>
         <canvas ref={ref} style={{ display: 'block', width: '100%', height: `${height}px`, touchAction: 'none', cursor: 'crosshair' }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onPointerLeave={up} />
-        {empty ? <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none', color: '#a1a1aa', fontSize: '13px' }}>Draw your signature here</div> : null}
-        <div style={{ position: 'absolute', left: '16px', right: '16px', bottom: '28px', borderTop: '1px solid #e4e4e7', pointerEvents: 'none' }} />
+        {empty ? <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none', color: 'var(--subtle, #a1a1aa)', fontSize: '13px' }}>Draw your signature here</div> : null}
+        <div style={{ position: 'absolute', left: '16px', right: '16px', bottom: '28px', borderTop: '1px solid var(--divider, #e4e4e7)', pointerEvents: 'none' }} />
       </div>
-      <button type="button" onClick={clear} style={{ marginTop: '6px', fontSize: '12px', color: '#52525b', background: 'none', border: 0, cursor: 'pointer', padding: 0 }}>Clear</button>
+      <button type="button" onClick={clear} style={{ marginTop: '6px', fontSize: '12px', color: 'var(--muted, #52525b)', background: 'none', border: 0, cursor: 'pointer', padding: 0 }}>Clear</button>
     </div>
   );
 }

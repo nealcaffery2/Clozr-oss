@@ -3,6 +3,7 @@
 // plus deals / comms / tasks / offers / transactions.
 
 import { tcChecklists } from '../supabase/functions/_shared/tc-checklists';
+import { DEMO_RECORD_SIGN_URL } from './inbox-demo';
 
 const IMG = {
   a:'https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=800&q=70&auto=format&fit=crop',
@@ -68,6 +69,8 @@ const people = [
     property:{addr:'1520 Easton Avenue',city:'San Antonio',st:'TX',zip:'78210',beds:3,baths:2,sqft:1540,year:1968,lot:'0.15 ac',type:'SFR',img:IMG.i,apn:'05122-009-0010'}},
   {id:'p10',name:'Marvin Cole',stage:'Closing',score:81,assigned:'taylor',source:'Zapier Webhook',phone:'(512) 555-0109',email:'marvin.cole@gmail.com',lastComm:'SMS · Today 9:10',lastCommTs:40,nextTask:'Title cleared · Fund Friday',offer:'$185,000',created:'Jun 28',tags:[],market:'Austin',
     motivation:'Job relocation',timeline:'Closing Friday',condition:'Good · C3',occupancy:'Vacant',mortgage:'$88,000',asking:'$199,000',desiredClose:'Sept 6',decisionMakers:'Marvin',
+    // Sent in on the disposition form, so the sample graph has one record with a Submission tab.
+    intake:{entity:'Cole Family Trust',disposition:'Wholesale',garage:'2 car attached',mls:'No',contract:'Signed PSA on file',notes:'Vacant since May. Keys are with the neighbor at 912.'},
     property:{addr:'910 Cedar Way',city:'Austin',st:'TX',zip:'78745',beds:3,baths:2,sqft:1420,year:1984,lot:'0.18 ac',type:'SFR',img:IMG.j,apn:'04150908130000'}},
   {id:'p11',name:'Teresa Vance',stage:'Contacted',score:64,assigned:'diego',source:'Facebook PPC',phone:'(972) 555-0133',email:'tvance@gmail.com',lastComm:'SMS · 5h ago',lastCommTs:300,nextTask:'Callback · 4:00 PM',offer:null,created:'Aug 28',tags:[],market:'DFW',
     motivation:'Exploring options',timeline:'6 months',condition:'Good · C3',occupancy:'Owner occupied',mortgage:'$155,000',asking:'$260,000',desiredClose:'—',decisionMakers:'Teresa + husband',
@@ -146,17 +149,18 @@ const buyers = [
 const timeline = [
   {id:'t1',type:'call',user:'taylor',who:'Taylor Reed',time:'Today 9:42 AM',title:'Outbound call · 4m 12s',recording:true,
     ai:{summary:'Seller values speed and certainty over maximum price. Moving before September. Needs help with moving expenses.',objections:['Wants $235K','Worried about closing timeline'],next:'Send revised offer before 2 PM.'}},
-  {id:'t2',type:'sms_in',user:null,who:'Kara Mitchell',time:'Today 9:31 AM',title:'Text received',body:'Hi Taylor, I looked over the numbers again. Can you call me this morning? I want to talk through the timeline.'},
+  {id:'t2',type:'sms_in',user:null,who:'Kara Mitchell',toRep:'Taylor Reed',time:'Today 9:31 AM',title:'Text received',body:'Hi Taylor, I looked over the numbers again. Can you call me this morning? I want to talk through the timeline.'},
   {id:'t0m',type:'call',user:null,who:'Kara Mitchell',time:'Today 8:14 AM',title:'Missed call',body:'Rang this browser and was not answered.'},
+  {id:'t0s',type:'sms_out',user:'diego',who:'Diego Ortiz',time:'Today 8:20 AM',title:'Text sent',body:'Hi Kara, Diego here, covering for Taylor this morning. Saw your call. She will ring you before 10 about the closing date.'},
   {id:'t2e',type:'email',user:null,who:'kara.mitchell@gmail.com',time:'Yesterday 6:02 PM',title:'Email received',body:'',
     email:{subject:'Re: Your cash offer for 1803 Cypress Lane',from:'kara.mitchell@gmail.com',fromName:'Kara Mitchell',to:['taylor@acmehomes.com','diego@acmehomes.com'],inbound:true,
       body:'Hi Taylor,\r\n\r\nThank you for sending this over so quickly. My brother and I read through the offer tonight and we are both comfortable with the price, but we would need a closing date after\r\nSeptember 15 so the kids can finish their first weeks of school.\r\n\r\nIs that something you can do? Also, can we leave the old washer and dryer in the garage?\r\n\r\nThanks,\r\nKara\r\n\r\nSent from my iPhone\r\n\r\nOn Mon, Sep 21, 2026 at 3:40 PM Taylor Reed <taylor@acmehomes.com> wrote:\r\n> Kara, here is the written offer we discussed: clozr.link/o/8f2k.\r\n> No obligation, happy to walk through it whenever.'}},
   {id:'t3',type:'offer',user:'taylor',who:'Taylor Reed',time:'Yesterday 4:15 PM',title:'Offer viewed by seller · 3rd time',body:'Offer link opened from mobile. Time on page 2m 40s.'},
   {id:'t4',type:'compr',user:'taylor',who:'COMPR',time:'Yesterday 3:58 PM',title:'Underwriting report generated',body:'ARV $318,000 · Confidence 92 · Rehab $48,200 – $57,600 · MAO (Wholesale) $181,400'},
   {id:'t4e',type:'email',user:'taylor',who:'Taylor Reed',time:'Yesterday 3:52 PM',title:'Email sent',body:'',
-    email:{subject:'Your cash offer for 1803 Cypress Lane',from:'taylor@acmehomes.com',fromName:'',to:['kara.mitchell@gmail.com'],inbound:false,
-      body:'Hi Kara,\r\n\r\nAs promised, here is our written cash offer for 1803 Cypress Lane: $186,000, as-is, no repairs, no commissions, and we cover the closing costs.\r\n\r\nYou pick the closing date. Reply here or call me with any questions.\r\n\r\nNatalie Reed\r\nAcme Homes'}},
-  {id:'t5',type:'sms_out',user:'taylor',who:'Taylor Reed',time:'Yesterday 3:40 PM',title:'Outbound SMS',body:'Kara, here is the written offer we discussed: clozr.link/o/8f2k. No obligation — happy to walk through it whenever.'},
+    email:{subject:'Your cash offer for 1803 Cypress Lane',from:'taylor@acmehomes.com',fromName:'',to:['kara.mitchell@gmail.com'],inbound:false,receipt:{opens:4,clicks:1,first_opened_at:new Date(Date.now() - 22 * 3600_000).toISOString()},
+      body:'Hi Kara,\r\n\r\nAs promised, here is our written cash offer for 1803 Cypress Lane: $186,000, as-is, no repairs, no commissions, and we cover the closing costs.\r\n\r\nYou pick the closing date. Reply here or call me with any questions.\r\n\r\nTaylor Reed\r\nAcme Homes'}},
+  {id:'t5',type:'sms_out',user:'taylor',who:'Taylor Reed',time:'Yesterday 3:40 PM',title:'Outbound SMS',body:`Kara, here is the written offer we discussed: ${DEMO_RECORD_SIGN_URL} No obligation. Happy to walk through it whenever.`},
   {id:'t6',type:'stage',user:'taylor',who:'Taylor Reed',time:'Yesterday 2:12 PM',title:'Stage changed · Contacted → Qualified',body:'Motivation confirmed. Decision makers identified.'},
   {id:'t7',type:'note',user:'taylor',who:'Taylor Reed',time:'Yesterday 2:10 PM',title:'Note',body:'Brother is co-heir; lives in Phoenix. Kara handles everything but wants him on the final call. Prefers text before calls.'},
   {id:'t8',type:'email',user:'taylor',who:'Taylor Reed',time:'Aug 23 · 10:04 AM',title:'Email sent',body:'Intro packet sent. Opened twice.',
@@ -405,7 +409,7 @@ const communications = [
   // p1 · Kara Mitchell · 123 Oakview Drive
   {id:'c1',personId:'p1',channel:'call',dir:'out',party:'Kara Mitchell',user:'taylor',ts:42,time:'Today 9:42 AM',preview:'Outbound call · 4m 12s — walked the revised numbers and the Sept 30 timeline.',dur:'4m 12s'},
   {id:'c2',personId:'p1',channel:'sms',dir:'in',party:'Kara Mitchell',user:null,ts:53,time:'Today 9:31 AM',preview:'Hi Taylor, I looked over the numbers again. Can you call me this morning? I want to talk through the timeline.'},
-  {id:'c3',personId:'p1',channel:'sms',dir:'out',party:'Kara Mitchell',user:'taylor',ts:1010,time:'Yesterday 3:40 PM',preview:'Kara, here is the written offer we discussed: clozr.link/o/8f2k. No obligation — happy to walk through it whenever.'},
+  {id:'c3',personId:'p1',channel:'sms',dir:'out',party:'Kara Mitchell',user:'taylor',ts:1010,time:'Yesterday 3:40 PM',preview:`Kara, here is the written offer we discussed: ${DEMO_RECORD_SIGN_URL} No obligation. Happy to walk through it whenever.`},
   {id:'c4',personId:'p1',channel:'email',dir:'out',party:'Kara Mitchell',user:'taylor',ts:2900,time:'Aug 23 · 10:04 AM',preview:'"How our process works" — intro packet sent. Opened twice.'},
   {id:'c5',personId:'p1',channel:'call',dir:'out',party:'Kara Mitchell',user:'taylor',ts:3100,time:'Aug 22 · 9:20 AM',preview:'First contact · 6m 48s — confirmed motivation (relocation) and co-heir brother in Phoenix.',dur:'6m 48s'},
 

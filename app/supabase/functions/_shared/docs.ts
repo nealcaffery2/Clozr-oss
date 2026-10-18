@@ -11,7 +11,8 @@
 import { PDFDocument, PDFFont, PDFImage, PDFPage, StandardFonts, rgb } from 'npm:pdf-lib@1.17.1';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { pd, pickPandaDocTemplate, status as pdStatus } from './pandadoc.ts';
-import { sendResend, transactionalFrom } from './resend.ts';
+import { type EnvLike, type ResendFrom, sendResend, transactionalFrom } from './resend.ts';
+import { signingResendEnv } from './workspace-email.ts';
 import { completedEmail, signingEmail } from './emails.ts';
 import { buildTokens, fill, longDate, money, partySigner, str, tokensIn, type Party, type Token } from './esign-map.ts';
 import { isPurchaseContract, nextDealStage, signedDealUpdate } from './contract-apply.ts';
@@ -632,6 +633,23 @@ export async function applySent(admin: SupabaseClient, row: Record<string, Any>)
 // ------------------------------------------------------------------- email
 /** Optional: email each signer their link when RESEND_API_KEY is set. Returns how many were emailed. */
 export type MailSigner = { id?: number; name?: string | null; email?: string | null; label?: string | null; role?: string; status?: string; url: string };
+export type SigningSender = { name?: string | null; email?: string | null };
+
+export async function signingSender(admin: SupabaseClient, userId: string | null | undefined): Promise<SigningSender | null> {
+  if (!userId) return null;
+  const { data } = await admin.from('profiles').select('full_name, email').eq('id', userId).maybeSingle();
+  if (!data) return null;
+  return { name: (data as Any).full_name ?? null, email: (data as Any).email ?? null };
+}
+
+/** Verified-domain From with the rep's display name; reply goes to the rep when we have one. */
+export function signingFromLine(env: EnvLike, sender?: SigningSender | null): ResendFrom | null {
+  const base = transactionalFrom(env);
+  if (!base) return null;
+  const name = (sender?.name ?? '').trim().replace(/[\r\n<>"]/g, '');
+  if (!name) return base;
+  return { ...base, from: `${name} <${base.email}>`, name };
+}
 
 /**
  * Mail each signer their own link.
@@ -643,10 +661,15 @@ export type MailSigner = { id?: number; name?: string | null; email?: string | n
  */
 export async function emailSigners(
   company: Company, contractName: string, message: string | null, signers: MailSigner[],
-  opts: { reminder?: boolean; expiresAt?: string | null; cc?: string[]; contractId?: number } = {},
+  opts: { reminder?: boolean; expiresAt?: string | null; cc?: string[]; contractId?: number; env?: EnvLike; sender?: SigningSender | null } = {},
 ): Promise<number> {
-  const from = transactionalFrom();
-  if (!from) return 0;
+  const env = opts.env ?? Deno.env;
+  const from = signingFromLine(env, opts.sender);
+  if (!from) {
+    console.error('signing email skipped: Resend is not configured (RESEND_API_KEY + MAIL_FROM or workspace blast_from)');
+    return 0;
+  }
+  const replyTo = (opts.sender?.email ?? '').trim() || company.email || null;
   let sent = 0;
   for (const s of signers) {
     if (!s.email) continue;
@@ -665,10 +688,10 @@ export async function emailSigners(
     });
     const ok = await sendResend({
       to: s.email, from: from.from, subject: mail.subject, html: mail.html, text: mail.text,
-      cc, replyTo: company.email || null,
+      cc, replyTo,
       // contract_id / signer_id let the Resend webhook show delivered / opened / bounced per recipient.
       tags: { kind: opts.reminder ? 'signing_reminder' : 'signing', ...(opts.contractId ? { contract_id: String(opts.contractId) } : {}), ...(s.id ? { signer_id: String(s.id) } : {}) },
-    });
+    }, env);
     if (ok) sent++;
   }
   return sent;
@@ -686,7 +709,8 @@ export async function emailSigners(
 export async function emailCompleted(
   admin: SupabaseClient, row: Record<string, Any>, company: Company, pdfPath: string | null, sha256: string | null, origin: string,
 ): Promise<number> {
-  const from = transactionalFrom();
+  const env = await signingResendEnv(admin, row.workspace_id as number);
+  const from = transactionalFrom(env);
   if (!from) return 0;
   const { data: signers } = await admin.from('contract_signers').select('name, email, label, role, signed_at, token').eq('contract_id', row.id).order('sort');
   const all = (signers ?? []) as SignerRow[];
@@ -705,7 +729,7 @@ export async function emailCompleted(
     const ok = await sendResend({
       to: s.email, from: from.from, subject: mail.subject, html: mail.html, text: mail.text,
       replyTo: company.email || null, tags: { kind: 'signing_completed' },
-    });
+    }, env);
     if (ok) sent++;
   }
   return sent;
@@ -794,7 +818,10 @@ export async function createContract(admin: SupabaseClient, i: CreateInput) {
   const links = (signerRows ?? []).map((s) => ({ id: s.id, role: s.role, label: s.label, name: s.name, email: s.email, phone: s.phone, status: s.status, recipient_type: s.recipient_type, sort: s.sort, url: signUrl(i.origin, s.token) }));
   let emailed = 0;
   // Sequential: only the first turn (and viewers) now; the next signer is mailed when the one before signs. CC waits for the signed copy.
-  if (i.send && i.email !== false) emailed = await emailSigners(i.company, name, i.message ?? null, sendTo(links, row.signing_order_mode), { expiresAt: expires, cc: tcs.map((t) => t.email), contractId: row.id });
+  if (i.send && i.email !== false) {
+    const mailEnv = await signingResendEnv(admin, i.ws);
+    emailed = await emailSigners(i.company, name, i.message ?? null, sendTo(links, row.signing_order_mode), { expiresAt: expires, cc: tcs.map((t) => t.email), contractId: row.id, env: mailEnv });
+  }
   if (i.notary?.needs && (notaryMode === 'wet' || notaryMode === 'vendor' || i.send)) {
     try { await queueNotary(admin, { ...row, notary_mode: notaryMode, notary_vendor: i.notary.vendor ?? null }, i.origin); } catch (e) { console.error('notary', (e as Error).message); }
   }

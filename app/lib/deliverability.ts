@@ -59,8 +59,13 @@ export type Overview = { domains: DomainRow[]; mailboxes: MailboxRow[]; suppress
 
 export type PostmasterDay = { date: string; reputation: 'HIGH' | 'MEDIUM' | 'LOW' | 'BAD' | null; spam: number | null; spf: number | null; dkim: number | null; dmarc: number | null; errors: number; error_types: string[] };
 /** Google Site Verification for one domain Postmaster does not list yet. 	xt is shown when it must be added by hand. */
-export type DomainVerification = { domain: string; status: 'verified' | 'pending' | 'needs_dns' | 'error' | 'unchecked'; dns_host: 'inboxkit' | 'vercel' | null; txt: string | null; detail: string | null; checked_at: string | null; attempts: number };
-export type Postmaster = { connected: boolean; granted: boolean; site_verification?: boolean; error?: string; domains: { domain: string; days: PostmasterDay[] }[]; unverified: string[]; verification?: DomainVerification[] };
+export type DomainVerification = {
+  domain: string; status: 'verified' | 'pending' | 'needs_dns' | 'error' | 'unchecked'; dns_host: 'inboxkit' | 'vercel' | null; txt: string | null; detail: string | null; checked_at: string | null; attempts: number;
+  /** Adding it to Postmaster this load: ready (in and verified), added (in, verifying), manual (Google refused, add it at postmaster.google.com), error. */
+  postmaster?: 'ready' | 'added' | 'manual' | 'error' | null; postmaster_detail?: string | null;
+};
+/** `remaining`: domains Site Verification did not reach this load; the next load does them. */
+export type Postmaster = { connected: boolean; granted: boolean; site_verification?: boolean; error?: string; domains: { domain: string; days: PostmasterDay[] }[]; unverified: string[]; verification?: DomainVerification[]; remaining?: number };
 export type WarmupMailbox = {
   email: string;
   /** Instantly: warming, health score, and 14 days of warm-up mail by where it landed. */

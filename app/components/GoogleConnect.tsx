@@ -14,9 +14,9 @@ import {
 } from '@/lib/google';
 import { calendarFeedUrl } from '@/lib/integrations';
 
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
-const ghost: React.CSSProperties = { height: '32px', padding: '0 12px', borderRadius: '9px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', color: '#18181b' };
-const mono: React.CSSProperties = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '11.5px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e4e4e7', background: '#fafafa', wordBreak: 'break-all', display: 'block' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
+const ghost: React.CSSProperties = { height: '32px', padding: '0 12px', borderRadius: '9px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', color: 'var(--ink, #18181b)' };
+const mono: React.CSSProperties = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '11.5px', padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--canvas, #fafafa)', wordBreak: 'break-all', display: 'block' };
 
 /** Google's own mark, so the button looks like every other Sign in with Google. */
 function GMark() {
@@ -36,11 +36,11 @@ const Dot = ({ on }: { on: boolean }) => (
 
 function Toggle({ on, onChange, title, sub, disabled }: { on: boolean; onChange: (v: boolean) => void; title: string; sub: string; disabled?: boolean }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '9px 0', borderTop: '1px solid #f0f0f1', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1 }}>
-      <input type="checkbox" checked={on} disabled={disabled} onChange={(e) => onChange(e.target.checked)} style={{ marginTop: '2px', width: '15px', height: '15px', accentColor: '#0A8560', flex: 'none' }} />
+    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '9px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1 }}>
+      <input type="checkbox" checked={on} disabled={disabled} onChange={(e) => onChange(e.target.checked)} style={{ marginTop: '2px', width: '15px', height: '15px', accentColor: 'var(--tx-mint, #0a8560)', flex: 'none' }} />
       <span style={{ minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#18181b' }}>{title}</span>
-        <span style={{ display: 'block', fontSize: '12px', color: '#71717a', marginTop: '1px', lineHeight: 1.45 }}>{sub}</span>
+        <span style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--ink, #18181b)' }}>{title}</span>
+        <span style={{ display: 'block', fontSize: '12px', color: 'var(--meta, #71717a)', marginTop: '1px', lineHeight: 1.45 }}>{sub}</span>
       </span>
     </label>
   );
@@ -157,30 +157,30 @@ export function GoogleConnect({ workspaceId, demo, userId, onChange }: { workspa
         <h2 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Google Calendar and Gmail</h2>
         {account ? <Dot on={account.status === 'active'} /> : null}
       </div>
-      <p style={{ margin: '0 0 14px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.5 }}>
+      <p style={{ margin: '0 0 14px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
         Appointments land on a CLOZR calendar in your Google account and sync both ways: move, rename, invite or delete on either side and the other follows.
         Invitations to sellers, buyers and vendors go out from Google Calendar with Yes / No / Maybe, and their answers show on the appointment.
         Contracts and offers go out from your own address instead of a no-reply one, and replies from people in the CRM show on their record.
       </p>
 
       {demo ? (
-        <p style={{ margin: 0, fontSize: '12.5px', color: '#a1a1aa' }}>Sign in to connect a Google account.</p>
+        <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--subtle, #a1a1aa)' }}>Sign in to connect a Google account.</p>
       ) : !status ? (
-        <p style={{ margin: 0, fontSize: '12.5px', color: '#71717a' }}>Checking…</p>
+        <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>Checking…</p>
       ) : !status.configured ? (
         <Setup redirect={status.redirect_uri} />
       ) : account ? (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: '10px 12px', borderRadius: '10px', background: '#f6fbf9', border: '1px solid #d6ece4' }}>
             <GMark />
-            <span style={{ fontSize: '13px', fontWeight: 600, color: '#18181b', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{account.email}</span>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ink, #18181b)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{account.email}</span>
             <span style={{ fontSize: '12px', color: account.status === 'active' ? '#0A8560' : '#b45309' }}>
               {account.status === 'active' ? `calendar ${ago(account.last_calendar_sync_at)}` : 'needs approving again'}
             </span>
             <span style={{ flex: 1 }} />
             <button type="button" onClick={() => void sync()} disabled={busy !== null} style={ghost}>{busy === 'sync' ? 'Syncing…' : 'Sync now'}</button>
             {account.status === 'active' ? null : (
-              <button type="button" onClick={() => void connect()} disabled={busy !== null} style={{ ...ghost, borderColor: '#0A8560', color: '#0A8560' }}>Reconnect</button>
+              <button type="button" onClick={() => void connect()} disabled={busy !== null} style={{ ...ghost, borderColor: '#0A8560', color: 'var(--tx-mint, #0a8560)' }}>Reconnect</button>
             )}
           </div>
 
@@ -213,35 +213,35 @@ export function GoogleConnect({ workspaceId, demo, userId, onChange }: { workspa
 
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' }}>
             <button type="button" onClick={() => void test()} disabled={busy !== null || !account.gmail_send} style={ghost}>{busy === 'test' ? 'Sending…' : 'Send test email'}</button>
-            <button type="button" onClick={() => void drop()} disabled={busy !== null} style={{ ...ghost, color: '#b91c1c', borderColor: '#fecaca' }}>Disconnect</button>
+            <button type="button" onClick={() => void drop()} disabled={busy !== null} style={{ ...ghost, color: 'var(--tx-red, #b91c1c)', borderColor: 'var(--tint-red-2, #fecaca)' }}>Disconnect</button>
           </div>
-          {account.last_error ? <p style={{ margin: '10px 0 0', fontSize: '12px', color: '#b45309' }}>{account.last_error}</p> : null}
+          {account.last_error ? <p style={{ margin: '10px 0 0', fontSize: '12px', color: 'var(--tx-amber, #b45309)' }}>{account.last_error}</p> : null}
         </>
       ) : (
         <>
-          <button type="button" onClick={() => void connect()} disabled={busy !== null} style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', height: '40px', padding: '0 16px', borderRadius: '10px', border: '1px solid #dadce0', background: '#fff', fontSize: '13.5px', fontWeight: 600, color: '#3c4043', cursor: busy ? 'wait' : 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>
+          <button type="button" onClick={() => void connect()} disabled={busy !== null} style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', height: '40px', padding: '0 16px', borderRadius: '10px', border: '1px solid var(--line-2, #dadce0)', background: 'var(--surface, #fff)', fontSize: '13.5px', fontWeight: 600, color: 'var(--ink-4, #3c4043)', cursor: busy ? 'wait' : 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>
             <GMark />
             {busy === 'connect' ? 'Waiting for Google…' : 'Connect Google'}
           </button>
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: '9px', marginTop: '12px', fontSize: '12.5px', color: '#52525b', cursor: 'pointer' }}>
-            <input type="checkbox" checked={wantMail} onChange={(e) => setWantMail(e.target.checked)} style={{ marginTop: '2px', width: '15px', height: '15px', accentColor: '#0A8560', flex: 'none' }} />
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: '9px', marginTop: '12px', fontSize: '12.5px', color: 'var(--muted, #52525b)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={wantMail} onChange={(e) => setWantMail(e.target.checked)} style={{ marginTop: '2px', width: '15px', height: '15px', accentColor: 'var(--tx-mint, #0a8560)', flex: 'none' }} />
             <span>Also read replies from people already in the CRM onto their record. Untick to ask Google for sending only.</span>
           </label>
-          <p style={{ margin: '10px 0 0', fontSize: '12px', color: '#a1a1aa', lineHeight: 1.5 }}>
+          <p style={{ margin: '10px 0 0', fontSize: '12px', color: 'var(--subtle, #a1a1aa)', lineHeight: 1.5 }}>
             Google asks you once, on its own screen. You can untick anything there and CLOZR uses whatever you approve — nothing to paste back here.
           </p>
         </>
       )}
 
-      {note ? <p style={{ margin: '12px 0 0', fontSize: '12.5px', color: note.ok ? '#15803d' : '#b91c1c' }}>{note.text}</p> : null}
+      {note ? <p style={{ margin: '12px 0 0', fontSize: '12.5px', color: note.ok ? 'var(--tx-green, #15803d)' : '#b91c1c' }}>{note.text}</p> : null}
 
       {others.length ? (
-        <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid #f0f0f1' }}>
-          <div style={{ fontSize: '11.5px', color: '#71717a', fontWeight: 600, marginBottom: '6px' }}>Also connected</div>
+        <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
+          <div style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600, marginBottom: '6px' }}>Also connected</div>
           {others.map((t) => (
-            <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: '#52525b', padding: '3px 0' }}>
+            <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: 'var(--muted, #52525b)', padding: '3px 0' }}>
               <Dot on={t.status === 'active'} /><span>{t.email}</span>
-              <span style={{ color: '#a1a1aa' }}>{t.status === 'active' ? `synced ${ago(t.last_calendar_sync_at)}` : 'needs approving again'}</span>
+              <span style={{ color: 'var(--subtle, #a1a1aa)' }}>{t.status === 'active' ? `synced ${ago(t.last_calendar_sync_at)}` : 'needs approving again'}</span>
             </div>
           ))}
         </div>
@@ -318,36 +318,36 @@ export function GoogleDriveCard({ workspaceId, demo }: { workspaceId: number | n
         <h2 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Google Drive</h2>
         {st ? <Dot on={hasDrive && !!cfg && !cfg.last_error} /> : null}
       </div>
-      <p style={{ margin: '0 0 14px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.5 }}>
+      <p style={{ margin: '0 0 14px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
         Point CLOZR at your deals folder. Every folder named for a property — and everything under it, Photos folders included — is filed on that deal: contracts, title work and other documents on its Files, pictures in its photos. New files follow every ten minutes. CLOZR only reads Drive; nothing is moved or deleted.
       </p>
       {demo ? (
-        <p style={{ margin: 0, fontSize: '12.5px', color: '#a1a1aa' }}>Sign in to connect Google Drive.</p>
+        <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--subtle, #a1a1aa)' }}>Sign in to connect Google Drive.</p>
       ) : !st ? (
-        <p style={{ margin: 0, fontSize: '12.5px', color: '#71717a' }}>Checking…</p>
+        <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>Checking…</p>
       ) : !st.email ? (
-        <p style={{ margin: 0, fontSize: '12.5px', color: '#71717a' }}>Connect Google in the card above first; Drive is added to that connection.</p>
+        <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>Connect Google in the card above first; Drive is added to that connection.</p>
       ) : !hasDrive ? (
-        <button type="button" onClick={() => void connect()} disabled={busy !== null} style={{ ...ghost, borderColor: '#0A8560', color: '#0A8560' }}>{busy === 'connect' ? 'Waiting for Google…' : `Connect Drive for ${st.email} (read-only)`}</button>
+        <button type="button" onClick={() => void connect()} disabled={busy !== null} style={{ ...ghost, borderColor: '#0A8560', color: 'var(--tx-mint, #0a8560)' }}>{busy === 'connect' ? 'Waiting for Google…' : `Connect Drive for ${st.email} (read-only)`}</button>
       ) : (
         <>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <input value={folder} onChange={(e) => setFolder(e.target.value)} placeholder={cfg ? `${cfg.root_name ?? 'Folder'} — paste another link to change` : 'Paste the folder link from Drive'}
-              style={{ flex: '1 1 260px', minWidth: 0, height: '32px', padding: '0 10px', borderRadius: '9px', border: '1px solid #e4e4e7', fontSize: '12.5px' }} />
+              style={{ flex: '1 1 260px', minWidth: 0, height: '32px', padding: '0 10px', borderRadius: '9px', border: '1px solid var(--divider, #e4e4e7)', fontSize: '12.5px' }} />
             <button type="button" onClick={() => void go('save')} disabled={busy !== null || !folder.trim()} style={ghost}>{busy === 'save' ? 'Reading Drive…' : 'Use this folder'}</button>
             {cfg ? <button type="button" onClick={() => void go('run')} disabled={busy !== null} style={ghost}>{busy === 'run' ? 'Syncing…' : 'Sync now'}</button> : null}
           </div>
           {cfg ? (
-            <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#52525b', lineHeight: 1.5 }}>
+            <p style={{ margin: '8px 0 0', fontSize: '12px', color: 'var(--muted, #52525b)', lineHeight: 1.5 }}>
               <strong>{cfg.root_name ?? cfg.root_folder_id}</strong> · last run {ago(cfg.last_run_at)}{cfg.running ? ' · running now' : ''}<br />
               {driveTreeLine(cfg.last_notes)}
-              {cfg.last_error ? <><br /><span style={{ color: '#b45309' }}>{cfg.last_error}</span></> : null}
-              {cfg.last_notes?.unmatched?.length ? <><br /><span style={{ color: '#a1a1aa' }}>No deal yet: {cfg.last_notes.unmatched.slice(0, 8).join(' · ')}</span></> : null}
+              {cfg.last_error ? <><br /><span style={{ color: 'var(--tx-amber, #b45309)' }}>{cfg.last_error}</span></> : null}
+              {cfg.last_notes?.unmatched?.length ? <><br /><span style={{ color: 'var(--subtle, #a1a1aa)' }}>No deal yet: {cfg.last_notes.unmatched.slice(0, 8).join(' · ')}</span></> : null}
             </p>
           ) : null}
         </>
       )}
-      {msg ? <p style={{ margin: '8px 0 0', fontSize: '12px', color: msg.ok ? '#15803d' : '#b91c1c' }}>{msg.text}</p> : null}
+      {msg ? <p style={{ margin: '8px 0 0', fontSize: '12px', color: msg.ok ? 'var(--tx-green, #15803d)' : '#b91c1c' }}>{msg.text}</p> : null}
     </div>
   );
 }
@@ -360,7 +360,7 @@ export function GoogleDriveCard({ workspaceId, demo }: { workspaceId: number | n
 function Setup({ redirect }: { redirect: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div style={{ fontSize: '12.5px', color: '#52525b', lineHeight: 1.6 }}>
+    <div style={{ fontSize: '12.5px', color: 'var(--muted, #52525b)', lineHeight: 1.6 }}>
       <p style={{ margin: '0 0 8px' }}>
         One setup, once, by whoever owns the Google account — after that everybody here just clicks Connect.
       </p>
@@ -414,19 +414,19 @@ function OtherCalendars({ workspaceId, demo }: { workspaceId: number | null; dem
 
   if (demo || !workspaceId) return null;
   return (
-    <details onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) void show(); }} style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid #f0f0f1' }}>
-      <summary style={{ fontSize: '12.5px', color: '#71717a', cursor: 'pointer' }}>Apple Calendar, Outlook, anything else</summary>
-      <p style={{ margin: '8px 0', fontSize: '12.5px', color: '#71717a', lineHeight: 1.5 }}>
+    <details onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) void show(); }} style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
+      <summary style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)', cursor: 'pointer' }}>Apple Calendar, Outlook, anything else</summary>
+      <p style={{ margin: '8px 0', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
         A read-only feed of the same appointments and tasks. Subscribe to this URL from the other calendar app — one-way, and the URL is the only credential, so treat it as a password and rotate it if it gets out.
       </p>
       {feed ? (
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           <code style={{ ...mono, flex: 1, minWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{feed}</code>
           <button type="button" onClick={() => { void navigator.clipboard?.writeText(feed).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); }); }} style={ghost}>{copied ? 'Copied' : 'Copy'}</button>
-          <button type="button" onClick={() => void rotate()} style={{ ...ghost, color: '#71717a' }}>Rotate</button>
+          <button type="button" onClick={() => void rotate()} style={{ ...ghost, color: 'var(--meta, #71717a)' }}>Rotate</button>
         </div>
-      ) : <p style={{ margin: 0, fontSize: '12.5px', color: '#71717a' }}>{note ?? 'Minting…'}</p>}
-      {note && feed ? <div style={{ marginTop: '8px', fontSize: '12px', color: '#15803d' }}>{note}</div> : null}
+      ) : <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>{note ?? 'Minting…'}</p>}
+      {note && feed ? <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--tx-green, #15803d)' }}>{note}</div> : null}
     </details>
   );
 }

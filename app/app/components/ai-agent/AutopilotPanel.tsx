@@ -248,7 +248,7 @@ export function AutopilotPanel({ isMobile }: { isMobile: boolean }) {
 function Chip({ on, label, onChange, disabled, children }: { on: boolean; label: string; onChange: (v: boolean) => void; disabled?: boolean; children?: React.ReactNode }) {
   return (
     <button type="button" role="checkbox" aria-checked={on} disabled={disabled} onClick={() => onChange(!on)} className="va-btn"
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 30, padding: '4px 10px', borderRadius: 999, border: `1px solid ${on ? GREEN : '#e4e4e7'}`, background: on ? '#ecfdf5' : '#fff', color: on ? GREEN : INK, fontSize: 12.5, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', maxWidth: '100%' }}>
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 30, padding: '4px 10px', borderRadius: 999, border: `1px solid ${on ? GREEN : 'var(--divider, #e4e4e7)'}`, background: on ? 'var(--tint-green, #ecfdf5)' : 'var(--surface, #fff)', color: on ? GREEN : INK, fontSize: 12.5, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', maxWidth: '100%' }}>
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>{children}
     </button>
   );

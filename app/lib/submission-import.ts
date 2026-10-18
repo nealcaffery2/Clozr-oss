@@ -21,7 +21,7 @@ import { DISPLAY, cleanEntity, entityKey } from '../supabase/functions/_shared/p
 import { supabase } from './supabase';
 import { logActivity } from './crm-write';
 import { logRun, notifyUser } from './data-runs';
-import { type ImportRecord, type ImportResult, type ReportRow, importProperty } from './import';
+import { type ImportRecord, type ImportResult, type ReportRow, importProperty, resolveImportProperties } from './import';
 import { factRows } from './import-extras';
 import { attachPhotoLinks } from './deal-files';
 import { toE164 } from './talkr';
@@ -268,6 +268,8 @@ async function existingSubmissions(workspaceId: number, sellerIds: number[]): Pr
 
 /** The property already filed under each row's address (address_key, as importProperty files it), or null. Reads only. */
 async function propertiesOf(workspaceId: number, records: ImportRecord[]): Promise<(number | null)[]> {
+  const looked = await resolveImportProperties(workspaceId, records.flatMap((r, i) => (r.addr ? [{ i, r, mode: 'fill' as const }] : [])), false);
+  if (looked) return records.map((_, i) => looked.get(i)?.propertyId ?? null);
   const sb = supabase!;
   const keys: (string | null)[] = [];
   for (let i = 0; i < records.length; i += 20) {
@@ -359,6 +361,8 @@ export async function runSubmissionImport(
   const now = new Date().toISOString();
   // What each partner already has here, so a resent house fills its deal instead of making a second one.
   const known: SubmissionIndex = indexSubmissions(await existingSubmissions(workspaceId, [...new Set([...byName.values()].map((v) => v.sellerId))]));
+  // Only rows one() will import: a row whose partner failed to resolve is skipped and leaves no property behind.
+  const propertyHits = await resolveImportProperties(workspaceId, records.flatMap((r, i) => (r.addr && byName.has(keys[i]) ? [{ i, r, mode: 'fill' as const }] : [])), true);
 
   async function one(i: number) {
     const r = records[i];
@@ -377,7 +381,8 @@ export async function runSubmissionImport(
     const { vendor, sellerId } = to;
     try {
       // The house's facts fill what the property does not have yet; a partner's sheet never overrides it.
-      const propertyId = await importProperty(workspaceId, r, 'fill');
+      const propertyHit = propertyHits?.get(i);
+      const propertyId = propertyHit ? propertyHit.propertyId : await importProperty(workspaceId, r, 'fill');
       const { owner, underwriter } = plan[i];
       const hit = matchSubmission(known, { sellerId, propertyId, sourceId: r.source_id });
       if (hit) {

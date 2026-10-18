@@ -26,6 +26,7 @@ import { allSigned, canSignNow, isDone, signs, turn } from '../_shared/signing-o
 import { approvalDecision, maskPhone, normalizeDelivery, phoneGateOk, phoneKey, phonesMatch } from '../_shared/docs-people.ts';
 import { delegateRecipient, deliverLinks, loadRecipients, recordApproval, textCode } from '../_shared/docs-flow.ts';
 import { afterTurn, saveSignerValues, signerFields, stampDateSigned } from '../_shared/pdf-contracts.ts';
+import { effectiveReadOnly } from '../_shared/pdf-fields.ts';
 import { sendResend, transactionalFrom } from '../_shared/resend.ts';
 import { publishContract } from '../_shared/contract-webhooks.ts';
 // PandaDoc parity (docs-parity): origin allow-list, access codes enforced, decline notice, new field types.
@@ -33,12 +34,27 @@ import { authNeeded, makeGate, safeOrigin } from '../_shared/parity/security.ts'
 import { notifyDeclined } from '../_shared/parity/notify.ts';
 import { blockers, computeFormulas, type LogicField, radioSiblings, validateParity } from '../_shared/parity/field-logic.ts';
 import {
-  addViewSeconds, codeFresh, emailsMatch, gateOk, hashAccessCode, maskEmail, mintCode, mintGate,
+  addViewSeconds, codeFresh, emailsMatch, firstViewNotice, gateOk, hashAccessCode, maskEmail, mintCode, mintGate,
   signedBody, signedTitle, viewedBody, viewedTitle,
 } from '../_shared/esign-session.ts';
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': ALLOW_HEADERS, 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
+
+/**
+ * The sender hears the first time a seller or buyer opens their link. A text
+ * carrying the link has no read receipt; this open is the one CLOZR gets, and
+ * the Inbox and the record show it as "Viewed" on that text too.
+ */
+async function notifyFirstView(admin: Any, row: Any, signer: Any, at: string): Promise<void> {
+  const notice = firstViewNotice(row, signer, at);
+  if (!notice) return;
+  const { error } = await admin.from('notifications').insert({
+    workspace_id: row.workspace_id, user_id: notice.user_id, category: 'Contracts', title: notice.title, body: notice.body,
+    seller_id: row.seller_id ?? null, deal_id: row.deal_id ?? null,
+  });
+  if (error) console.error('first view notice', error.message);
+}
 
 /** A notary link is a different token. Same rule: only the emailed address opens it, then they apply the seal on file. */
 async function notaryDoor(admin: Any, b: Any, token: string): Promise<Response> {
@@ -104,7 +120,7 @@ async function notaryDoor(admin: Any, b: Any, token: string): Promise<Response> 
 
 // ---------------------------------------------------------------- parity
 const PARITY_TYPES = new Set(['radio', 'email', 'phone', 'attachment', 'stamp', 'formula']);
-const FIELD_LOGIC_COLS = 'id, signer_id, type, required, read_only, value, label, page, x, y, field_key, group_key, conditions, formula, validation, options';
+const FIELD_LOGIC_COLS = 'id, signer_id, type, required, read_only, variable_key, value, label, page, x, y, field_key, group_key, conditions, formula, validation, options';
 
 /** Required-field check with conditions, radio groups and checkbox-group counts (replaces pdf-contracts unfinished). */
 async function parityUnfinished(admin: Any, row: Any, signerId: number): Promise<string | null> {
@@ -130,7 +146,7 @@ async function saveParityValues(admin: Any, row: Any, signer: Any, values: Array
     const f = byId.get(Number(v.id));
     if (!f || !PARITY_TYPES.has(f.type)) { base.push(v); continue; }
     if (f.signer_id !== signer.id) return { ok: false as const, error: 'That field is not yours to fill.', field_id: Number(v.id) };
-    if (f.read_only) return { ok: false as const, error: `${f.label || 'That field'} is filled in for you.`, field_id: Number(f.id) };
+    if (effectiveReadOnly(f)) return { ok: false as const, error: `${f.label || 'That field'} is filled in for you.`, field_id: Number(f.id) };
     const r = validateParity(f, v.value);
     if (!r.ok) return { ok: false as const, error: r.error, field_id: Number(f.id) };
     extra.push({ f, value: r.value });
@@ -193,7 +209,9 @@ Deno.serve(async (req) => {
   const expired = row.expires_at && new Date(row.expires_at).getTime() < Date.now() && row.status !== 'completed';
   const closed = ['voided', 'declined', 'completed', 'expired'].includes(row.status);
 
-  const others = (all ?? []).filter((s) => s.id !== signer.id && s.status !== 'delegated').map((s) => ({ role: s.role, label: s.label, name: s.name, status: s.status }));
+  const others = (all ?? []).filter((s) => s.id !== signer.id && s.status !== 'delegated').map((s) => ({
+    role: s.role, label: s.label, name: s.name, status: s.status, recipient_type: String(s.recipient_type ?? 'signer'),
+  }));
   const smsOk = normalizeDelivery(signer.delivery) !== 'email' && !!phoneKey(signer.phone);
   const view = () => json({
     locked: false,
@@ -227,6 +245,7 @@ Deno.serve(async (req) => {
     await logEvent(admin, row, 'viewed', { signer: signer.role, email: signer.email, ip }, who);
     publishContract(admin, row, 'contract.viewed', { signer });
     await logContractFeed(admin, row, viewedTitle(signer.role), viewedBody({ name: signer.name, email: signer.email, at: now }));
+    await notifyFirstView(admin, row, signer, now);
   };
 
   switch (b.action) {
@@ -297,6 +316,7 @@ Deno.serve(async (req) => {
         await logEvent(admin, row, 'viewed', { signer: signer.role, email: signer.email, ip }, who);
         publishContract(admin, row, 'contract.viewed', { signer });
         await logContractFeed(admin, row, viewedTitle(signer.role), viewedBody({ name: signer.name, email: signer.email, at: now }));
+        await notifyFirstView(admin, row, signer, now);
       }
       signer.status = signer.status === 'pending' ? 'viewed' : signer.status;
       if (bySms) signer.phone_verified_at = now;

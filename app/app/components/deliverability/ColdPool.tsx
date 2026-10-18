@@ -26,7 +26,7 @@ type Run = (action: string, body: Record<string, unknown>, where: Where) => Prom
 type Notes = { where: Where; ok: boolean; text: string } | null;
 
 const emptyStep = (): StepDraft => ({ delay_business_days: 2, subject: '', body: '', bSubject: '', bBody: '' });
-const metaText: React.CSSProperties = { fontSize: '12px', color: '#71717a', fontVariantNumeric: 'tabular-nums' };
+const metaText: React.CSSProperties = { fontSize: '12px', color: 'var(--meta, #71717a)', fontVariantNumeric: 'tabular-nums' };
 
 export function ColdPool({ workspaceId, demo, data, err, reload }: { workspaceId: number; demo: boolean; data: ColdOverview | null; err: string | null; reload: () => Promise<void> }) {
   const [note, setNote] = useState<Notes>(null);
@@ -47,7 +47,7 @@ export function ColdPool({ workspaceId, demo, data, err, reload }: { workspaceId
   if (err && !data) {
     return (
       <section style={card} aria-label="Outreach inboxes">
-        <p role="alert" style={{ margin: 0, fontSize: '12.5px', color: '#b91c1c' }}>Couldn&apos;t load cold email: {err.replace(/\.$/, '')}. Nothing was changed.</p>
+        <p role="alert" style={{ margin: 0, fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)' }}>Couldn&apos;t load cold email: {err.replace(/\.$/, '')}. Nothing was changed.</p>
         <button type="button" style={{ ...ghost, marginTop: '10px' }} onClick={() => void reload()}>Try again</button>
       </section>
     );
@@ -55,7 +55,7 @@ export function ColdPool({ workspaceId, demo, data, err, reload }: { workspaceId
   if (!data) {
     return (
       <section style={card} aria-label="Outreach inboxes" aria-busy="true">
-        <p role="status" style={{ margin: 0, fontSize: '12.5px', color: '#71717a' }}>Loading outreach inboxes…</p>
+        <p role="status" style={{ margin: 0, fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>Loading outreach inboxes…</p>
       </section>
     );
   }
@@ -106,14 +106,14 @@ function Inboxes({ workspaceId, data, run, say, reload, note }: { workspaceId: n
       why="The inboxes that send cold email, grouped by domain. They live on spare domains so a spam complaint never touches your main company address."
       how={<AddInboxesHelp data={data} />}
     >
-      <div role="list" style={{ borderTop: '1px solid #f0f0f1' }}>
+      <div role="list" style={{ borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
         {groups.map((g) => (
           <DomainRow key={g.name} g={g} open={isOpen(g)} toggle={() => setOpen((cur) => ({ ...cur, [g.name]: !isOpen(g) }))} data={data} run={run} minDays={minDays} reads={reads} />
         ))}
       </div>
       {data.admin ? (
         <details style={{ marginTop: '12px' }}>
-          <summary style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', minHeight: '24px', fontSize: '12px', fontWeight: 600, color: '#0A8560' }}>
+          <summary style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', minHeight: '24px', fontSize: '12px', fontWeight: 600, color: 'var(--tx-mint, #0a8560)' }}>
             <Icon name="chevron" size={13} />Add inboxes
           </summary>
           <div style={{ marginTop: '10px' }}><AddInboxes workspaceId={workspaceId} data={data} say={say} reload={reload} /></div>
@@ -128,10 +128,10 @@ function DomainRow({ g, open, toggle, data, run, minDays, reads }: { g: DomainGr
   const d = g.domain;
   const panel = `dlv-domain-${d?.id ?? 'none'}`;
   return (
-    <div role="listitem" style={{ borderBottom: '1px solid #f0f0f1' }}>
+    <div role="listitem" style={{ borderBottom: '1px solid var(--divider-2, #f0f0f1)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', padding: '6px 0' }}>
-        <button type="button" onClick={toggle} aria-expanded={open} aria-controls={panel} style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 240px', minWidth: 0, minHeight: '32px', padding: '0 4px', border: 0, background: 'none', cursor: 'pointer', textAlign: 'left', color: '#18181b', borderRadius: '6px' }}>
-          <span style={{ color: '#71717a', display: 'inline-flex', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .14s cubic-bezier(.23,1,.32,1)' }}><Icon name="chevron" size={14} /></span>
+        <button type="button" onClick={toggle} aria-expanded={open} aria-controls={panel} style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 240px', minWidth: 0, minHeight: '32px', padding: '0 4px', border: 0, background: 'none', cursor: 'pointer', textAlign: 'left', color: 'var(--ink, #18181b)', borderRadius: '6px' }}>
+          <span style={{ color: 'var(--meta, #71717a)', display: 'inline-flex', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .14s cubic-bezier(.23,1,.32,1)' }}><Icon name="chevron" size={14} /></span>
           <span style={{ fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }} title={g.name}>{g.name}</span>
           <span style={{ ...metaText, whiteSpace: 'nowrap' }}>{g.mailboxes.length} {g.mailboxes.length === 1 ? 'inbox' : 'inboxes'}</span>
           <span style={{ marginLeft: 'auto' }}><Badge tone={g.pill.tone}>{g.pill.label}</Badge></span>
@@ -140,7 +140,7 @@ function DomainRow({ g, open, toggle, data, run, minDays, reads }: { g: DomainGr
       </div>
       {open ? (
         <div id={panel} style={{ padding: '0 0 8px 26px' }}>
-          {g.issue ? <p style={{ margin: '0 0 6px', fontSize: '12px', color: '#b91c1c', lineHeight: 1.5, maxWidth: '64ch' }}>{g.issue}</p> : null}
+          {g.issue ? <p style={{ margin: '0 0 6px', fontSize: '12px', color: 'var(--tx-red, #b91c1c)', lineHeight: 1.5, maxWidth: '64ch' }}>{g.issue}</p> : null}
           {d ? <p style={{ ...metaText, margin: '0 0 4px' }}>Up to {d.daily_cap} cold emails a day from this domain{d.checked_at ? <> · DNS score {d.score ?? 'n/a'} · <span title={fullDate(d.checked_at)}>checked {relDays(d.checked_at)}</span></> : ''}</p> : null}
           {g.mailboxes.length ? g.mailboxes.map((m) => (
             <MailboxRow key={m.id} m={m} read={reads.get(m.id)} live={data.health.warmup?.[textValue(m.email).toLowerCase()]} gateOn={!!data.warmup.gate?.on} minDays={minDays} admin={data.admin} run={run} />
@@ -160,14 +160,14 @@ function MailboxRow({ m, read, live, gateOn, minDays, admin, run }: { m: ColdMai
   const blocked = m.paused || m.status === 'error' || (!!m.warmup_gate && !m.warmup_gate.ready && m.status === 'warming');
   const cap = blocked ? 0 : m.daily_cap;
   return (
-    <div style={{ padding: '7px 0', borderTop: '1px solid #f4f4f5' }}>
+    <div style={{ padding: '7px 0', borderTop: '1px solid var(--surface-2, #f4f4f5)' }}>
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '12.5px', fontWeight: 600, overflowWrap: 'anywhere', minWidth: 0 }}>{textValue(m.email)}</span>
         <Badge tone={pill.tone}>{pill.label}</Badge>
         <span style={metaText} title={fullDate(read?.clears)}>{cap} a day{when ? `, ${when}` : ''}</span>
         {admin ? <button type="button" style={{ ...ghost, height: '28px', marginLeft: 'auto' }} onClick={() => void run(m.paused ? 'resume_mailbox' : 'pause_mailbox', { id: m.id }, 'inboxes')}>{m.paused ? 'Resume' : 'Pause'}</button> : null}
       </div>
-      {issue ? <p style={{ margin: '3px 0 0', fontSize: '12px', lineHeight: 1.45, maxWidth: '64ch', color: issue.level === 'problem' ? '#b91c1c' : '#52525b' }}>{issue.text}</p> : null}
+      {issue ? <p style={{ margin: '3px 0 0', fontSize: '12px', lineHeight: 1.45, maxWidth: '64ch', color: issue.level === 'problem' ? '#b91c1c' : 'var(--muted, #52525b)' }}>{issue.text}</p> : null}
       <WarmupLine mailbox={m} live={live} gateOn={gateOn} />
     </div>
   );
@@ -351,7 +351,7 @@ function Warmup({ workspaceId, data, run, say, reload, note }: { workspaceId: nu
           <dl style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 110px) minmax(0, 1fr)', gap: '4px 12px', margin: '0 0 8px' }}>
             {limits.map(([k, v]) => (
               <React.Fragment key={k}>
-                <dt style={{ color: '#71717a' }}>{k}</dt>
+                <dt style={{ color: 'var(--meta, #71717a)' }}>{k}</dt>
                 <dd style={{ margin: 0 }}>{v}</dd>
               </React.Fragment>
             ))}
@@ -366,11 +366,11 @@ function Warmup({ workspaceId, data, run, say, reload, note }: { workspaceId: nu
         {gate?.on ? <Badge tone={w.key_set ? 'good' : 'bad'}>{w.key_set ? 'Instantly key saved' : 'No Instantly key'}</Badge> : null}
         {gate?.on && w.synced_at ? <Badge tone="muted" title={fullDate(w.synced_at)}>Synced {relDays(w.synced_at)}</Badge> : null}
       </div>
-      {gate?.on && textValue(w.sync_error) ? <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#b91c1c' }}>The last score read failed: {textValue(w.sync_error).replace(/\.$/, '')}. It tries again tonight, or press Sync now.</p> : null}
-      {textValue(data.health.warmup_error) ? <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#92400e' }}>Live scores could not be read just now ({textValue(data.health.warmup_error).replace(/\.$/, '')}). The scores shown are from the last daily read.</p> : null}
+      {gate?.on && textValue(w.sync_error) ? <p style={{ margin: '8px 0 0', fontSize: '12px', color: 'var(--tx-red, #b91c1c)' }}>The last score read failed: {textValue(w.sync_error).replace(/\.$/, '')}. It tries again tonight, or press Sync now.</p> : null}
+      {textValue(data.health.warmup_error) ? <p style={{ margin: '8px 0 0', fontSize: '12px', color: 'var(--tx-amber-deep, #92400e)' }}>Live scores could not be read just now ({textValue(data.health.warmup_error).replace(/\.$/, '')}). The scores shown are from the last daily read.</p> : null}
       {data.admin ? (
         <details style={{ marginTop: '12px' }}>
-          <summary style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', minHeight: '24px', fontSize: '12px', fontWeight: 600, color: '#0A8560' }}><Icon name="chevron" size={13} />Warmup settings</summary>
+          <summary style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', minHeight: '24px', fontSize: '12px', fontWeight: 600, color: 'var(--tx-mint, #0a8560)' }}><Icon name="chevron" size={13} />Warmup settings</summary>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px', marginTop: '10px' }}>
             <label><span style={fieldLabel}>Warmup service</span>
               <select style={{ ...input, width: '100%' }} value={provider} onChange={(e) => setProvider(e.target.value)}>
@@ -407,14 +407,41 @@ function Warmup({ workspaceId, data, run, say, reload, note }: { workspaceId: nu
  * apart, that stops the moment someone replies. Drafts are written here and
  * only send after Launch.
  */
+function stepsFrom(c: ColdOverview['campaigns'][number]): StepDraft[] {
+  const rows = [...c.steps].sort((a, b) => a.position - b.position);
+  return rows.length ? rows.map((s) => {
+    const b = s.variants.find((v) => v.key === 'B') ?? s.variants[0];
+    return { delay_business_days: s.delay_business_days, subject: s.subject, body: s.body, bSubject: b?.subject ?? '', bBody: b?.body ?? '' };
+  }) : [{ ...emptyStep(), delay_business_days: 0 }];
+}
+
 function Campaigns({ data, run, note }: { data: ColdOverview; run: Run; note: Notes }) {
   const [writing, setWriting] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [tag, setTag] = useState('');
   const [viewId, setViewId] = useState('');
+  const [autoEnroll, setAutoEnroll] = useState(false);
   const [steps, setSteps] = useState<StepDraft[]>([{ ...emptyStep(), delay_business_days: 0 }]);
   const admin = data.admin;
   const setStep = (i: number, patch: Partial<StepDraft>) => setSteps((cur) => cur.map((s, n) => (n === i ? { ...s, ...patch } : s)));
+
+  function blankForm() {
+    setEditId(null);
+    setName('');
+    setTag('');
+    setViewId('');
+    setSteps([{ ...emptyStep(), delay_business_days: 0 }]);
+  }
+
+  function openEdit(c: ColdOverview['campaigns'][number]) {
+    setEditId(c.id);
+    setName(textValue(c.name));
+    setTag(textValue(c.audience_tag));
+    setViewId(c.saved_view_id ? String(c.saved_view_id) : '');
+    setSteps(stepsFrom(c));
+    setWriting(true);
+  }
 
   async function saveDraft() {
     const payload = steps.map((s, i) => ({
@@ -425,18 +452,17 @@ function Campaigns({ data, run, note }: { data: ColdOverview; run: Run; note: No
       variants: s.bSubject && s.bBody ? [{ key: 'B', subject: s.bSubject, body: s.bBody, weight: 1 }] : [],
     }));
     const r = await run('save_campaign', {
+      ...(editId ? { id: editId } : {}),
       name,
       audience_kind: viewId ? 'saved_view' : 'tag',
       audience_tag: tag,
       saved_view_id: viewId ? Number(viewId) : null,
       fallback_timezone: data.fallback_timezone,
+      ...(data.autopilot ? { auto_enroll: !viewId && autoEnroll } : {}),
       steps: payload,
     }, 'campaigns');
     if (r.ok) {
-      setName('');
-      setTag('');
-      setViewId('');
-      setSteps([{ ...emptyStep(), delay_business_days: 0 }]);
+      blankForm();
       setWriting(false);
     }
   }
@@ -447,22 +473,35 @@ function Campaigns({ data, run, note }: { data: ColdOverview; run: Run; note: No
       id="cold-campaigns"
       title={`Campaigns (${data.campaigns.length})`}
       why="A few plain emails to a group of buyers, sent days apart. Each one stops by itself when the buyer replies."
-      actions={admin && !writing ? <button type="button" style={ghost} onClick={() => setWriting(true)}>New campaign</button> : null}
+      actions={admin && !writing ? <button type="button" style={ghost} onClick={() => { blankForm(); setWriting(true); }}>New campaign</button> : null}
       how={<p style={{ margin: 0 }}>Merge fields: {'{{first_name}}'}, {'{{last_name}}'}, {'{{company}}'}, {'{{city}}'}, {'{{state}}'}. Spintax: {'{hi|hello}'}. A second subject and body on a step is variant B. One recipient is in one active sequence, from the mailbox that sent step 1. A real reply stops the sequence, is assigned to the buyer&apos;s owner, and shows in the inbox. An out-of-office reply pauses it and resumes later.</p>}
     >
       {data.campaigns.length === 0 && !writing ? <p style={{ ...metaText, margin: 0 }}>No campaigns yet.{admin ? ' Press New campaign to write the first one.' : ''}</p> : null}
       {data.campaigns.map((c) => (
-        <div key={c.id} style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', padding: '8px 0', borderTop: '1px solid #f0f0f1' }}>
+        <div key={c.id} style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', padding: '8px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
           <span style={{ fontSize: '12.5px', fontWeight: 600 }}>{textValue(c.name)}</span>
           <Badge tone={c.status === 'active' ? 'good' : 'muted'}>{c.status === 'active' ? 'Sending' : c.status === 'draft' ? 'Draft' : c.status === 'paused' ? 'Paused' : textValue(c.status)}</Badge>
           <span style={metaText}>{c.enrolled} buyers · {c.steps.length} {c.steps.length === 1 ? 'email' : 'emails'}</span>
-          {admin && c.status === 'draft' ? <button type="button" style={{ ...primary, marginLeft: 'auto' }} onClick={() => void run('launch', { id: c.id }, 'campaigns')}>Launch</button> : null}
-          {admin && c.status === 'active' ? <button type="button" style={{ ...ghost, marginLeft: 'auto' }} onClick={() => void run('pause_campaign', { id: c.id }, 'campaigns')}>Pause</button> : null}
-          {admin && c.status === 'paused' ? <button type="button" style={{ ...ghost, marginLeft: 'auto' }} onClick={() => void run('resume_campaign', { id: c.id }, 'campaigns')}>Resume</button> : null}
+          {data.autopilot && c.auto_enroll && c.audience_kind === 'tag' ? <Badge tone="muted" title={`Adds buyers tagged ${textValue(c.audience_tag)} every 30 minutes while it sends`}>Autopilot</Badge> : null}
+          {admin ? (
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {(c.status === 'draft' || c.status === 'paused') ? <button type="button" style={ghost} onClick={() => openEdit(c)}>Edit</button> : null}
+              {c.status === 'active' ? <span style={metaText}>Pause it to change the emails</span> : null}
+              {data.autopilot && c.audience_kind === 'tag' && c.status !== 'done' ? (
+                <button type="button" style={ghost} onClick={() => void run('auto_enroll_campaign', { id: c.id, on: !c.auto_enroll }, 'campaigns')}>
+                  {c.auto_enroll ? 'Turn off autopilot' : 'Turn on autopilot'}
+                </button>
+              ) : null}
+              {c.status === 'draft' ? <button type="button" style={primary} onClick={() => void run('launch', { id: c.id }, 'campaigns')}>Launch</button> : null}
+              {c.status === 'active' ? <button type="button" style={ghost} onClick={() => void run('pause_campaign', { id: c.id }, 'campaigns')}>Pause</button> : null}
+              {c.status === 'paused' ? <button type="button" style={ghost} onClick={() => void run('resume_campaign', { id: c.id }, 'campaigns')}>Resume</button> : null}
+            </span>
+          ) : null}
         </div>
       ))}
       {admin && writing ? (
-        <form onSubmit={(e) => { e.preventDefault(); void saveDraft(); }} style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #f0f0f1', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <form onSubmit={(e) => { e.preventDefault(); void saveDraft(); }} style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--divider-2, #f0f0f1)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <p style={{ margin: 0, fontSize: '12.5px', fontWeight: 600 }}>{editId ? 'Edit campaign' : 'New campaign'}</p>
           {field('dlv-c-name', 'Campaign name', <input id="dlv-c-name" required style={{ ...input, width: '100%' }} value={name} onChange={(e) => setName(e.target.value)} />)}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
             {field('dlv-c-tag', 'Send to buyers with this tag', <input id="dlv-c-tag" style={{ ...input, width: '100%' }} value={tag} onChange={(e) => setTag(e.target.value)} />)}
@@ -473,9 +512,14 @@ function Campaigns({ data, run, note }: { data: ColdOverview; run: Run; note: No
               </select>
             ))}
           </div>
+          {data.autopilot && !viewId ? (
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', minHeight: '24px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={autoEnroll} onChange={(e) => setAutoEnroll(e.target.checked)} style={{ accentColor: 'var(--tx-mint, #0a8560)' }} /> Autopilot: once launched, add newly tagged buyers every 30 minutes
+            </label>
+          ) : null}
           {steps.map((s, i) => (
-            <fieldset key={i} style={{ border: '1px solid #f0f0f1', borderRadius: '8px', padding: '10px', margin: 0, display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>
-              <legend style={{ fontSize: '12px', fontWeight: 600, padding: '0 4px' }}>Email {i + 1}</legend>
+            <fieldset key={i} style={{ border: '1px solid var(--divider-2, #f0f0f1)', borderRadius: '8px', padding: '10px', margin: 0, display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>
+              <legend style={{ fontSize: '12px', fontWeight: 600, padding: '0 4px' }}>Email {i + 1}{i > 0 ? <button type="button" style={{ ...ghost, marginLeft: '8px', padding: '2px 8px' }} onClick={() => setSteps((cur) => cur.filter((_, n) => n !== i))}>Remove</button> : null}</legend>
               {i > 0 ? field(`dlv-s${i}-wait`, 'Business days to wait after the last email', <input id={`dlv-s${i}-wait`} style={{ ...input, width: '88px' }} inputMode="numeric" value={s.delay_business_days} onChange={(e) => setStep(i, { delay_business_days: Number(e.target.value) || 0 })} />) : null}
               {field(`dlv-s${i}-subj`, 'Subject', <input id={`dlv-s${i}-subj`} style={{ ...input, width: '100%' }} value={s.subject} onChange={(e) => setStep(i, { subject: e.target.value })} />)}
               {field(`dlv-s${i}-body`, 'Body', <textarea id={`dlv-s${i}-body`} style={{ ...input, width: '100%', height: '88px', padding: '8px' }} value={s.body} onChange={(e) => setStep(i, { body: e.target.value })} />)}
@@ -485,8 +529,8 @@ function Campaigns({ data, run, note }: { data: ColdOverview; run: Run; note: No
           ))}
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button type="button" style={ghost} onClick={() => setSteps((cur) => [...cur, emptyStep()])}>Add another email</button>
-            <button type="submit" style={primary}>Save draft</button>
-            <button type="button" style={ghost} onClick={() => setWriting(false)}>Cancel</button>
+            <button type="submit" style={primary}>{editId ? 'Save changes' : 'Save draft'}</button>
+            <button type="button" style={ghost} onClick={() => { blankForm(); setWriting(false); }}>Cancel</button>
           </div>
         </form>
       ) : null}
@@ -549,7 +593,7 @@ function Rules({ data, run, note }: { data: ColdOverview; run: Run; note: Notes 
           </form>
         </div>
       ) : null}
-      {!data.physical_address ? <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#92400e' }}>No mailing address yet. The law requires one in every cold email footer.</p> : null}
+      {!data.physical_address ? <p style={{ margin: '8px 0 0', fontSize: '12px', color: 'var(--tx-amber-deep, #92400e)' }}>No mailing address yet. The law requires one in every cold email footer.</p> : null}
       <Note note={note} />
     </Section>
   );
@@ -573,10 +617,10 @@ function Health({ data }: { data: ColdOverview }) {
       why="How cold email went this week. Bounces (bad addresses) and spam complaints are what get inboxes blocked."
       actions={sorted.length ? <button type="button" style={ghost} aria-expanded={all} onClick={() => setAll((v) => !v)}>{all ? 'Hide details' : 'Show all'}</button> : null}
     >
-      <p style={{ margin: 0, fontSize: '12.5px', color: flagged ? '#b91c1c' : '#3f3f46', fontVariantNumeric: 'tabular-nums' }}>{line}</p>
+      <p style={{ margin: 0, fontSize: '12.5px', color: flagged ? 'var(--tx-red, #b91c1c)' : 'var(--ink-3, #3f3f46)', fontVariantNumeric: 'tabular-nums' }}>{line}</p>
       {all ? (
         <div style={{ marginTop: '8px' }}>
-          <div aria-hidden="true" style={{ display: 'flex', gap: '8px', padding: '4px 0', fontSize: '11.5px', color: '#71717a', fontWeight: 500 }}>
+          <div aria-hidden="true" style={{ display: 'flex', gap: '8px', padding: '4px 0', fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 500 }}>
             <span style={{ flex: '1 1 200px' }}>Inbox or domain</span>
             <span style={{ display: 'flex', gap: '8px' }}><span style={{ width: '56px', textAlign: 'right' }}>Sent</span><span style={{ width: '56px', textAlign: 'right' }}>Bounced</span><span style={{ width: '56px', textAlign: 'right' }}>Replied</span><span style={{ width: '64px', textAlign: 'right' }}>Spam</span></span>
           </div>
@@ -584,7 +628,7 @@ function Health({ data }: { data: ColdOverview }) {
             const name = textValue(r.email) || textValue(r.domain) || 'Mailbox';
             const bad = overLimit(r);
             return (
-              <div key={name} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', padding: '5px 0', borderTop: '1px solid #f4f4f5', fontSize: '12px', color: bad ? '#b91c1c' : '#3f3f46', fontVariantNumeric: 'tabular-nums' }}>
+              <div key={name} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', padding: '5px 0', borderTop: '1px solid var(--surface-2, #f4f4f5)', fontSize: '12px', color: bad ? 'var(--tx-red, #b91c1c)' : 'var(--ink-3, #3f3f46)', fontVariantNumeric: 'tabular-nums' }}>
                 <span style={{ flex: '1 1 200px', minWidth: 0, overflowWrap: 'anywhere', fontWeight: r.domain ? 600 : 500 }}>{name}{bad ? ' (over the limit)' : ''}</span>
                 <span style={{ display: 'flex', gap: '8px' }} aria-label={`${r.sent_7d} sent, ${pct(r.bounceRate)} bounced, ${pct(r.replyRate)} replied, ${pct(r.complaintRate)} spam complaints`}>
                   <span style={{ width: '56px', textAlign: 'right' }}>{r.sent_7d}</span>

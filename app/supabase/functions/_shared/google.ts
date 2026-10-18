@@ -28,6 +28,9 @@ import { type Book, type DealRef, type Link, type Route, addrKey, addressesOf as
 import { AI_PER_RUN, aiKey, classifyDeal } from './gmail-ai.ts';
 import { googleSyncWorkspace } from './google-scope.ts';
 import { rateLimit } from './security.ts';
+import { type Lane, type Moved, HISTORY_PAGES, lendThreads, HISTORY_TYPES, MOVED_FULL_PER_RUN, MOVED_PER_RUN, MOVED_TRIES, STALL_S, addedMail, cmpHistory, firstPending, historyCut, movedIntoView, quickVerdict, stampPoint, upkeepDue, upkeepMark } from './gmail-lanes.ts';
+import { type Stranger, classifyStranger, namesOf, titleDomains } from './contact-suggest.ts';
+import { quietPatch } from './google-writes.ts';
 
 type Any = any;
 
@@ -46,7 +49,13 @@ export const SCOPE = {
    * ("Connect Postmaster"): Gmail's numbers on domain reputation and spam
    * rate. Not in DEFAULT_SCOPES, so nobody already connected is asked again.
    */
-  postmaster: 'https://www.googleapis.com/auth/postmaster.readonly',
+  postmaster: 'https://www.googleapis.com/auth/postmaster.traffic.readonly',
+  /**
+   * Postmaster Tools v2 lists domains under its own scope; asked for with
+   * `postmaster`. v1's postmaster.readonly no longer reads anything, so an
+   * account holding only that one is asked to connect Postmaster again.
+   */
+  postmasterDomains: 'https://www.googleapis.com/auth/postmaster.domain',
   /**
    * Asked for together with Postmaster: lets CLOZR verify the workspace's
    * sending domains for that account (site-verification.ts), so Postmaster
@@ -325,163 +334,6 @@ export async function ensureFeeds(admin: SupabaseClient, account: Account, acces
       : [];
   }
   return (data ?? []) as Feed[];
-}
-
-const HOUR = 3_600_000;
-const iso = (d: Date) => d.toISOString();
-
-async function fingerprint(o: unknown): Promise<string> {
-  const bits = await crypto.subtle.digest('SHA-256', enc.encode(JSON.stringify(o)));
-  return Array.from(new Uint8Array(bits)).slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-type Ev = { summary: string; description: string; location: string | null; start: string; end: string };
-
-/**
- * CLOZR → Google. Appointments and open dated tasks from the last month
- * forward; a fingerprint of what we last sent means an unchanged row costs
- * nothing, and a row that no longer qualifies takes its event with it.
- */
-export async function pushCalendar(admin: SupabaseClient, account: Account, accessToken: string, origin: string): Promise<{ created: number; updated: number; removed: number }> {
-  const calendarId = account.calendar_id;
-  if (!calendarId) return { created: 0, updated: 0, removed: 0 };
-  const ws = googleSyncWorkspace(account);
-  const since = iso(new Date(Date.now() - 30 * 24 * HOUR));
-
-  const [{ data: appts }, { data: tasks }, { data: sellers }, { data: links }] = await Promise.all([
-    admin.from('appointments').select('id, title, kind, starts_at, ends_at, location, notes, seller_id').eq('workspace_id', ws).gte('starts_at', since),
-    admin.from('tasks').select('id, title, task_type, due_at, done, seller_id, deal_id').eq('workspace_id', ws).eq('done', false).not('due_at', 'is', null).gte('due_at', since),
-    admin.from('sellers').select('id, name, property_address').eq('workspace_id', ws),
-    admin.from('google_event_links').select('id, source, source_id, event_id, pushed').eq('account_id', account.id),
-  ]);
-  const who = new Map((sellers ?? []).map((s) => [s.id, s]));
-  const linkOf = new Map((links ?? []).map((l) => [`${l.source}:${l.source_id}`, l]));
-
-  const want = new Map<string, Ev>();
-  for (const a of appts ?? []) {
-    const s = a.seller_id ? who.get(a.seller_id) : null;
-    want.set(`appointment:${a.id}`, {
-      summary: [a.kind && a.kind !== 'Appointment' ? a.kind : '', a.title].filter(Boolean).join(' · ') || 'Appointment',
-      description: [s ? `${s.name}${s.property_address ? ' — ' + s.property_address : ''}` : '', a.notes ?? '', `${origin}/clozr/`].filter(Boolean).join('\n\n'),
-      location: a.location ?? s?.property_address ?? null,
-      start: new Date(a.starts_at).toISOString(),
-      end: new Date(a.ends_at ?? new Date(new Date(a.starts_at).getTime() + HOUR)).toISOString(),
-    });
-  }
-  for (const t of tasks ?? []) {
-    const s = t.seller_id ? who.get(t.seller_id) : null;
-    want.set(`task:${t.id}`, {
-      summary: `${t.task_type}: ${t.title}`,
-      description: [s ? `${s.name}${s.property_address ? ' — ' + s.property_address : ''}` : 'CLOZR task', `${origin}/clozr/`].join('\n\n'),
-      location: null,
-      start: new Date(t.due_at!).toISOString(),
-      end: new Date(new Date(t.due_at!).getTime() + 30 * 60_000).toISOString(),
-    });
-  }
-
-  let created = 0, updated = 0, removed = 0;
-  for (const [key, ev] of want) {
-    const [source, idText] = key.split(':');
-    const link = linkOf.get(key);
-    const print = await fingerprint(ev);
-    if (link && (link.pushed === print || link.pushed === `cancelled:${print}`)) continue;
-    const body = {
-      summary: ev.summary,
-      description: ev.description,
-      location: ev.location ?? undefined,
-      start: { dateTime: ev.start },
-      end: { dateTime: ev.end },
-      extendedProperties: { private: { clozr: '1', clozr_source: source, clozr_id: idText, clozr_ws: String(ws) } },
-      source: { title: 'Open in CLOZR', url: `${origin}/clozr/` },
-    };
-    try {
-      if (link) {
-        await api(accessToken, `${CAL}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(link.event_id)}`, { method: 'PATCH', body: JSON.stringify({ ...body, status: 'confirmed' }) });
-        await admin.from('google_event_links').update({ pushed: print }).eq('id', link.id);
-        updated++;
-      } else {
-        const ev2 = await api(accessToken, `${CAL}/calendars/${encodeURIComponent(calendarId)}/events`, { method: 'POST', body: JSON.stringify(body) });
-        await admin.from('google_event_links').insert({ account_id: account.id, source, source_id: Number(idText), event_id: ev2.id, pushed: print });
-        created++;
-      }
-    } catch (err) {
-      if ((err as Any)?.status === 404 && link) {
-        await admin.from('google_event_links').delete().eq('id', link.id);
-      } else {
-        console.error('calendar push failed', { key, err: String(err) });
-      }
-    }
-  }
-
-  for (const [key, link] of linkOf) {
-    if (want.has(key)) continue;
-    await api(accessToken, `${CAL}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(link.event_id)}`, { method: 'DELETE' }).catch(() => null);
-    await admin.from('google_event_links').delete().eq('id', link.id);
-    removed++;
-  }
-  return { created, updated, removed };
-}
-
-/**
- * Google → CLOZR. Only events CLOZR put there, matched by the private
- * properties we stamped on them, so nothing else in the account is read or
- * touched. Moving an appointment on a phone moves it in the CRM.
- *
- * A deleted event is not a deleted appointment: the record is the CRM's, so
- * the link is parked instead, and changing the appointment in CLOZR brings
- * the event back.
- */
-export async function pullCalendar(admin: SupabaseClient, account: Account, accessToken: string): Promise<{ applied: number; cancelled: number }> {
-  const calendarId = account.calendar_id;
-  if (!calendarId) return { applied: 0, cancelled: 0 };
-  const updatedMin = account.last_calendar_sync_at ?? iso(new Date(Date.now() - 7 * 24 * HOUR));
-  const q = new URLSearchParams({ updatedMin, showDeleted: 'true', singleEvents: 'true', maxResults: '250', privateExtendedProperty: 'clozr=1' });
-  const page = await api(accessToken, `${CAL}/calendars/${encodeURIComponent(calendarId)}/events?${q}`).catch((err) => {
-    console.error('calendar pull failed', String(err));
-    return { items: [] };
-  });
-
-  let applied = 0, cancelled = 0;
-  for (const ev of (page.items ?? []) as Any[]) {
-    const props = ev.extendedProperties?.private ?? {};
-    const source = props.clozr_source as string | undefined;
-    const id = Number(props.clozr_id);
-    if (!source || !Number.isFinite(id)) continue;
-    if (String(props.clozr_ws) !== String(account.workspace_id)) continue;
-
-    if (ev.status === 'cancelled') {
-      const { data: link } = await admin.from('google_event_links').select('id, pushed').eq('account_id', account.id).eq('source', source).eq('source_id', id).maybeSingle();
-      if (link && !String(link.pushed ?? '').startsWith('cancelled:')) {
-        await admin.from('google_event_links').update({ pushed: `cancelled:${link.pushed ?? ''}` }).eq('id', link.id);
-        cancelled++;
-      }
-      continue;
-    }
-    const start = ev.start?.dateTime ?? (ev.start?.date ? `${ev.start.date}T09:00:00Z` : null);
-    if (!start) continue;
-    const end = ev.end?.dateTime ?? null;
-
-    if (source === 'appointment') {
-      const { data: row } = await admin.from('appointments').select('id, starts_at, ends_at, location').eq('id', id).eq('workspace_id', account.workspace_id).maybeSingle();
-      if (!row) continue;
-      const patch: Any = {};
-      if (new Date(row.starts_at).getTime() !== new Date(start).getTime()) patch.starts_at = new Date(start).toISOString();
-      if (end && (!row.ends_at || new Date(row.ends_at).getTime() !== new Date(end).getTime())) patch.ends_at = new Date(end).toISOString();
-      if (ev.location && ev.location !== row.location) patch.location = String(ev.location).slice(0, 500);
-      if (Object.keys(patch).length) {
-        await admin.from('appointments').update(patch).eq('id', id);
-        applied++;
-      }
-    } else if (source === 'task') {
-      const { data: row } = await admin.from('tasks').select('id, due_at').eq('id', id).eq('workspace_id', account.workspace_id).maybeSingle();
-      if (!row) continue;
-      if (!row.due_at || new Date(row.due_at).getTime() !== new Date(start).getTime()) {
-        await admin.from('tasks').update({ due_at: new Date(start).toISOString() }).eq('id', id);
-        applied++;
-      }
-    }
-  }
-  return { applied, cancelled };
 }
 
 // -------------------------------------------------------------------- gmail
@@ -887,16 +739,49 @@ async function backfillContacts(admin: SupabaseClient, ws: number, book: Book, c
  * emails on deals and transactions, and our own addresses, which never count
  * as a match. Sellers, buyers, vendors and deal parties come in per batch
  * through knowPeople.
+ *
+ * `cache` belongs to one invocation: a run hands the same map to each
+ * loadBook (google-sync syncAccount, across its Gmail lanes) and the
+ * workspace is read once. Each call still builds a Book of its own, since
+ * knowPeople fills one in as a pass goes. Never keep one at module scope: an
+ * isolate can serve more than one run.
  */
-export async function loadBook(admin: SupabaseClient, ws: number): Promise<{ book: Book }> {
-  const [deals, txs, accounts, members, senders] = await Promise.all([
-    // Archived deals (duplicates, dead files) take no mail: what was filed on one refiles onto the live deal.
-    everyRow<Any>(() => admin.from('deals').select('id, seller_id, buyer_id, title_vendor_id, title_email, property_id, stage, created_at, properties(line1)').eq('workspace_id', ws).is('archived_at', null).order('created_at', { ascending: false }).order('id', { ascending: false })),
-    everyRow<Any>(() => admin.from('transactions').select('id, deal_id, title_email').eq('workspace_id', ws).not('title_email', 'is', null).order('id')),
-    admin.from('google_accounts').select('email, user_id').eq('workspace_id', ws),
-    admin.from('workspace_members').select('user_id, profiles(email)').eq('workspace_id', ws),
-    admin.from('email_senders').select('from_email, reply_to, user_id').eq('workspace_id', ws).eq('active', true),
-  ]);
+export type BookCache = Map<number, Promise<Any[][]>>;
+
+/**
+ * Every live deal with its street, newest first, as one call
+ * (gmail_book_deals, migration 344) instead of a page per thousand deals
+ * (several on a busy workspace, every run). The pages stay as the fallback for a
+ * database without the function.
+ */
+async function bookDeals(admin: SupabaseClient, ws: number): Promise<Any[]> {
+  const { data, error } = await admin.rpc('gmail_book_deals', { p_ws: ws });
+  if (!error && Array.isArray(data)) return data;
+  console.error('gmail_book_deals unavailable, paging', error?.message ?? typeof data);
+  // Archived deals (duplicates, dead files) take no mail: what was filed on one refiles onto the live deal.
+  return everyRow<Any>(() => admin.from('deals').select('id, seller_id, buyer_id, title_vendor_id, title_email, property_id, stage, created_at, properties(line1)').eq('workspace_id', ws).is('archived_at', null).order('created_at', { ascending: false }).order('id', { ascending: false }));
+}
+
+/** A failed read stops the run: a book missing our own addresses would store the team's mail as inbound and credit no rep. */
+async function rowsOf(what: string, q: PromiseLike<{ data: Any[] | null; error: { message: string } | null }>): Promise<Any[]> {
+  const { data, error } = await q;
+  if (error) throw new Error(`${what}: ${error.message}`);
+  return data ?? [];
+}
+
+export async function loadBook(admin: SupabaseClient, ws: number, cache?: BookCache): Promise<{ book: Book }> {
+  let read = cache?.get(ws);
+  if (!read) {
+    read = Promise.all([
+      bookDeals(admin, ws),
+      everyRow<Any>(() => admin.from('transactions').select('id, deal_id, title_email').eq('workspace_id', ws).not('title_email', 'is', null).order('id')),
+      rowsOf('google_accounts', admin.from('google_accounts').select('email, user_id').eq('workspace_id', ws)),
+      rowsOf('workspace_members', admin.from('workspace_members').select('user_id, profiles(email)').eq('workspace_id', ws)),
+      rowsOf('email_senders', admin.from('email_senders').select('from_email, reply_to, user_id').eq('workspace_id', ws).eq('active', true)),
+    ]);
+    cache?.set(ws, read);
+  }
+  const [deals, txs, accounts, members, senders] = await read;
 
   const ours = new Set<string>();
   const reps = new Map<string, string>();
@@ -907,12 +792,12 @@ export async function loadBook(admin: SupabaseClient, ws: number): Promise<{ boo
     const id = String(userId ?? '').trim();
     if (id && !reps.has(e)) reps.set(e, id);
   };
-  for (const a of (accounts.data ?? []) as Any[]) claim(a.email, a.user_id);
-  for (const m of (members.data ?? []) as Any[]) {
+  for (const a of accounts) claim(a.email, a.user_id);
+  for (const m of members) {
     const p = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles;
     claim(p?.email, m.user_id);
   }
-  for (const s of (senders.data ?? []) as Any[]) {
+  for (const s of senders) {
     const from = addrKey(s.from_email);
     if (from) ours.add(from);
     claim(s.from_email, s.user_id);
@@ -1218,7 +1103,10 @@ async function aiFill(budget: AiBudget, route: Route, link: Link, msg: { subject
  * one its street names. A row a person filed, or one filed before 107, is
  * never moved.
  */
-async function relinkEmail(admin: SupabaseClient, ws: number, book: Book, conversations: Map<string, Link>, budget: AiBudget): Promise<number> {
+/** Older unfiled mail re-tried per run, on top of the newest 40. */
+const OLDER_RELINK_PER_RUN = 60;
+
+async function relinkEmail(admin: SupabaseClient, ws: number, book: Book, conversations: Map<string, Link>, budget: AiBudget, accountId?: number): Promise<number> {
   const since = new Date(Date.now() - 120 * 86_400_000).toISOString();
   const read = (cols: string, routed: boolean) => {
     const q = admin.from('communications').select(`${LINK_COLS}, ${cols}`).eq('workspace_id', ws).eq('channel', 'email');
@@ -1226,10 +1114,34 @@ async function relinkEmail(admin: SupabaseClient, ws: number, book: Book, conver
       .order('occurred_at', { ascending: false }).limit(40);
   };
   let routedCol = true;
-  let { data: loose, error } = await read('from_email, to_email, cc_email, subject, summary, deal_routed_by', true);
+  let cols = 'from_email, to_email, cc_email, subject, summary, deal_routed_by';
+  let { data: loose, error } = await read(cols, true);
   // Before migration 107 there is no deal_routed_by (only unfiled mail is re-run); before 82 no cc_email.
-  if (error) { routedCol = false; ({ data: loose, error } = await read('from_email, to_email, cc_email, subject, summary', false)); }
-  if (error) ({ data: loose } = await read('from_email, to_email, subject', false));
+  if (error) { routedCol = false; cols = 'from_email, to_email, cc_email, subject, summary'; ({ data: loose, error } = await read(cols, false)); }
+  if (error) { cols = 'from_email, to_email, subject'; ({ data: loose } = await read(cols, false)); }
+  // The newest 40 alone never reach older mail that is still unfiled. A page
+  // of it per run, walking back from gmail_relink_before (migration 259) and
+  // starting over from the newest when it reaches the end, so every unfiled
+  // email is tried again against the deals and people as they are now.
+  if (accountId != null) {
+    const { data: cur, error: curErr } = await admin.from('google_accounts').select('gmail_relink_before').eq('id', accountId).maybeSingle();
+    if (!curErr) {
+      // The cursor is inclusive so mail sharing the edge's timestamp is not
+      // skipped (the edge row itself is tried twice). A page that is all one
+      // instant steps a millisecond past it so the walk cannot stall.
+      const at: string | null = cur?.gmail_relink_before ?? null;
+      let q = admin.from('communications').select(`${LINK_COLS}, ${cols}, occurred_at`).eq('workspace_id', ws).eq('channel', 'email').is('deal_id', null);
+      if (at) q = q.lte('occurred_at', at);
+      const { data: older } = await q.order('occurred_at', { ascending: false }).order('id', { ascending: false }).limit(OLDER_RELINK_PER_RUN);
+      const page = (older ?? []) as Any[];
+      const have = new Set(((loose ?? []) as Any[]).map((c) => c.id));
+      loose = [...((loose ?? []) as Any[]), ...page.filter((c) => !have.has(c.id))];
+      let edge: string | null = page.length >= OLDER_RELINK_PER_RUN ? page[page.length - 1].occurred_at ?? null : null;
+      if (edge && at && Date.parse(edge) === Date.parse(at)) edge = new Date(Date.parse(at) - 1).toISOString();
+      // A set edge always moves (it is older than `at`, or stepped past it); null over null is the only no-op.
+      if (edge || at) await admin.from('google_accounts').update({ gmail_relink_before: edge }).eq('id', accountId);
+    }
+  }
   // The files on each row, by name: a street there files the mail like one in the subject.
   const names = new Map<number, string[]>();
   const ids = ((loose ?? []) as Any[]).map((c) => c.id as number);
@@ -1271,6 +1183,85 @@ async function relinkEmail(admin: SupabaseClient, ws: number, book: Book, conver
     if (!error) relinked++;
   }
   return relinked;
+}
+
+// ------------------------------------------------------- new contacts
+/** An address the workspace already knows: a teammate, a seller, buyer or vendor, or a party on a deal. */
+const knownAddress = (book: Book, e: string) =>
+  book.ours.has(e) || book.sellers.has(e) || book.buyers.has(e) || book.vendors.has(e) || book.parties.has(e);
+
+/**
+ * Notes the agents, escrow officers and title reps on this run's mail that
+ * CLOZR does not know (contact-suggest.ts, migration 259). Someone at a title
+ * company we already use is added as a vendor under that company right away,
+ * and onto the deal when the mail is on one. Everyone else becomes a
+ * suggestion the TC adds or dismisses from the Inbox. Words alone (no
+ * brokerage or title domain) only count on mail filed on a deal, or in the
+ * TC's own mailbox, so a wholesaler's blast to a rep does not fill the list.
+ */
+async function noteStrangers(admin: SupabaseClient, ws: number, account: Pick<Account, 'id' | 'user_id'>, book: Book,
+  seen: { m: Any; h: Map<string, string>; from: string; to: string[]; subject: string; link: Link }[]): Promise<void> {
+  const live = seen.filter((s) => !isBulk(s.h));
+  if (!live.length) return;
+  const [{ data: vendorRows }, { data: me }] = await Promise.all([
+    admin.from('vendors').select('business_name, email').eq('workspace_id', ws).ilike('service_type', 'title%').not('email', 'is', null).limit(500),
+    admin.from('workspace_members').select('role').eq('workspace_id', ws).eq('user_id', account.user_id).maybeSingle(),
+  ]);
+  const titles = titleDomains((vendorRows ?? []) as Any[]);
+  const tcMailbox = me?.role === 'tc';
+  const found = new Map<string, Stranger & { deal_id: number | null; subject: string; seen_at: string }>();
+  for (const s of live) {
+    const names = namesOf(`${s.h.get('from') ?? ''},${s.h.get('to') ?? ''},${s.h.get('cc') ?? ''}`);
+    const files = filesOf(s.m?.payload).map((f) => f.filename).join(' ');
+    const text = s.link.deal_id != null || tcMailbox ? `${s.subject} ${String(s.m?.snippet ?? '')} ${files}` : '';
+    const at = new Date(Number(s.m?.internalDate) || Date.now()).toISOString();
+    for (const e of [s.from, ...s.to].map(addrKey)) {
+      if (!e || knownAddress(book, e)) continue;
+      const c = classifyStranger(e, names.get(e) ?? null, text, titles);
+      if (!c) continue;
+      const had = found.get(e);
+      if (!had || (had.deal_id == null && s.link.deal_id != null)) found.set(e, { ...c, deal_id: s.link.deal_id ?? had?.deal_id ?? null, subject: s.subject, seen_at: at });
+    }
+  }
+  if (!found.size) return;
+  const emails = Array.from(found.keys());
+  const { data: prior } = await admin.from('contact_suggestions').select('email, status').eq('workspace_id', ws).in('email', emails);
+  const statusOf = new Map(((prior ?? []) as Any[]).map((r) => [String(r.email), String(r.status)]));
+  const rows: Any[] = [];
+  for (const c of found.values()) {
+    const row: Any = { email: c.email, name: c.name, company: c.company, kind: c.kind, deal_id: c.deal_id, user_id: account.user_id, subject: c.subject.slice(0, 300), seen_at: c.seen_at };
+    if (c.known_company && !statusOf.has(c.email)) {
+      const sourceId = `gmail-title:${c.email}`;
+      const { data: made, error } = await admin.from('vendors').insert({
+        workspace_id: ws, business_name: c.company, contact_name: c.name, email: c.email,
+        service_type: 'Title Company', source: 'gmail', source_id: sourceId,
+      }).select('id').single();
+      // Two mailboxes syncing at once can both add this person (nothing in the
+      // table is unique on email). Each run reads back after its own insert,
+      // so they agree on the oldest row and the later one removes its own.
+      let v = made as { id: number } | null;
+      if (!error && v) {
+        const { data: same } = await admin.from('vendors').select('id').eq('workspace_id', ws).eq('source', 'gmail').eq('source_id', sourceId).order('id').limit(1);
+        const keep = Number((same as { id: number }[] | null)?.[0]?.id ?? v.id);
+        if (keep !== Number(v.id)) { await admin.from('vendors').delete().eq('id', v.id); v = { id: keep }; }
+      }
+      if (!error && v) {
+        row.status = 'auto';
+        row.vendor_id = v.id;
+        book.vendors.set(c.email, Number(v.id));
+        if (c.deal_id != null) {
+          await admin.from('deal_parties').insert({
+            workspace_id: ws, deal_id: c.deal_id, role: 'title', vendor_id: v.id, name: c.name, company: c.company,
+            email: c.email, source: 'gmail', source_id: `gmail-title:${c.email}`,
+          });
+        }
+      } else if (error) console.error('title contact not added', { email: c.email, err: error.message });
+    }
+    rows.push(row);
+  }
+  const { error } = await admin.rpc('contact_suggestions_note', { p_ws: ws, p_rows: rows });
+  // Before migration 259 there is nowhere to write; the mail itself is unaffected.
+  if (error) console.error('contact_suggestions_note', error.message);
 }
 
 // ------------------------------------------------------------- attachments
@@ -1525,155 +1516,326 @@ export type GmailPull = {
   idle?: boolean;
 };
 
-/** Between full passes on a mailbox where nothing arrives, the relink, history, file and HTML passes still run this often. */
+/** Between upkeep passes on a mailbox where nothing arrives, the relink, history, file and HTML passes still run this often. */
 const MAINTENANCE_S = 55 * 60;
+
+/**
+ * The fast lane's first step, and all of it on a quiet minute. Gmail's
+ * historyId moves on any change to the mailbox (a read, a label), so an
+ * unchanged one means nothing arrived. A moved one is put to history.list
+ * from the stored id: an added message (not a draft, chat, spam or trash)
+ * sends the run on to read the window, and mail moved into view (to the
+ * inbox, out of spam or trash) comes back as `moved`, read by id because its
+ * date can be older than the window; `truncatedAt` is the last record read
+ * when there were more pages than HISTORY_PAGES. Quiet keeps the new
+ * historyId so the next minute compares against it, and stamps
+ * last_gmail_sync_at as the old idle path did, but only once the stored one
+ * is QUIET_STAMP_MS old (google-writes.ts quietPatch): on an unchanged
+ * mailbox it is a heartbeat, and stamping it every minute was most of the
+ * table's updates. Anything unusual (no stored id, a
+ * mailbox more than an hour behind, history.list 404 on an id Gmail no longer
+ * keeps, more pages than HISTORY_PAGES) answers "not quiet" and the window
+ * read decides, so this can only skip work, never mail.
+ */
+export async function gmailQuick(admin: SupabaseClient, account: Pick<Account, 'id' | 'last_gmail_sync_at'>, accessToken: string, startedAt = new Date()): Promise<{ quiet: boolean; historyId: string | null; stored: string | null; moved: Moved[]; truncatedAt: string | null }> {
+  const profile = await gmail(accessToken, '/profile').catch(() => null);
+  const historyId = profile?.historyId != null ? String(profile.historyId) : null;
+  // Read fresh: a run that finished since the caller loaded the account moved both.
+  const { data: hrow } = await admin.from('google_accounts').select('gmail_history_id, last_gmail_sync_at').eq('id', account.id).maybeSingle();
+  const stored = hrow?.gmail_history_id != null ? String(hrow.gmail_history_id) : null;
+  const last = hrow?.last_gmail_sync_at ?? account.last_gmail_sync_at;
+  const current = !!last && Date.parse(last) >= startedAt.getTime() - 3_600_000;
+  const verdict = quickVerdict({ profileId: historyId, storedId: stored, current });
+  if (verdict === 'read') return { quiet: false, historyId, stored, moved: [], truncatedAt: null };
+  if (verdict === 'history') {
+    const pages: Any[] = [];
+    let next: string | undefined;
+    try {
+      do {
+        const r = await gmail(accessToken, `/history?startHistoryId=${encodeURIComponent(stored!)}${HISTORY_TYPES.map((t) => `&historyTypes=${t}`).join('')}&maxResults=500${next ? `&pageToken=${encodeURIComponent(next)}` : ''}`);
+        pages.push(r);
+        next = r?.nextPageToken;
+      } while (next && pages.length < HISTORY_PAGES);
+    } catch {
+      return { quiet: false, historyId, stored, moved: [], truncatedAt: null };
+    }
+    const moved = movedIntoView(pages);
+    const truncatedAt = historyCut(pages, !!next, stored!);
+    if (truncatedAt || moved.length || addedMail(pages).length) return { quiet: false, historyId, stored, moved, truncatedAt };
+  }
+  const patch = quietPatch({ verdict, historyId, last, startedAt });
+  if (patch) await admin.from('google_accounts').update(patch).eq('id', account.id);
+  return { quiet: true, historyId, stored, moved: [], truncatedAt: null };
+}
+
+/** What one pass works with, and what it adds up. */
+type Run = {
+  admin: SupabaseClient; account: Account; accessToken: string; ws: number;
+  book: Book; conversations: Map<string, Link>; budget: AiBudget;
+  filings: Filing[]; logged: number; relinked: number; failed: boolean;
+};
+
+async function startRun(admin: SupabaseClient, account: Account, accessToken: string, ai: boolean, conversations = true, books?: BookCache): Promise<Run> {
+  const ws = googleSyncWorkspace(account);
+  const { book } = await loadBook(admin, ws, books);
+  // The connected address is ours even before its google_accounts row is read back.
+  book.ours.add(addrKey(account.email));
+  const budget: AiBudget = { key: ai ? aiKey() : null, left: ai ? AI_PER_RUN : 0, routed: 0 };
+  const r: Run = { admin, account, accessToken, ws, book, conversations: new Map(), budget, filings: [], logged: 0, relinked: 0, failed: false };
+  if (conversations) await withConversations(r);
+  return r;
+}
+
+/** Filed conversations (up to 2,000 rows): read once per run, and only by a run that needs them. */
+async function withConversations(r: Run): Promise<void> {
+  r.conversations = await loadConversations(r.admin, r.ws, r.book).catch((err) => { console.error('gmail conversations failed', String(err)); return new Map<string, Link>(); });
+}
+
+/**
+ * Backfill, slow lane only. History is metadata first; only messages that
+ * match a person or a deal are read in full, and only a few of those, so one
+ * run stays inside the CPU budget. The newest threads for each address are
+ * the ones kept: Gmail lists newest first and the cursor moves on, while mail
+ * from here forward arrives on the fast lane. Read on its own so a project
+ * without migration 78 still gets the other passes.
+ */
+async function runBackfill(r: Run): Promise<number> {
+  const { admin, account, accessToken, ws, book, conversations, budget } = r;
+  const { data: cur, error: curErr } = await admin.from('google_accounts').select('gmail_backfill_cursor').eq('id', account.id).maybeSingle();
+  if (curErr) { console.error('gmail backfill skipped: migration 78 not applied?', curErr.message); return 0; }
+  const cursor = String(cur?.gmail_backfill_cursor ?? '');
+  const chunks: Contact[][] = [];
+  const queued = new Set<string>();
+  const contacts = await backfillContacts(admin, ws, book, cursor).catch((err) => { console.error('gmail backfill contacts failed', String(err)); return [] as Contact[]; });
+  for (const c of contacts) {
+    if (!queued.has(c.email) && queued.size >= BACKFILL_ADDRESSES) break;
+    queued.add(c.email);
+    const last = chunks[chunks.length - 1];
+    if (!last || new Set(last.map((x) => x.email)).size >= 20) chunks.push([c]); else last.push(c);
+  }
+  const searched = new Set<string>();
+  const threadsRead = new Set<string>();
+  let fullLeft = 8;
+  let nextCursor: string | null = null;
+  for (const chunk of chunks) {
+    if (threadsRead.size >= BACKFILL_THREADS && nextCursor) break;
+    const emails = Array.from(new Set(chunk.map((c) => c.email))).filter((e) => !searched.has(e));
+    try {
+      if (emails.length) {
+        const q = `newer_than:${BACKFILL_DAYS}d -in:chats -in:drafts {${emails.map((a) => `from:${a} to:${a} cc:${a}`).join(' ')}}`;
+        const hits = await listAll(accessToken, q, 40);
+        const room = BACKFILL_THREADS - threadsRead.size;
+        const threadIds = Array.from(new Set(hits.map((x) => x.threadId))).filter((t) => !threadsRead.has(t)).slice(0, Math.max(0, room));
+        const threads = await pool(threadIds, POOL, (t) => gmailOrGone(accessToken, `/threads/${t}?${META_QS}`));
+        const bad = threads.find((t) => t instanceof Error);
+        if (bad) throw bad;
+        await knowPeople(admin, ws, book, (threads as Any[]).flatMap((t) => ((t?.messages ?? []) as Any[]).flatMap(messageAddresses)));
+        type Pick = { id: string; link: Link; by: 'rule' | 'ai' };
+        const picks: Pick[] = [];
+        for (const t of threads as Any[]) {
+          const msgs = ((t?.messages ?? []) as Any[]).filter(notDraft);
+          const peeks = msgs.map((m) => peek(book, m));
+          const links = peeks.map((p) => p.link);
+          const lend = threadLink(links);
+          for (let i = 0; i < msgs.length; i++) {
+            const m = msgs[i];
+            const p = peeks[i];
+            let l = mergeLink(links[i], lend);
+            const key = l.deal_id == null ? conversationKey(book, p.from, p.to, p.subject) : null;
+            if (key && conversations.has(key)) l = mergeLink(l, conversations.get(key));
+            const ai = await aiFill(budget, p.route, l, { subject: p.subject, from: p.from, to: p.to, text: String(m.snippet ?? '') });
+            if (ai) l = ai;
+            if (!isLinked(l)) continue;
+            picks.push({ id: String(m.id), link: l, by: ai ? 'ai' : 'rule' });
+          }
+        }
+        const take = picks.slice(0, fullLeft);
+        fullLeft -= take.length;
+        const fulls = await pool(take, POOL, (p) => gmailOrGone(accessToken, `/messages/${p.id}?format=full`));
+        const rows: Any[] = [];
+        for (let i = 0; i < take.length; i++) {
+          const m = fulls[i];
+          if (!m || m instanceof Error) continue;
+          const row = await rowFor(accessToken, ws, book, m, take[i].link, take[i].by);
+          rows.push(row);
+          if (take[i].link.deal_id) r.filings.push(filingOf(m, row));
+        }
+        const s = await store(admin, ws, rows, account);
+        r.logged += s.logged;
+        r.relinked += s.filled;
+        threadIds.forEach((t) => threadsRead.add(t));
+        emails.forEach((e) => searched.add(e));
+      }
+      nextCursor = chunk[chunk.length - 1].key;
+    } catch (err) {
+      console.error('gmail backfill stopped', { account: account.id, err: String(err) });
+      r.failed = true;
+      break;
+    }
+  }
+  if (nextCursor) await admin.from('google_accounts').update({ gmail_backfill_cursor: nextCursor }).eq('id', account.id);
+  return searched.size;
+}
 
 /**
  * Mail with people in the CRM, onto their record and their deal.
  *
- * Two passes, each with its own cursor, so nothing is skipped and nothing
- * is fetched twice without need:
+ * Two lanes (gmail-lanes.ts), so a burst of upkeep never holds back a reply:
  *
- *   backfill   every address in the book, oldest-touched first, searched once
- *              per mailbox — From, To and Cc — BACKFILL_DAYS back, and every
- *              thread it turns up read whole, so a reply from someone not in
- *              the CRM still lands with the thread. Resumes from
- *              google_accounts.gmail_backfill_cursor (migration 78), which
- *              also means a contact added or edited today, or a title company
- *              put on a deal, has their history pulled on the next run.
- *   new mail   everything since last_gmail_sync_at (Sent included — the
- *              rep's own replies are half of a deal's email), read headers
- *              first; what matches by address, by the street in the subject,
- *              by a thread-mate in this batch or by In-Reply-To/References to
- *              a row already stored is read in full and kept. The rest is
- *              never stored: CRM-unrelated mail stays out of the shared inbox.
- *              Oldest first, so a run cut short by a failure or the per-run
- *              limit hands `through` back at the last message it finished.
+ *   fast   new mail. gmailQuick first; on a quiet minute that is the whole
+ *          run. Otherwise everything since last_gmail_sync_at (Sent
+ *          included: the rep's own replies are half of a deal's email), read
+ *          headers first; what matches by address, by the street in the
+ *          subject, by a thread-mate in this batch or by In-Reply-To /
+ *          References to a row already stored is read in full and kept. The
+ *          rest is never stored: CRM-unrelated mail stays out of the shared
+ *          inbox. Oldest first, so a run cut short by a failure or the
+ *          per-run limit hands `through` back at the last message it
+ *          finished. Rules only: a person on several deals gets the deal from
+ *          the slow lane's relink a few minutes later, which asks the AI.
+ *   slow   upkeep: the relink pass (with the AI fallback), then, once new
+ *          mail is current, backfill (every address in the book, oldest
+ *          touched first, BACKFILL_DAYS back, from
+ *          google_accounts.gmail_backfill_cursor, migration 78), files on
+ *          mail that has a deal, and the HTML of rows stored as plain text.
+ *          Runs when the fast lane has stored mail through a newer historyId
+ *          than the last upkeep (gmail_upkeep_history_id, migration 273) and
+ *          hourly regardless.
  *
  * Each message is one `communications` row keyed by its RFC Message-ID, the
  * same in every teammate's mailbox, so two reps on one thread store it once
  * and a re-run is a no-op (apart from filling links it learnt since).
  */
-export async function pullGmail(admin: SupabaseClient, account: Account, accessToken: string, startedAt = new Date()): Promise<GmailPull> {
-  const ws = googleSyncWorkspace(account);
-  // Gmail's historyId moves on any change to the mailbox. Unchanged since a
-  // run that read through to its own start means no mail arrived, so one
-  // profile call answers the run. Read on its own so a project without
-  // migration 170 just does the full pass.
-  const profile = await gmail(accessToken, '/profile').catch(() => null);
-  const historyId = profile?.historyId != null ? String(profile.historyId) : null;
-  const { data: hrow } = await admin.from('google_accounts').select('gmail_history_id').eq('id', account.id).maybeSingle();
-  const current = !!account.last_gmail_sync_at && Date.parse(account.last_gmail_sync_at) >= startedAt.getTime() - 3_600_000;
-  if (historyId && hrow?.gmail_history_id === historyId && current) {
-    const maintenance = await rateLimit(admin, `gmail-maint:${account.id}`, 1, MAINTENANCE_S);
-    if (!maintenance.allowed) {
-      const through = startedAt.toISOString();
-      await admin.from('google_accounts').update({ last_gmail_sync_at: through }).eq('id', account.id);
-      return { logged: 0, relinked: 0, filed: 0, backfilled: 0, through, failed: false, idle: true };
-    }
+export function pullGmail(admin: SupabaseClient, account: Account, accessToken: string, startedAt = new Date(), lane: Lane = 'fast', books?: BookCache): Promise<GmailPull> {
+  return lane === 'slow' ? upkeepGmail(admin, account, accessToken, startedAt, books) : newGmail(admin, account, accessToken, startedAt, books);
+}
+
+type Linked = ReturnType<typeof peek> & { m: Any; by: 'rule' | 'ai' };
+
+/**
+ * Header-read messages, linked the way the rules link them: each message's
+ * own addresses and street, thread-mates in the same batch, anything already
+ * stored that it replies to, and a filed conversation with the same person
+ * and subject. In the fast lane there is no AI key (startRun), so aiFill
+ * returns at once.
+ */
+async function linkMessages(r: Run, metas: Any[]): Promise<Linked[]> {
+  const { admin, ws, book, budget } = r;
+  await knowPeople(admin, ws, book, metas.filter(Boolean).flatMap(messageAddresses));
+  const seen = metas.filter((m) => m && notDraft(m)).map((m) => ({ m, ...peek(book, m) }));
+  // Thread-mates in this batch lend each other their link (window and moved
+  // mail together, so a restored parent files its reply)…
+  const fromThread = lendThreads(seen.map((s) => ({ threadId: String(s.m.threadId), link: s.link })));
+  // …and so does anything already stored that the message is a reply to.
+  const refs = Array.from(new Set(seen.filter((s) => !s.link.deal_id).flatMap((s) => s.refs)));
+  const prior = new Map<string, Link>();
+  for (let i = 0; i < refs.length; i += 200) {
+    const { data } = await admin.from('communications').select(LINK_COLS).eq('workspace_id', ws).eq('source', 'gmail').in('source_id', refs.slice(i, i + 200));
+    for (const row of (data ?? []) as Any[]) prior.set(row.source_id, row);
   }
+  const lent = seen.map((s, i) => {
+    let l = fromThread[i];
+    for (const ref of s.refs) l = mergeLink(l, prior.get(ref));
+    return { s, l, key: l.deal_id == null ? conversationKey(book, s.from, s.to, s.subject) : null };
+  });
+  if (lent.some((x) => x.key) && !r.conversations.size) await withConversations(r);
+  const merged: Linked[] = lent.map(({ s, l, key }) => {
+    // …and so does a filed conversation with the same person and subject.
+    if (key && r.conversations.has(key)) l = mergeLink(l, r.conversations.get(key));
+    return { ...s, link: l, by: 'rule' as 'rule' | 'ai' };
+  });
+  for (const s of merged) {
+    const ai = await aiFill(budget, s.route, s.link, { subject: s.subject, from: s.from, to: s.to, text: String(s.m.snippet ?? '') });
+    if (ai) { s.link = ai; s.by = 'ai'; }
+  }
+  return merged;
+}
 
-  const { book } = await loadBook(admin, ws);
-  // The connected address is ours even before its google_accounts row is read back.
-  book.ours.add(addrKey(account.email));
-  const budget: AiBudget = { key: aiKey(), left: AI_PER_RUN, routed: 0 };
-  const conversations = await loadConversations(admin, ws, book).catch((err) => { console.error('gmail conversations failed', String(err)); return new Map<string, Link>(); });
-  let relinked = await relinkEmail(admin, ws, book, conversations, budget).catch((err) => { console.error('gmail relink failed', String(err)); return 0; });
-  let logged = 0;
-  let failed = false;
-  const filings: Filing[] = [];
+/** Full messages to rows, after a last look at the attachments' names for a deal. */
+async function rowsFor(r: Run, wanted: Linked[], fulls: Any[]): Promise<Any[]> {
+  const rows: Any[] = [];
+  for (let i = 0; i < wanted.length; i++) {
+    const m = fulls[i] as Any;
+    if (!m) continue;
+    // The headers matched a person but no deal: the full message has the attachments' names to try.
+    let link = wanted[i].link;
+    if (link.deal_id == null) {
+      const again = peek(r.book, m).link;
+      if (again.deal_id != null) link = mergeLink(link, again);
+    }
+    rows.push(await rowFor(r.accessToken, r.ws, r.book, m, link, wanted[i].by));
+  }
+  return rows;
+}
 
-  // ---------------------------------------------------------------- backfill
-  // Called after the new-mail cursor is saved. History is metadata first;
-  // only messages that match a person or a deal are read in full, and only
-  // a few of those, so one run stays inside the CPU budget. The newest
-  // threads for each address are the ones kept — Gmail lists newest first
-  // and the cursor moves on, while mail from here forward arrives on the
-  // new-mail pass. Read on its own so a project without migration 78 still
-  // gets that pass.
-  const runBackfill = async (): Promise<number> => {
-    const { data: cur, error: curErr } = await admin.from('google_accounts').select('gmail_backfill_cursor').eq('id', account.id).maybeSingle();
-    if (curErr) { console.error('gmail backfill skipped: migration 78 not applied?', curErr.message); return 0; }
-    const cursor = String(cur?.gmail_backfill_cursor ?? '');
-    const chunks: Contact[][] = [];
-    const queued = new Set<string>();
-    const contacts = await backfillContacts(admin, ws, book, cursor).catch((err) => { console.error('gmail backfill contacts failed', String(err)); return [] as Contact[]; });
-    for (const c of contacts) {
-      if (!queued.has(c.email) && queued.size >= BACKFILL_ADDRESSES) break;
-      queued.add(c.email);
-      const last = chunks[chunks.length - 1];
-      if (!last || new Set(last.map((x) => x.email)).size >= 20) chunks.push([c]); else last.push(c);
-    }
-    const searched = new Set<string>();
-    const threadsRead = new Set<string>();
-    let fullLeft = 8;
-    let nextCursor: string | null = null;
-    for (const chunk of chunks) {
-      if (threadsRead.size >= BACKFILL_THREADS && nextCursor) break;
-      const emails = Array.from(new Set(chunk.map((c) => c.email))).filter((e) => !searched.has(e));
-      try {
-        if (emails.length) {
-          const q = `newer_than:${BACKFILL_DAYS}d -in:chats -in:drafts {${emails.map((a) => `from:${a} to:${a} cc:${a}`).join(' ')}}`;
-          const hits = await listAll(accessToken, q, 40);
-          const room = BACKFILL_THREADS - threadsRead.size;
-          const threadIds = Array.from(new Set(hits.map((x) => x.threadId))).filter((t) => !threadsRead.has(t)).slice(0, Math.max(0, room));
-          const threads = await pool(threadIds, POOL, (t) => gmailOrGone(accessToken, `/threads/${t}?${META_QS}`));
-          const bad = threads.find((t) => t instanceof Error);
-          if (bad) throw bad;
-          await knowPeople(admin, ws, book, (threads as Any[]).flatMap((t) => ((t?.messages ?? []) as Any[]).flatMap(messageAddresses)));
-          type Pick = { id: string; link: Link; by: 'rule' | 'ai' };
-          const picks: Pick[] = [];
-          for (const t of threads as Any[]) {
-            const msgs = ((t?.messages ?? []) as Any[]).filter(notDraft);
-            const peeks = msgs.map((m) => peek(book, m));
-            const links = peeks.map((p) => p.link);
-            const lend = threadLink(links);
-            for (let i = 0; i < msgs.length; i++) {
-              const m = msgs[i];
-              const p = peeks[i];
-              let l = mergeLink(links[i], lend);
-              const key = l.deal_id == null ? conversationKey(book, p.from, p.to, p.subject) : null;
-              if (key && conversations.has(key)) l = mergeLink(l, conversations.get(key));
-              const ai = await aiFill(budget, p.route, l, { subject: p.subject, from: p.from, to: p.to, text: String(m.snippet ?? '') });
-              if (ai) l = ai;
-              if (!isLinked(l)) continue;
-              picks.push({ id: String(m.id), link: l, by: ai ? 'ai' : 'rule' });
-            }
-          }
-          const take = picks.slice(0, fullLeft);
-          fullLeft -= take.length;
-          const fulls = await pool(take, POOL, (p) => gmailOrGone(accessToken, `/messages/${p.id}?format=full`));
-          const rows: Any[] = [];
-          for (let i = 0; i < take.length; i++) {
-            const m = fulls[i];
-            if (!m || m instanceof Error) continue;
-            const row = await rowFor(accessToken, ws, book, m, take[i].link, take[i].by);
-            rows.push(row);
-            if (take[i].link.deal_id) filings.push(filingOf(m, row));
-          }
-          const s = await store(admin, ws, rows, account);
-          logged += s.logged;
-          relinked += s.filled;
-          threadIds.forEach((t) => threadsRead.add(t));
-          emails.forEach((e) => searched.add(e));
-        }
-        nextCursor = chunk[chunk.length - 1].key;
-      } catch (err) {
-        console.error('gmail backfill stopped', { account: account.id, err: String(err) });
-        failed = true;
-        break;
-      }
-    }
-    if (nextCursor) await admin.from('google_accounts').update({ gmail_backfill_cursor: nextCursor }).eq('id', account.id);
-    return searched.size;
+/**
+ * Mail moved into view (gmailQuick), read by id in history order: at most
+ * MOVED_PER_RUN by headers here, linked together with the window's batch
+ * (linkMessages), then at most MOVED_FULL_PER_RUN in full (storeMoved).
+ * `settled` collects the ids that are done: stored, not CRM mail, deleted,
+ * or given up after MOVED_TRIES failed reads in a day. The rest stay pending
+ * and the history cursor stops before the first of them (stampPoint).
+ */
+type MovedRead = { metas: Any[]; settled: Set<string>; failed: (id: string, err: unknown) => Promise<void> };
+
+async function fetchMoved(r: Run, moved: Moved[]): Promise<MovedRead> {
+  const settled = new Set<string>();
+  const failed = async (id: string, err: unknown) => {
+    const tries = await rateLimit(r.admin, `gmail-moved:${r.account.id}:${id}`, MOVED_TRIES, 86_400);
+    if (tries.allowed) { console.error('gmail moved mail not read, retrying', { account: r.account.id, id, err: String(err) }); return; }
+    console.error('gmail moved mail given up', { account: r.account.id, id, err: String(err) });
+    settled.add(id);
   };
+  const take = moved.slice(0, MOVED_PER_RUN);
+  const metas = await pool(take, POOL, (x) => gmailOrGone(r.accessToken, `/messages/${x.id}?${META_QS}`));
+  const ok: Any[] = [];
+  for (let i = 0; i < take.length; i++) {
+    const m = metas[i];
+    if (m instanceof Error) await failed(take[i].id, m);
+    else if (!m) settled.add(take[i].id);
+    else ok.push(m);
+  }
+  return { metas: ok, settled, failed };
+}
 
-  // ---------------------------------------------------------------- new mail
+async function storeMoved(r: Run, read: MovedRead, merged: Linked[]): Promise<Set<string>> {
+  const { settled } = read;
+  const linked = new Set(merged.filter((s) => isLinked(s.link)).map((s) => String(s.m.id)));
+  // Read, not CRM mail (or a draft): nothing to store.
+  for (const m of read.metas) if (!linked.has(String(m.id))) settled.add(String(m.id));
+  const wanted = merged.filter((s) => isLinked(s.link)).slice(0, MOVED_FULL_PER_RUN);
+  const fulls = await pool(wanted, POOL, (s) => gmailOrGone(r.accessToken, `/messages/${s.m.id}?format=full`));
+  const good: Linked[] = [];
+  const goodFulls: Any[] = [];
+  for (let i = 0; i < wanted.length; i++) {
+    const f = fulls[i];
+    if (f instanceof Error) { await read.failed(String(wanted[i].m.id), f); continue; }
+    good.push(wanted[i]);
+    goodFulls.push(f);
+  }
+  const st = await store(r.admin, r.ws, await rowsFor(r, good, goodFulls), r.account);
+  r.logged += st.logged;
+  r.relinked += st.filled;
+  for (const s of good) settled.add(String(s.m.id));
+  return settled;
+}
+
+async function newGmail(admin: SupabaseClient, account: Account, accessToken: string, startedAt: Date, books?: BookCache): Promise<GmailPull> {
+  const quick = await gmailQuick(admin, account, accessToken, startedAt);
+  // gmailQuick already wrote the stamp if one was due; nothing for the caller to store.
+  if (quick.quiet) return { logged: 0, relinked: 0, filed: 0, backfilled: 0, through: null, failed: false, idle: true };
+  const historyId = quick.historyId;
+  const before = account.last_gmail_sync_at;
+
+  // No AI (the slow lane's relink asks it); conversations only if a message needs them.
+  const r = await startRun(admin, account, accessToken, false, false, books);
+  const { ws, book } = r;
+  let through: string | null = null;
+
   // First run: the backfill carries history, so the window only has to reach
   // back far enough to meet it.
   const fromMs = account.last_gmail_sync_at ? new Date(account.last_gmail_sync_at).getTime() - OVERLAP_MS : startedAt.getTime() - 86_400_000;
   const toMs = Math.min(startedAt.getTime(), fromMs + WINDOW_MS);
-  let through: string | null = null;
   const listed = await listAll(accessToken, `after:${Math.floor(fromMs / 1000)} before:${Math.ceil(toMs / 1000)} -in:chats -in:drafts`, 5000);
   if (listed.length >= 5000) console.error('gmail window over 5000 messages; the oldest may be missed', { account: account.id, from: new Date(fromMs).toISOString() });
   // Gmail lists newest first; work oldest first so a cut-off leaves a clean edge.
@@ -1684,31 +1846,17 @@ export async function pullGmail(admin: SupabaseClient, account: Account, accessT
   let cut = upTo !== -1;
   if (upTo === -1) upTo = metas.length;
   const done = metas.slice(0, upTo) as Any[];
-  await knowPeople(admin, ws, book, done.filter(Boolean).flatMap(messageAddresses));
-  const seen = done.filter((m) => m && notDraft(m)).map((m) => ({ m, ...peek(book, m) }));
-
-  // Thread-mates in this batch lend each other their link…
-  const byThread = new Map<string, Link[]>();
-  for (const s of seen) byThread.set(String(s.m.threadId), [...(byThread.get(String(s.m.threadId)) ?? []), s.link]);
-  // …and so does anything already stored that the message is a reply to.
-  const refs = Array.from(new Set(seen.filter((s) => !s.link.deal_id).flatMap((s) => s.refs)));
-  const prior = new Map<string, Link>();
-  for (let i = 0; i < refs.length; i += 200) {
-    const { data } = await admin.from('communications').select(LINK_COLS).eq('workspace_id', ws).eq('source', 'gmail').in('source_id', refs.slice(i, i + 200));
-    for (const r of (data ?? []) as Any[]) prior.set(r.source_id, r);
-  }
-  const merged = seen.map((s) => {
-    let l = mergeLink(s.link, threadLink(byThread.get(String(s.m.threadId)) ?? []));
-    for (const r of s.refs) l = mergeLink(l, prior.get(r));
-    // …and so does a filed conversation with the same person and subject.
-    const key = l.deal_id == null ? conversationKey(book, s.from, s.to, s.subject) : null;
-    if (key && conversations.has(key)) l = mergeLink(l, conversations.get(key));
-    return { ...s, link: l, by: 'rule' as 'rule' | 'ai' };
-  });
-  for (const s of merged) {
-    const ai = await aiFill(budget, s.route, s.link, { subject: s.subject, from: s.from, to: s.to, text: String(s.m.snippet ?? '') });
-    if (ai) { s.link = ai; s.by = 'ai'; }
-  }
+  // Mail moved into view, by id. A message the window just listed is the window's.
+  const listedIds = new Set(queue.map((x) => x.id));
+  const moved = quick.moved.filter((x) => !listedIds.has(x.id));
+  const movedRead = moved.length ? await fetchMoved(r, moved) : null;
+  // One linking pass over the window's batch and the moved mail together, so
+  // a restored parent and its reply in the window lend each other a link.
+  const inWindow = new Set(done.filter(Boolean));
+  const linkedAll = await linkMessages(r, [...done, ...(movedRead?.metas ?? [])]);
+  const merged = linkedAll.filter((x) => inWindow.has(x.m));
+  // Agents, escrow officers and title reps on this mail who are not in CLOZR yet.
+  await noteStrangers(admin, ws, account, book, merged).catch((err) => console.error('gmail contact suggestions failed', String(err)));
   const wanted = merged.filter((s) => isLinked(s.link));
   // HTML bodies are the expensive part. Stop after FULL_PER_RUN and leave
   // the window edge on the last one stored, so the next run continues there
@@ -1729,59 +1877,94 @@ export async function pullGmail(admin: SupabaseClient, account: Account, accessT
     // Stop the window at the first message that could not be read, so it is read again next time.
     upTo = done.indexOf(wanted[firstBad].m);
   }
-  const rows: Any[] = [];
-  for (let i = 0; i < kept; i++) {
-    const m = fulls[i] as Any;
-    if (!m) continue;
-    // The headers matched a person but no deal: the full message has the attachments' names to try.
-    let link = wanted[i].link;
-    if (link.deal_id == null) {
-      const again = peek(book, m).link;
-      if (again.deal_id != null) link = mergeLink(link, again);
-    }
-    const row = await rowFor(accessToken, ws, book, m, link, wanted[i].by);
-    if (row.deal_id) filings.push(filingOf(m, row));
-    rows.push(row);
-  }
-  const s = await store(admin, ws, rows, account);
-  logged += s.logged;
-  relinked += s.filled;
+  // The files on these rows are listed in email_attachments by store(); the
+  // slow lane's fileStoredAttachments saves them to the deal.
+  const s = await store(admin, ws, await rowsFor(r, wanted.slice(0, kept), fulls.slice(0, kept)), account);
+  r.logged += s.logged;
+  r.relinked += s.filled;
 
-  if (cut) failed = true;
+  if (cut) r.failed = true;
   if (upTo === queue.length && !cut) through = new Date(toMs).toISOString();
   else if (upTo > 0) {
     // The newest message finished, as the edge of the next window.
     const last = Math.max(...done.slice(0, upTo).map((m) => Number(m?.internalDate) || 0));
     if (last > 0) through = new Date(last).toISOString();
   }
-  // Before history, attachments, or anything else that can blow the CPU
-  // budget: a kill after this still leaves a cursor, and the next run
-  // continues instead of rereading the same window forever.
+  // Written here, not only by the caller, so an isolate killed after this
+  // still leaves a cursor and the next run continues instead of rereading.
   if (through) {
     await admin.from('google_accounts').update({ last_gmail_sync_at: through }).eq('id', account.id);
   }
-  // Read through to this run's start: the historyId taken before the listing
-  // marks "nothing since". Any later change moves it, so the next run reads.
-  // Its own write, so a project without migration 170 still keeps the cursor.
+
+  const settled = movedRead ? await storeMoved(r, movedRead, linkedAll.filter((x) => !inWindow.has(x.m))) : new Set<string>();
+
+  // The historyId marks "nothing since". Kept only when the window read
+  // through to this run's start, and never past a moved message still to
+  // read or past the last history record read (stampPoint), so a per-run
+  // limit leaves that mail for the next run instead of skipping it. Its own
+  // write, so a project without migration 170 still keeps the cursor.
+  let stamped = false;
   if (historyId && !cut && toMs === startedAt.getTime() && through === new Date(toMs).toISOString()) {
-    await admin.from('google_accounts').update({ gmail_history_id: historyId }).eq('id', account.id);
+    const point = stampPoint({ profileId: historyId, pendingAt: firstPending(moved, settled), truncatedAt: quick.truncatedAt });
+    if (!quick.stored || cmpHistory(point, quick.stored) > 0) {
+      await admin.from('google_accounts').update({ gmail_history_id: point }).eq('id', account.id);
+      stamped = true;
+    }
   }
+  // Mail stored by a run that stopped short of the cursor (a cut window, a
+  // catch-up) leaves gmail_history_id where it was, so upkeep would read
+  // "nothing new" and leave its files and relink for the hourly slot. A fresh
+  // marker in the upkeep cursor makes the next slow tick due, and since no
+  // slow run read this value, one already in flight cannot stamp over it.
+  // Before migration 273 the column is missing and the write errors harmlessly.
+  if (!stamped && r.logged > 0) {
+    await admin.from('google_accounts').update({ gmail_upkeep_history_id: upkeepMark() }).eq('id', account.id);
+  }
+  // A run that failed and moved no cursor would be dispatched again every
+  // minute for the same failure. Hold the minute lane off this mailbox for
+  // STALL_S; the slow lane's catch-up and the app still read it meanwhile.
+  const progressed = stamped || r.logged > 0 || (!!through && through !== before);
+  if (!progressed && (r.failed || moved.length > 0 || quick.truncatedAt)) {
+    await rateLimit(admin, `gmail-stall:${account.id}`, 1, STALL_S);
+  }
+  return { logged: r.logged, relinked: r.relinked, filed: 0, backfilled: 0, through, failed: r.failed };
+}
 
-  // A mailbox still working through old windows spends the run on mail
-  // alone. History, files and HTML wait until new mail is current; the files
-  // are already listed in email_attachments, so fileStoredAttachments picks
-  // them up then.
-  const edge = through ?? account.last_gmail_sync_at;
+async function upkeepGmail(admin: SupabaseClient, account: Account, accessToken: string, startedAt: Date, books?: BookCache): Promise<GmailPull> {
+  const idle: GmailPull = { logged: 0, relinked: 0, filed: 0, backfilled: 0, through: null, failed: false, idle: true };
+  // Upkeep follows what the fast lane has stored (gmail_history_id), not the
+  // live mailbox: mail Gmail has but CLOZR has not stored yet is not upkept,
+  // so stamping past it would leave its files and relink for the hourly run.
+  const { data: hrow } = await admin.from('google_accounts').select('gmail_history_id, last_gmail_sync_at').eq('id', account.id).maybeSingle();
+  const readId = hrow?.gmail_history_id != null ? String(hrow.gmail_history_id) : null;
+  // Before migration 273 the column is missing, the read errors, and upkeep
+  // runs every slow tick (what a busy mailbox got before the lanes split).
+  const { data: urow, error: uerr } = await admin.from('google_accounts').select('gmail_upkeep_history_id').eq('id', account.id).maybeSingle();
+  const upkeepId = uerr || urow?.gmail_upkeep_history_id == null ? null : String(urow.gmail_upkeep_history_id);
+  // Spend the hourly slot only on a mailbox with nothing new stored, as the old idle path did.
+  const same = !!readId && readId === upkeepId;
+  const hourlyAllowed = same ? (await rateLimit(admin, `gmail-maint:${account.id}`, 1, MAINTENANCE_S)).allowed : false;
+  if (!upkeepDue({ readId, upkeepId, hourlyAllowed })) return idle;
+
+  const r = await startRun(admin, account, accessToken, true, true, books);
+  r.relinked += await relinkEmail(admin, r.ws, r.book, r.conversations, r.budget, account.id).catch((err) => { console.error('gmail relink failed', String(err)); return 0; });
+
+  // A mailbox still working through old windows spends its CPU on new mail
+  // in the fast lane. History, files and HTML wait until that is current;
+  // the files are already listed in email_attachments, so
+  // fileStoredAttachments picks them up then.
+  const edge = hrow?.last_gmail_sync_at ?? account.last_gmail_sync_at;
   if (!edge || Date.parse(edge) < startedAt.getTime() - 3_600_000) {
-    return { logged, relinked, filed: 0, backfilled: 0, through, failed };
+    return { logged: r.logged, relinked: r.relinked, filed: 0, backfilled: 0, through: null, failed: r.failed };
   }
 
-  const backfilled = await runBackfill();
+  const backfilled = await runBackfill(r);
 
   // After the rows are stored, so each file can point at the message it came on.
   // A failure here never costs the mail: it is logged and retried next run.
-  let filed = await fileAttachments(admin, accessToken, ws, filings).catch((err) => { console.error('gmail attachments failed', String(err)); return 0; });
-  // …and files on mail that found its deal only now (relinked above, or filed by hand since).
+  let filed = await fileAttachments(admin, accessToken, r.ws, r.filings).catch((err) => { console.error('gmail attachments failed', String(err)); return 0; });
+  // …and files on mail that found its deal since it was stored (fast lane,
+  // relink above, or filed by hand).
   filed += await fileStoredAttachments(admin, account, accessToken).catch((err) => { console.error('stored attachments failed', String(err)); return 0; });
 
   // Messages already stored as the plain part (or as HTML the old check
@@ -1789,53 +1972,14 @@ export async function pullGmail(admin: SupabaseClient, account: Account, accessT
   // what fetches it.
   await hydrateHtml(admin, account, accessToken).catch((err) => { console.error('gmail html hydrate failed', String(err)); });
 
-  return { logged, relinked, filed, backfilled, through, failed };
-}
-
-// --------------------------------------------------------------------- sync
-export type SyncResult = {
-  ok: boolean; email: string; status: string;
-  calendar: { created: number; updated: number; removed: number; applied: number; cancelled: number } | null;
-  gmail: { logged: number; relinked: number } | null;
-  message?: string;
-};
-
-/** One pass over one connection: push, pull back, then the mail. */
-export async function syncAccount(admin: SupabaseClient, account: Account, opts: { origin: string; workspaceName: string }): Promise<SyncResult> {
-  const accessToken = await accessFor(admin, account);
-  if (!accessToken) {
-    return { ok: false, email: account.email, status: 'needs_reauth', calendar: null, gmail: null, message: 'Google needs this connection approved again.' };
+  // Its own write, so a project without migration 273 still finishes the run.
+  // Only over the value this run started from: a fast run that stored mail
+  // meanwhile left a new marker, and that mail still needs its upkeep. The
+  // hourly pass over an unchanged mailbox (readId === upkeepId) has nothing to move.
+  if (readId && readId !== upkeepId) {
+    const base = admin.from('google_accounts').update({ gmail_upkeep_history_id: readId }).eq('id', account.id);
+    const { error } = await (upkeepId == null ? base.is('gmail_upkeep_history_id', null) : base.eq('gmail_upkeep_history_id', upkeepId));
+    if (error) console.error('gmail upkeep cursor not kept: migration 273 not applied?', error.message);
   }
-  const out: SyncResult = { ok: true, email: account.email, status: 'active', calendar: null, gmail: null };
-  const patch: Any = { last_error: null, status: 'active' };
-
-  if (account.calendar_sync && has(account, SCOPE.calendar)) {
-    try {
-      await ensureCalendar(admin, account, accessToken, opts.workspaceName);
-      const startedAt = new Date();
-      const pulled = await pullCalendar(admin, account, accessToken);
-      const pushed = await pushCalendar(admin, account, accessToken, opts.origin);
-      out.calendar = { ...pushed, ...pulled };
-      patch.last_calendar_sync_at = iso(startedAt);
-    } catch (err) {
-      console.error('calendar sync failed', { account: account.id, err: String(err) });
-      patch.last_error = 'Calendar sync hit an error. It will try again on the next sync.';
-      out.message = patch.last_error;
-    }
-  }
-
-  if (account.gmail_read && has(account, SCOPE.gmailRead)) {
-    try {
-      const startedAt = new Date();
-      out.gmail = await pullGmail(admin, account, accessToken);
-      patch.last_gmail_sync_at = iso(startedAt);
-    } catch (err) {
-      console.error('gmail sync failed', { account: account.id, err: String(err) });
-      patch.last_error = 'Gmail sync hit an error. It will try again on the next sync.';
-      out.message = patch.last_error;
-    }
-  }
-
-  await admin.from('google_accounts').update(patch).eq('id', account.id);
-  return out;
+  return { logged: r.logged, relinked: r.relinked, filed, backfilled, through: null, failed: r.failed };
 }

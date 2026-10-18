@@ -48,8 +48,8 @@ type Form = {
 
 const ROLE_LABEL: Record<NonNullable<Attendee['role']>, string> = { seller: 'Seller', buyer: 'Buyer', vendor: 'Vendor', rep: 'Rep', other: 'Guest' };
 const ANSWER: Record<NonNullable<Attendee['status']>, { text: string; color: string }> = {
-  accepted: { text: 'Yes', color: '#16a34a' }, declined: { text: 'No', color: '#b91c1c' },
-  tentative: { text: 'Maybe', color: '#d97706' }, needsAction: { text: 'Invited', color: '#a1a1aa' },
+  accepted: { text: 'Yes', color: '#16a34a' }, declined: { text: 'No', color: 'var(--tx-red, #b91c1c)' },
+  tentative: { text: 'Maybe', color: '#d97706' }, needsAction: { text: 'Invited', color: 'var(--subtle, #a1a1aa)' },
 };
 
 function formFrom(ev: CalEvent | null, d: PanelDraft | null | undefined, userId: string | null): Form {
@@ -160,8 +160,8 @@ export function EventPanel(p: EventPanelProps) {
   }
 
   const shell: React.CSSProperties = inline
-    ? { background: '#fff', border: `1px solid ${LINE}`, borderRadius: '12px', display: 'flex', flexDirection: 'column', minWidth: 0 }
-    : { width: '340px', flex: 'none', background: '#fff', borderLeft: `1px solid ${LINE}`, display: 'flex', flexDirection: 'column', minHeight: 0 };
+    ? { background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', display: 'flex', flexDirection: 'column', minWidth: 0 }
+    : { width: '340px', flex: 'none', background: 'var(--surface, #fff)', borderLeft: `1px solid ${LINE}`, display: 'flex', flexDirection: 'column', minHeight: 0 };
 
   return (
     <aside style={shell}>
@@ -185,7 +185,7 @@ export function EventPanel(p: EventPanelProps) {
                 {EVENT_TYPES.filter((t) => t.key !== 'task').map((t) => (
                   <button key={t.key} type="button" onClick={() => set('kind', t.kind)} style={{
                     height: '26px', padding: '0 9px', borderRadius: '7px', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-                    border: `1px solid ${typeOfKind(form.kind) === t.key ? INK : LINE}`, background: typeOfKind(form.kind) === t.key ? INK : '#fff', color: typeOfKind(form.kind) === t.key ? '#fff' : INK,
+                    border: `1px solid ${typeOfKind(form.kind) === t.key ? INK : LINE}`, background: typeOfKind(form.kind) === t.key ? INK : 'var(--surface, #fff)', color: typeOfKind(form.kind) === t.key ? 'var(--surface, #fff)' : INK,
                   }}>{t.label}</button>
                 ))}
               </div>
@@ -221,12 +221,12 @@ export function EventPanel(p: EventPanelProps) {
             {rep ? <Row k="Calendar" v={<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><Avatar initials={rep.initials} color={rep.color} size={16} />{rep.full_name}</span>} /> : null}
             {event!.notes ? <Row k="Notes" v={<span style={{ whiteSpace: 'pre-wrap' }}>{event!.notes}</span>} /> : null}
             {isClose ? <Row k="Deal" v={event!.kind} /> : isTask ? <Row k="Type" v={`${event!.kind} · ${event!.done ? 'done' : 'open'}`} /> : null}
-            {event!.friday ? <p role="alert" style={{ margin: '4px 0 8px', fontSize: '12px', color: '#b91c1c', fontWeight: 600, lineHeight: 1.45 }}>Friday close. Closings are Monday to Thursday.</p> : null}
+            {event!.friday ? <p role="alert" style={{ margin: '4px 0 8px', fontSize: '12px', color: 'var(--tx-red, #b91c1c)', fontWeight: 600, lineHeight: 1.45 }}>Friday close. Closings are Monday to Thursday.</p> : null}
             {event!.fromGoogle ? <Row k="Source" v="Made in Google Calendar" /> : null}
             {event!.readOnly ? (
               <p style={{ margin: '4px 0 8px', fontSize: '12px', color: MUTED, lineHeight: 1.45 }}>{MIRROR_NOTE}</p>
             ) : null}
-            {event!.syncState === 'error' ? <p style={{ margin: '4px 0 8px', fontSize: '12px', color: '#b91c1c' }}>Google refused the last sync. Sync now to retry.</p> : null}
+            {event!.syncState === 'error' ? <p style={{ margin: '4px 0 8px', fontSize: '12px', color: 'var(--tx-red, #b91c1c)' }}>Google refused the last sync. Sync now to retry.</p> : null}
           </>
         )}
 
@@ -240,9 +240,9 @@ export function EventPanel(p: EventPanelProps) {
                 </span>
                 <span style={{ fontSize: '11px', color: MUTED }}>{ROLE_LABEL[a.role ?? 'other']}</span>
                 <span style={{ fontSize: '11px', fontWeight: 600, color: ANSWER[a.status ?? 'needsAction'].color }}>{ANSWER[a.status ?? 'needsAction'].text}</span>
-                {mayEdit ? <button type="button" onClick={() => set('attendees', form.attendees.filter((x) => x.email !== a.email))} aria-label="Remove" style={{ background: 'none', border: 0, color: '#a1a1aa', cursor: 'pointer', padding: '0 2px', fontSize: '14px', lineHeight: 1 }}>×</button> : null}
+                {mayEdit ? <button type="button" onClick={() => set('attendees', form.attendees.filter((x) => x.email !== a.email))} aria-label="Remove" style={{ background: 'none', border: 0, color: 'var(--subtle, #a1a1aa)', cursor: 'pointer', padding: '0 2px', fontSize: '14px', lineHeight: 1 }}>×</button> : null}
               </div>
-            )) : <p style={{ margin: '0 0 6px', fontSize: '12px', color: '#a1a1aa' }}>Nobody yet. Add the seller, a buyer or a vendor by email.</p>}
+            )) : <p style={{ margin: '0 0 6px', fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>Nobody yet. Add the seller, a buyer or a vendor by email.</p>}
             {draft?.suggest?.filter((s) => !form.attendees.some((a) => a.email === s.email)).map((s) => (
               <button key={s.email} type="button" className="dc2" onClick={() => addAttendee(s)} style={{ ...ghost, height: '26px', fontSize: '12px', marginRight: '6px', marginTop: '4px' }}>+ {s.name ?? s.email}</button>
             ))}
@@ -257,7 +257,7 @@ export function EventPanel(p: EventPanelProps) {
                 {busy === 'invite' ? 'Saving…' : 'Send invite'}
               </button>
             ) : null}
-            <p style={{ margin: '8px 0 0', fontSize: '11.5px', color: '#a1a1aa', lineHeight: 1.45 }}>Invitations come from your Google Calendar, with Yes / No / Maybe; answers show here.</p>
+            <p style={{ margin: '8px 0 0', fontSize: '11.5px', color: 'var(--subtle, #a1a1aa)', lineHeight: 1.45 }}>Invitations come from your Google Calendar, with Yes / No / Maybe; answers show here.</p>
           </div>
         ) : null}
 
@@ -275,7 +275,7 @@ export function EventPanel(p: EventPanelProps) {
             <>
               <button type="button" className="dc2" onClick={() => setEditing(true)} style={ghost}>Edit</button>
               <span style={{ flex: 1 }} />
-              <button type="button" onClick={() => void remove()} disabled={busy !== null} style={{ ...ghost, color: '#b91c1c', borderColor: '#fecaca' }}>{busy === 'delete' ? 'Deleting…' : 'Delete'}</button>
+              <button type="button" onClick={() => void remove()} disabled={busy !== null} style={{ ...ghost, color: 'var(--tx-red, #b91c1c)', borderColor: 'var(--tint-red-2, #fecaca)' }}>{busy === 'delete' ? 'Deleting…' : 'Delete'}</button>
             </>
           )}
         </div>

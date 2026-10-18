@@ -97,12 +97,12 @@ export function SearchSelectMenu({
           aria-controls={id}
           aria-activedescendant={shown[at] ? `${id}-${at}` : undefined}
           aria-autocomplete="list"
-          style={{ flex: 'none', height: '32px', margin: '0 0 6px', padding: '0 10px', borderRadius: '8px', border: '1px solid #e4e4e7', background: '#fafafa', fontSize: '12.5px', color: '#18181b', outline: 'none', fontFamily: 'var(--font-sans)' }}
+          style={{ flex: 'none', height: '32px', margin: '0 0 6px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--canvas, #fafafa)', fontSize: '12.5px', color: 'var(--ink, #18181b)', outline: 'none', fontFamily: 'var(--font-sans)' }}
         />
         <div style={{ display: 'flex', gap: 4, margin: '0 0 6px' }}>
           {(dated ? ['az', 'za', 'recent'] as const : ['az', 'za'] as const).map((d) => (
             <button key={d} type="button" aria-pressed={dir === d} onClick={() => setDir((cur) => (cur === d ? 'list' : d))}
-              style={{ height: 24, padding: '0 8px', borderRadius: 7, border: '1px solid #e4e4e7', background: dir === d ? '#E7F8F1' : '#fff', color: dir === d ? '#0A8560' : '#52525b', fontSize: 11, fontWeight: 650, cursor: 'pointer', fontFamily: 'inherit' }}>
+              style={{ height: 24, padding: '0 8px', borderRadius: 7, border: '1px solid var(--divider, #e4e4e7)', background: dir === d ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: dir === d ? '#0A8560' : 'var(--muted, #52525b)', fontSize: 11, fontWeight: 650, cursor: 'pointer', fontFamily: 'inherit' }}>
               {d === 'az' ? 'A to Z' : d === 'za' ? 'Z to A' : 'Recent'}
             </button>
           ))}
@@ -122,7 +122,7 @@ export function SearchSelectMenu({
             </button>
           ))}
           {shown.length <= pinned && terms.length ? (
-            <div style={{ padding: '8px 10px', fontSize: '12px', color: '#a1a1aa' }}>No match for “{text.trim()}”</div>
+            <div style={{ padding: '8px 10px', fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>No match for “{text.trim()}”</div>
           ) : null}
         </div>
       </div>

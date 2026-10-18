@@ -33,6 +33,7 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { type SupabaseClient, createClient } from 'jsr:@supabase/supabase-js@2';
 import { ALLOW_HEADERS, HARDENING, clientIp, rateLimit, serverError, tooMany } from '../_shared/security.ts';
+import { type Optin, type OptinHave, mergeOptins } from './optins.ts';
 
 const SOURCE = 'deal_machine';
 const COMMAND_TTL_MS = 60 * 60 * 1000;
@@ -231,29 +232,28 @@ Deno.serve(async (req) => {
         const items = Array.isArray(body.items) ? body.items.slice(0, 500) : [];
         const runKey = str(body.run_key, 200);
         const runId = runKey ? await runFor(db, ws, deviceId, runKey, {}) : null;
-        let written = 0;
-        for (const it of items) {
-          const domain = str(it?.domain, 253)?.toLowerCase().replace(/^www\./, '');
-          if (!domain) continue;
-          const status = OPTIN_STATUS.has(String(it?.status)) ? String(it.status) : 'opted_in';
-          const at = iso(it?.occurred_at);
-          const { data: have } = await db.from('dm_optins').select('id, attempts, status').eq('workspace_id', ws).eq('domain', domain).maybeSingle();
-          if (have) {
-            await db.from('dm_optins').update({
-              // An opt-in that once succeeded stays succeeded; a later "no form" does not undo it.
-              status: have.status === 'opted_in' ? 'opted_in' : status,
-              url: str(it?.url, 2000) ?? undefined, method: str(it?.method, 40), detail: str(it?.detail, 500),
-              attempts: (have.attempts as number) + 1, run_id: runId, device_id: deviceId, last_at: at,
-            }).eq('id', have.id);
-          } else {
-            await db.from('dm_optins').insert({
-              workspace_id: ws, domain, url: str(it?.url, 2000), status, method: str(it?.method, 40), detail: str(it?.detail, 500),
-              run_id: runId, device_id: deviceId, first_at: at, last_at: at,
-            });
-          }
-          written++;
+        const found: Optin[] = items.map((it: Any) => ({
+          domain: str(it?.domain, 253)?.toLowerCase().replace(/^www\./, '') ?? '',
+          url: str(it?.url, 2000), status: OPTIN_STATUS.has(String(it?.status)) ? String(it.status) : 'opted_in',
+          method: str(it?.method, 40), detail: str(it?.detail, 500), at: iso(it?.occurred_at),
+        })).filter((o: Optin) => o.domain);
+        // One read of the domains already there and one upsert, in place of a
+        // read and a write per domain. A failed read writes nothing (500, the
+        // extension queues the batch again).
+        const have = new Map<string, OptinHave>();
+        const domains = [...new Set(found.map((o) => o.domain))];
+        for (let i = 0; i < domains.length; i += 100) {
+          const { data, error } = await db.from('dm_optins').select('domain, url, status, attempts, first_at')
+            .eq('workspace_id', ws).in('domain', domains.slice(i, i + 100));
+          if (error) throw error;
+          for (const r of (data ?? []) as OptinHave[]) have.set(r.domain, r);
         }
-        return json({ ok: true, written });
+        const rows = mergeOptins(found, have, { workspace_id: ws, run_id: runId, device_id: deviceId });
+        if (rows.length) {
+          const { error } = await db.from('dm_optins').upsert(rows, { onConflict: 'workspace_id,domain' });
+          if (error) throw error;
+        }
+        return json({ ok: true, written: found.length });
       }
 
       case 'groups.sync': {

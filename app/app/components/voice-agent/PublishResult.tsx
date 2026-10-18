@@ -31,8 +31,8 @@ export function PublishResultView({ result, chosenModel, error }: { result: Publ
           {CHECK_ROWS.map((c, i) => {
             const pass = result.checks[c.key];
             return (
-              <li key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderTop: i ? '1px solid #f0f0f1' : 'none' }}>
-                <span aria-hidden="true" style={{ width: 20, height: 20, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 999, background: pass ? GREEN : '#f4f4f5', color: pass ? '#fff' : '#a1a1aa', border: pass ? 0 : `1px solid ${LINE}` }}>
+              <li key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderTop: i ? '1px solid var(--divider-2, #f0f0f1)' : 'none' }}>
+                <span aria-hidden="true" style={{ width: 20, height: 20, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 999, background: pass ? GREEN : 'var(--surface-2, #f4f4f5)', color: pass ? 'var(--surface, #fff)' : 'var(--subtle, #a1a1aa)', border: pass ? 0 : `1px solid ${LINE}` }}>
                   {pass ? <Check size={13} strokeWidth={3} /> : <Minus size={13} strokeWidth={3} />}
                 </span>
                 <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: INK }}>{c.label}</span>
@@ -44,17 +44,17 @@ export function PublishResultView({ result, chosenModel, error }: { result: Publ
       </div>
 
       {result.manual.length ? (
-        <div style={{ padding: '12px 14px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#92400e' }}>{result.manual.length === 1 ? 'One step' : `${result.manual.length} steps`} ElevenLabs does not let CLOZR do</div>
-          <p style={{ margin: '2px 0 10px', fontSize: 12, color: '#92400e', lineHeight: 1.45 }}>Copy each value into the place named. Publish again afterwards to confirm.</p>
+        <div style={{ padding: '12px 14px', borderRadius: 10, background: 'var(--tint-amber, #fffbeb)', border: '1px solid var(--tint-amber-2, #fde68a)' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-amber-deep, #92400e)' }}>{result.manual.length === 1 ? 'One step' : `${result.manual.length} steps`} ElevenLabs does not let CLOZR do</div>
+          <p style={{ margin: '2px 0 10px', fontSize: 12, color: 'var(--tx-amber-deep, #92400e)', lineHeight: 1.45 }}>Copy each value into the place named. Publish again afterwards to confirm.</p>
           <ol style={{ margin: 0, padding: 0, listStyle: 'none', display: 'grid', gap: 10 }}>
             {result.manual.map((m, i) => (
-              <li key={i} style={{ background: '#fff', border: '1px solid #fde68a', borderRadius: 9, padding: '10px 12px' }}>
+              <li key={i} style={{ background: 'var(--surface, #fff)', border: '1px solid var(--tint-amber-2, #fde68a)', borderRadius: 9, padding: '10px 12px' }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: INK }}>{i + 1}. {m.step}</div>
                 {m.where ? <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{m.where}</div> : null}
                 {m.value_to_paste ? (
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
-                    <span style={{ ...mono, flex: '1 1 200px', minWidth: 0, padding: '7px 10px', border: `1px solid ${LINE}`, borderRadius: 8, background: '#fafafa' }}>{m.value_to_paste}</span>
+                    <span style={{ ...mono, flex: '1 1 200px', minWidth: 0, padding: '7px 10px', border: `1px solid ${LINE}`, borderRadius: 8, background: 'var(--canvas, #fafafa)' }}>{m.value_to_paste}</span>
                     <CopyButton value={m.value_to_paste} />
                   </div>
                 ) : null}

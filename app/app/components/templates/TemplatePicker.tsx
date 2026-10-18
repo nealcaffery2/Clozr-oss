@@ -91,7 +91,7 @@ export function TemplatePicker({ channel, audience, templates, team, userId, loa
               <span style={{ font: '700 11px/1 var(--sans)', color: 'var(--accent)' }}>{t.channel === 'sms' ? 'SMS' : 'Email'} · {AUDIENCE_LABEL[t.audience]}</span>
             </span>
             <span className="truncate" style={{ font: '400 11.5px/1.3 var(--sans)', color: 'var(--muted)' }}>{t.subject ? `${t.subject} — ` : ''}{t.body_text.replace(/\s+/g, ' ').slice(0, 140)}</span>
-            <span style={{ font: '500 10px/1 var(--sans)', color: 'var(--muted-2)' }}>{ownerLabel(t, userId, team)}{t.category ? ` · ${t.category}` : ''}</span>
+            <span style={{ font: '500 11px/1.2 var(--sans)', color: 'var(--muted-2)' }}>{ownerLabel(t, userId, team)}{t.category ? ` · ${t.category}` : ''}</span>
           </button>
         ))}
       </div>

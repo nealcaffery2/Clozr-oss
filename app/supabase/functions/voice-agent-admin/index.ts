@@ -30,8 +30,8 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import { corsFor, fence, jsonWith, rateLimit, serverError, tooMany, UNTRUSTED_RULE } from '../_shared/security.ts';
 import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
-import { NO_EXTRAS, buildInitiation, phoneKey, pickPersona, resolveCaller, type CallLeg, type Resolution } from '../_shared/voice-agent.ts';
-import { initiationFor, loadCandidates, missingRelation } from '../_shared/voice-agent-db.ts';
+import { NO_EXTRAS, TEST_CALL_GOAL, buildInitiation, outboundOpener, pickPersona, resolveCaller, testRecordToken, type CallLeg, type Resolution } from '../_shared/voice-agent.ts';
+import { initiationFor, loadCandidates, missingRelation, recordPhoneKey } from '../_shared/voice-agent-db.ts';
 import {
   ElevenError, PREVIEW_MAX_CHARS, SAMPLE_BUYER, SAMPLE_BUYER_MEMORY, SAMPLE_CANDIDATE, SAMPLE_MEMORY, SAMPLE_REP, agentBody, builtWriteTools, callOut, checksFromAgent, deleteRemoteAgent, elJson,
   generateSecret, getSignedUrl, listVoices, previewSpeech, runConnect, webhookUrls,
@@ -39,7 +39,7 @@ import {
 } from '../_shared/voice-agent-admin.ts';
 import {
   AGENT_KEY_RE, DEFAULT_AGENT_KEY, TOOL_AVAILABLE, TOOL_KEYS, TOOL_LABELS, cleanText, defaultSettings, diffLines, diffSettings, normalizeSettings,
-  settingsFromRow, slugify, type AgentSettings,
+  settingsFromRow, slugify, toolOn, type AgentSettings,
 } from '../_shared/voice-agent-settings.ts';
 import { TEMPLATES } from '../_shared/voice-agent-templates.ts';
 import { assemblePrompt, estimateTokens, promptWarnings } from '../_shared/voice-agent-prompt.ts';
@@ -136,6 +136,8 @@ Deno.serve(async (req) => {
   /** An ElevenLabs failure as our answer: 502 with its (redacted) reason, never a 500. */
   const elFail = (e: unknown) => {
     if (!(e instanceof ElevenError)) return null;
+    // A 5xx is ElevenLabs down or degraded, not our settings: say so, and where to look.
+    if (e.status >= 500) return json({ error: `ElevenLabs is having trouble on their side (${e.status}), so nothing reached the agent. Check status.elevenlabs.io and try again in a few minutes.` }, 502);
     const hint = e.status === 401 || e.status === 403 ? 'ElevenLabs rejected the API key or its permissions' : 'ElevenLabs refused the request';
     return json({ error: `${hint}: ${e.message}` }, 502);
   };
@@ -376,7 +378,12 @@ Deno.serve(async (req) => {
     // The secrets are stored before ElevenLabs is told them, so a webhook that fires the
     // moment the agent exists already finds its row.
     await persist(state);
-    const r = await runConnect(cfg, state, settings, TEMPLATES, urls);
+    // The team's first names, so a caller asking for a rep by name is heard right.
+    const { data: members } = await admin.from('workspace_members').select('user_id').eq('workspace_id', ws);
+    const ids = ((members ?? []) as { user_id: string }[]).map((m) => m.user_id).slice(0, 60);
+    const { data: people } = ids.length ? await admin.from('profiles').select('full_name').in('id', ids) : { data: [] };
+    const teamNames = ((people ?? []) as { full_name?: string | null }[]).map((p) => String(p.full_name ?? '').trim().split(/\s+/)[0]).filter(Boolean);
+    const r = await runConnect(cfg, state, settings, TEMPLATES, urls, teamNames);
     await persist(r.state);
 
     // What to do by hand: the phone number, settings ElevenLabs cannot express, and any step that failed.
@@ -470,7 +477,8 @@ Deno.serve(async (req) => {
           await updateEleven(cfg, cur.el_phone_number_id, { label, ...(answer ? { agent_id: answer } : {}) }).catch((e) => warnings.push(lineError(e)));
         }
         if (cur.telnyx_number_id && label !== cur.label) {
-          const k = await telnyxSetting(admin, 'TELNYX_API_KEY');
+          // The number is saved already: a failed key read is a warning, like a failed rename.
+          const k = await telnyxSetting(admin, 'TELNYX_API_KEY').catch((e) => { warnings.push(lineError(e)); return null; });
           if (k) await tagNumber({ apiKey: k }, cur.telnyx_number_id, null, label).catch((e) => warnings.push(lineError(e)));
         }
         return json({ ok: true, numbers: await readNumbers(), warnings });
@@ -725,22 +733,29 @@ Deno.serve(async (req) => {
         const persona = { ...base, introduceAs: live.identity.introduce_as, recordingNotice: rn.enabled ? rn.text : null, casual: live.personality.formality <= 2 };
         let init;
         let resolution: string;
-        if (body.sample === true && body.record_kind === 'buyer') {
+        // "Me" is the tester under their own first name, on the side the agent talks to (me_as).
+        const meta = (who.user.user_metadata ?? {}) as Any;
+        const mine = body.record_kind === 'me' ? String(meta.full_name || meta.name || '').trim().split(/\s+/)[0].slice(0, 40) : '';
+        // An agent that prices with COMPR gets no made-up range: it runs a real quote for the address the tester names.
+        const quotes = live.offer_authority.mode !== 'none' && !toolOn(live, 'get_compr_offer');
+        if (body.sample === true && (body.record_kind === 'buyer' || (body.record_kind === 'me' && body.me_as === 'buyer'))) {
           // A buyer call carries no offer range or seller facts, the same as initiationFor gives a real buyer.
           const leg: CallLeg = { direction: 'inbound', ours: '', theirs: '' };
-          init = buildInitiation(resolveCaller([SAMPLE_BUYER]), leg, SAMPLE_BUYER_MEMORY, { ...persona, repName: SAMPLE_REP }, { ...NO_EXTRAS, rep_phone: '+15125550100' });
+          const cand = mine ? { ...SAMPLE_BUYER, name: mine } : SAMPLE_BUYER;
+          const mem = mine ? {
+            brief: SAMPLE_BUYER_MEMORY.brief.replaceAll('Marcus', mine),
+            facts: { ...SAMPLE_BUYER_MEMORY.facts, first_name: mine, last_contact_summary: SAMPLE_BUYER_MEMORY.facts.last_contact_summary?.replaceAll('Marcus', mine) ?? null },
+          } : SAMPLE_BUYER_MEMORY;
+          init = buildInitiation(resolveCaller([cand]), leg, mem, { ...persona, repName: SAMPLE_REP }, { ...NO_EXTRAS, rep_phone: '+15125550100' });
           resolution = 'one';
         } else if (body.sample === true) {
           const leg: CallLeg = { direction: 'inbound', ours: '', theirs: '' };
-          // "Me": the sample seller, under the tester's own first name.
-          const meta = (who.user.user_metadata ?? {}) as Any;
-          const mine = body.record_kind === 'me' ? String(meta.full_name || meta.name || '').trim().split(/\s+/)[0].slice(0, 40) : '';
           const cand = mine ? { ...SAMPLE_CANDIDATE, name: mine } : SAMPLE_CANDIDATE;
           const mem = mine ? { brief: SAMPLE_MEMORY.brief.replaceAll('Jamie', mine), facts: { ...SAMPLE_MEMORY.facts, first_name: mine, last_contact_summary: SAMPLE_MEMORY.facts.last_contact_summary?.replaceAll('Jamie', mine) ?? null } } : SAMPLE_MEMORY;
           init = buildInitiation(resolveCaller([cand]), leg, mem, { ...persona, repName: SAMPLE_REP }, {
             rep_phone: '+15125550100', lead_source: 'form', property_facts: '3 bed, 2 bath', mortgage_payoff_estimate: '$120,000',
-            offer_low: live.offer_authority.mode === 'none' ? '' : '$150,000', offer_high: live.offer_authority.mode === 'none' ? '' : '$170,000', seller_asking_price: '$210,000',
-            call_goal: '',
+            offer_low: quotes ? '$150,000' : '', offer_high: quotes ? '$170,000' : '', seller_asking_price: '$210,000',
+            call_goal: '', rep_available: 'yes',
           });
           resolution = 'one';
         } else {
@@ -750,11 +765,7 @@ Deno.serve(async (req) => {
           // Checked as the caller, so a rep who cannot see the record cannot hear its memory.
           const { data: visible } = await asCaller.from(kind === 'seller' ? 'sellers' : 'buyers').select('id, phone, phone_key').eq('id', id).eq('workspace_id', ws).maybeSingle();
           if (!visible) return json({ error: 'record not found' }, 404);
-          let pk = phoneKey((visible as Any).phone_key ?? (visible as Any).phone);
-          if (!pk && kind === 'buyer') {
-            const { data: bp } = await admin.from('buyer_phones').select('phone, phone_key').eq('workspace_id', ws).eq('buyer_id', id).order('position').limit(5);
-            for (const p of (bp ?? []) as Any[]) { pk = phoneKey(p.phone_key ?? p.phone); if (pk) break; }
-          }
+          const pk = await recordPhoneKey(admin, ws, kind, id, visible as Any);
           if (!pk) return json({ error: 'This record has no phone number, so there is no caller to test as.' }, 422);
           const all = await loadCandidates(admin, ws, pk);
           const chosen = all.find((c) => c.kind === kind && c.id === id);
@@ -765,7 +776,15 @@ Deno.serve(async (req) => {
           // chose who is calling, even when a shared number would leave it ambiguous.
           if (res.status !== 'blocked') res = { status: 'one', match: chosen };
           init = await initiationFor(admin, ws, res, { direction: 'inbound', ours: '', theirs: pk }, persona, live);
+          // A browser test has no caller ID: these let lead_context find this record (voice-agent toolCaller),
+          // and the token proves test_session picked it, since the browser passes the variables on itself.
+          const dv = init.dynamic_variables as Record<string, unknown>;
+          dv.record_kind = kind;
+          dv.record_id = String(id);
+          dv.record_token = await testRecordToken(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', { ws, agentId: String(row.agent_id), kind, id });
         }
+        // A test from the console is the team: quiet hours and call hours do not apply, day or night.
+        (init.dynamic_variables as Record<string, unknown>).call_goal = TEST_CALL_GOAL;
         if (typeof body.phone === 'string' && body.phone.trim()) {
           // A real phone test: the agent rings this number with the same brief. Nothing is read from or written to the CRM.
           const to = phoneE164(body.phone);
@@ -777,7 +796,12 @@ Deno.serve(async (req) => {
           const fromId = local?.el_phone_number_id ?? live.channels.phone_number_id;
           if (!fromId) return json({ error: 'This agent has no phone number to call from yet. Add one on the Handling tab, then publish.' }, 409);
           const dv = init.dynamic_variables as Record<string, unknown>;
-          const first_message = dv.first_name ? `Hi, is this ${dv.first_name}?` : 'Hi, who am I speaking with?';
+          // A phone test has a caller ID (the tester's), so lead_context looks up that number, never the record.
+          dv.record_token = '';
+          // The same opener a real outbound call gets (outboundOpener), so the test hears what a seller hears.
+          const first_message = dv.first_name
+            ? outboundOpener(String(dv.first_name), { ...persona, repName: null }, dv.record_kind === 'seller' ? String(dv.property_address ?? '') : '')
+            : 'Hi, who am I speaking with?';
           try {
             const r = await elJson<{ success?: boolean; message?: string; conversation_id?: string | null }>(cfg, 'POST', '/v1/convai/sip-trunk/outbound-call', {
               agent_id: row.agent_id, agent_phone_number_id: fromId, to_number: to,

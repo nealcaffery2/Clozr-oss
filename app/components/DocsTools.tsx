@@ -6,19 +6,19 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { type LibraryTemplate, docsPlus, listDocTemplates } from '@/lib/contracts';
 
-const INK = '#18181b';
-const MUTED = '#71717a';
-const LINE = '#e4e4e7';
+const INK = 'var(--ink, #18181b)';
+const MUTED = 'var(--meta, #71717a)';
+const LINE = 'var(--divider, #e4e4e7)';
 const GREEN = '#0A8560';
-const box: React.CSSProperties = { background: '#fff', border: `1px solid ${LINE}`, borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
-const field: React.CSSProperties = { width: '100%', height: '36px', borderRadius: '8px', border: `1px solid ${LINE}`, padding: '0 10px', fontSize: '14px', color: INK, background: '#fff', fontFamily: 'inherit', boxSizing: 'border-box' };
+const box: React.CSSProperties = { background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
+const field: React.CSSProperties = { width: '100%', height: '36px', borderRadius: '8px', border: `1px solid ${LINE}`, padding: '0 10px', fontSize: '14px', color: INK, background: 'var(--surface, #fff)', fontFamily: 'inherit', boxSizing: 'border-box' };
 const lab: React.CSSProperties = { display: 'grid', gap: '6px', fontSize: '13px', color: MUTED, fontWeight: 500 };
 const btn = (primary = false, off = false): React.CSSProperties => ({
   height: '36px', padding: '0 14px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: off ? 'not-allowed' : 'pointer', opacity: off ? 0.6 : 1,
-  border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? GREEN : '#fff', color: primary ? '#fff' : INK, fontFamily: 'inherit',
+  border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? GREEN : 'var(--surface, #fff)', color: primary ? 'var(--surface, #fff)' : INK, fontFamily: 'inherit',
 });
 const h: React.CSSProperties = { margin: '0 0 6px', fontSize: '17px', fontWeight: 700, letterSpacing: '-0.015em', color: INK };
-const sub: React.CSSProperties = { margin: '0 0 18px', fontSize: '16px', color: '#3f3f46', lineHeight: 1.55, maxWidth: '68ch' };
+const sub: React.CSSProperties = { margin: '0 0 18px', fontSize: '16px', color: 'var(--ink-3, #3f3f46)', lineHeight: 1.55, maxWidth: '68ch' };
 
 /** Roles a recipient from outside fills (not the company's own signer). */
 const outsideRoles = (t: LibraryTemplate | undefined) => (t?.signers ?? []).filter((s) => s.party !== 'company');
@@ -119,7 +119,7 @@ export function BulkSendPanel({ workspaceId, onToast }: { workspaceId: number; o
           <tbody>
             {batches.map((b) => (
               <tr key={b.id} style={{ borderTop: `1px solid ${LINE}` }}>
-                <td style={{ padding: '6px 0' }}>{b.name}</td><td>{b.status}</td><td>{b.sent} of {b.total}</td><td style={{ color: b.failed ? '#b91c1c' : undefined }}>{b.failed}</td>
+                <td style={{ padding: '6px 0' }}>{b.name}</td><td>{b.status}</td><td>{b.sent} of {b.total}</td><td style={{ color: b.failed ? 'var(--tx-red, #b91c1c)' : undefined }}>{b.failed}</td>
               </tr>
             ))}
           </tbody>
@@ -245,10 +245,10 @@ export function DocsReports({ workspaceId }: { workspaceId: number }) {
           {[7, 30, 90, 365].map((d) => <option key={d} value={d}>Last {d} days</option>)}
         </select>
       </div>
-      {err ? <p style={{ ...sub, color: '#b91c1c' }}>{err}</p> : !s ? <p style={sub}>Loading…</p> : (
+      {err ? <p style={{ ...sub, color: 'var(--tx-red, #b91c1c)' }}>{err}</p> : !s ? <p style={sub}>Loading…</p> : (
         <>
           {/* The funnel reads left to right: of what went out, how much was opened and signed. */}
-          <p style={{ margin: 0, fontSize: '16px', color: '#3f3f46', display: 'flex', flexWrap: 'wrap', gap: '8px 18px', alignItems: 'baseline' }}>
+          <p style={{ margin: 0, fontSize: '16px', color: 'var(--ink-3, #3f3f46)', display: 'flex', flexWrap: 'wrap', gap: '8px 18px', alignItems: 'baseline' }}>
             {step(s.sent, 'sent')}
             {step(s.viewed, 'opened', s.sent)}
             {step(s.completed, 'signed by everyone', s.sent)}

@@ -11,24 +11,21 @@
 .talkr-inbox {
   /* Surfaces */
   --bg: var(--page, #f2f4f8);
-  --panel: #ffffff;
+  --panel: var(--surface, #ffffff);
   --panel-2: #e8ecf3;
   --line: var(--edge, #dde2ea);
   --line-soft: var(--band-line, #e3e8ef);
   --line-hover: var(--edge-hover, #c9d1dd);
 
-  /* Ink. Both muted steps hold 4.5:1 on white and on every tint below
-     (#71717a and #a1a1aa did not, and the tints made it worse). */
-  --text: #18181b;
-  --muted: #52525b;
-  --muted-2: #62626c;
-  --ink: #111111;
+  /* Ink. --ink, --muted and --muted-2 are the page's own tokens (tokens.css:
+     #18181b, #52525b, #62626c; both muted steps hold 4.5:1 on white and on
+     every tint below), inherited rather than redeclared so dark mode's
+     :root[data-theme="dark"] values reach the inbox. */
+  --text: var(--ink, #18181b);
 
-    /* Talkr red: calling, the dialer and texts are Talkr's (tokens.css --c-talkr). */
-  --accent: #e6142e;
-  --accent-hover: #c20f26;
-  --accent-soft: #ffe9ec;
-  --accent-light: #fda4af;
+  /* CLOZR green, the one accent (DESIGN.md §2), the page's --accent. */
+  --accent-soft: #e7f8f1;
+  --accent-light: #a7dcc5;
   --orange: #ff7a45;
 
   /* Semantic */
@@ -57,7 +54,7 @@
   background: var(--bg);
   color: var(--text);
   /* CLOZR's system sans (globals.css); every inline `font:` shorthand names var(--sans). */
-  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --sans: var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
   font-family: var(--sans);
   font-variant-numeric: tabular-nums;
 }
@@ -219,14 +216,14 @@
   padding: 0 10px;
 }
 
-/* Hairline separators inset past the dot and the 44px avatar. */
+/* Hairline separators inset past the unread dot. */
 .talkr-inbox .ios-row {
   position: relative;
 }
 .talkr-inbox .ios-row::after {
   content: '';
   position: absolute;
-  left: 76px; /* 6 pad + 10 dot + 8 gap + 44 avatar + 8 gap */
+  left: 24px; /* 6 pad + 10 dot + 8 gap */
   right: 0;
   bottom: 0;
   height: 0.5px;
@@ -267,7 +264,8 @@
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: var(--accent);
+  /* iMessage: the send arrow is the same blue as our bubbles (tokens.css --sms-out). */
+  background: var(--sms-out, #0b6fe6);
   color: #fff;
   cursor: pointer;
   transition: opacity 0.15s ease, transform 0.15s ease;
@@ -442,8 +440,8 @@
 }
 .talkr-inbox .ax-row {
   display: grid;
-  grid-template-columns: 6px 32px minmax(150px, 240px) minmax(0, 1fr) 64px;
-  grid-template-areas: 'dot av who body time';
+  grid-template-columns: 6px minmax(150px, 240px) minmax(0, 1fr) 64px;
+  grid-template-areas: 'dot who body time';
   align-items: center;
   column-gap: 12px;
   width: 100%;
@@ -479,39 +477,6 @@
 }
 .talkr-inbox .ax-row[data-unread] .ax-dot {
   background: var(--accent);
-}
-.talkr-inbox .ax-av {
-  grid-area: av;
-  position: relative;
-  display: inline-flex;
-}
-/* The channel sits on the avatar so the eye gets it without reading a word. */
-.talkr-inbox .ax-ch {
-  position: absolute;
-  right: -4px;
-  bottom: -4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  background: #3f3f46;
-  color: #fff;
-  box-shadow: 0 0 0 2px var(--panel);
-}
-.talkr-inbox .ax-anon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--panel-2);
-  color: var(--muted);
-}
-.talkr-inbox .ax-ch[data-alert] {
-  background: var(--red);
 }
 .talkr-inbox .ax-who {
   grid-area: who;
@@ -637,14 +602,13 @@
     display: none;
   }
   .talkr-inbox .ax-row {
-    grid-template-columns: 6px 32px minmax(0, 1fr) auto;
-    grid-template-areas: 'dot av who time' '. . body body';
+    grid-template-columns: 6px minmax(0, 1fr) auto;
+    grid-template-areas: 'dot who time' '. body body';
     row-gap: 4px;
     padding: 10px 12px 10px 6px;
     align-items: start;
   }
-  .talkr-inbox .ax-dot,
-  .talkr-inbox .ax-av {
+  .talkr-inbox .ax-dot {
     align-self: center;
   }
   .talkr-inbox .ax-time {
@@ -710,21 +674,15 @@
   outline-offset: 2px;
 }
 
-/* The thread is a canvas one step darker than the page, so an inbound bubble
-   (white, lifted) and an outbound one (Talkr red, lifted) both read as objects. */
+/* The thread is iMessage: a white canvas, our bubbles blue with white text,
+   theirs light grey with near-black text (tokens.css --sms-*, DESIGN.md §2).
+   Flat bubbles, as iOS draws them; the colour carries the side. */
 .talkr-inbox .msg-thread {
-  --thread: #e2e7ef;
-  --bubble-in: #ffffff;
+  --thread: var(--sms-thread, #ffffff);
   background: var(--thread) !important;
 }
-.talkr-inbox .msg-thread .bubble {
-  box-shadow: 0 1px 1px rgba(20, 30, 55, 0.14), 0 2px 5px -1px rgba(20, 30, 55, 0.12);
-}
 .talkr-inbox .msg-thread .bubble-in {
-  color: var(--text);
-}
-.talkr-inbox .msg-thread .bubble-out {
-  box-shadow: 0 1px 1px rgba(120, 8, 24, 0.3), 0 3px 7px -2px rgba(120, 8, 24, 0.32);
+  color: var(--sms-in-text, #18181b);
 }
 
 /* Sticky header and composer are tier-3 bars over the canvas. */
@@ -760,7 +718,7 @@
   box-shadow: var(--elev-press);
 }
 .talkr-inbox .send-btn:not(:disabled) {
-  box-shadow: 0 1px 2px rgba(120, 8, 24, 0.35), 0 3px 8px -2px rgba(230, 20, 46, 0.45);
+  box-shadow: 0 1px 2px rgba(8, 40, 96, 0.3), 0 3px 8px -2px rgba(11, 111, 230, 0.4);
 }
 .talkr-inbox .send-btn:disabled {
   background: #a1a1aa;
@@ -900,8 +858,655 @@
   box-shadow: none;
   color: #fff;
 }
+/* A text in the All list reads as the SMS thread does: ours blue, theirs grey. */
+.talkr-inbox .ax-read[data-sms] .ax-read-msgs { background: var(--sms-thread, #fff); }
+.talkr-inbox .ax-msg[data-sms] p {
+  background: var(--sms-in, #e9e9eb);
+  box-shadow: none;
+  color: var(--sms-in-text, #18181b);
+  border-radius: 18px;
+}
+.talkr-inbox .ax-msg[data-sms][data-out] p {
+  background: var(--sms-out, #0b6fe6);
+  color: var(--sms-out-text, #fff);
+}
 .talkr-inbox .ax-msg time {
   color: var(--muted);
   font: 500 11px/1 var(--sans);
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Whose inbox (screens/Inbox.tsx OwnerSwitch), beside the header's title:
+ * the rep's own by default, one teammate at a time. The house select
+ * (chrome.css); looking at someone else's inbox fills it ink, so it is never
+ * mistaken for your own.
+ */
+.talkr-inbox .inbox-owner {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.talkr-inbox .inbox-owner select:not([multiple]):not([size]) {
+  height: 28px;
+  max-width: 170px;
+  border-radius: 8px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.talkr-inbox .inbox-owner[data-other] select:not([multiple]):not([size]),
+.talkr-inbox .inbox-owner[data-other] select:not([multiple]):not([size]):hover,
+.talkr-inbox .inbox-owner[data-other] select:not([multiple]):not([size]):focus {
+  background-color: #18181b;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  box-shadow: none;
+  color: #fff;
+}
+.talkr-inbox .inbox-owner option {
+  color: #18181b;
+  background: #fff;
+}
+
+/* The line under a teammate's inbox list: what looking does and does not change. */
+.talkr-inbox .inbox-owner-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--panel-2, #f4f4f5);
+  color: #3f3f46;
+  font: 500 12px/1.4 var(--sans);
+}
+.talkr-inbox .inbox-owner-note svg { flex-shrink: 0; margin-top: 2px; }
+
+/* "Viewed 2:14 PM" under a text whose CLOZR link was opened; "Opened" under a tracked email. */
+.talkr-inbox .ax-receipt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  color: #71717a;
+  font: 500 11.5px/1.2 var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+.talkr-inbox .ax-receipt[data-seen] {
+  color: #0A8560;
+}
+
+/* ============================================================
+   The All tab, SmarterContact's inbox model (2026-10): a folder rail, label
+   chips on rows, a filter dialog, bulk actions, and Messages / Info / Notes
+   on the open thread. Tokens, not literals, so dark mode follows.
+   ============================================================ */
+.talkr-inbox .ax-desk {
+  grid-template-columns: 164px minmax(320px, 470px) minmax(0, 1fr);
+}
+.talkr-inbox .ax-desk[data-one] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* ---- Rail ---- */
+.talkr-inbox .ax-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 8px;
+  border-right: 1px solid var(--divider);
+  background: var(--surface-2);
+}
+.talkr-inbox .ax-rail-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.talkr-inbox .ax-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: 500 12.5px/1 var(--sans);
+  text-align: left;
+  cursor: pointer;
+}
+.talkr-inbox .ax-rail-item svg { flex-shrink: 0; color: var(--muted); }
+@media (hover: hover) and (pointer: fine) {
+  .talkr-inbox .ax-rail-item:hover { background: var(--surface); }
+}
+.talkr-inbox .ax-rail-item[aria-current='page'] {
+  background: var(--surface);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--divider);
+}
+.talkr-inbox .ax-rail-item[aria-current='page'] svg { color: var(--accent); }
+.talkr-inbox .ax-rail-item:focus-visible,
+.talkr-inbox .ax-rail-plus:focus-visible,
+.talkr-inbox .ax-rail-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.talkr-inbox .ax-rail-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.talkr-inbox .ax-rail-n {
+  min-width: 18px;
+  padding: 2px 5px;
+  border-radius: 6px;
+  background: var(--surface-3, var(--divider));
+  color: var(--ink);
+  font: 600 11px/1 var(--sans);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.talkr-inbox .ax-rail-n[data-hot] { background: var(--accent); color: #fff; }
+.talkr-inbox .ax-rail-sec {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 0 4px 0 8px;
+}
+.talkr-inbox .ax-rail-h { color: var(--muted); font: 500 11.5px/1 var(--sans); }
+.talkr-inbox .ax-rail-plus,
+.talkr-inbox .ax-rail-x {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .talkr-inbox .ax-rail-plus:hover, .talkr-inbox .ax-rail-x:hover { background: var(--surface); color: var(--ink); }
+}
+.talkr-inbox .ax-rail-saved { display: flex; align-items: center; }
+.talkr-inbox .ax-rail-saved .ax-rail-x { opacity: 0; flex-shrink: 0; }
+.talkr-inbox .ax-rail-saved:hover .ax-rail-x,
+.talkr-inbox .ax-rail-saved:focus-within .ax-rail-x { opacity: 1; }
+.talkr-inbox .ax-rail-none { padding: 4px 8px; color: var(--muted); font: 500 11.5px/1.4 var(--sans); }
+.talkr-inbox .ax-rail-quick { margin-top: 12px; }
+
+/* ---- List bar: select all, search, Filters ---- */
+.talkr-inbox .ax-check {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.talkr-inbox .ax-check input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.talkr-inbox .ax-check input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.talkr-inbox .ax-chip { color: var(--ink); }
+.talkr-inbox .ax-chip svg { color: var(--muted); }
+.talkr-inbox .ax-chip[aria-pressed='true'] svg { color: #fff; }
+
+/* ---- Bulk bar ---- */
+.talkr-inbox .ax-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 53px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface);
+}
+.talkr-inbox .ax-bulk-n { margin-right: 4px; color: var(--ink); font: 600 12.5px/1 var(--sans); font-variant-numeric: tabular-nums; }
+.talkr-inbox .ax-bulk-x { margin-left: auto; }
+.talkr-inbox .ax-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: 500 12.5px/1 var(--sans);
+  white-space: nowrap;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.08), 0 2px 4px 0 rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.talkr-inbox .ax-tool svg { color: var(--muted); }
+.talkr-inbox .ax-tool:active { transform: scale(0.97); }
+.talkr-inbox .ax-tool:disabled { opacity: 0.5; cursor: default; }
+.talkr-inbox .ax-tool:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.talkr-inbox .ax-tool-dark { background: var(--ink); color: var(--surface); box-shadow: none; font-weight: 600; }
+.talkr-inbox .ax-tool-accent { background: var(--accent); color: #fff; box-shadow: none; font-weight: 600; }
+.talkr-inbox .ax-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .talkr-inbox .ax-icon-btn:hover { background: var(--surface-2); color: var(--ink); }
+}
+.talkr-inbox .ax-icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.talkr-inbox .ax-link {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: 600 12px/1 var(--sans);
+  cursor: pointer;
+  text-decoration: none;
+}
+.talkr-inbox .ax-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* ---- Rows: dot, checkbox, the row button, chips, star ---- */
+.talkr-inbox .ax-row {
+  grid-template-columns: 6px 24px minmax(0, 1fr) 28px;
+  grid-template-areas: 'dot chk open star' 'dot chk tags star';
+  align-items: start;
+  row-gap: 0;
+  padding: 8px 10px 8px 10px;
+  cursor: default;
+}
+.talkr-inbox .ax-row .ax-dot { grid-area: dot; margin-top: 15px; }
+.talkr-inbox .ax-row .ax-check { grid-area: chk; margin-top: 6px; }
+.talkr-inbox .ax-row[data-selected] { background: var(--accent-soft, #e7f8f1); }
+.talkr-inbox .ax-open {
+  grid-area: open;
+  display: grid;
+  grid-template-columns: 32px minmax(140px, 220px) minmax(0, 1fr) 64px;
+  grid-template-areas: 'ava who body time';
+  align-items: center;
+  column-gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.talkr-inbox .ax-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.talkr-inbox .ax-avatar {
+  grid-area: ava;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font: 600 11.5px/1 var(--sans);
+  letter-spacing: 0.02em;
+}
+.talkr-inbox .ax-row[data-unread] .ax-avatar { background: var(--accent-soft, #e7f8f1); color: var(--accent); }
+.talkr-inbox .ax-avatar-n {
+  position: absolute;
+  right: -5px;
+  top: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font: 700 10px/16px var(--sans);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.talkr-inbox .ax-row .ax-time { align-self: start; margin-top: 2px; }
+.talkr-inbox .ax-kind { display: inline-flex; align-items: center; gap: 4px; }
+.talkr-inbox .ax-kind svg { color: var(--muted); }
+.talkr-inbox .ax-kind[data-alert] svg { color: var(--red-hover); }
+.talkr-inbox .ax-star {
+  grid-area: star;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-top: 2px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.talkr-inbox .ax-star[aria-pressed='true'] { color: #b45309; }
+.talkr-inbox .ax-star:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (hover: hover) and (pointer: fine) {
+  .talkr-inbox .ax-row .ax-star:not([aria-pressed='true']) { opacity: 0; }
+  .talkr-inbox .ax-row:hover .ax-star, .talkr-inbox .ax-row:focus-within .ax-star { opacity: 1; }
+  .talkr-inbox .ax-star:hover { background: var(--surface-2); color: var(--ink); }
+}
+.talkr-inbox .ax-row[aria-current='true'] { background: var(--accent-soft, #e9f6f0); box-shadow: inset 2px 0 0 var(--accent); }
+
+/* Label chips: a strip under the row, aligned under the name. */
+.talkr-inbox .ax-row > .ax-tags { grid-area: tags; padding: 4px 0 0 42px; }
+.talkr-inbox .ax-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.talkr-inbox .ax-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  max-width: 160px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--ink-2, var(--ink));
+  font: 600 11px/1 var(--sans);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.talkr-inbox .ax-tag[data-ghost] { background: transparent; box-shadow: inset 0 0 0 1px var(--divider); color: var(--muted); }
+.talkr-inbox .ax-tag-suggest {
+  border: 1px dashed var(--accent);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+.talkr-inbox .ax-tag-suggest:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (hover: hover) and (pointer: fine) {
+  .talkr-inbox .ax-tag-suggest:hover { background: var(--accent-soft, #e7f8f1); }
+}
+/* 20px chips with a 24px hit target (the pseudo-element pads the click area). */
+.talkr-inbox .ax-chip-btn, .talkr-inbox .ax-tag-suggest { position: relative; }
+.talkr-inbox .ax-chip-btn::before, .talkr-inbox .ax-tag-suggest::before { content: ''; position: absolute; inset: -2px; }
+.talkr-inbox .ax-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--divider);
+  color: var(--muted);
+  font: 600 11px/1 var(--sans);
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .talkr-inbox .ax-chip-btn:hover { background: var(--surface-2); color: var(--ink); }
+}
+.talkr-inbox .ax-chip-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---- Menu popover ---- */
+.talkr-inbox .ax-menu { position: relative; display: inline-flex; }
+.talkr-inbox .ax-menu-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  min-width: 180px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md, 0 0 0 1px rgba(0, 0, 0, 0.06), 0 6px 16px -4px rgba(0, 0, 0, 0.16));
+  transform-origin: top left;
+  animation: ax-pop 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.talkr-inbox .ax-menu-pop[data-align='end'] { left: auto; right: 0; transform-origin: top right; }
+@keyframes ax-pop { from { opacity: 0; transform: scale(0.96); } }
+@media (prefers-reduced-motion: reduce) { .talkr-inbox .ax-menu-pop { animation: none; } }
+.talkr-inbox .ax-menu-h { margin: 0; padding: 6px 8px 4px; color: var(--muted); font: 500 11.5px/1 var(--sans); }
+.talkr-inbox .ax-menu-empty { margin: 0; padding: 8px; color: var(--muted); font: 500 12px/1.4 var(--sans); max-width: 240px; }
+.talkr-inbox .ax-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: 500 12.5px/1 var(--sans);
+  text-align: left;
+  cursor: pointer;
+}
+.talkr-inbox .ax-menu-item:disabled { opacity: 0.5; cursor: default; }
+.talkr-inbox .ax-menu-item:focus-visible, .talkr-inbox .ax-menu-item:hover { background: var(--surface-2); outline: none; }
+.talkr-inbox .ax-menu-item svg { color: var(--accent); }
+.talkr-inbox .ax-menu-label { flex: 1; }
+.talkr-inbox .ax-menu-swatch { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* ---- New activity ---- */
+.talkr-inbox .ax-fresh {
+  position: sticky;
+  top: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: max-content;
+  margin: 8px auto -36px;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--ink);
+  color: var(--surface);
+  font: 600 12px/1 var(--sans);
+  box-shadow: var(--shadow-md, 0 6px 16px -4px rgba(0, 0, 0, 0.2));
+  cursor: pointer;
+}
+.talkr-inbox .ax-fresh:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- Thread pane: tabs, assignee, header chips ---- */
+.talkr-inbox .ax-read-who .ax-tags { margin-top: 2px; }
+.talkr-inbox .ax-read-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface);
+}
+.talkr-inbox .ax-read-tab {
+  height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--muted);
+  font: 600 12.5px/1 var(--sans);
+  cursor: pointer;
+}
+.talkr-inbox .ax-read-tab[aria-selected='true'] { color: var(--ink); border-bottom-color: var(--accent); }
+.talkr-inbox .ax-read-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
+.talkr-inbox .ax-read-actions .ax-tool { height: 32px; }
+.talkr-inbox .ax-read-actions .ax-more > .ax-tool { width: 32px; padding: 0; justify-content: center; }
+.talkr-inbox .ax-star-head { width: 32px; height: 32px; margin: 0; border-radius: 8px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.08), 0 2px 4px 0 rgba(0, 0, 0, 0.04); background: var(--surface); }
+
+/* ---- Info and Notes ---- */
+.talkr-inbox .ax-info {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--page, var(--bg));
+}
+.talkr-inbox .ax-info-card {
+  padding: 12px 14px;
+  border: 1px solid var(--divider);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.talkr-inbox .ax-info-name { margin: 0; color: var(--ink); font: 650 14px/1.2 var(--sans); }
+.talkr-inbox .ax-info-last { margin: 4px 0 8px; color: var(--muted); font: 500 11.5px/1.3 var(--sans); }
+.talkr-inbox .ax-info-h { display: block; margin: 0 0 8px; color: var(--muted); font: 500 11.5px/1 var(--sans); }
+.talkr-inbox .ax-info-line { display: flex; gap: 10px; margin: 0; padding: 5px 0; font: 500 12.5px/1.3 var(--sans); }
+.talkr-inbox .ax-info-k { width: 92px; flex-shrink: 0; color: var(--muted); }
+.talkr-inbox .ax-info-v { color: var(--ink); font-variant-numeric: tabular-nums; }
+.talkr-inbox .ax-info-dl { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 6px 10px; margin: 0; font: 500 12.5px/1.3 var(--sans); }
+.talkr-inbox .ax-info-dl > div { display: contents; }
+.talkr-inbox .ax-info-dl dt { color: var(--muted); }
+.talkr-inbox .ax-info-dl dd { margin: 0; color: var(--ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.talkr-inbox .ax-info-none { margin: 0; color: var(--muted); font: 500 12px/1.4 var(--sans); }
+.talkr-inbox .ax-info-open { display: inline-block; margin: 10px 0 0; }
+.talkr-inbox .ax-info-recent { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+.talkr-inbox .ax-info-recent button {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 6px 4px;
+  border: 0;
+  border-top: 1px solid var(--divider-2);
+  background: transparent;
+  color: var(--ink);
+  font: 500 12.5px/1.3 var(--sans);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.talkr-inbox .ax-info-recent li:first-child button { border-top: 0; }
+.talkr-inbox .ax-info-recent button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .talkr-inbox .ax-info-recent button:hover { background: var(--surface-2); } }
+.talkr-inbox .ax-info-kind { color: var(--muted); font-size: 11.5px; }
+.talkr-inbox .ax-info-prev { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.talkr-inbox .ax-info-recent time { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.talkr-inbox .ax-note-form { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--divider); border-radius: 12px; background: var(--surface); }
+.talkr-inbox .ax-note-form textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: 500 13px/1.45 var(--sans);
+  resize: vertical;
+}
+.talkr-inbox .ax-note-form textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.talkr-inbox .ax-note-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.talkr-inbox .ax-note-err { margin: 0; color: var(--red-hover); font: 500 12px/1.4 var(--sans); }
+.talkr-inbox .ax-notes { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.talkr-inbox .ax-notes li { padding: 10px 14px; border: 1px solid var(--divider); border-radius: 12px; background: var(--surface); }
+.talkr-inbox .ax-notes p { margin: 0 0 4px; color: var(--ink); font: 400 13px/1.45 var(--sans); white-space: pre-wrap; overflow-wrap: anywhere; }
+.talkr-inbox .ax-notes time { color: var(--muted); font: 500 11px/1 var(--sans); font-variant-numeric: tabular-nums; }
+
+/* ---- Filter dialog ---- */
+.talkr-inbox .ax-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-lg, 0 22px 60px -12px rgba(0, 0, 0, 0.3));
+}
+.talkr-inbox .ax-dialog::backdrop { background: rgba(24, 24, 27, 0.4); }
+.talkr-inbox .ax-dialog-in { display: flex; flex-direction: column; max-height: calc(100dvh - 32px); }
+.talkr-inbox .ax-dialog-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--divider); }
+.talkr-inbox .ax-dialog-head h2 { margin: 0; font: 700 15px/1.2 var(--sans); letter-spacing: -0.015em; }
+.talkr-inbox .ax-dialog-body { display: flex; flex-direction: column; gap: 14px; padding: 14px 16px; overflow: auto; }
+.talkr-inbox .ax-dialog-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--divider); background: var(--surface-2); border-radius: 0 0 14px 14px; }
+.talkr-inbox .ax-dialog-grow { flex: 1; color: var(--muted); font: 500 11.5px/1 var(--sans); font-variant-numeric: tabular-nums; }
+.talkr-inbox .ax-fset { margin: 0; padding: 0; border: 0; min-width: 0; }
+.talkr-inbox .ax-fset legend { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; padding: 0; color: var(--muted); font: 500 11.5px/1 var(--sans); }
+.talkr-inbox .ax-fsel { height: 24px; padding: 0 4px; border: 1px solid var(--divider); border-radius: 6px; background: var(--surface); color: var(--ink); font: 600 11.5px/1 var(--sans); }
+.talkr-inbox .ax-fchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.talkr-inbox .ax-fchip {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: 500 12.5px/1 var(--sans);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.08), 0 2px 4px 0 rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+}
+.talkr-inbox .ax-fchip[aria-pressed='true'] { background: var(--ink); color: var(--surface); box-shadow: none; }
+.talkr-inbox .ax-fchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.talkr-inbox .ax-fnone { color: var(--muted); font: 500 12px/1.4 var(--sans); }
+.talkr-inbox .ax-frow { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.talkr-inbox .ax-flabel { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font: 500 11.5px/1 var(--sans); min-width: 0; }
+.talkr-inbox .ax-flabel input, .talkr-inbox .ax-flabel select {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: 500 13px/1 var(--sans);
+  min-width: 0;
+}
+.talkr-inbox .ax-flabel input:focus-visible, .talkr-inbox .ax-flabel select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.talkr-inbox .ax-fsave { display: flex; align-items: flex-end; gap: 6px; }
+.talkr-inbox .ax-fsave .ax-flabel input { width: 160px; }
+
+/* ---- Narrow: the rail is a strip, rows stack ---- */
+@container ax (max-width: 680px) {
+  .talkr-inbox .ax-row { grid-template-columns: 6px 24px minmax(0, 1fr) 28px; grid-template-areas: 'dot chk open star' 'dot chk tags star'; padding: 8px 8px 8px 6px; }
+  .talkr-inbox .ax-open { grid-template-columns: 32px minmax(0, 1fr) auto; grid-template-areas: 'ava who time' 'ava body body'; row-gap: 3px; }
+  .talkr-inbox .ax-row > .ax-tags { padding-left: 42px; }
+  .talkr-inbox .ax-check-all { display: none; }
+  .talkr-inbox .ax-row .ax-star:not([aria-pressed='true']) { opacity: 1; }
+}
+.talkr-inbox .ax-desk[data-one] .ax-rail {
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border-right: 0;
+  border-bottom: 1px solid var(--divider);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.talkr-inbox .ax-desk[data-one] .ax-rail-list { flex-direction: row; gap: 2px; }
+.talkr-inbox .ax-desk[data-one] .ax-rail-item { width: auto; min-height: 32px; white-space: nowrap; }
+.talkr-inbox .ax-desk[data-one] .ax-rail-sec,
+.talkr-inbox .ax-desk[data-one] .ax-rail-none,
+.talkr-inbox .ax-desk[data-one] .ax-rail-saved .ax-rail-x,
+.talkr-inbox .ax-desk[data-one] .ax-rail-quick { display: none; }
+.talkr-inbox .ax-desk[data-one] .ax-rail-saved { display: inline-flex; }
+.talkr-inbox .ax-desk[data-one] .ax-read-head { padding: 10px 12px; }
+.talkr-inbox .ax-desk[data-one] .ax-read-tabs { padding: 0 8px; }
+.talkr-inbox .ax-desk[data-one] .ax-info { padding: 12px; }
+@media (max-width: 1100px) {
+  .talkr-inbox .ax-desk:not([data-one]) { grid-template-columns: 148px minmax(280px, 360px) minmax(0, 1fr); }
 }

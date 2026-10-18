@@ -13,7 +13,7 @@ import type { ClozrView } from '@/app/clozr/view';
 import { PlanBuilder } from '@/app/components/plans/PlanBuilder';
 import { TextSequences } from '@/app/components/sequences/TextSequences';
 
-const headBtn: React.CSSProperties = { height: '32px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '12.5px', cursor: 'pointer', color: '#18181b' };
+const headBtn: React.CSSProperties = { height: '32px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '12.5px', cursor: 'pointer', color: 'var(--ink, #18181b)' };
 
 export function ActionPlans({ V }: { V: ClozrView }) {
   // Automated texts (Talkr sequences) sit beside action plans: plans make tasks
@@ -32,6 +32,7 @@ export function ActionPlans({ V }: { V: ClozrView }) {
       notify={V.showToast}
       onChanged={V.reloadCrm}
       onOpenPerson={(id) => V.openPerson('s' + id)}
+      onOpenBuyer={V.openBuyerById}
       // Opened from somewhere (a record's plan, People's bulk bar, a buyer): the way back there.
       headerLeft={V.planReturnTo ? (
         <BackLink to={V.planBack} />
@@ -41,7 +42,7 @@ export function ActionPlans({ V }: { V: ClozrView }) {
         <button type="button" className="dc2" onClick={() => setTexts(true)} title="Talkr sequences: texts that send themselves and stop on a reply" style={headBtn}>
           Automated texts
         </button>
-        <button type="button" className="dc2" onClick={V.goAutomations} style={{ height: '32px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '12.5px', cursor: 'pointer', color: '#18181b' }}>
+        <button type="button" className="dc2" onClick={V.goAutomations} style={{ height: '32px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '12.5px', cursor: 'pointer', color: 'var(--ink, #18181b)' }}>
           Automation canvas
         </button>
         </>

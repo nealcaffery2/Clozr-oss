@@ -1,8 +1,8 @@
 // Genius Mode v2 rules.  Run:  deno run supabase/functions/_shared/genius-core.test.ts
 // (or, without Deno:  node --experimental-strip-types supabase/functions/_shared/genius-core.test.ts)
 import {
-  type Hit, type Subject, applyDetail, buildBuyers, dropRetailEndBuyers, eventsOf, isEntity, mapHit, matchKnown, mapSkipBatch, mapSkipReapi, ownerFrom, ownerKey,
-  parseFilters, salePrice, searchPlans, skipTarget, splitPeople, type Source, mapAttom, mergeAttom, tagSources,
+  type Hit, type Subject, applyDetail, buildBuyers, dropRetailEndBuyers, eventsOf, isEntity, mapHit, matchKnown, mapSkipBatch, mapSkipReapi, mergeSkipHits, ownerFrom, ownerKey,
+  parseFilters, parseMailingLine, salePrice, searchPlans, skipTarget, splitPeople, type Source, mapAttom, mergeAttom, tagSources,
 } from './genius-core.ts';
 
 let failed = 0;
@@ -190,19 +190,30 @@ eq('a RealEstateAPI no-match is no hits', mapSkipReapi({ persons: [] }), []);
 
 {
   const c = buildBuyers([mapHit(row({ companyName: 'Acme Homes LLC', corporateOwned: true, ownerOccupied: false, mailAddress: { street: '9 Office Rd', city: 'Austin', state: 'TX', zip: '78701' } }))], f, subject, [], new Map(), NOW)[0];
-  eq('an entity goes to BatchData', skipTarget(c)?.provider, 'batchdata');
+  eq('an entity still uses BatchData for cache label but also hits RealEstateAPI', skipTarget(c)?.useBatch, true);
   eq('an entity is traced at its mailing address, with no name', skipTarget(c)?.body, { propertyAddress: { street: '9 Office Rd', city: 'Austin', state: 'TX', zip: '78701' } });
+  eq('RealEstateAPI LLC body uses mail fields without names', skipTarget(c)?.reapi.mail_address, '9 Office Rd');
+  eq('merge combines phones from two providers', mergeSkipHits(
+    [{ name: 'A', phones: [{ number: '2105550101', type: null, dnc: false, score: null }], emails: [], mailing: null }],
+    [{ name: 'B', phones: [{ number: '(210) 555-0101', type: 'Mobile', dnc: false, score: null }, { number: '2105550199', type: null, dnc: false, score: null }], emails: ['a@b.co'], mailing: null }],
+  ).flatMap((h) => h.phones.map((p) => p.number.replace(/\D/g, '').slice(-10))).sort(), ['2105550101', '2105550199']);
   const target = (mail_parts: Record<string, string> | null) => skipTarget({ key: 'k', owner_name: 'Jo Doe', corporate: false, people: ['Jo Doe'], mail_parts: mail_parts as never, mailing: null, purchases: [] });
   eq('street + zip alone is traceable', target({ address: '5 Home Ln', city: '', state: '', zip: '78702' })?.body.propertyAddress, { street: '5 Home Ln', zip: '78702' });
   eq('street + city + state alone is traceable', target({ address: '5 Home Ln', city: 'Austin', state: 'TX', zip: '' })?.body.propertyAddress, { street: '5 Home Ln', city: 'Austin', state: 'TX' });
   eq('a street with no zip, city or state costs nothing', target({ address: '5 Home Ln', city: '', state: '', zip: '' }), null);
-  eq('zip+4 is sent as 5 digits but keyed as it always was', [target({ address: '5 Home Ln', city: '', state: '', zip: '78702-1234' })?.body.propertyAddress.zip, target({ address: '5 Home Ln', city: '', state: '', zip: '78702-1234' })?.owner_key], ['78702', 'k|5 home ln 78702 1234']);
+  eq('zip+4 is sent as 5 digits and keyed on the 5-digit zip', [target({ address: '5 Home Ln', city: '', state: '', zip: '78702-1234' })?.body.propertyAddress.zip, target({ address: '5 Home Ln', city: '', state: '', zip: '78702-1234' })?.owner_key], ['78702', 'k|5 home ln 78702']);
   const person = skipTarget({ key: 'k', owner_name: 'Jo Doe', corporate: false, people: ['Jo Doe'], mail_parts: { address: '5 Home Ln', city: 'Austin', state: 'TX', zip: '78702' }, mailing: null, purchases: [] });
   eq('an individual goes to RealEstateAPI', person?.provider, 'reapi');
   eq('RealEstateAPI gets its own body, by name', person?.reapi, { address: '5 Home Ln', city: 'Austin', state: 'TX', zip: '78702', first_name: 'Jo', last_name: 'Doe' });
   eq('a person is traced by name at their mailing address',
     skipTarget({ key: 'k', owner_name: 'Jo Doe', corporate: false, people: ['Jo Doe'], mail_parts: { address: '5 Home Ln', city: 'Austin', state: 'TX', zip: '78702' }, mailing: null, purchases: [] })?.body,
     { propertyAddress: { street: '5 Home Ln', city: 'Austin', state: 'TX', zip: '78702' }, name: { first: 'Jo', last: 'Doe' } });
+  eq('lowercase state in a mailing line still parses', parseMailingLine('9 Office Rd, Austin, tx 78701')?.state, 'TX');
+  eq('an LLC flipper with no mailing traces at the subject property',
+    skipTarget({
+      key: 'flip-llc', owner_name: 'Acme Flip LLC', corporate: true, people: [], mail_parts: null, mailing: null,
+      purchases: [{ address: '100 Flip St', city: 'San Antonio', state: 'TX', zip: '78209', role: 'flip' } as never],
+    })?.body.propertyAddress.street, '100 Flip St');
 }
 
 // ---- ATTOM, side by side ----

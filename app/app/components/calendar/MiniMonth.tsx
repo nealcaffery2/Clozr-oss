@@ -18,14 +18,14 @@ export function MiniMonth({ month, selected, busyDays, onPick, onMonth }: {
   return (
     <div style={{ padding: '4px 0' }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ font: '500 14px/1.2 var(--font-sans)', color: '#3c4043', flex: 1 }}>
+        <span style={{ font: '500 14px/1.2 var(--font-sans)', color: 'var(--ink-4, #3c4043)', flex: 1 }}>
           {month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
         </span>
         <button type="button" className="cz-icon-btn" onClick={() => onMonth(addMonths(month, -1))} aria-label="Previous month" style={{ width: 28, height: 28 }}>
-          <Chevron dir="left" size={14} color="#3c4043" />
+          <Chevron dir="left" size={14} color="var(--ink-4, #3c4043)" />
         </button>
         <button type="button" className="cz-icon-btn" onClick={() => onMonth(addMonths(month, 1))} aria-label="Next month" style={{ width: 28, height: 28 }}>
-          <Chevron dir="right" size={14} color="#3c4043" />
+          <Chevron dir="right" size={14} color="var(--ink-4, #3c4043)" />
         </button>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0 }}>
@@ -46,7 +46,7 @@ export function MiniMonth({ month, selected, busyDays, onPick, onMonth }: {
                 font: `${sel || today ? 600 : 400} 12px/1 var(--font-sans)`,
                 position: 'relative',
                 background: sel ? MINT : 'transparent',
-                color: sel ? '#fff' : today ? MINT : inMonth ? INK : '#dadce0',
+                color: sel ? 'var(--on-dark, #fff)' : today ? MINT : inMonth ? INK : 'var(--line-2, #dadce0)',
               }}
             >
               {d.getDate()}

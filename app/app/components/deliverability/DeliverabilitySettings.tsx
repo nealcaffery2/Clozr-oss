@@ -110,7 +110,7 @@ export function DeliverabilitySettings({ workspaceId, demo }: { workspaceId: num
   const warmNow = warmStatus(data, pm, accountId);
   const live = !demo && !!workspaceId;
 
-  if (!live || !workspaceId) return <p style={{ fontSize: '12.5px', color: '#71717a', margin: 0 }}>Email settings need the live database. Sign in to a real workspace to see them.</p>;
+  if (!live || !workspaceId) return <p style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)', margin: 0 }}>Email settings need the live database. Sign in to a real workspace to see them.</p>;
 
   return (
     <div id="email-deliverability" data-dlv style={{ minWidth: 0 }}>
@@ -127,11 +127,11 @@ export function DeliverabilitySettings({ workspaceId, demo }: { workspaceId: num
       <GroupHeading id="warm-email" title="Warm email (Resend blasts to your buyer list)" why="Deal blasts to buyers already on your list, sent through Resend, plus each rep's own Gmail for one-to-one replies." />
       {err ? (
         <section style={card} aria-label="Warm email">
-          <p role="alert" style={{ margin: 0, fontSize: '12.5px', color: '#b91c1c' }}>Couldn&apos;t load the warm email settings: {err.replace(/\.$/, '')}. Nothing was changed.</p>
+          <p role="alert" style={{ margin: 0, fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)' }}>Couldn&apos;t load the warm email settings: {err.replace(/\.$/, '')}. Nothing was changed.</p>
           <button type="button" style={{ ...ghost, marginTop: '10px' }} onClick={() => void load()}>Try again</button>
         </section>
       ) : !data ? (
-        <section style={card} aria-label="Warm email" aria-busy="true"><p role="status" style={{ margin: 0, fontSize: '12.5px', color: '#71717a' }}>Loading buyer blast settings…</p></section>
+        <section style={card} aria-label="Warm email" aria-busy="true"><p role="status" style={{ margin: 0, fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>Loading buyer blast settings…</p></section>
       ) : (
         <>
           <ChecklistCard overview={data} postmaster={pm} accountId={accountId} setAccountId={setAccountId} />

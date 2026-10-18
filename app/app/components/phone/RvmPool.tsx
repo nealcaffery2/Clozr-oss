@@ -13,12 +13,13 @@ import { supabase } from '@/lib/supabase';
 import { useSession } from '@/lib/session';
 import { loadSettings, saveSettings } from '@/lib/integrations';
 import { forgetLinePools } from '@/lib/line-pools';
+import { lineOwner, useLineNames } from '@/lib/line-names';
 import { localMidnightIso } from '@/lib/rvm';
 import { DEFAULT_RVM_CEILING, DEFAULT_RVM_RAMP, lineUsable, rampCap, rampDay, stateCode2, stateOfPhone, suggestPool, type RvmPoolSettings } from '@/lib/rvm-pool';
 import { Btn, INK, LINE, MUTED, NoteBox, card, errText, field, label, type Note } from './ui';
 
 type Row = {
-  phone_e164: string; label: string | null;
+  phone_e164: string; label: string | null; assigned_user_id?: string | null;
   pool: 'rvm' | 'dialer' | null; market_state: string | null; daily_cap: number | null; ramp_started_at: string | null;
   spam_risk: string | null;
 };
@@ -26,7 +27,7 @@ type Health = { phone_e164: string; paused: boolean; grade: string | null; spam_
 
 const POOL_LABEL: Record<string, string> = { rvm: 'RVM pool', dialer: 'Dialer pool', '': 'Not pooled' };
 
-export function RvmPool({ numbers, admin, onBuy }: { numbers: { phone_e164: string; label: string | null }[]; admin: boolean; onBuy?: () => void }) {
+export function RvmPool({ numbers, admin, onBuy }: { numbers: { phone_e164: string; label: string | null; assigned_user_id?: string | null }[]; admin: boolean; onBuy?: () => void }) {
   const wsId = useSession().workspace?.id ?? null;
   const [rows, setRows] = useState<Row[] | null>(null);
   const [missing, setMissing] = useState(false);
@@ -52,7 +53,7 @@ export function RvmPool({ numbers, admin, onBuy }: { numbers: { phone_e164: stri
     const all = new Map<string, Row>();
     for (const n of numbers) {
       const r = have.get(n.phone_e164);
-      all.set(n.phone_e164, { phone_e164: n.phone_e164, label: n.label, pool: (r?.pool as Row['pool']) ?? null, market_state: r?.market_state ?? null, daily_cap: r?.daily_cap ?? null, ramp_started_at: r?.ramp_started_at ?? null, spam_risk: r?.spam_risk ?? null });
+      all.set(n.phone_e164, { phone_e164: n.phone_e164, label: n.label, assigned_user_id: n.assigned_user_id ?? null, pool: (r?.pool as Row['pool']) ?? null, market_state: r?.market_state ?? null, daily_cap: r?.daily_cap ?? null, ramp_started_at: r?.ramp_started_at ?? null, spam_risk: r?.spam_risk ?? null });
     }
     for (const [phone, r] of have) if (!all.has(phone)) all.set(phone, { phone_e164: phone, label: null, pool: (r.pool as Row['pool']) ?? null, market_state: r.market_state ?? null, daily_cap: r.daily_cap ?? null, ramp_started_at: r.ramp_started_at ?? null, spam_risk: r.spam_risk ?? null });
     setRows([...all.values()].sort((a, b) => a.phone_e164.localeCompare(b.phone_e164)));
@@ -84,7 +85,8 @@ export function RvmPool({ numbers, admin, onBuy }: { numbers: { phone_e164: stri
 
   // Load when the workspace or the line list changes. Done during render rather
   // than in an effect: load() writes state, and set-state-in-effect fails CI.
-  const loadKey = `${wsId}|${numbers.map((n) => n.phone_e164).join(',')}`;
+  // The assignment is in the key too, so reassigning a line refreshes its owner.
+  const loadKey = `${wsId}|${numbers.map((n) => `${n.phone_e164}:${n.assigned_user_id ?? ''}`).join(',')}`;
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   if (wsId != null && loadedKey !== loadKey) {
     setLoadedKey(loadKey);
@@ -93,6 +95,11 @@ export function RvmPool({ numbers, admin, onBuy }: { numbers: { phone_e164: stri
 
   const suggestion = useMemo(() => suggestPool(byState, want), [byState, want]);
   const pooled = (rows ?? []).filter((r) => r.pool === 'rvm');
+  // A rep's own line (assigned in Talkr, or named in rep_phone_numbers) is
+  // their caller ID. The pool keeps its lines off live calls, so a rep's line
+  // in it blocks their dialer: one rep's line sat there for days.
+  useLineNames();
+  const ownerOf = (r: Row) => lineOwner(r);
   const haveByState = useMemo(() => {
     const m: Record<string, number> = {};
     for (const r of pooled) { const s = stateCode2(r.market_state) ?? stateOfPhone(r.phone_e164) ?? '?'; m[s] = (m[s] ?? 0) + 1; }
@@ -104,6 +111,12 @@ export function RvmPool({ numbers, admin, onBuy }: { numbers: { phone_e164: stri
   const save = async (r: Row, patch: Partial<Row>) => {
     if (!supabase) return;
     const next = { ...r, ...patch };
+    // An assigned line is blocked even before the names load (or when its owner has none on file).
+    const owner = ownerOf(r) || (r.assigned_user_id ? 'a teammate' : '');
+    if (next.pool === 'rvm' && r.pool !== 'rvm' && owner) {
+      setNote({ ok: false, text: `${formatPhone(r.phone_e164)} is ${owner}'s line. Lines in the RVM pool are kept off live calls, so ${owner} could not dial from it. Unassign it in Talkr first, or pick another line.` });
+      return;
+    }
     setBusy(r.phone_e164); setNote(null);
     const { error } = await supabase.rpc('caller_line_set', {
       p_workspace: wsId, p_phone: next.phone_e164, p_pool: next.pool, p_state: next.market_state,
@@ -139,7 +152,7 @@ export function RvmPool({ numbers, admin, onBuy }: { numbers: { phone_e164: stri
       <p style={{ margin: '0 0 10px', fontSize: '12.5px', color: MUTED, lineHeight: 1.5 }}>
         Lines in the RVM pool carry ringless voicemail (Slybroadcast shows the line as the caller ID) and stay off live calls. A drop goes out on a line in the lead&rsquo;s state, then a neighbouring state or their area code, then any pool line, and never past the line&rsquo;s cap for today. A new line warms up: {DEFAULT_RVM_RAMP[0]} drops on day one, rising to {DEFAULT_RVM_CEILING} a day by day {DEFAULT_RVM_RAMP.length}. A line the guard paused or graded At risk is skipped. With no pool set, drops rotate across every line as before. CLOZR tells Talkr who sent each drop; turn on &ldquo;Ring the rep who last reached out first&rdquo; on a line above and a callback rings that rep first.
       </p>
-      {missing ? <div style={{ fontSize: '12px', color: '#92400e', background: '#fef3c7', borderRadius: '8px', padding: '7px 10px', marginBottom: '10px' }}>The pool columns arrive with migration 135. Until it is applied, drops rotate across every line.</div> : null}
+      {missing ? <div style={{ fontSize: '12px', color: 'var(--tx-amber-deep, #92400e)', background: 'var(--caution-soft, #fef3c7)', borderRadius: '8px', padding: '7px 10px', marginBottom: '10px' }}>The pool columns arrive with migration 135. Until it is applied, drops rotate across every line.</div> : null}
 
       {rows === null ? <div style={{ fontSize: '12.5px', color: MUTED }}>Loading lines…</div> : (
         <div style={{ border: `1px solid ${LINE}`, borderRadius: '10px', overflowX: 'auto' }}>
@@ -157,9 +170,13 @@ export function RvmPool({ numbers, admin, onBuy }: { numbers: { phone_e164: stri
                 const cap = rampCap(day, settings, r.daily_cap);
                 const st = stateCode2(r.market_state) ?? stateOfPhone(r.phone_e164);
                 const dis = !admin || busy === r.phone_e164 || missing;
+                const owner = ownerOf(r);
                 return (
-                  <tr key={r.phone_e164} style={{ borderTop: '1px solid #f0f0f1' }}>
-                    <td style={{ padding: '7px 10px', color: INK, whiteSpace: 'nowrap' }}>{formatPhone(r.phone_e164)}{r.label ? <span style={{ color: MUTED }}> · {r.label}</span> : null}</td>
+                  <tr key={r.phone_e164} style={{ borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
+                    <td style={{ padding: '7px 10px', color: INK, whiteSpace: 'nowrap' }}>
+                      {formatPhone(r.phone_e164)}{owner ? <span style={{ color: MUTED }}> · {owner}</span> : null}{r.label && r.label.toLowerCase() !== owner.toLowerCase() ? <span style={{ color: MUTED }}> · {r.label}</span> : null}
+                      {r.pool === 'rvm' && owner ? <div style={{ fontSize: '11.5px', color: 'var(--tx-red, #b91c1c)', whiteSpace: 'normal' }}>{owner}&rsquo;s line, blocked from live calls while pooled.</div> : null}
+                    </td>
                     <td style={{ padding: '7px 10px' }}>
                       <select aria-label={`Pool for ${r.phone_e164}`} disabled={dis} value={r.pool ?? ''} style={field}
                         onChange={(e) => void save(r, { pool: (e.target.value || null) as Row['pool'], ramp_started_at: e.target.value === 'rvm' && r.pool !== 'rvm' ? null : r.ramp_started_at })}>
@@ -180,7 +197,7 @@ export function RvmPool({ numbers, admin, onBuy }: { numbers: { phone_e164: stri
                         style={{ ...field, width: '64px' }}
                         onBlur={(e) => { const raw = e.target.value.trim(); const v = raw === '' ? null : Math.max(0, Math.floor(Number(raw))); if (raw !== '' && !Number.isFinite(v)) return; if (v !== r.daily_cap) void save(r, { daily_cap: v }); }} />
                     </td>
-                    <td style={{ padding: '7px 10px', color: ok ? '#15803d' : '#b91c1c', whiteSpace: 'nowrap' }}>{h?.paused ? 'Paused' : !ok ? 'Skipped (at risk)' : h?.grade === 'watch' ? 'Watch' : 'Good'}</td>
+                    <td style={{ padding: '7px 10px', color: ok ? 'var(--tx-green, #15803d)' : '#b91c1c', whiteSpace: 'nowrap' }}>{h?.paused ? 'Paused' : !ok ? 'Skipped (at risk)' : h?.grade === 'watch' ? 'Watch' : 'Good'}</td>
                   </tr>
                 );
               })}
@@ -202,7 +219,7 @@ export function RvmPool({ numbers, admin, onBuy }: { numbers: { phone_e164: stri
           {suggestion.map((s) => {
             const have = haveByState[s.state] ?? 0;
             return (
-              <span key={s.state} style={{ fontSize: '12px', padding: '4px 8px', borderRadius: '8px', border: `1px solid ${LINE}`, background: have >= s.lines ? '#dcfce7' : '#fafafa' }}>
+              <span key={s.state} style={{ fontSize: '12px', padding: '4px 8px', borderRadius: '8px', border: `1px solid ${LINE}`, background: have >= s.lines ? 'var(--positive-soft, #dcfce7)' : 'var(--canvas, #fafafa)' }}>
                 <b>{s.state}</b> {s.lines} line{s.lines === 1 ? '' : 's'} <span style={{ color: MUTED }}>· {s.leads} leads · have {have}</span>
               </span>
             );

@@ -145,7 +145,7 @@ export function Roleplay({ workspaceId, isMobile, onScored, onArmed }: { workspa
             <div role="radiogroup" style={{ display: 'flex', gap: 4 }}>
               {DIFFICULTIES.map((d) => (
                 <button key={d.id} type="button" role="radio" aria-checked={difficulty === d.id} onClick={() => setDifficulty(d.id)}
-                  style={{ ...btn, background: difficulty === d.id ? INK : '#fff', color: difficulty === d.id ? '#fff' : INK }}>{d.label}</button>
+                  style={{ ...btn, background: difficulty === d.id ? INK : 'var(--surface, #fff)', color: difficulty === d.id ? 'var(--surface, #fff)' : INK }}>{d.label}</button>
               ))}
             </div>
           </div>
@@ -159,9 +159,9 @@ export function Roleplay({ workspaceId, isMobile, onScored, onArmed }: { workspa
           <div>
             <div style={{ ...eyebrow, marginBottom: 6 }}>How</div>
             <div role="radiogroup" style={{ display: 'flex', gap: 4 }}>
-              <button type="button" role="radio" aria-checked={mode === 'phone'} onClick={() => setMode('phone')} style={{ ...btn, display: 'inline-flex', alignItems: 'center', gap: 6, background: mode === 'phone' ? INK : '#fff', color: mode === 'phone' ? '#fff' : INK }}><Phone size={13} />Phone line</button>
-              <button type="button" role="radio" aria-checked={mode === 'voice'} onClick={() => setMode('voice')} style={{ ...btn, display: 'inline-flex', alignItems: 'center', gap: 6, background: mode === 'voice' ? INK : '#fff', color: mode === 'voice' ? '#fff' : INK }}><Mic size={13} />Voice</button>
-              <button type="button" role="radio" aria-checked={mode === 'text'} onClick={() => setMode('text')} style={{ ...btn, display: 'inline-flex', alignItems: 'center', gap: 6, background: mode === 'text' ? INK : '#fff', color: mode === 'text' ? '#fff' : INK }}><MessageSquare size={13} />Text</button>
+              <button type="button" role="radio" aria-checked={mode === 'phone'} onClick={() => setMode('phone')} style={{ ...btn, display: 'inline-flex', alignItems: 'center', gap: 6, background: mode === 'phone' ? INK : 'var(--surface, #fff)', color: mode === 'phone' ? 'var(--surface, #fff)' : INK }}><Phone size={13} />Phone line</button>
+              <button type="button" role="radio" aria-checked={mode === 'voice'} onClick={() => setMode('voice')} style={{ ...btn, display: 'inline-flex', alignItems: 'center', gap: 6, background: mode === 'voice' ? INK : 'var(--surface, #fff)', color: mode === 'voice' ? 'var(--surface, #fff)' : INK }}><Mic size={13} />Voice</button>
+              <button type="button" role="radio" aria-checked={mode === 'text'} onClick={() => setMode('text')} style={{ ...btn, display: 'inline-flex', alignItems: 'center', gap: 6, background: mode === 'text' ? INK : 'var(--surface, #fff)', color: mode === 'text' ? 'var(--surface, #fff)' : INK }}><MessageSquare size={13} />Text</button>
             </div>
           </div>
           <button type="button" onClick={start} disabled={phase === 'starting'} style={{ ...primary, height: 34, padding: '0 16px', background: GREEN }}>
@@ -179,7 +179,7 @@ export function Roleplay({ workspaceId, isMobile, onScored, onArmed }: { workspa
       <div style={{ ...card, display: 'grid', gap: 10 }}>
         <div style={eyebrow}>Roleplay line armed</div>
         <div style={{ fontSize: 15, fontWeight: 700, color: INK }}>Call <a href={`tel:${armed.phone.replace(/[^+\d]/g, '')}`} style={{ color: GREEN }}>{armed.phone}</a> from your cell</div>
-        <div style={{ fontSize: 13, color: '#27272a', lineHeight: 1.5 }}>
+        <div style={{ fontSize: 13, color: 'var(--ink-2, #27272a)', lineHeight: 1.5 }}>
           {armed.seller} ({p.label}, {DIFFICULTIES.find((d) => d.id === difficulty)?.label.toLowerCase()}{objection ? `, ${OBJECTIONS.find((o) => o.id === objection)?.label.toLowerCase()}` : ''}) picks up. Armed until {new Date(armed.until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.
           Your scorecard lands in Practice about a minute after you hang up.
         </div>
@@ -209,7 +209,7 @@ export function Roleplay({ workspaceId, isMobile, onScored, onArmed }: { workspa
       <div ref={scroller} style={{ ...card, maxHeight: phase === 'done' ? 220 : 380, overflow: 'auto', display: 'grid', gap: 8, padding: 12 }}>
         {lines.length === 0 ? <div style={{ fontSize: 12.5, color: MUTED }}>{session?.mode === 'voice' ? 'Connecting… say hello when you hear them.' : ''}</div> : null}
         {lines.map((l, i) => (
-          <div key={i} style={{ justifySelf: l.role === 'rep' ? 'end' : 'start', maxWidth: '82%', background: l.role === 'rep' ? INK : '#f4f4f5', color: l.role === 'rep' ? '#fff' : INK, borderRadius: 12, padding: '7px 11px', fontSize: 13, lineHeight: 1.45 }}>
+          <div key={i} style={{ justifySelf: l.role === 'rep' ? 'end' : 'start', maxWidth: '82%', background: l.role === 'rep' ? INK : 'var(--surface-2, #f4f4f5)', color: l.role === 'rep' ? 'var(--surface, #fff)' : INK, borderRadius: 12, padding: '7px 11px', fontSize: 13, lineHeight: 1.45 }}>
             {l.text}
           </div>
         ))}

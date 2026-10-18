@@ -74,7 +74,7 @@ const sourceOf = (c: Candidate): 'both' | 'reapi' | 'attom' => {
 
 const STAGE_LABEL = { search: 'Pulling sales', enrich: 'Enriching purchases', skiptrace: 'Skip tracing', attom: 'Pulling ATTOM sales', attom_owners: 'Reading ATTOM owners', homefull: 'Checking flip photos', snipe: 'Reading deed chains', deeds: 'Searching the deed index' } as const;
 
-const card: React.CSSProperties = { background: '#fff', border: `1px solid ${LINE}`, borderRadius: '14px', overflow: 'hidden' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '14px', overflow: 'hidden' };
 
 /** Current owner of a house someone already resold. Homefull wants the flipper. */
 function retailEndBuyer(c: Candidate, all: Candidate[]): boolean {
@@ -469,10 +469,10 @@ export function GeniusMode(props: Props) {
           <input value={query} onChange={(e) => { setQuery(e.target.value); setTyped(true); setPicked(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { setSugs([]); void go(); } }}
             placeholder="123 Rigsby Ave, San Antonio, TX" autoComplete="off" style={{ ...input, width: '100%', height: fieldH, fontSize: isMobile ? '16px' : '13px' }} />
           {typed && sugs.length ? (
-            <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 4px)', zIndex: 20, background: '#fff', borderRadius: '10px', boxShadow: SHADOW.md, overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 4px)', zIndex: 20, background: 'var(--surface, #fff)', borderRadius: '10px', boxShadow: SHADOW.md, overflow: 'hidden' }}>
               {sugs.map((s, i) => (
                 <button key={i} type="button" onClick={() => { setPicked({ address: s.address || s.title, city: s.city, state: s.state, zip: s.zip, reapi_id: s.reapi_id }); if (s.lat && s.lng) setPreview({ lat: s.lat, lng: s.lng }); setQuery(s.title); setTyped(false); setSugs([]); }}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 0, borderTop: i ? `1px solid ${HAIR}` : 0, background: '#fff', fontSize: '12.5px', color: INK, cursor: 'pointer' }}>{s.title}</button>
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 0, borderTop: i ? `1px solid ${HAIR}` : 0, background: 'var(--surface, #fff)', fontSize: '12.5px', color: INK, cursor: 'pointer' }}>{s.title}</button>
               ))}
             </div>
           ) : null}
@@ -482,7 +482,7 @@ export function GeniusMode(props: Props) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', minWidth: 0, gridColumn: isMobile ? '1 / -1' : undefined }}>
         <span style={{ fontSize: '11.5px', fontWeight: 500, color: MUTED }}>Or one of your deals</span>
         <SearchSelect value={picked && 'deal_id' in picked ? String(picked.deal_id) : ''} placeholder="Search your deals" ariaLabel="Pick one of your deals"
-          fieldStyle={{ height: fieldH, border: 0, boxShadow: SHADOW.ring, background: '#fff', fontSize: isMobile ? '16px' : '13px', padding: '0 10px' }}
+          fieldStyle={{ height: fieldH, border: 0, boxShadow: SHADOW.ring, background: 'var(--surface, #fff)', fontSize: isMobile ? '16px' : '13px', padding: '0 10px' }}
           options={deals.map((d) => ({ v: String(d.id), label: d.label }))}
           onChange={(v) => {
             const d = deals.find((x) => String(x.id) === v);
@@ -612,7 +612,7 @@ export function GeniusMode(props: Props) {
           </Control>
         </div>
       ) : null}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px 16px', margin: `12px -${gutter} 0`, padding: `10px ${gutter}`, borderTop: `1px solid ${LINE}`, background: '#fff', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px 16px', margin: `12px -${gutter} 0`, padding: `10px ${gutter}`, borderTop: `1px solid ${LINE}`, background: 'var(--surface, #fff)', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', flex: isMobile ? '1 1 100%' : 'none' }}>
           <button type="button" onClick={() => void go()} disabled={blocked} aria-busy={busy || undefined} style={{ ...btn('purple'), padding: '0 16px', cursor: busy ? 'wait' : 'pointer', flex: isMobile ? 1 : 'none' }}>
             <Icon d={ICON.search} size={14} />{busy ? 'Searching…' : run ? 'Search again' : 'Find buyers'}
@@ -634,7 +634,7 @@ export function GeniusMode(props: Props) {
         {est || (dirty && !busy) ? (
           <div role="status" style={{ flexBasis: '100%', display: 'flex', gap: '4px 12px', flexWrap: 'wrap', fontSize: '12px' }}>
             {est ? <span style={{ color: MUTED, fontVariantNumeric: 'tabular-nums' }}>{est}</span> : null}
-            {dirty && !busy ? <span style={{ color: '#b45309', fontWeight: 600 }}>Filters widened. Search again to pull the rest.</span> : null}
+            {dirty && !busy ? <span style={{ color: 'var(--tx-amber, #b45309)', fontWeight: 600 }}>Filters widened. Search again to pull the rest.</span> : null}
           </div>
         ) : null}
       </div>
@@ -651,7 +651,7 @@ export function GeniusMode(props: Props) {
           {filters.kinds.map((k) => KIND_PLURAL[k]).join(', ')} · {filters.radius_mi} mi · {filters.months < 12 ? '6 mo' : `${filters.months / 12} yr`}
           {filters.property_types.length < TYPES.length ? ` · ${filters.property_types.length} property type${filters.property_types.length === 1 ? '' : 's'}` : ''}
         </div>
-        {dirty && !busy ? <div style={{ fontSize: '11.5px', color: '#b45309', fontWeight: 600, marginTop: '2px' }}>Filters widened. Search again to pull the rest.</div> : null}
+        {dirty && !busy ? <div style={{ fontSize: '11.5px', color: 'var(--tx-amber, #b45309)', fontWeight: 600, marginTop: '2px' }}>Filters widened. Search again to pull the rest.</div> : null}
       </div>
       {busy ? <button type="button" onClick={() => abort.current?.abort()} style={btn('ghost')}>Stop</button>
         : <button type="button" onClick={() => setEditF(true)} style={btn('ghost')} aria-expanded={false}><Icon d={ICON.sliders} size={14} />Edit</button>}
@@ -660,7 +660,7 @@ export function GeniusMode(props: Props) {
 
   const status = (busy || err || run) ? (
     <div style={{ padding: `9px ${gutter}`, borderBottom: '1px solid var(--band-line)', background: 'var(--band)', fontSize: '12px', color: MUTED }}>
-      {err ? <div style={{ color: RED, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '9px', padding: '8px 10px', lineHeight: 1.5, marginBottom: busy || run ? '8px' : 0 }}>{err}</div> : null}
+      {err ? <div style={{ color: RED, background: 'var(--tint-red, #fef2f2)', border: '1px solid var(--tint-red-2, #fecaca)', borderRadius: '9px', padding: '8px 10px', lineHeight: 1.5, marginBottom: busy || run ? '8px' : 0 }}>{err}</div> : null}
       {busy ? (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', marginBottom: '5px' }}>
@@ -678,22 +678,22 @@ export function GeniusMode(props: Props) {
           <span style={{ color: LINE }}>·</span>
           <span>{(run.properties_scanned ?? run.sales_scanned).toLocaleString('en-US')} records scanned</span>
           {run.candidates.some((c) => c.smart_match) ? <><span style={{ color: LINE }}>·</span><span style={{ color: PURPLE, fontWeight: 600 }}>{run.candidates.filter((c) => c.smart_match).length} SmartMatch</span></> : null}
-          {truncated ? <><span style={{ color: LINE }}>·</span><span style={{ color: '#b45309' }}>hit the record ceiling; narrow the radius for the rest</span></> : null}
+          {truncated ? <><span style={{ color: LINE }}>·</span><span style={{ color: 'var(--tx-amber, #b45309)' }}>hit the record ceiling; narrow the radius for the rest</span></> : null}
           {run.created_at ? <span style={{ marginLeft: isMobile ? 0 : 'auto', width: isMobile ? '100%' : undefined, color: MUTED, fontVariantNumeric: 'tabular-nums' }}>{run.status === 'done' ? 'Saved' : run.status} {ago(run.created_at)}{creditsLine ? ` · ${creditsLine}` : ''}</span> : null}
         </div>
       ) : null}
       {methodStats ? (
-        <div role="status" style={{ marginTop: '8px', padding: '8px 10px', borderRadius: '9px', border: `1px solid ${LINE}`, background: '#fafafa', fontSize: '12px', color: MUTED, lineHeight: 1.5 }}>
+        <div role="status" style={{ marginTop: '8px', padding: '8px 10px', borderRadius: '9px', border: `1px solid ${LINE}`, background: 'var(--canvas, #fafafa)', fontSize: '12px', color: MUTED, lineHeight: 1.5 }}>
           <b style={{ color: INK }}>Methods </b>
           {methodStats.methods.map((m) => `${METHOD_LABEL[m]} ${methodStats.counts[m] ?? 0}`).join(' · ')}
           {methodStats.counts.homefull_checked ? ` · ${methodStats.counts.homefull_checked} flips photo-checked` : ''}
           {methodStats.counts.contract_buyers ? ` · ${methodStats.counts.contract_buyers} from our contracts` : ''}
           {methodStats.counts.deeds ? ` · ${methodStats.counts.deeds} deeds read` : ''}
-          {methodStats.notes.length ? <ul style={{ margin: '4px 0 0', padding: 0, listStyle: 'none', color: '#b45309' }}>{methodStats.notes.map((n, i) => <li key={i}>{n}</li>)}</ul> : null}
+          {methodStats.notes.length ? <ul style={{ margin: '4px 0 0', padding: 0, listStyle: 'none', color: 'var(--tx-amber, #b45309)' }}>{methodStats.notes.map((n, i) => <li key={i}>{n}</li>)}</ul> : null}
         </div>
       ) : null}
       {compareStats ? (
-        <div role="status" style={{ marginTop: '8px', padding: '8px 10px', borderRadius: '9px', border: `1px solid ${compareStats.error ? '#fecaca' : LINE}`, background: compareStats.error ? '#fef2f2' : '#fafafa', fontSize: '12px', color: compareStats.error ? '#b91c1c' : MUTED, lineHeight: 1.5 }}>
+        <div role="status" style={{ marginTop: '8px', padding: '8px 10px', borderRadius: '9px', border: `1px solid ${compareStats.error ? 'var(--tint-red-2, #fecaca)' : LINE}`, background: compareStats.error ? 'var(--tint-red, #fef2f2)' : 'var(--canvas, #fafafa)', fontSize: '12px', color: compareStats.error ? 'var(--tx-red, #b91c1c)' : MUTED, lineHeight: 1.5 }}>
           {compareStats.error ? <>ATTOM did not run: {compareStats.error}</> : (
             <>
               <b style={{ color: INK }}>Compare </b>
@@ -702,7 +702,7 @@ export function GeniusMode(props: Props) {
               {' '}Both: <b style={{ color: INK }}>{(compareStats.both ?? 0).toLocaleString('en-US')}</b> · RealEstateAPI only: <b style={{ color: INK }}>{(compareStats.reapi_only ?? 0).toLocaleString('en-US')}</b> · ATTOM only: <b style={{ color: INK }}>{(compareStats.attom_only ?? 0).toLocaleString('en-US')}</b>.
               {' '}Buyers: both {view.bySource.both} · RealEstateAPI only {view.bySource.reapi} · ATTOM only {view.bySource.attom}. Each buyer and property appears once.
               {compareStats.attom_calls ? <span> · {compareStats.attom_calls} ATTOM calls</span> : null}
-              {compareStats.note ? <div style={{ color: '#b45309', marginTop: '4px' }}>{compareStats.note}</div> : null}
+              {compareStats.note ? <div style={{ color: 'var(--tx-amber, #b45309)', marginTop: '4px' }}>{compareStats.note}</div> : null}
             </>
           )}
         </div>
@@ -718,7 +718,7 @@ export function GeniusMode(props: Props) {
         <div style={{ fontWeight: 700, color: INK, paddingRight: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.owner_name}</div>
         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', margin: '5px 0' }}>
           <Badge {...KIND_BADGE[c.kind]}>{KIND_LABEL[c.kind]}</Badge>
-          {c.smart_match ? <Badge color="#08694C" tint={PURPLE_TINT}>SmartMatch</Badge> : null}
+          {c.smart_match ? <Badge color="var(--tx-mint-deep, #08694c)" tint={PURPLE_TINT}>SmartMatch</Badge> : null}
           {c.non_disclosure ? <Badge>Non-disclosure</Badge> : null}
           {c.corporate ? <Badge>Entity</Badge> : null}
         </div>
@@ -762,7 +762,7 @@ export function GeniusMode(props: Props) {
   const pageIds = shown.map((c) => c.key);
   const allOnPage = pageIds.length > 0 && pageIds.every((k) => sel[k]);
   const bulkBar = (
-    <div className={isMobile ? 'gx-scroll' : undefined} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: isMobile ? 'nowrap' : 'wrap', overflowX: isMobile ? 'auto' : undefined, padding: `8px ${isMobile ? '12px' : '14px'}`, borderBottom: `1px solid ${HAIR}`, background: selected.length ? '#F0FAF5' : '#fff', position: 'sticky', top: isMobile ? SWITCH_H : 0, zIndex: 3 }}>
+    <div className={isMobile ? 'gx-scroll' : undefined} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: isMobile ? 'nowrap' : 'wrap', overflowX: isMobile ? 'auto' : undefined, padding: `8px ${isMobile ? '12px' : '14px'}`, borderBottom: `1px solid ${HAIR}`, background: selected.length ? 'var(--c-genius-soft, #f0faf5)' : 'var(--surface, #fff)', position: 'sticky', top: isMobile ? SWITCH_H : 0, zIndex: 3 }}>
       <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: INK, fontWeight: 600, cursor: 'pointer', flex: 'none', whiteSpace: 'nowrap' }}>
         <input type="checkbox" checked={allOnPage} onChange={() => setSel((s) => ({ ...s, ...Object.fromEntries(pageIds.map((k) => [k, !allOnPage])) }))} style={{ accentColor: PURPLE }} />
         {selected.length ? `${selected.length} selected` : 'Select page'}
@@ -791,7 +791,7 @@ export function GeniusMode(props: Props) {
         </>
       ) : null}
       <button type="button" onClick={exportCsv} style={{ ...btn('ghost', true), marginLeft: 'auto' }}><Icon d={ICON.download} size={13} />{isMobile ? 'CSV' : 'Export CSV'}</button>
-      {bulk && !isMobile ? <span style={{ width: '100%', fontSize: '11.5px', color: '#08694C', fontWeight: 600 }}>{bulk}</span> : null}
+      {bulk && !isMobile ? <span style={{ width: '100%', fontSize: '11.5px', color: 'var(--tx-mint-deep, #08694c)', fontWeight: 600 }}>{bulk}</span> : null}
     </div>
   );
   const bulkNote = bulk && isMobile ? <div role="status" style={{ padding: `6px ${gutter}`, fontSize: '11.5px', color: PURPLE, fontWeight: 600, borderBottom: `1px solid ${HAIR}` }}>{bulk}</div> : null;
@@ -809,7 +809,7 @@ export function GeniusMode(props: Props) {
           {bulkBar}
           {bulkNote}
           {prospectsAdded > 0 && props.onShowProspects ? (
-            <div role="status" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: `8px ${gutter}`, background: '#E7F8F1', borderBottom: `1px solid ${HAIR}`, fontSize: '12.5px', color: INK }}>
+            <div role="status" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: `8px ${gutter}`, background: 'var(--mint-dim, #e7f8f1)', borderBottom: `1px solid ${HAIR}`, fontSize: '12.5px', color: INK }}>
               <span>{prospectsAdded} buyer{prospectsAdded === 1 ? '' : 's'} added to Buyer Prospects.</span>
               <button type="button" onClick={props.onShowProspects} style={btn('solid', true)}>Show me the prospects</button>
             </div>
@@ -856,7 +856,7 @@ export function GeniusMode(props: Props) {
         </span>
       ))}
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-        <span style={{ width: '9px', height: '9px', borderRadius: '50%', background: '#a1a1aa', boxShadow: '0 0 0 1.5px #fff, 0 0 0 3px #f59e0b' }} />SmartMatch
+        <span style={{ width: '9px', height: '9px', borderRadius: '50%', background: 'var(--subtle, #a1a1aa)', boxShadow: '0 0 0 1.5px var(--surface, #fff), 0 0 0 3px #f59e0b' }} />SmartMatch
       </span>
     </div>
   );
@@ -912,7 +912,7 @@ export function GeniusMode(props: Props) {
           return (
             <button key={k} type="button" role="tab" aria-selected={on} onClick={() => pickView(k)}
               style={{ flex: 1, minWidth: 0, border: 0, borderRadius: '7px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', cursor: 'pointer',
-                fontSize: '12.5px', fontWeight: on ? 650 : 500, color: on ? INK : MUTED, background: on ? '#fff' : 'transparent', boxShadow: on ? SHADOW.ring : 'none', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                fontSize: '12.5px', fontWeight: on ? 650 : 500, color: on ? INK : MUTED, background: on ? 'var(--surface, #fff)' : 'transparent', boxShadow: on ? SHADOW.ring : 'none', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
               <Icon d={d} size={14} />{l}
             </button>
           );
@@ -963,13 +963,13 @@ export function GeniusMode(props: Props) {
       <aside style={card}>
         <div style={{ display: 'flex', gap: '4px', padding: '8px', borderBottom: '1px solid var(--band-line)', background: 'var(--band)' }}>
           {([['search', 'Find buyers'], ['wholesalers', 'Wholesalers']] as const).map(([k, l]) => (
-            <button key={k} type="button" onClick={() => setPane(k)} style={{ flex: 1, border: 0, borderRadius: '7px', padding: '7px 6px', fontSize: '12px', fontWeight: 650, cursor: 'pointer', color: pane === k ? INK : MUTED, background: pane === k ? '#fff' : 'transparent', boxShadow: pane === k ? SHADOW.ring : 'none' }}>{l}</button>
+            <button key={k} type="button" onClick={() => setPane(k)} style={{ flex: 1, border: 0, borderRadius: '7px', padding: '7px 6px', fontSize: '12px', fontWeight: 650, cursor: 'pointer', color: pane === k ? INK : MUTED, background: pane === k ? 'var(--surface, #fff)' : 'transparent', boxShadow: pane === k ? SHADOW.ring : 'none' }}>{l}</button>
           ))}
         </div>
         <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--band-line)', background: 'var(--band)', fontSize: '12px', fontWeight: 700, color: INK }}>Past searches</div>
         <div style={{ maxHeight: 'calc(100vh - 200px)', overflow: 'auto' }}>
           {past.length === 0 ? <div style={{ padding: '14px', fontSize: '12px', color: MUTED, lineHeight: 1.5 }}>Searches you run are saved here and reopen without spending a credit.</div> : past.map((p) => (
-            <button key={p.id} type="button" onClick={() => void openPast(p.id)} style={{ display: 'flex', gap: '9px', alignItems: 'center', width: '100%', textAlign: 'left', padding: '10px 12px', border: 0, borderTop: `1px solid ${HAIR}`, background: run?.run_id === p.id ? '#F0FAF5' : '#fff', boxShadow: run?.run_id === p.id ? `inset 3px 0 0 ${PURPLE}` : 'none', cursor: 'pointer' }}>
+            <button key={p.id} type="button" onClick={() => void openPast(p.id)} style={{ display: 'flex', gap: '9px', alignItems: 'center', width: '100%', textAlign: 'left', padding: '10px 12px', border: 0, borderTop: `1px solid ${HAIR}`, background: run?.run_id === p.id ? 'var(--c-genius-soft, #f0faf5)' : 'var(--surface, #fff)', boxShadow: run?.run_id === p.id ? `inset 3px 0 0 ${PURPLE}` : 'none', cursor: 'pointer' }}>
               <span style={{ width: '34px', height: '34px', flex: 'none', borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: '11px', fontWeight: 700, color: p.top_score == null ? MUTED : heat(p.top_score).text, border: `3px solid ${p.top_score == null ? HAIR : heat(p.top_score).stroke}` }}>{p.top_score ?? '—'}</span>
               <span style={{ minWidth: 0 }}>
                 <span style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.address ?? 'Untitled'}</span>

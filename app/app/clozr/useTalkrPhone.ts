@@ -20,18 +20,48 @@ import { liveCallerBlock, mergeLineProviders, type LinePools } from '@/lib/calle
 import { pushCallerIdPick, reconcileCallerId } from '@/lib/caller-id-link';
 import { loadLinePools } from '@/lib/line-pools';
 import { useSession } from '@/lib/session';
+import { carrierCheck, carrierReport } from '@/lib/carrier-safe';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { getSmsFrom } from '@/lib/sms-from';
 import { replyLine, sendsAsSelf } from '@/lib/thread-line';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSoftphone, refusalText, type Softphone } from '@/lib/softphone';
 import { mayAutoAcquirePhone } from '@/lib/softphone-lock';
+import { setPhoneBusy } from '@/lib/phone-busy';
 import { onExtensionCall, useTalkrExtension, type ExtensionState } from '@/lib/talkr-extension';
 import { useDialSession, type DialSession } from './useDialSession';
 import { useLiveTranscript, type LiveTranscript } from '@/lib/live-transcript';
 import { playEvent } from '@/lib/phone-audio';
 import { fileCallOnRecord } from '@/lib/call-file';
+import { fromLine, recordSentText, sentTextRow } from '@/lib/sms-record';
 import { TALKR_EVENT_TYPES, eventFacts, publishTalkrEvent, type TalkrEvent } from '@/lib/talkr-events';
 import { heartbeatStatus, usePresence } from '@/lib/talkr-presence';
+import { createPresenceLeader, PRESENCE_BEAT_MS, type PresenceLeader } from '@/lib/presence-leader';
+import { foldLists } from '@/lib/talkr-lists';
+import { inInbox, lineOwners, threadOwner } from '@/lib/inbox-owner';
+
+/** Whether a thread sits in this rep's own inbox. */
+function isOwn(c: ConversationDto, me: MeDto): boolean {
+  return inInbox(threadOwner(c, lineOwners(me.org_numbers ?? [])), 'me', me.id);
+}
+
+/**
+ * Threads with something unread in this rep's own inbox, each counted once
+ * across the lists read. A manager's recent list is the office's newest 60,
+ * so the badge also reads Talkr's unread-only list: an unread thread of
+ * theirs older than the newest 60 still counts.
+ */
+function ownUnread(lists: readonly (readonly ConversationDto[] | null | undefined)[], me: MeDto | null): number {
+  if (!me) return 0;
+  const seen = new Set<string>();
+  let n = 0;
+  for (const c of lists.flatMap((l) => l ?? [])) {
+    if (seen.has(c.id)) continue;
+    seen.add(c.id);
+    if (c.unread_count > 0 && isOwn(c, me)) n++;
+  }
+  return n;
+}
 import {
   TalkrError,
   areaCity,
@@ -148,6 +178,12 @@ export type TalkrPhone = {
   callerId: { id: string | null; label: string; city: string | null; mode: 'dedicated' | 'local_presence' };
   callerIdOptions: Array<{ id: string; label: string; city: string | null; mine: boolean; isDefault: boolean; blocked: string | null }>;
   setCallerId: (numberId: string) => Promise<void>;
+  /**
+   * The rep's Talkr profile as another surface already saved it (the caller ID
+   * picker). Its lines get their carriers back, so live dialing still skips
+   * the RVM-only ones. No request: the save already went to Talkr.
+   */
+  setMe: (me: MeDto) => void;
   /** The transcript as Talkr's intel endpoint wants it. */
   turns: IntelTurn[];
   /** Re-reads the lists that move (threads, recent calls, call history); not the reference data. */
@@ -157,7 +193,8 @@ export type TalkrPhone = {
   /** Loads a thread. Reading it is not opening it: only `markRead` clears its unread count. */
   loadMessages: (conversationId: string) => void;
   markRead: (conversationId: string) => void;
-  sendSms: (input: { conversation_id?: string; to_number?: string; body: string }) => Promise<boolean>;
+  /** `record`: the seller or buyer the thread belongs to, so the sent text is filed on it (lib/sms-record). */
+  sendSms: (input: { conversation_id?: string; to_number?: string; body: string; record?: { sellerId?: number | null; buyerId?: number | null } }) => Promise<boolean>;
   /**
    * Log the wrap-up disposition on Talkr. Resolves to the label used, or null
    * when Talkr has no match. A chip ("Interested", "Callback") is matched onto
@@ -258,14 +295,18 @@ export function useTalkrPhone({
       talkr.conversations({ limit: 60 }).catch(() => null),
       talkr.calls().catch(() => null),
       talkr.history({ type: 'calls', limit: 40 }).catch(() => null),
-    ]).then(([convs, calls, hist]) => {
+      talkr.conversations({ unread: true, limit: 200 }).catch(() => null),
+    ]).then(([convs, calls, hist, unreadList]) => {
       if (seq !== listsSeq.current) return;
-      setData((d) => (d.status !== 'ok' ? d : {
-        ...d,
-        ...(convs ? { convs: convs.conversations, unread: convs.counts.unread } : {}),
+      // A read that changed nothing keeps the same `data`, so the view model
+      // behind it is not rebuilt (lib/talkr-lists).
+      setData((d) => (d.status !== 'ok' ? d : foldLists(d, {
+        // Unread is this rep's own threads only (lib/inbox-owner): a manager's
+        // list holds the office's, and their badge is not the office's count.
+        ...(convs ? { convs: convs.conversations, unread: ownUnread([convs.conversations, unreadList?.conversations], d.me) } : {}),
         ...(calls ? { recent: calls.calls.slice(0, 12) } : {}),
         ...(hist ? { history: hist.items } : {}),
-      }));
+      })));
     });
   }, []);
   const refresh = useCallback(() => {
@@ -298,12 +339,13 @@ export function useTalkrPhone({
           org_numbers: mergeLineProviders(meRaw.org_numbers ?? [], listed.numbers),
         };
         providersRef.current = listed.numbers.map((n) => ({ id: n.id, provider: n.provider ?? null }));
-        const [disp, calls, hist, team, convs] = await Promise.all([
+        const [disp, calls, hist, team, convs, unreadList] = await Promise.all([
           talkr.dispositions().catch(() => ({ dispositions: [] as DispositionDto[] })),
           talkr.calls().catch(() => ({ calls: [] as CallDto[] })),
           talkr.history({ type: 'calls', limit: 40 }).catch(() => ({ items: [] as HistoryItemDto[] })),
           talkr.team().catch(() => ({ members: [] as TeamMemberDto[] })),
           talkr.conversations({ limit: 60 }).catch(() => ({ conversations: [] as ConversationDto[], total: 0, counts: { unread: 0 } })),
+          talkr.conversations({ unread: true, limit: 200 }).catch(() => null),
         ]);
         if (!live) return;
         unreachableRuns.current = 0;
@@ -317,7 +359,7 @@ export function useTalkrPhone({
           history: hist.items,
           team: team.members,
           convs: convs.conversations,
-          unread: convs.counts.unread,
+          unread: ownUnread([convs.conversations, unreadList?.conversations], me),
         }));
       } catch (err) {
         if (!live) return;
@@ -380,13 +422,6 @@ export function useTalkrPhone({
       // A thread already in this rep's list (a rep's list is their own threads).
       return !!f.conversationId && d.convs.some((c) => c.id === f.conversationId && (!c.assigned_user_id || c.assigned_user_id === meId));
     };
-    // Talkr's bus events carry the user they are for. One that names nobody is
-    // not announced: a teammate's text or voicemail stays with them (the bell
-    // still lists the rep's own, by the line it came in on).
-    const forMe = (e: TalkrEvent) => {
-      const meId = meIdRef.current;
-      return !!meId && eventFacts(e).userIds.includes(meId);
-    };
     const stop = keepEventStream(async () => {
       const token = await talkrToken();
       return token ? eventStreamUrl(token) : null;
@@ -394,9 +429,10 @@ export function useTalkrPhone({
       for (const type of TALKR_EVENT_TYPES) {
         es.addEventListener(type, (raw) => {
           const e = publishTalkrEvent(type, (raw as MessageEvent).data);
-          // message.received is only ever an inbound text (services/messages.ts).
-          if (type === 'message.received' && forMe(e)) playEvent('sms');
-          if (type === 'voicemail.left' && forMe(e)) playEvent('voicemail');
+          // Texts and voicemails chime from the bell (useClozr), when their row
+          // shows there. Chiming off Talkr's stream played a sound for texts
+          // the bell never listed: another workspace's on the shared org, a
+          // "can't talk now" auto-reply, a STOP.
           if (type === 'voicemail.left') return;
           if (mine(e)) now(); else eventually();
         });
@@ -464,14 +500,26 @@ export function useTalkrPhone({
       if (!mayAutoAcquirePhone(document)) return;
       void spInit().catch(() => undefined);
     };
-    tryAuto();
+    // The SDK download and its setup wait for an idle moment, so they never
+    // compete with first paint; the timeout still starts them within 2 s.
+    // Nothing can ring this browser before it registers, so no call event is
+    // waiting to be lost: the wait only moves registration a moment later.
+    const idle = typeof window.requestIdleCallback === 'function';
+    const wait = idle ? window.requestIdleCallback(tryAuto, { timeout: 2000 }) : window.setTimeout(tryAuto, 300);
     document.addEventListener('visibilitychange', tryAuto);
     window.addEventListener('focus', tryAuto);
     return () => {
+      if (idle) window.cancelIdleCallback(wait);
+      else window.clearTimeout(wait);
       document.removeEventListener('visibilitychange', tryAuto);
       window.removeEventListener('focus', tryAuto);
     };
   }, [enabled, data.status, spDeviceState, spInit, extensionHasPhone, callUp]);
+
+  // A second answer can only reach this tab while a call is up here or a
+  // session is dialing, so only then does a hidden tab keep the drop URL fresh.
+  const busyHere = callUp || session.session?.state === 'active';
+  useEffect(() => { setPhoneBusy(busyHere); }, [busyHere]);
 
   // The guard above only stops a new registration. A tab that registered
   // before the extension said it holds the phone has to stand its own down,
@@ -488,21 +536,73 @@ export function useTalkrPhone({
   // extension sends its own heartbeat while it holds the phone, so this tab
   // going quiet is the truth rather than a gap. What it sends is what the rep
   // picked (lib/talkr-presence), never a blanket Available over their Away.
+  //
+  // One tab per browser beats (lib/presence-leader), once a minute. The tab
+  // with the phone leads over one without it; a hidden leader steps down and
+  // a visible tab takes over at once.
   const presence = usePresence();
   const phoneReady = sp.deviceState === 'ready';
-  useEffect(() => {
-    if (!enabled || data.status !== 'ok' || extensionHasPhone) return;
-    const status = heartbeatStatus(presence, phoneReady);
-    const beat = () => void talkr.heartbeat(status).catch(() => undefined);
-    beat();
-    const id = setInterval(beat, 30_000);
-    return () => clearInterval(id);
-  }, [enabled, data.status, phoneReady, extensionHasPhone, presence]);
+  const meId = data.me?.id ?? null;
+  const beatOn = enabled && data.status === 'ok' && !extensionHasPhone && !!meId;
+  const [leader, setLeader] = useState<PresenceLeader | null>(null);
+  /** Whether this tab sent the last beat, so only the leader says offline. */
+  const ledBeat = useRef(false);
+  /** The last beat this tab sent; a second ask with the same status inside 10 s is dropped. */
+  const lastBeat = useRef<{ at: number; status: string } | null>(null);
   // Offline once, when this tab stops speaking for the rep, not on every change of presence.
   useEffect(() => {
-    if (!enabled || data.status !== 'ok' || extensionHasPhone) return;
-    return () => { void talkr.heartbeat('offline').catch(() => undefined); };
-  }, [enabled, data.status, extensionHasPhone]);
+    if (!beatOn || !meId) return;
+    const l = createPresenceLeader(meId);
+    setLeader(l);
+    const release = () => l.release();
+    const onHide = () => {
+      if (!document.hidden) return;
+      l.release();
+      ledBeat.current = false;
+    };
+    window.addEventListener('pagehide', release);
+    document.addEventListener('visibilitychange', onHide);
+    return () => {
+      window.removeEventListener('pagehide', release);
+      document.removeEventListener('visibilitychange', onHide);
+      l.release();
+      setLeader(null);
+      if (ledBeat.current) void talkr.heartbeat('offline').catch(() => undefined);
+      ledBeat.current = false;
+      lastBeat.current = null;
+    };
+  }, [beatOn, meId]);
+  useEffect(() => {
+    if (!leader) return;
+    const status = heartbeatStatus(presence, phoneReady);
+    const beat = () => {
+      if (document.hidden) return;
+      if (!leader.claim(phoneReady)) { ledBeat.current = false; return; }
+      ledBeat.current = true;
+      const last = lastBeat.current;
+      const t = Date.now();
+      if (last && last.status === status && t - last.at < 10_000) return;
+      lastBeat.current = { at: t, status };
+      void talkr.heartbeat(status).catch(() => undefined);
+    };
+    // A change of presence or phone settles for 2 s before it is sent, so a
+    // phone coming up right after a pick is one beat, not two.
+    const first = setTimeout(beat, 2_000);
+    // The leader let go (hidden or closed): a visible tab takes over. The
+    // short random wait keeps two visible tabs from both claiming it.
+    let freed: ReturnType<typeof setTimeout> | null = null;
+    const offFreed = leader.onFreed(() => {
+      if (freed) clearTimeout(freed);
+      freed = setTimeout(beat, Math.round(Math.random() * 500));
+    });
+    const stop = everyWhileVisible(beat, PRESENCE_BEAT_MS);
+    return () => {
+      clearTimeout(first);
+      if (freed) clearTimeout(freed);
+      offFreed();
+      stop();
+    };
+  }, [leader, phoneReady, presence]);
 
   // Do not disturb: a call that rings here is declined, so the caller reaches
   // voicemail and nothing rings over what the rep is doing.
@@ -745,6 +845,10 @@ export function useTalkrPhone({
     }
   }, [workspaceId, userId]);
 
+  const setMe = useCallback((next: MeDto) => {
+    setData((d) => ({ ...d, me: { ...next, org_numbers: mergeLineProviders(next.org_numbers ?? [], providersRef.current) } }));
+  }, []);
+
   // Once per workspace and Talkr seat: Talkr's default (what dials) wins,
   // CLOZR's caller ID fills in a Talkr seat that has none.
   const reconciledFor = useRef<string | null>(null);
@@ -770,28 +874,43 @@ export function useTalkrPhone({
   }, []);
   const markRead = useCallback((conversationId: string) => {
     setData((d) => {
-      const was = d.convs.find((c) => c.id === conversationId)?.unread_count ?? 0;
-      if (!was) return d;
-      return { ...d, unread: Math.max(0, d.unread - 1), convs: d.convs.map((c) => (c.id === conversationId ? { ...c, unread_count: 0 } : c)) };
+      const was = d.convs.find((c) => c.id === conversationId);
+      if (!was?.unread_count) return d;
+      const convs = d.convs.map((c) => (c.id === conversationId ? { ...c, unread_count: 0 } : c));
+      // The badge counts past the list on screen, so it steps down instead of recounting that list.
+      return { ...d, unread: d.me && isOwn(was, d.me) ? Math.max(0, d.unread - 1) : d.unread, convs };
     });
     void talkr.markRead(conversationId).catch(() => undefined);
   }, []);
 
-  const sendSms = useCallback<TalkrPhone['sendSms']>(async (input) => {
+  const sendSms = useCallback<TalkrPhone['sendSms']>(async ({ record, ...input }) => {
+    // A rep's own words go as typed; only what a carrier would block is stopped (lib/carrier-safe).
+    const carrier = carrierCheck(input.body ?? '', { mode: 'reply' });
+    if (carrier.blocked) {
+      setData((d) => ({ ...d, error: `Not sent: a carrier would block it. ${carrierReport(carrier)}.` }));
+      return false;
+    }
     try {
       // The CRM-wide send-from pick, unless the caller named a line. With no
       // pick the TC still replies on her own line, not the rep's thread line.
       let from = getSmsFrom();
-      if (!from && sendsAsSelf() && input.conversation_id) {
-        const { me, convs } = dataRef.current;
-        const conv = convs.find((c) => c.id === input.conversation_id);
-        if (me && conv) from = replyLine(me, conv.our_number ?? null, true);
-      }
+      const { me, convs } = dataRef.current;
+      const conv = input.conversation_id ? convs.find((c) => c.id === input.conversation_id) ?? null : null;
+      if (!from && sendsAsSelf() && conv && me) from = replyLine(me, conv.our_number ?? null, true);
       const r = await talkr.sendMessage(from ? { ...input, from_phone_number_id: from } : input);
       setData((d) => ({
         ...d,
         msgs: { ...d.msgs, [r.conversation_id]: [...(d.msgs[r.conversation_id] ?? []), r.message] },
       }));
+      // On the record now, with who sent it and the line it left from. The
+      // browser mirror used to be the only path, and it credited the line's owner.
+      const to = r.message.to_number ?? conv?.their_number ?? input.to_number ?? null;
+      if (workspaceId && userId && to) {
+        void recordSentText(sentTextRow({
+          workspaceId, sellerId: record?.sellerId ?? null, buyerId: record?.buyerId ?? null, to, body: input.body, msg: r.message, repId: userId,
+          fromPhone: fromLine(r.message, from, me?.org_numbers, conv?.our_number ?? null),
+        }));
+      }
       refresh();
       return true;
     } catch (err) {
@@ -857,6 +976,7 @@ export function useTalkrPhone({
       callerId,
       callerIdOptions,
       setCallerId,
+      setMe,
       turns,
       refresh,
       retry,
@@ -872,7 +992,7 @@ export function useTalkrPhone({
       session,
     }),
     [
-      enabled, data, sp, tx, intel, intelBusy, summary, summaryStatus, callerId, callerIdOptions, setCallerId, turns,
+      enabled, data, sp, tx, intel, intelBusy, summary, summaryStatus, callerId, callerIdOptions, setCallerId, setMe, turns,
       refresh, retry, loadMessages, markRead, sendSms, disposition, setContext, setRecordTarget, filedCommId, reset, extension, session,
     ],
   );

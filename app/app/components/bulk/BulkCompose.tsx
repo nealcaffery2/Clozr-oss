@@ -19,7 +19,7 @@
 // body_html survives the trip, and that every refusal comes back named.
 
 import { SmsFromPicker } from '@/components/SmsFromPicker';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 // This composer is built out of Talkr's components, which speak the Talkr
 // design-system tokens (--panel, --line, --text, --sans, --r-btn …). Those are
 // scoped to `.talkr-inbox`, never :root, so mounted from People or Buyers —
@@ -31,10 +31,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import '@/app/clozr/talkr-inbox.css';
 import {
   type Block, type MessageTemplate, MERGE_FIELDS,
-  blocksToEmail, renderEmail,
+  blocksToEmail, renderEmail, saveTemplate,
 } from '@/lib/message-templates';
 import { MAX_BODY, MAX_RECIPIENTS, type Recipient, type SendContext, renderMerge, textMany } from '@/lib/sms';
-import { sendEmail } from '@/lib/google';
+import { claimBulkEmail, releaseBulkEmail, sendEmail } from '@/lib/google';
 import { queueBulkRvm } from '@/lib/crm-write';
 import { RvmRecordingPicker } from '@/app/components/talkr/RvmRecordingPicker';
 import type { VmClip } from '@/app/components/talkr/useVmLibrary';
@@ -106,7 +106,7 @@ const label: React.CSSProperties = { display: 'block', font: '600 11px/1 var(--s
 const input: React.CSSProperties = { ...FIELD, width: '100%', font: '500 13px/1.3 var(--sans)' };
 const seg = (on: boolean): React.CSSProperties => ({
   height: 26, padding: '0 11px', borderRadius: 6, border: 0, cursor: 'pointer', flex: 'none', whiteSpace: 'nowrap',
-  font: '600 11.5px/1 var(--sans)', background: on ? '#fff' : 'transparent', color: on ? 'var(--text)' : 'var(--muted)',
+  font: '600 11.5px/1 var(--sans)', background: on ? 'var(--surface, #fff)' : 'transparent', color: on ? 'var(--text)' : 'var(--muted)',
   boxShadow: on ? '0 1px 2px rgba(0,0,0,.06)' : 'none',
 });
 const segWrap: React.CSSProperties = { display: 'inline-flex', gap: 2, padding: 3, background: 'var(--panel-2)', borderRadius: 8 };
@@ -135,11 +135,12 @@ function defaultBlast(templates: MessageTemplate[]): MessageTemplate | null {
 
 export function BulkCompose(props: BulkComposeProps) {
   const t = useTemplates(props.workspaceId);
-  // Templates first, then the composer. A buyer email opens on the Acme Homes
-  // deal blast, and that is the composer's initial state — not an effect that
-  // rewrites what the rep may already have typed.
+  // Templates first, then the composer. A buyer deal email opens on the Home
+  // Pros deal blast, and that is the composer's initial state — not an effect
+  // that rewrites what the rep may already have typed. A plain email (no deal
+  // required) opens blank.
   if (t.loading) return null;
-  return <Composer {...props} t={t} blast={props.kind === 'buyer' ? defaultBlast(t.templates) : null} />;
+  return <Composer {...props} t={t} blast={props.kind === 'buyer' && props.requireDeal ? defaultBlast(t.templates) : null} />;
 }
 
 function Composer({
@@ -181,6 +182,9 @@ function Composer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rvmKey]);
   const facts = rvmFacts && rvmFacts.key === rvmKey ? rvmFacts : null;
+  /** "Save as template": the name being typed, or null when the field is closed. */
+  const [tplName, setTplName] = useState<string | null>(null);
+  const [savingTpl, setSavingTpl] = useState(false);
 
   const deal = deals.find((d) => String(d.id) === dealId) ?? null;
   // A vendor list has no templates of its own: offer them all and let the rep pick.
@@ -217,7 +221,7 @@ function Composer({
   const skipped = rows.filter((r) => r.skip);
 
   /** Everything a message can merge for one person: the deal, then them, then who they are and who is writing. */
-  const fieldsOf = (r: Row): Record<string, string> => ({
+  const fieldsOf = useCallback((r: Row): Record<string, string> => ({
     // A blast has no campaign facts about each buyer, so the per-buyer dispo
     // fields render blank here (and the sentence around them closes up)
     // rather than going out as a literal {{purchase_note}}.
@@ -234,7 +238,7 @@ function Composer({
     rep_phone: rep.repPhone ?? '',
     rep_email: rep.repEmail ?? '',
     company: rep.company ?? '',
-  });
+  }), [deal, rep.repName, rep.repPhone, rep.repEmail, rep.company]);
 
   const pickChannel = (c: Channel) => {
     if (c === channel) return;
@@ -253,18 +257,24 @@ function Composer({
   };
   const writeMyOwn = () => { setTpl(null); setBody(tpl?.body_text ?? body); setConfirming(false); };
 
+  // No name, phone or address to sign with (a demo workspace, a member who
+  // has filled none of it in) would render the signature as a bare "·".
+  const signed = Boolean((rep.repName ?? rep.repEmail ?? rep.repPhone ?? '').trim());
+  /** A message typed here as the blocks a template is made of: one paragraph, signed as the rep. */
+  const ownBlocks = useMemo((): Block[] => [{ id: 'body', type: 'paragraph', text: body }, ...(signed ? [{ id: 'sign', type: 'signature' } as Block] : [])], [body, signed]);
+
   /** The HTML that goes out: the template's own, or this message in the same branded shell. */
   const html = useMemo(() => {
     if (channel !== 'email') return null;
     if (tpl?.body_html) return tpl.body_html;
-    // No name, phone or address to sign with (a demo workspace, a member who
-    // has filled none of it in) would render the signature as a bare "·".
-    const signed = Boolean((rep.repName ?? rep.repEmail ?? rep.repPhone ?? '').trim());
-    const blocks: Block[] = [{ id: 'body', type: 'paragraph', text: body }, ...(signed ? [{ id: 'sign', type: 'signature' } as Block] : [])];
-    return blocksToEmail(blocks).html;
-  }, [channel, tpl, body, rep.repName, rep.repEmail, rep.repPhone]);
+    return blocksToEmail(ownBlocks).html;
+  }, [channel, tpl, ownBlocks]);
 
-  const sample = go[0] ? fieldsOf(go[0]) : null;
+  // The first recipient's values, kept between renders: a new object here
+  // re-rendered the whole email preview (merge, tidy, iframe reload) on
+  // every keystroke and every progress tick of a send.
+  const first = go[0];
+  const sample = useMemo(() => (first ? fieldsOf(first) : null), [first, fieldsOf]);
   const preview = useMemo(() => (sample ? renderEmail({ subject, body_html: html, body_text: body }, sample) : null), [sample, subject, html, body]);
   const smsOut = sample ? renderMerge(body, sample) : '';
   const s = smsSegments(smsOut);
@@ -298,6 +308,93 @@ function Composer({
     toast(r.ok && r.data.ok ? `Test sent to ${testTo}` : r.ok ? r.data.message ?? 'Gmail refused that send.' : r.message);
   };
 
+  /** Keep what is typed here as a CLOZR template, for the picker next time. */
+  const saveAsTemplate = async () => {
+    const name = (tplName ?? '').trim();
+    if (!name || savingTpl) return;
+    if (!canWrite || workspaceId === null) { toast('Sign in to a workspace to save templates.'); return; }
+    setSavingTpl(true);
+    const r = await saveTemplate(workspaceId, {
+      name: name.slice(0, 120), channel: channel === 'sms' ? 'sms' : 'email',
+      audience: kind === 'buyer' ? 'buyer' : kind === 'vendor' ? 'general' : 'seller', category: null,
+      subject: channel === 'email' ? subject : null, body_text: body, body_html: null,
+      // An email keeps its blocks: saveTemplate renders body_html from them, and the editor reopens them.
+      blocks: channel === 'email' ? ownBlocks : null, shared: false,
+    });
+    setSavingTpl(false);
+    if (!r.ok) { toast(r.message); return; }
+    setTplName(null);
+    toast(`Saved “${r.data.name}” to your templates`);
+    t.reload();
+  };
+
+  /**
+   * Email, as a batch. One mailbox-guard claim for everyone first
+   * (claimBulkEmail), so the send is spaced from the mailbox's last send
+   * rather than each email from the one before it; then up to three Gmail
+   * sends in flight at once, each spending its claim. A refusal that stops
+   * every later send (Google needs approving again, sending switched off)
+   * stops the loop and gives the unspent claims back.
+   */
+  const sendEmails = async (ws: number, sent: number[], failed: string[]) => {
+    const key = (r: Row) => r.to.trim().toLowerCase();
+    const claim = await claimBulkEmail(ws, go.map(key));
+    if (!claim.ok) { failed.push(`Nothing sent: ${claim.message}`); return; }
+    if (!claim.data.connected) { failed.push('Nothing sent: connect Google in Settings to send email'); return; }
+    const refused = new Map((claim.data.refused ?? []).map((x) => [x.email, x]));
+    if (claim.data.ok === false) {
+      failed.push(`Nothing sent: ${claim.data.message || claim.data.code || 'the mailbox guard refused this send'}`);
+      return;
+    }
+    const claims = claim.data.claims ?? {};
+    const todo: Row[] = [];
+    for (const r of go) {
+      const why = refused.get(key(r));
+      if (why) failed.push(`${r.name}: ${why.message}`);
+      else if (claims[key(r)] == null) failed.push(`${r.name}: not claimed`);
+      else todo.push(r);
+    }
+    let held = '';
+    let done = 0;
+    const queue = [...todo];
+    const unspent: number[] = [];
+    const one = async (r: Row) => {
+      const claimId = claims[key(r)];
+      if (held) { failed.push(`${r.name}: not attempted (${held})`); unspent.push(claimId); return; }
+      const m = renderEmail({ subject, body_html: html, body_text: body }, fieldsOf(r));
+      const res = await sendEmail(ws, {
+        to: r.to, subject: m.subject, body_html: m.html ?? undefined, body_text: m.text,
+        ...(kind === 'seller' ? { seller_id: r.dbId } : kind === 'buyer' ? { buyer_id: r.dbId } : { vendor_id: r.dbId }),
+        deal_id: deal?.id ?? null, kind: 'bulk', claim_id: claimId,
+      });
+      if (!res.ok) { failed.push(`${r.name}: ${res.message}`); unspent.push(claimId); return; }
+      if (!res.data.connected || res.data.status === 'needs_reauth') {
+        held = res.data.status === 'needs_reauth' ? 'Google needs this connection approved again — Settings → Google' : 'connect Google in Settings to send email';
+        failed.push(`${r.name}: ${held}`); unspent.push(claimId); return;
+      }
+      if (res.data.ok === false) {
+        if (res.data.code && !['suppressed', 'unverified_unsafe', 'claim'].includes(res.data.code)) held = `mailbox guard: ${res.data.code}${res.data.next_at ? `, next at ${new Date(res.data.next_at).toLocaleTimeString()}` : ''}`;
+        failed.push(`${r.name}: ${res.data.message || res.data.code || 'refused'}`);
+        if (res.data.code !== 'claim') unspent.push(claimId);
+        return;
+      }
+      // google-sync files the row on a seller or buyer; a vendor is filed from here.
+      if (kind === 'vendor' && res.data.communication_id && supabase) {
+        await supabase.from('communications').update({ vendor_id: r.dbId }).eq('id', res.data.communication_id);
+      }
+      sent.push(r.dbId);
+    };
+    await Promise.all(Array.from({ length: Math.min(3, queue.length) }, async () => {
+      while (queue.length) {
+        const r = queue.shift()!;
+        await one(r);
+        done += 1;
+        setProgress(done);
+      }
+    }));
+    if (unspent.length) void releaseBulkEmail(ws, unspent);
+  };
+
   const send = async () => {
     if (!canWrite || workspaceId === null) {
       setResult({ summary: `${go.length} would be sent (demo)`, lines: ['Sign in to a workspace to send for real.'] });
@@ -307,7 +404,11 @@ function Composer({
     setProgress(0);
     const sent: number[] = [];
     const failed: string[] = [];
+    const changed: string[] = [];
 
+    // Whatever happens, the modal must not stay on "Sending…" with Close
+    // disabled: a thrown error here used to lock it with no way out.
+    try {
     if (channel === 'rvm') {
       // The script is the recording's written record (what the activity log shows), not something read aloud.
       const clip = rvmClip;
@@ -331,44 +432,31 @@ function Composer({
         sellerId: kind === 'seller' ? r.dbId : null, buyerId: kind === 'buyer' ? r.dbId : null, vendorId: kind === 'vendor' ? r.dbId : null,
         name: r.name, phone: r.to, extra: fieldsOf(r),
       }));
-      const out = await textMany(ws, to, body, rep);
+      const out = await textMany(ws, to, body, rep, setProgress);
       out.forEach((o, i) => (o.error ? failed.push(`${go[i].name}: ${o.error}`) : sent.push(go[i].dbId)));
+      // What the carrier check reworded (lib/carrier-safe), once, above the failures.
+      const fixed = [...new Set(out.map((o) => o.carrierFixed).filter((f): f is string => !!f))];
+      if (fixed.length) changed.push(`Reworded so carriers deliver it: ${fixed.slice(0, 3).join('; ')}${fixed.length > 3 ? ` and ${fixed.length - 3} more` : ''}.`);
       setProgress(go.length);
     } else {
-      // One at a time: the mailbox guard paces bulk mail, and when it refuses
-      // for a reason that will refuse the next one too (paused, a cap, outside
-      // the window) the rest are not attempted rather than hammered.
-      let held = '';
-      for (const [i, r] of go.entries()) {
-        setProgress(i);
-        if (held) { failed.push(`${r.name}: not attempted (${held})`); continue; }
-        const m = renderEmail({ subject, body_html: html, body_text: body }, fieldsOf(r));
-        const res = await sendEmail(ws, {
-          to: r.to, subject: m.subject, body_html: m.html ?? undefined, body_text: m.text,
-          ...(kind === 'seller' ? { seller_id: r.dbId } : kind === 'buyer' ? { buyer_id: r.dbId } : { vendor_id: r.dbId }), kind: 'bulk',
-        });
-        if (!res.ok) { failed.push(`${r.name}: ${res.message}`); continue; }
-        if (!res.data.connected) { held = 'connect Google in Settings to send email'; failed.push(`${r.name}: ${held}`); continue; }
-        if (res.data.ok === false) {
-          if (res.data.code && res.data.code !== 'suppressed') held = `mailbox guard: ${res.data.code}${res.data.next_at ? `, next at ${new Date(res.data.next_at).toLocaleTimeString()}` : ''}`;
-          failed.push(`${r.name}: ${res.data.message || res.data.code || 'refused'}`);
-          continue;
-        }
-        // google-sync files the row on a seller or buyer; a vendor is filed from here.
-        if (kind === 'vendor' && res.data.communication_id && supabase) {
-          await supabase.from('communications').update({ vendor_id: r.dbId }).eq('id', res.data.communication_id);
-        }
-        sent.push(r.dbId);
-      }
+      await sendEmails(ws, sent, failed);
       setProgress(go.length);
     }
+    } catch (err) {
+      failed.push(`Stopped: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setProgress(null);
+    }
 
-    if (sent.length && onSent) await onSent({ channel, dealId: deal?.id ?? null, sentDbIds: sent });
-    setProgress(null);
+    // The report first; whatever the host does after a send (mark the deal
+    // sent, reload the CRM) runs behind it rather than holding "Sending…".
     setResult({
       summary: `${sent.length} sent · ${failed.length} failed · ${skipped.length} skipped`,
-      lines: [...failed, ...skipped.map((r) => `${r.name}: skipped (${r.skip})`)],
+      lines: [...changed, ...failed, ...skipped.map((r) => `${r.name}: skipped (${r.skip})`)],
     });
+    if (sent.length && onSent) {
+      try { await onSent({ channel, dealId: deal?.id ?? null, sentDbIds: sent }); } catch (err) { console.error('after send', err); }
+    }
   };
 
   // Escape closes, unless a send is in flight.
@@ -463,7 +551,23 @@ function Composer({
                       <Icon name="template" size={13} /> {picking ? 'Hide templates' : 'Use a template'}
                     </Button>
                     {body.trim() && <Button tone="ghost" className="dc2" onClick={() => setBody(channel === 'sms' ? SMS_START : EMAIL_START)} style={{ padding: '7px 11px' }}>Clear</Button>}
+                    {body.trim() && tplName === null && (
+                      <Button tone="ghost" className="dc2" onClick={() => setTplName(channel === 'email' && subject.trim() ? subject.trim().slice(0, 60) : '')} style={{ padding: '7px 11px' }}>
+                        <Icon name="template" size={13} /> Save as template
+                      </Button>
+                    )}
                   </div>
+                  {tplName !== null && (
+                    <div className="flex items-center gap-2 rounded-xl p-2.5" style={{ border: '1px solid var(--line)', background: 'var(--panel)' }} data-testid="save-template">
+                      <input
+                        style={{ ...input, flex: 1 }} value={tplName} autoFocus placeholder="Template name"
+                        onChange={(e) => setTplName(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void saveAsTemplate(); } if (e.key === 'Escape') { e.stopPropagation(); setTplName(null); } }}
+                      />
+                      <Button tone="accent" className="dc2" disabled={!tplName.trim() || savingTpl} onClick={() => void saveAsTemplate()} style={{ padding: '7px 11px' }}>{savingTpl ? 'Saving…' : 'Save'}</Button>
+                      <Button tone="ghost" className="dc2" disabled={savingTpl} onClick={() => setTplName(null)} style={{ padding: '7px 11px' }}>Cancel</Button>
+                    </div>
+                  )}
                   {channel === 'email' && (
                     <label><span style={label}>Subject</span>
                       <input style={input} value={subject} onChange={(e) => { setSubject(e.target.value); setConfirming(false); }} {...track(setSubject)} placeholder="Off market in {{city}} — {{asking_price}}" /></label>
@@ -521,7 +625,8 @@ function Composer({
           <div className="flex min-h-0 flex-col gap-3 overflow-auto p-4" style={{ background: 'var(--panel-2)' }}>
             <div className="flex flex-wrap items-center gap-2">
               <span className="mr-auto" style={label}>{sample ? `Preview · as ${go[0].name} gets it` : 'Preview'}</span>
-              {channel === 'email' && preview && <SpamRiskBadge subject={preview.subject} html={preview.html} text={preview.text} recipients={go.length} kind="bulk" />}
+              {/* Each person gets their own message, so the "several recipients" finding does not apply. */}
+              {channel === 'email' && preview && <SpamRiskBadge subject={preview.subject} html={preview.html} text={preview.text} recipients={1} kind="bulk" />}
               {channel === 'email' && (
                 <>
                   <span style={segWrap}>

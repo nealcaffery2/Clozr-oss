@@ -114,7 +114,7 @@ export function PublishDialog({ api, agentKey, liveVersion, templateId, chosenMo
           <div>
             <label htmlFor="va-publish-note" style={{ display: 'block', fontSize: 11.5, color: MUTED, fontWeight: 600, marginBottom: 6 }}>Note (optional)</label>
             <input id="va-publish-note" className="va-field" value={note} maxLength={200} placeholder="What changed and why" onChange={(e) => setNote(e.target.value)}
-              style={{ width: '100%', height: 36, padding: '0 11px', border: `1px solid ${LINE}`, borderRadius: 9, fontSize: 13, outline: 0, background: '#fafafa', color: INK, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+              style={{ width: '100%', height: 36, padding: '0 11px', border: `1px solid ${LINE}`, borderRadius: 9, fontSize: 13, outline: 0, background: 'var(--canvas, #fafafa)', color: INK, fontFamily: 'inherit', boxSizing: 'border-box' }} />
             <p style={{ margin: '5px 0 0', fontSize: 12, color: MUTED }}>Shown in History next to the version.</p>
           </div>
         </div>

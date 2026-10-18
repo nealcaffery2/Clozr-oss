@@ -1,5 +1,5 @@
 // iVueit: reading a submission's photos and the order line Casey sees.
-import { submissionPhotos } from '../supabase/functions/_shared/ivueit-photos';
+import { hookTypeOf, IVUEIT_HOOK_TYPES, submissionPhotos } from '../supabase/functions/_shared/ivueit-photos';
 import { orderLine, type PhotoOrderRow } from '../lib/ivueit';
 
 let failed = 0;
@@ -37,4 +37,6 @@ eq('rush shows', orderLine({ ...base, urgent: true }, new Date('2026-10-13T12:20
 eq('done counts photos', orderLine({ ...base, status: 'completed', photo_count: 1, completed_at: '2026-10-14T18:00:00Z' }), '1 photo in · Oct 14');
 eq('failed says why', orderLine({ ...base, status: 'failed', error: 'The order expired before a Vuer shot it. Order again.' }), 'The order expired before a Vuer shot it. Order again.');
 
+eq('all three iVueit webhooks are registered', [...IVUEIT_HOOK_TYPES], ['VueCompleted', 'VueCanceled', 'VueEscalated']);
+eq('webhook type from the URL; an old URL without one is VueCompleted, an unknown one is null', [hookTypeOf('VueCanceled'), hookTypeOf('VueEscalated'), hookTypeOf(null), hookTypeOf(''), hookTypeOf('junk')], ['VueCanceled', 'VueEscalated', 'VueCompleted', 'VueCompleted', null]);
 if (failed) { console.error(`${failed} failed`); process.exit(1); }

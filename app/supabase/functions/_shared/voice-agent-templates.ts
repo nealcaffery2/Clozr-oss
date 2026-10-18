@@ -338,7 +338,8 @@ export const TEMPLATES: Record<string, AgentTemplate> = {
     settings: {
       identity: { role: 'acquisitions', introduce_as: 'virtual_assistant' },
       // Negotiating against a COMPR range needs the sharpest brain; the underwriting itself runs in COMPR.
-      voice: { llm: 'claude-sonnet-5-5', thinking: 'light' },
+      // Thinking stays off: a reasoning pass is dead air before every reply.
+      voice: { llm: 'claude-sonnet-5-5', thinking: 'off' },
       personality: { tone: 'direct', energy: 3, verbosity: 2, warmth: 3, formality: 3, use_fillers: true, humor: 0 },
       script: { template_id: 'acquisitions' },
       rules: {

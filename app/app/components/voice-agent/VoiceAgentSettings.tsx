@@ -129,7 +129,7 @@ export function VoiceAgentSettings({ isMobile, onOpenRecord }: { isMobile: boole
             <div style={{ textAlign: 'center', paddingBottom: 12 }}>
               <button type="button" className="va-btn va-prim" style={{ ...primary(), height: 36, padding: '0 16px' }} onClick={() => setDialog({ kind: 'new' })}><Plus size={15} aria-hidden="true" /> Create your first agent</button>
             </div>
-          ) : <div style={{ textAlign: 'center', paddingBottom: 12, color: '#a1a1aa' }}><Bot size={22} aria-hidden="true" /></div>}
+          ) : <div style={{ textAlign: 'center', paddingBottom: 12, color: 'var(--subtle, #a1a1aa)' }}><Bot size={22} aria-hidden="true" /></div>}
         </section>
       ) : (
         <AgentList agents={agents} stats={stats} selected={selected} dirtyKeys={forms.dirtyKeys} canEdit={canEdit} isMobile={isMobile}

@@ -3,7 +3,7 @@
 // rail looks the same until someone moves it. The saved order is the full
 // sequence; pins are a subset that always render first, in that same order.
 
-export const DEFAULT_PINNED_LISTS = ['My Leads', 'New Leads', 'Hot Leads', 'Follow Up Today'];
+export const DEFAULT_PINNED_LISTS = ['Needs attention', 'My Leads', 'New Leads', 'Hot Leads', 'Follow Up Today'];
 
 /** Defaults, then any saved labels that still exist, unknowns dropped, missing defaults appended. */
 export function orderSmartLists(defaults: string[], savedOrder: string[]): string[] {

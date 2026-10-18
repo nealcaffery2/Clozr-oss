@@ -44,18 +44,18 @@ export function BuyerCard(p: Props) {
   const callName = person ?? c.owner_name;
   // How this buyer was found, and the proof: the strongest method up top, every piece of evidence under the reasons.
   const found = headline(c);
-  const methodTint = (m: string): [string, string] => m === 'homefull' ? ['#9a3412', '#ffedd5'] : m === 'wholesale_snipe' ? ['#be123c', '#ffe4e6'] : m === 'wholesaler_buyers' ? ['#6d28d9', '#ede9fe'] : m === 'reverse_llc' ? ['#0369a1', '#e0f2fe'] : m === 'landlord' ? ['#15803d', '#dcfce7'] : ['#3f3f46', '#f4f4f5'];
+  const methodTint = (m: string): [string, string] => m === 'homefull' ? ['#9a3412', 'var(--tint-orange-2, #ffedd5)'] : m === 'wholesale_snipe' ? ['#be123c', '#ffe4e6'] : m === 'wholesaler_buyers' ? ['#6d28d9', 'var(--tint-violet, #ede9fe)'] : m === 'reverse_llc' ? ['#0369a1', 'var(--tint-sky, #e0f2fe)'] : m === 'landlord' ? ['#15803d', 'var(--positive-soft, #dcfce7)'] : ['var(--ink-3, #3f3f46)', 'var(--surface-2, #f4f4f5)'];
 
   const phoneRow = (ph: MarkedPhone & { person: string | null }, compact: boolean) => (
     <div key={ph.number} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: compact ? '1px 0' : '3px 0', fontSize: '12px', opacity: ph.status === 'wrong' ? 0.5 : 1 }}>
       {p.onCall && !ph.dnc && ph.status !== 'wrong' ? (
         <button type="button" onClick={(e) => { e.stopPropagation(); p.onCall!(ph.person ?? callName, ph.number); }} title="Call through the dialer"
           style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', border: 0, background: 'none', padding: '2px 0', color: INK, fontWeight: 600, cursor: 'pointer', fontVariantNumeric: 'tabular-nums' }}>
-          <span style={{ display: 'inline-grid', placeItems: 'center', width: '20px', height: '20px', borderRadius: '6px', background: '#E7F8F1', color: GREEN }}><Icon d={ICON.phone} size={11} /></span>{ph.number}
+          <span style={{ display: 'inline-grid', placeItems: 'center', width: '20px', height: '20px', borderRadius: '6px', background: 'var(--mint-dim, #e7f8f1)', color: GREEN }}><Icon d={ICON.phone} size={11} /></span>{ph.number}
         </button>
       ) : <span style={{ color: INK, fontWeight: 600, textDecoration: ph.status === 'wrong' ? 'line-through' : 'none', fontVariantNumeric: 'tabular-nums' }}>{ph.number}</span>}
       <span style={{ color: MUTED, fontSize: '11px' }}>{ph.type ?? ''}</span>
-      {ph.dnc ? <Badge color={RED} tint="#fef2f2" title="On the Do Not Call list: never texted in bulk or auto-dialed">DNC</Badge> : null}
+      {ph.dnc ? <Badge color={RED} tint="var(--tint-red, #fef2f2)" title="On the Do Not Call list: never texted in bulk or auto-dialed">DNC</Badge> : null}
       {ph.status === 'good' ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', color: GREEN, fontSize: '11px', fontWeight: 600 }}><Icon d={ICON.check} size={11} stroke={2.5} />Good</span> : null}
       {canWrite && !compact ? (
         <span style={{ display: 'inline-flex', gap: '3px', marginLeft: 'auto' }}>
@@ -88,7 +88,7 @@ export function BuyerCard(p: Props) {
 
   return (
     <div onMouseEnter={() => p.onHover(true)} onMouseLeave={() => p.onHover(false)} data-active={p.active || undefined}
-      style={{ borderBottom: `1px solid ${HAIR}`, background: p.active ? '#F0FAF5' : p.open ? '#fcfcfd' : '#fff', boxShadow: p.active ? `inset 3px 0 0 ${PURPLE}` : 'none' }}>
+      style={{ borderBottom: `1px solid ${HAIR}`, background: p.active ? 'var(--c-genius-soft, #f0faf5)' : p.open ? 'var(--surface-1, #fcfcfd)' : 'var(--surface, #fff)', boxShadow: p.active ? `inset 3px 0 0 ${PURPLE}` : 'none' }}>
       <div role="button" tabIndex={0} onClick={p.onToggle}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); p.onToggle(); } }}
         style={{ display: 'flex', alignItems: 'flex-start', gap: isMobile ? '10px' : '12px', padding: isMobile ? '12px 12px 10px' : '13px 14px', cursor: 'pointer' }}>
@@ -101,29 +101,29 @@ export function BuyerCard(p: Props) {
             <Badge {...KIND_BADGE[c.kind]}>{KIND_LABEL[c.kind]}</Badge>
           </div>
           {person || (!c.corporate && c.people.length > 1) ? (
-            <div style={{ fontSize: '12px', color: '#3f3f46', marginTop: '2px' }}>{c.corporate ? `Behind it: ${person}` : c.people.join(' · ')}</div>
+            <div style={{ fontSize: '12px', color: 'var(--ink-3, #3f3f46)', marginTop: '2px' }}>{c.corporate ? `Behind it: ${person}` : c.people.join(' · ')}</div>
           ) : null}
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', marginTop: '6px' }}>
-            {c.smart_match ? <Badge color="#08694C" tint={PURPLE_TINT} title="Top tier for this deal"><Icon d={ICON.sparkle} size={10} stroke={2.4} />SmartMatch #{c.smart_rank}</Badge> : null}
-            {c.matched_buyer_id ? <Badge color={GREEN} tint="#E7F8F1" title={`Matched by ${c.match_by}`}>In your buyers</Badge> : null}
+            {c.smart_match ? <Badge color="var(--tx-mint-deep, #08694c)" tint={PURPLE_TINT} title="Top tier for this deal"><Icon d={ICON.sparkle} size={10} stroke={2.4} />SmartMatch #{c.smart_rank}</Badge> : null}
+            {c.matched_buyer_id ? <Badge color={GREEN} tint="var(--mint-dim, #e7f8f1)" title={`Matched by ${c.match_by}`}>In your buyers</Badge> : null}
             {found ? (c.methods ?? [found.method]).map((m) => { const [col, tint] = methodTint(m); return <Badge key={m} color={col} tint={tint} title={c.evidence?.find((e) => e.method === m)?.summary ?? METHOD_LABEL[m]}>{METHOD_LABEL[m]}</Badge>; })
-              : p.foundVia ? <Badge color="#3f3f46" tint="#f4f4f5">{p.foundVia}</Badge> : null}
+              : p.foundVia ? <Badge color="var(--ink-3, #3f3f46)" tint="var(--surface-2, #f4f4f5)">{p.foundVia}</Badge> : null}
             {c.sources?.length ? (
-              <Badge title="Which data source found this buyer" {...(c.sources.length > 1 ? { color: '#15803d', tint: '#dcfce7' } : c.sources[0] === 'attom' ? { color: '#0369a1', tint: '#e0f2fe' } : {})}>
+              <Badge title="Which data source found this buyer" {...(c.sources.length > 1 ? { color: 'var(--tx-green, #15803d)', tint: 'var(--positive-soft, #dcfce7)' } : c.sources[0] === 'attom' ? { color: 'var(--tx-sky, #0369a1)', tint: 'var(--tint-sky, #e0f2fe)' } : {})}>
                 {c.sources.length > 1 ? 'Both sources' : c.sources[0] === 'attom' ? 'ATTOM only' : 'RealEstateAPI only'}
               </Badge>
             ) : null}
-            {c.institutional ? <Badge color="#92400e" tint="#fef3c7">Institutional</Badge> : null}
+            {c.institutional ? <Badge color="var(--tx-amber-deep, #92400e)" tint="var(--caution-soft, #fef3c7)">Institutional</Badge> : null}
             {c.portfolio_count && c.portfolio_count > 1 ? (
               <button type="button" onClick={(e) => { e.stopPropagation(); p.onPortfolio(); }} title="See their portfolio"
-                style={{ border: 0, boxShadow: SHADOW.ring, background: '#fff', borderRadius: '6px', fontSize: '11px', fontWeight: 600, lineHeight: '16px', minHeight: '24px', color: '#3f3f46', padding: '0 7px', cursor: 'pointer', fontVariantNumeric: 'tabular-nums' }}>
+                style={{ border: 0, boxShadow: SHADOW.ring, background: 'var(--surface, #fff)', borderRadius: '6px', fontSize: '11px', fontWeight: 600, lineHeight: '16px', minHeight: '24px', color: 'var(--ink-3, #3f3f46)', padding: '0 7px', cursor: 'pointer', fontVariantNumeric: 'tabular-nums' }}>
                 {c.portfolio_count.toLocaleString('en-US')} owned
               </button>
             ) : null}
           </div>
           {last ? (
             <div style={{ fontSize: '12px', color: MUTED, marginTop: '6px', lineHeight: 1.45 }}>
-              <span style={{ color: '#3f3f46' }}>{last.role === 'flip' && last.resale_date ? 'Flipped' : last.role === 'build' ? 'Built on' : 'Bought'} {last.address}</span>
+              <span style={{ color: 'var(--ink-3, #3f3f46)' }}>{last.role === 'flip' && last.resale_date ? 'Flipped' : last.role === 'build' ? 'Built on' : 'Bought'} {last.address}</span>
               {last.distance_mi != null ? ` · ${last.distance_mi} mi` : ''}
               {` · ${last.beds ?? '?'}bd/${last.baths ?? '?'}ba`}{last.sqft ? ` · ${last.sqft.toLocaleString('en-US')} sf` : ''}{last.year_built ? ` · ${last.year_built}` : ''}
               {` · ${priceLine(last)} · ${when(last.date)}`}
@@ -141,7 +141,7 @@ export function BuyerCard(p: Props) {
           {c.evidence?.length ? (
             <div style={{ marginTop: '7px', display: 'grid', gap: '3px' }}>
               {c.evidence.map((e, i) => { const [col] = methodTint(e.method); return (
-                <div key={i} style={{ fontSize: '11.5px', color: '#3f3f46', lineHeight: 1.45 }}>
+                <div key={i} style={{ fontSize: '11.5px', color: 'var(--ink-3, #3f3f46)', lineHeight: 1.45 }}>
                   <b style={{ color: col }}>{METHOD_LABEL[e.method]}:</b> {e.summary}{e.confidence != null && e.confidence < 0.95 ? <span style={{ color: MUTED }}> · {Math.round(e.confidence * 100)}% sure</span> : null}
                 </div>
               ); })}
@@ -151,14 +151,14 @@ export function BuyerCard(p: Props) {
           {phones.length ? (
             <div style={{ marginTop: '7px', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
               {phones.slice(0, 3).map((ph) => phoneRow(ph, true))}
-              {emails[0] ? <a href={`mailto:${emails[0]}`} onClick={(e) => reachClick(e, 'email', { name: callName ?? '', email: emails[0], audience: 'buyer' })} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: INK, marginTop: '2px', textDecoration: 'none' }}><span style={{ display: 'inline-grid', placeItems: 'center', width: '20px', height: '20px', borderRadius: '6px', background: '#f4f4f5', color: MUTED }}><Icon d={ICON.mail} size={11} /></span>{emails[0]}</a> : null}
+              {emails[0] ? <a href={`mailto:${emails[0]}`} onClick={(e) => reachClick(e, 'email', { name: callName ?? '', email: emails[0], audience: 'buyer' })} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: INK, marginTop: '2px', textDecoration: 'none' }}><span style={{ display: 'inline-grid', placeItems: 'center', width: '20px', height: '20px', borderRadius: '6px', background: 'var(--surface-2, #f4f4f5)', color: MUTED }}><Icon d={ICON.mail} size={11} /></span>{emails[0]}</a> : null}
             </div>
           ) : c.contacts ? <div style={{ fontSize: '11.5px', color: MUTED, marginTop: '7px' }}>Skip trace found no phones or emails.</div> : null}
           {p.traceError ? <div style={{ fontSize: '11.5px', color: RED, marginTop: '6px' }}>{p.traceError}</div> : null}
         </div>
         {!isMobile ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', flex: 'none' }} onClick={(e) => e.stopPropagation()}>
-            <Ring value={c.pct_of_arv} color="#52525b" label="% of ARV" suffix="%" size={40} />
+            <Ring value={c.pct_of_arv} color="var(--muted, #52525b)" label="% of ARV" suffix="%" size={40} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'stretch' }}>{actions}</div>
           </div>
         ) : null}
@@ -166,7 +166,7 @@ export function BuyerCard(p: Props) {
 
       {isMobile && canWrite ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px 12px', flexWrap: 'wrap' }}>
-          <Ring value={c.pct_of_arv} color="#52525b" suffix="%" size={34} />
+          <Ring value={c.pct_of_arv} color="var(--muted, #52525b)" suffix="%" size={34} />
           {actions}
         </div>
       ) : null}

@@ -13,15 +13,15 @@ export default function PlaygroundLayout({ children }: { children: React.ReactNo
   const s = useSession();
   if (DEV) return <>{children}</>;
   if (!s.ready || (s.session && s.memberships === 'loading')) {
-    return <main aria-busy="true" style={{ minHeight: '100dvh', background: '#fafafa' }} />;
+    return <main aria-busy="true" style={{ minHeight: '100dvh', background: 'var(--canvas, #fafafa)' }} />;
   }
   if (!isAdmin((s.workspace?.role as Role | undefined) ?? null)) {
     return (
-      <main style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: '#fafafa', padding: '16px', fontFamily: 'system-ui, sans-serif' }}>
+      <main style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: 'var(--canvas, #fafafa)', padding: '16px', fontFamily: 'system-ui, sans-serif' }}>
         <div style={{ maxWidth: '360px', textAlign: 'center' }}>
-          <h1 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#18181b' }}>This page isn’t available</h1>
-          <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#52525b', lineHeight: 1.5 }}>
-            Playground pages are for workspace owners and admins. <a href="/app" style={{ color: '#0A8560' }}>Open CLOZR</a>
+          <h1 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--ink, #18181b)' }}>This page isn’t available</h1>
+          <p style={{ margin: '6px 0 0', fontSize: '13px', color: 'var(--muted, #52525b)', lineHeight: 1.5 }}>
+            Playground pages are for workspace owners and admins. <a href="/app" style={{ color: 'var(--tx-mint, #0a8560)' }}>Open CLOZR</a>
           </p>
         </div>
       </main>

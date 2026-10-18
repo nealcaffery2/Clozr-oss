@@ -70,18 +70,18 @@ export function AiAgentToggle({ workspaceId, kind, recordId, recordName, canWrit
       <AiaStyles />
       <div className="aia-pill" title={title}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 0, height: mobile ? 36 : 32, borderRadius: 999, flex: 'none', overflow: 'hidden',
-          border: `1px solid ${on ? 'rgba(22,163,74,.45)' : blocked ? '#e4e4e7' : 'rgba(220,38,38,.35)'}`,
-          background: on ? 'linear-gradient(90deg, #ecfdf5, #f0fdf4)' : blocked ? '#fafafa' : '#fff',
+          border: `1px solid ${on ? 'rgba(22,163,74,.45)' : blocked ? 'var(--divider, #e4e4e7)' : 'rgba(220,38,38,.35)'}`,
+          background: on ? 'linear-gradient(90deg, var(--tint-green, #ecfdf5), var(--tint-green-2, #f0fdf4))' : blocked ? 'var(--canvas, #fafafa)' : 'var(--surface, #fff)',
           boxShadow: on ? '0 0 0 3px rgba(34,197,94,.12)' : 'none', opacity: live ? 1 : 0.6 }}>
         <button type="button" onClick={() => live && setOpen(true)} disabled={!live} aria-label={`Open ${name} for this record`}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: '100%', padding: '0 8px 0 4px', border: 0, background: 'none', cursor: live ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>
           <AgentAvatar name={name} src={agent?.avatar_url} size={mobile ? 28 : 24} live={on} />
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: on ? '#166534' : '#27272a', whiteSpace: 'nowrap', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: on ? '#166534' : 'var(--ink-2, #27272a)', whiteSpace: 'nowrap', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {on ? name : 'AI Agent'}
           </span>
         </button>
         {blocked ? (
-          <span aria-label="Not allowed" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '0 10px 0 4px', fontSize: 11.5, fontWeight: 700, color: '#71717a' }}>
+          <span aria-label="Not allowed" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '0 10px 0 4px', fontSize: 11.5, fontWeight: 700, color: 'var(--meta, #71717a)' }}>
             <Ban size={13} aria-hidden /> Off limits
           </span>
         ) : (
@@ -89,7 +89,7 @@ export function AiAgentToggle({ workspaceId, kind, recordId, recordName, canWrit
             style={{ height: '100%', padding: '0 8px 0 6px', border: 0, borderLeft: `1px solid ${on ? 'rgba(22,163,74,.25)' : 'rgba(220,38,38,.2)'}`, background: 'none', cursor: live && canWrite ? 'pointer' : 'not-allowed', display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}>
             <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '.08em', color: on ? '#16a34a' : '#dc2626' }}>{busy ? '…' : on ? 'ON' : 'OFF'}</span>
             <span aria-hidden style={{ width: 34, height: 20, borderRadius: 999, padding: 2, background: on ? '#22c55e' : '#ef4444', display: 'inline-flex', transition: 'background .2s', boxSizing: 'border-box' }}>
-              <span style={{ width: 16, height: 16, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,.3)', transform: `translateX(${on ? 14 : 0}px)`, transition: 'transform .2s' }} />
+              <span style={{ width: 16, height: 16, borderRadius: '50%', background: 'var(--surface, #fff)', boxShadow: '0 1px 2px rgba(0,0,0,.3)', transform: `translateX(${on ? 14 : 0}px)`, transition: 'transform .2s' }} />
             </span>
           </button>
         )}

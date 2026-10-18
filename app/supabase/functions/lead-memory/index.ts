@@ -10,8 +10,9 @@
  * { action: 'refresh_dirty' }
  *   The two-minute pg_cron kick (lead_memory_kick, only when something is
  *   dirty), service role only. Takes up to DIRTY_CAP records from
- *   lead_memory_dirty(), newest touch first, and refreshes them in turn until
- *   the time budget runs out; whatever is left stays dirty for the next tick.
+ *   lead_memory_dirty(), newest touch first, and refreshes DIRTY_PARALLEL at
+ *   a time until the time budget runs out; whatever is left stays dirty for
+ *   the next tick.
  *
  * Deployed with verify_jwt, so the gateway checks the bearer's signature and
  * its role claim can be trusted. Needs ANTHROPIC_API_KEY for the AI brief;
@@ -22,10 +23,13 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { corsFor, jsonWith, rateLimit, serverError, tooMany, isServiceCaller } from '../_shared/security.ts';
 import { refreshLeadMemory } from '../_shared/lead-memory.ts';
+import { pool } from '../ai-agent/pool.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
 const DIRTY_CAP = 15;
+/** Model calls at once. Each record is its own memory row and nothing is sent, so order does not matter. */
+const DIRTY_PARALLEL = 3;
 /** Stop starting new records after this long, so a tick never overlaps the next. */
 const DIRTY_BUDGET_MS = 80_000;
 
@@ -59,14 +63,14 @@ Deno.serve(async (req) => {
     const queue = (data ?? []) as { workspace_id: number; record_kind: 'seller' | 'buyer'; record_id: number }[];
     const run = async () => {
       let done = 0;
-      for (const d of queue) {
-        if (Date.now() - started > DIRTY_BUDGET_MS) break;
+      await pool(queue, DIRTY_PARALLEL, async (d) => {
+        if (Date.now() - started > DIRTY_BUDGET_MS) return;
         try {
           if (await refreshLeadMemory(admin, Number(d.workspace_id), d.record_kind, Number(d.record_id))) done++;
         } catch (e) {
           console.error('lead-memory refresh_dirty', `${d.record_kind}:${d.record_id}`, String(e));
         }
-      }
+      });
       console.log('lead-memory refresh_dirty', { queued: queue.length, refreshed: done, ms: Date.now() - started });
     };
     // pg_net gives up after five seconds; the work carries on past the reply.

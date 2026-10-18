@@ -9,6 +9,7 @@
 
 import { addBuyerEmail } from './buyer-contacts';
 import type { Filters, FoundVia, Kind, Purchase, SkipHit, SkipPhone, Strategy, Subject } from '../supabase/functions/_shared/genius-core';
+import { tracePurchaseStub } from '../supabase/functions/_shared/genius-core';
 import { type Evidence, type Labelled, type Method, METHOD_BLURB, METHOD_LABEL, METHOD_TAG, RUN_METHODS, headline, isMethod } from '../supabase/functions/_shared/genius-methods';
 import { emptyBuyBox } from './buyer-profile';
 import { createBuyer, tagBuyers } from './crm-write';
@@ -141,7 +142,10 @@ export type TraceTarget = {
 export const skipTraceTargets = (workspaceId: number, targets: TraceTarget[]) =>
   call<{ results: Record<string, { hits: SkipHit[]; cached: boolean; at: string } | { error: string }>; credits: Record<string, number> }>({
     workspace_id: workspaceId, action: 'skiptrace',
-    targets: targets.slice(0, 100).map((t) => ({ ...t, purchases: [] })),
+    targets: targets.slice(0, 100).map((t) => ({
+      ...t,
+      purchases: t.mail_parts ? [tracePurchaseStub(t.mail_parts)] : [],
+    })),
   });
 
 /**

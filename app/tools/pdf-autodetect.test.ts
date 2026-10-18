@@ -6,7 +6,8 @@
 // stacked signature blocks, and a leaseback's "Seller (Tenant):" lines.
 import assert from 'node:assert/strict';
 import { assignRoles, classify, detectFields, sideOf, tidyLabel, whoIn, type Side, type TextItem } from '../lib/pdf-autodetect';
-import type { Shape } from '../lib/pdf-shapes';
+import { isOutlined, type Shape } from '../lib/pdf-shapes';
+import { mergeOcr, wordsOf } from '../lib/pdf-ocr';
 import { autoMapText } from '../lib/doc-text-import';
 import { docName, replacedBuiltIn } from '../lib/template-import';
 import { guessKind } from '../lib/contracts';
@@ -45,8 +46,8 @@ ok('record values and types', () => {
   assert.equal(classify('Daily Rent Amount: $', acq).type, 'currency');
   assert.equal(classify('vacate within', { ...acq, after: ' calendar days following' }).type, 'number');
   assert.equal(classify('Seller shall pay $', { ...acq, after: ' per day as holdover rent' }).type, 'currency');
-  assert.deepEqual(classify('Seller Signature', acq), { type: 'signature', who: 'seller' });
-  assert.deepEqual(classify('Initialed for identification by Buyer', acq), { type: 'initials', who: 'buyer' });
+  assert.deepEqual(classify('Seller Signature', acq), { type: 'signature', who: 'seller', explicit: true });
+  assert.deepEqual(classify('Initialed for identification by Buyer', acq), { type: 'initials', who: 'buyer', explicit: true });
   assert.deepEqual(classify('Date', { ...acq, ctx: 'seller', inSignBlock: true }), { type: 'date_signed', who: 'seller' });
 });
 
@@ -157,6 +158,96 @@ ok('a stack of PandaDoc exports: type, and the built-in each replaces', () => {
   }
   assert.equal(docName('TREC_One_to_Four_2026.pdf'), 'TREC One to Four 2026', 'a year stays; a copy number goes');
   assert.equal(replacedBuiltIn('Lead intake checklist', builtIns), null);
+});
+
+// A TXR seller's disclosure from zipForm: every printed word is an outline, so
+// the labels below come from OCR (marked `ocr`) and the only real text is what
+// the listing agent typed in. It needs initials on every page and the
+// signature blocks, nothing else (it once came back with 192 fields).
+const word = (p: number, str: string, x: number, y: number, w = str.length * 4): TextItem => ({ page: p, str, x, y, w, h: 9, ocr: true });
+const fill = (p: number, str: string, x: number, y: number): TextItem => ({ page: p, str, x, y, w: str.length * 6, h: 9 });
+const footer = (p: number): { items: TextItem[]; shapes: Shape[] } => ({
+  items: [word(p, 'Initialed', 150, 742), word(p, 'by:', 190, 742), word(p, 'Buyer:', 229, 742, 23), word(p, 'and', 337, 742, 14), word(p, 'Seller:', 355, 742, 24)],
+  shapes: [257, 299, 382, 425].map((x) => ({ page: p, kind: 'rule' as const, x, y: 744, w: 35, h: 0.5 })),
+});
+const disclosure = (filled: boolean) => {
+  const f1 = footer(1), f2 = footer(2);
+  const items: TextItem[] = [
+    ...f1.items, ...f2.items,
+    word(1, 'Dishwasher', 40, 300, 50), word(1, 'If', 220, 322, 8), word(1, 'yes,', 230, 322, 16), word(1, 'explain:', 250, 322, 30),
+    word(2, 'Signature', 37, 502, 36), word(2, 'of', 76, 502, 8), word(2, 'Seller', 86, 502, 22), word(2, 'Date', 270, 502, 16),
+    word(2, 'Signature', 340, 502, 36), word(2, 'of', 379, 502, 8), word(2, 'Seller', 389, 502, 22), word(2, 'Date', 555, 502, 16),
+    word(2, 'Printed', 37, 546, 28), word(2, 'Name:', 68, 546, 24), word(2, 'Printed', 340, 546, 28), word(2, 'Name:', 371, 546, 24),
+    ...(filled ? [fill(1, 'X', 100, 300), fill(1, 'Unknown', 300, 320), fill(1, 'X', 230, 360)] : []),
+  ];
+  const shapes: Shape[] = [
+    ...f1.shapes, ...f2.shapes,
+    { page: 1, kind: 'box', x: 95, y: 290, w: 30, h: 14 },
+    { page: 1, kind: 'rule', x: 285, y: 322, w: 250, h: 0.5 },
+    { page: 1, kind: 'rule', x: 252, y: 362, w: 338, h: 0.5 },
+    { page: 2, kind: 'rule', x: 37, y: 490, w: 208, h: 0.5 }, { page: 2, kind: 'rule', x: 239, y: 490, w: 55, h: 0.5 },
+    { page: 2, kind: 'rule', x: 306, y: 490, w: 208, h: 0.5 }, { page: 2, kind: 'rule', x: 520, y: 490, w: 58, h: 0.5 },
+    { page: 2, kind: 'rule', x: 96, y: 548, w: 200, h: 0.5 }, { page: 2, kind: 'rule', x: 399, y: 548, w: 180, h: 0.5 },
+  ];
+  return detectFields(items, [page, page], shapes, { name: "Seller's Disclosure Notice", kind: 'disclosure', outlined: [1, 2] });
+};
+
+ok('a filled-in disclosure drawn as outlines: initials and signatures only', () => {
+  const { found, signOnly } = disclosure(true);
+  assert.ok(signOnly, 'typed-in values on an outlined form: it is filled in');
+  const at = (p: number) => found.filter((f) => f.page === p).map((f) => `${f.type}:${f.who}${f.printedName ? ':name' : ''}`);
+  assert.deepEqual(at(1), ['initials:buyer', 'initials:seller', 'initials:seller2'], 'the comma between two initials blanks is not a label; Acme Homes initials once');
+  assert.deepEqual(at(2), [
+    'signature:seller', 'signature:seller2', 'date_signed:seller', 'date_signed:seller2', 'text:seller:name', 'text:seller2:name',
+    'initials:buyer', 'initials:seller', 'initials:seller2',
+  ], '"Signature of Seller" twice on a row is the second seller, with their own date and name');
+  assert.ok(!found.some((f) => f.page === 1 && f.type === 'signature'), 'an "X" typed in a box is a check mark, not "X ____" to sign on');
+});
+
+ok('the same outlined form left blank still maps its blanks', () => {
+  const { found, signOnly } = disclosure(false);
+  assert.ok(!signOnly);
+  assert.ok(found.some((f) => f.page === 1 && f.type === 'text' && /explain/i.test(f.label ?? '')), 'the "If yes, explain" line');
+  assert.ok(found.some((f) => f.type === 'signature' && f.who === 'seller'));
+});
+
+ok('an outlined form OCR could not read maps nothing, not a nameless box on every line', () => {
+  const shapes: Shape[] = [{ page: 1, kind: 'rule', x: 285, y: 322, w: 250, h: 0.5 }, { page: 1, kind: 'rule', x: 36, y: 400, w: 200, h: 0.5 }, ...footer(1).shapes];
+  assert.equal(detectFields([], [page], shapes, { name: "Seller's Disclosure Notice", kind: 'disclosure', outlined: [1] }).found.length, 0, 'blank and unread');
+  assert.equal(detectFields([fill(1, 'Unknown', 300, 320)], [page], shapes, { kind: 'disclosure', outlined: [1] }).found.length, 0, 'filled in and unread');
+  assert.ok(detectFields([], [page], shapes, { kind: 'disclosure' }).found.length > 0, 'the same lines on a page that is not outlined still map');
+});
+
+ok('stacked generic signature blocks: the second is the buyer, with their own date and name', () => {
+  const items = [
+    run(1, 'Signature: ______________________________', 54, 500),
+    run(1, 'Date: ______________', 54, 520),
+    run(1, 'Printed Name: ____________________', 54, 540),
+    run(1, 'Signature: ______________________________', 54, 580),
+    run(1, 'Date: ______________', 54, 600),
+    run(1, 'Printed Name: ____________________', 54, 620),
+  ];
+  const { found, side } = detectFields(items, [page], [], { name: 'Acme Homes PSA 2026', kind: 'psa' });
+  assert.deepEqual(found.map((f) => `${f.type}:${f.who}`), [
+    'signature:seller', 'date_signed:seller', 'text:seller',
+    'signature:buyer', 'date_signed:buyer', 'text:buyer',
+  ], 'generic blocks split seller then buyer, dates and names follow their block');
+  const fields = assignRoles(found, ACQ_ROLES, side);
+  assert.equal(fields.filter((f) => f.type === 'signature' && f.role === 'seller').length, 1);
+  assert.equal(fields.filter((f) => f.type === 'signature' && f.role === 'buyer').length, 1, 'the buyer signature is not on the seller side');
+});
+
+ok('OCR words: one row per line, misreads and typed-in text dropped', () => {
+  assert.ok(isOutlined(99, 29652), 'a zipForm page: tens of thousands of curves, a few typed values');
+  assert.ok(!isOutlined(2400, 900), 'a normal page with a logo');
+  const words = wordsOf(1, [{ baseline: { x0: 0, y0: 200, x1: 1000, y1: 204 }, words: [
+    { text: 'Seller:', bbox: { x0: 100, y0: 180, x1: 150, y1: 206 } }, { text: '.', bbox: { x0: 160, y0: 198, x1: 162, y1: 202 } },
+    { text: 'i', bbox: { x0: 170, y0: 190, x1: 172, y1: 202 } }, { text: 'Unknown', bbox: { x0: 600, y0: 184, x1: 680, y1: 206 } },
+  ] }], 2);
+  assert.deepEqual(words.map((w) => w.str), ['Seller:', 'Unknown'], 'a comma read as "i" is dropped');
+  assert.equal(words[0].y, 100.25, 'on the baseline, in points');
+  const merged = mergeOcr([fill(1, 'Unknown', 300, 101)], words);
+  assert.deepEqual(merged.map((w) => `${w.str}${w.ocr ? '*' : ''}`), ['Unknown', 'Seller:*'], 'OCR of the typed-in "Unknown" is the same text twice');
 });
 
 console.log(`pdf-autodetect: ${n} groups passed`);

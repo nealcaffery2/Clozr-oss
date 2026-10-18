@@ -9,16 +9,16 @@
 import React from 'react';
 import { heat } from '@/lib/heat';
 
-export const INK = '#18181b';
-export const MUTED = '#71717a';
-export const FAINT = '#a1a1aa';
-export const LINE = '#e4e4e7';
-export const HAIR = '#f0f0f1';
+export const INK = 'var(--ink, #18181b)';
+export const MUTED = 'var(--meta, #71717a)';
+export const FAINT = 'var(--subtle, #a1a1aa)';
+export const LINE = 'var(--divider, #e4e4e7)';
+export const HAIR = 'var(--divider-2, #f0f0f1)';
 export const GREEN = '#0A8560';
 export const PURPLE = '#0A8560';
-export const PURPLE_TINT = '#E7F5EF';
+export const PURPLE_TINT = 'var(--c-action-soft, #e7f5ef)';
 export const RED = '#b91c1c';
-export const INK_2 = '#3f3f46';
+export const INK_2 = 'var(--ink-3, #3f3f46)';
 
 /** Elevation, from beautiful-shadows: one recipe per surface, never mixed. */
 export const SHADOW = {
@@ -40,12 +40,12 @@ export const GX_CSS = `
 [data-gx] button:disabled{cursor:default!important;opacity:.5}
 [data-gx] :is(button,a,input,select,[role=button],[tabindex]):focus-visible{outline:2px solid ${'#0A8560'};outline-offset:2px}
 [data-gx] label:has(>input[type=checkbox]:focus-visible)>span[aria-hidden]{outline:2px solid ${'#0A8560'};outline-offset:2px}
-[data-gx] input::placeholder{color:${'#a1a1aa'}}
+[data-gx] input::placeholder{color:${'var(--subtle, #a1a1aa)'}}
 [data-gx] input:focus-visible,[data-gx] select:focus-visible{outline-offset:0;box-shadow:0 0 0 3px ${'#0A8560'}26}
 @media (hover:hover) and (pointer:fine){
   [data-gx] button:not(:disabled):hover{filter:brightness(.96)}
-  [data-gx] [data-gx-row]:hover{background:#fafafa}
-  [data-gx] [data-alt]>div:not([data-active]):hover{background:#F0FAF5!important}
+  [data-gx] [data-gx-row]:hover{background:var(--canvas, #fafafa)}
+  [data-gx] [data-alt]>div:not([data-active]):hover{background:var(--c-genius-soft, #f0faf5)!important}
 }
 [data-gx] [data-alt]>div:not([data-active]){background:var(--band)!important}
 [data-gx] .gx-scroll{scrollbar-width:none;-webkit-overflow-scrolling:touch}
@@ -124,7 +124,7 @@ export function Pill({ on, onClick, children, disabled, title }: { on: boolean; 
     <button type="button" onClick={onClick} aria-pressed={on} disabled={disabled} title={title} style={{
       height: '28px', padding: '0 11px', borderRadius: '8px', fontSize: '12px', fontWeight: on ? 600 : 500, cursor: 'pointer',
       whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '6px', border: 0,
-      background: on ? INK : '#fff', color: on ? '#fff' : INK_2,
+      background: on ? INK : 'var(--surface, #fff)', color: on ? 'var(--surface, #fff)' : INK_2,
       boxShadow: on ? '0 1px 2px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.08)' : SHADOW.ring,
     }}>{children}</button>
   );
@@ -155,8 +155,8 @@ export function Toggle({ on, onChange, disabled, children, title }: { on: boolea
   return (
     <label title={title} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', minHeight: '32px', fontSize: '12.5px', fontWeight: 500, color: INK, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap' }}>
       <input type="checkbox" checked={on} disabled={disabled} onChange={(e) => onChange(e.target.checked)} style={{ position: 'absolute', opacity: 0, width: 1, height: 1, margin: 0 }} />
-      <span aria-hidden="true" style={{ position: 'relative', width: '28px', height: '16px', borderRadius: '99px', background: on ? PURPLE : '#d4d4d8', flex: 'none', transition: 'background-color 140ms ease' }}>
-        <span style={{ position: 'absolute', top: '2px', left: '2px', width: '12px', height: '12px', borderRadius: '50%', background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,.2)', transform: on ? 'translateX(12px)' : 'none', transition: 'transform 140ms cubic-bezier(.23,1,.32,1)' }} />
+      <span aria-hidden="true" style={{ position: 'relative', width: '28px', height: '16px', borderRadius: '99px', background: on ? PURPLE : 'var(--line, #d4d4d8)', flex: 'none', transition: 'background-color 140ms ease' }}>
+        <span style={{ position: 'absolute', top: '2px', left: '2px', width: '12px', height: '12px', borderRadius: '50%', background: 'var(--surface, #fff)', boxShadow: '0 1px 2px rgba(0,0,0,.2)', transform: on ? 'translateX(12px)' : 'none', transition: 'transform 140ms cubic-bezier(.23,1,.32,1)' }} />
       </span>
       {children}
     </label>
@@ -164,7 +164,7 @@ export function Toggle({ on, onChange, disabled, children, title }: { on: boolea
 }
 
 /** A status chip: sentence case, 11px semibold, a small radius so it never reads as a button. */
-export function Badge({ children, color = INK_2, tint = '#f4f4f5', title }: { children: React.ReactNode; color?: string; tint?: string; title?: string }) {
+export function Badge({ children, color = INK_2, tint = 'var(--surface-2, #f4f4f5)', title }: { children: React.ReactNode; color?: string; tint?: string; title?: string }) {
   return (
     <span title={title} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600, lineHeight: '16px', color, background: tint, padding: '1px 7px', borderRadius: '6px', whiteSpace: 'nowrap' }}>{children}</span>
   );
@@ -188,15 +188,15 @@ export function Stat({ label, value, strong, hint }: { label: string; value: Rea
 export const btn = (kind: 'ghost' | 'solid' | 'purple' = 'ghost', small = false): React.CSSProperties => ({
   height: small ? '28px' : '32px', padding: small ? '0 10px' : '0 13px', borderRadius: '8px', fontSize: small ? '12px' : '12.5px', fontWeight: kind === 'ghost' ? 500 : 600,
   cursor: 'pointer', whiteSpace: 'nowrap', border: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-  background: kind === 'solid' ? INK : kind === 'purple' ? PURPLE : '#fff',
-  color: kind === 'ghost' ? INK : '#fff',
+  background: kind === 'solid' ? INK : kind === 'purple' ? PURPLE : 'var(--surface, #fff)',
+  color: kind === 'ghost' ? INK : 'var(--surface, #fff)',
   boxShadow: kind === 'ghost' ? SHADOW.ring
     : kind === 'purple' ? '0 0 0 1px #08694C, 0 1px 2px rgba(8,105,76,.3), inset 0 1px 0 rgba(255,255,255,.16)'
       : '0 0 0 1px #000, 0 1px 2px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.1)',
 });
 
 export const input: React.CSSProperties = {
-  height: '32px', padding: '0 10px', borderRadius: '8px', border: 0, boxShadow: SHADOW.ring, fontSize: '13px', color: INK, background: '#fff', minWidth: 0, outline: 'none',
+  height: '32px', padding: '0 10px', borderRadius: '8px', border: 0, boxShadow: SHADOW.ring, fontSize: '13px', color: INK, background: 'var(--surface, #fff)', minWidth: 0, outline: 'none',
 };
 
 export const sectionLabel: React.CSSProperties = { fontSize: '12px', color: INK, fontWeight: 600, marginBottom: '8px' };
@@ -204,7 +204,7 @@ export const sectionLabel: React.CSSProperties = { fontSize: '12px', color: INK,
 export function Modal({ title, onClose, children, width = 760, isMobile }: { title: React.ReactNode; onClose: () => void; children: React.ReactNode; width?: number; isMobile: boolean }) {
   return (
     <div role="dialog" aria-modal="true" data-gx onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(24,24,27,.38)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : '24px' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', width: isMobile ? '100%' : `min(${width}px, 100%)`, maxHeight: isMobile ? '92vh' : '88vh', borderRadius: isMobile ? '16px 16px 0 0' : '14px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: SHADOW.lg }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--surface, #fff)', width: isMobile ? '100%' : `min(${width}px, 100%)`, maxHeight: isMobile ? '92vh' : '88vh', borderRadius: isMobile ? '16px 16px 0 0' : '14px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: SHADOW.lg }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '13px 16px', borderBottom: `1px solid ${HAIR}` }}>
           <div style={{ flex: 1, minWidth: 0, fontSize: '14.5px', fontWeight: 700, color: INK }}>{title}</div>
           <button type="button" onClick={onClose} aria-label="Close" style={{ ...btn('ghost', true), width: '28px', padding: 0, boxShadow: 'none', color: MUTED }}><Icon d={ICON.x} size={15} /></button>

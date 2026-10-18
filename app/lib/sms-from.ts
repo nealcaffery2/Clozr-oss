@@ -3,8 +3,14 @@
 // One choice for the whole CRM, shown and changeable on every texting box: the
 // record composer, the quick text popup, bulk texts and buyer texts. lib/sms
 // reads it on every send, so a box that forgets to pass it still honours it.
-// Null is "my default line", which Talkr resolves (the rep's default number).
-// Remembered per browser, like the rest of a rep's composer preferences.
+// Null is "my default line", which Talkr resolves: the thread's line when one
+// is open with that number, else the rep's default number (Settings →
+// Numbers, the same default Talkr dials from).
+//
+// The pick lasts the page, not the browser. It used to be kept in
+// localStorage, and a line picked once for one text silently became every
+// later text's line, credited to that line's owner. A rep now starts each
+// session on their own default.
 'use client';
 
 import { useSyncExternalStore } from 'react';
@@ -14,7 +20,8 @@ const KEY = 'clozr.smsFrom';
 export type SmsLine = MeDto['org_numbers'][number];
 
 let current: string | null = null;
-try { current = typeof localStorage !== 'undefined' ? localStorage.getItem(KEY) || null : null; } catch { /* private mode */ }
+// Forget what an earlier build remembered, so nobody keeps sending on it.
+try { if (typeof localStorage !== 'undefined') localStorage.removeItem(KEY); } catch { /* private mode */ }
 const listeners = new Set<() => void>();
 
 /** The chosen line's Talkr id, or null for the rep's default. */
@@ -24,10 +31,6 @@ export function getSmsFrom(): string | null {
 
 export function setSmsFrom(id: string | null) {
   current = id || null;
-  try {
-    if (current) localStorage.setItem(KEY, current);
-    else localStorage.removeItem(KEY);
-  } catch { /* private mode */ }
   for (const l of listeners) l();
 }
 

@@ -1,7 +1,7 @@
 // One predicate for "may we reach out": the secret blacklist tag, a buyer's
 // blacklisted_at, a DNC tag. The Blacklist button writes only the tag.
 // Run: npx tsx tools/blacklist.test.ts
-import { BLACKLIST_MESSAGE, blockReason, isBlacklisted, isDoNotEngage, loadBlocked, type BlacklistDb } from '../lib/blacklist';
+import { BLACKLIST_MESSAGE, BLACKLIST_UNREAD, blockReason, isBlacklisted, isDoNotEngage, loadBlocked, textBlock, type BlacklistDb } from '../lib/blacklist';
 import { decideRvm, hasDnc, type RvmFacts } from '../lib/rvm';
 import { inTodayUniverse, type TodayPerson } from '../lib/today';
 import { blockedTexts, textOne } from '../lib/sms';
@@ -92,6 +92,14 @@ eq('a failed read is an error, not "clear"', bad.ok, false);
 const many = fakeDb(rows);
 await loadBlocked(many, { sellerIds: Array.from({ length: 450 }, (_, i) => i + 1) });
 eq('ids are read in chunks of 200', many.reads.map((r) => r.split(':')[1]!.split(',').length), [200, 200, 50]);
+
+// ---- server texts (docs-flow textRecipient): a failed read holds the text, it is not "clear" and not a "no" ----
+eq('textBlock: a blacklisted seller is a no', textBlock(got, { seller_id: 1 }), BLACKLIST_MESSAGE);
+eq('textBlock: a blacklisted buyer is a no', textBlock(got, { buyer_id: 8 }), BLACKLIST_MESSAGE);
+eq('textBlock: a clean seller and buyer may go', textBlock(got, { seller_id: 2, buyer_id: 9 }), null);
+eq('textBlock: no record may go', textBlock(got, {}), null);
+eq('textBlock: a failed read holds, with its own reason', textBlock(bad, { seller_id: 2 }), BLACKLIST_UNREAD);
+eq('the hold reason text', BLACKLIST_UNREAD, 'could not check the blacklist');
 
 // ---- one-to-one text: blocked before Talkr is ever called ----
 let sent = 0;

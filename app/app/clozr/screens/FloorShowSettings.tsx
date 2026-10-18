@@ -14,11 +14,11 @@ import {
 } from '@/lib/floor-store';
 import { listTeammates, type Teammate } from '@/lib/plans';
 
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
 const h2: React.CSSProperties = { margin: '0 0 6px', fontSize: '14px', fontWeight: 700 };
-const sub: React.CSSProperties = { margin: '0 0 12px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.5 };
-const btn: React.CSSProperties = { height: '32px', padding: '0 12px', borderRadius: '9px', border: '1px solid #e4e4e7', background: '#fff', fontWeight: 650, cursor: 'pointer', fontSize: '12.5px' };
-const primary: React.CSSProperties = { ...btn, background: '#1c1d1f', color: '#fff', borderColor: '#1c1d1f' };
+const sub: React.CSSProperties = { margin: '0 0 12px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 };
+const btn: React.CSSProperties = { height: '32px', padding: '0 12px', borderRadius: '9px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontWeight: 650, cursor: 'pointer', fontSize: '12.5px' };
+const primary: React.CSSProperties = { ...btn, background: 'var(--ink-deep, #1c1d1f)', color: 'var(--surface, #fff)', borderColor: 'var(--ink-deep, #1c1d1f)' };
 
 function NotifySwitches() {
   const prefs = useFloorNotifyPrefs();
@@ -33,11 +33,11 @@ function NotifySwitches() {
         type="checkbox"
         checked={on}
         onChange={(e) => void set(key, e.target.checked)}
-        style={{ marginTop: '2px', width: '15px', height: '15px', accentColor: '#0A8560', flex: 'none', cursor: 'pointer' }}
+        style={{ marginTop: '2px', width: '15px', height: '15px', accentColor: 'var(--tx-mint, #0a8560)', flex: 'none', cursor: 'pointer' }}
       />
       <span>
-        <span style={{ display: 'block', fontSize: '13.5px', fontWeight: 650, color: '#18181b' }}>{title}</span>
-        <span style={{ display: 'block', fontSize: '12.5px', color: '#71717a', lineHeight: 1.45, marginTop: '2px' }}>{hint}</span>
+        <span style={{ display: 'block', fontSize: '13.5px', fontWeight: 650, color: 'var(--ink, #18181b)' }}>{title}</span>
+        <span style={{ display: 'block', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.45, marginTop: '2px' }}>{hint}</span>
       </span>
     </label>
   );
@@ -47,8 +47,8 @@ function NotifySwitches() {
       <p style={sub}>These are yours. On is how it works today. Turning one off stops it for you: the popup, the toast, and the sound. Contract bells, the wheel, texts, and the rest of the bell stay on.</p>
       {row(prefs.leaderboard, 'Leaderboard notifications', 'When someone passes a teammate on today’s calls, offers, or talk time.', 'leaderboard')}
       {row(prefs.badges, 'Badge notifications', 'Badge popups, hall-of-shame callouts, and the catch-up when you come back.', 'badges')}
-      <div style={{ fontSize: '12px', color: '#71717a' }}>Saved on your account, and in this browser.</div>
-      {note ? <div style={{ marginTop: '8px', fontSize: '12.5px', color: '#b45309' }}>{note}</div> : null}
+      <div style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>Saved on your account, and in this browser.</div>
+      {note ? <div style={{ marginTop: '8px', fontSize: '12.5px', color: 'var(--tx-amber, #b45309)' }}>{note}</div> : null}
     </div>
   );
 }
@@ -125,7 +125,7 @@ export function FloorShowSettings({ isMobile }: { isMobile: boolean }) {
     <div>
       <NotifySwitches />
       {stale ? (
-        <div style={{ ...card, background: '#fffbeb', borderColor: '#fcd34d' }}>
+        <div style={{ ...card, background: 'var(--tint-amber, #fffbeb)', borderColor: '#fcd34d' }}>
           <h2 style={h2}>Update this month’s prize</h2>
           <p style={sub}>The gold slice has been “{floor?.monthlyPrize || 'AirPods'}” long enough. Pick a new one so the wheel stays fresh — AirPods, a Quest 3, a domestic flight, dinner for two, or a company outing are the usual rotation.</p>
         </div>
@@ -148,31 +148,31 @@ export function FloorShowSettings({ isMobile }: { isMobile: boolean }) {
         <p style={sub}>Nine everyday prizes share the wheel equally: a $50 gas card, a $20 Starbucks card, a $50 Amazon card, an hour at Topgolf, one concert ticket, nails or a haircut, a $25 DoorDash card, a car wash and detail, and a late start. The gold slice is rarer and is whatever you set here.</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
           {MONTHLY_SUGGESTIONS.map((idea) => (
-            <button key={idea} type="button" onClick={() => setPrize(idea)} style={{ ...btn, background: prize === idea ? '#E7F8F1' : '#fff', borderColor: prize === idea ? '#0A8560' : '#e4e4e7' }}>{idea}</button>
+            <button key={idea} type="button" onClick={() => setPrize(idea)} style={{ ...btn, background: prize === idea ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', borderColor: prize === idea ? '#0A8560' : 'var(--divider, #e4e4e7)' }}>{idea}</button>
           ))}
         </div>
-        <label style={{ display: 'block', fontSize: '12px', fontWeight: 650, color: '#52525b' }}>
+        <label style={{ display: 'block', fontSize: '12px', fontWeight: 650, color: 'var(--muted, #52525b)' }}>
           This month
-          <input value={prize} onChange={(e) => setPrize(e.target.value)} style={{ display: 'block', width: isMobile ? '100%' : '360px', marginTop: '4px', height: '34px', borderRadius: '8px', border: '1px solid #e4e4e7', padding: '0 10px' }} />
+          <input value={prize} onChange={(e) => setPrize(e.target.value)} style={{ display: 'block', width: isMobile ? '100%' : '360px', marginTop: '4px', height: '34px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', padding: '0 10px' }} />
         </label>
-        <label style={{ display: 'block', fontSize: '12px', fontWeight: 650, color: '#52525b', marginTop: '8px' }}>
+        <label style={{ display: 'block', fontSize: '12px', fontWeight: 650, color: 'var(--muted, #52525b)', marginTop: '8px' }}>
           Note for you (how to fulfill it)
-          <input value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="Order from the company card" style={{ display: 'block', width: isMobile ? '100%' : '360px', marginTop: '4px', height: '34px', borderRadius: '8px', border: '1px solid #e4e4e7', padding: '0 10px' }} />
+          <input value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="Order from the company card" style={{ display: 'block', width: isMobile ? '100%' : '360px', marginTop: '4px', height: '34px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', padding: '0 10px' }} />
         </label>
         <button type="button" disabled={busy} onClick={() => void savePrize()} style={{ ...primary, marginTop: '12px' }}>Save prize</button>
-        {floor?.updatedAt ? <div style={{ marginTop: '8px', fontSize: '12px', color: '#71717a' }}>Last set {new Date(floor.updatedAt).toLocaleDateString()}.</div> : <div style={{ marginTop: '8px', fontSize: '12px', color: '#b45309' }}>Not set yet — save one so the reminder can wait a month.</div>}
+        {floor?.updatedAt ? <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--meta, #71717a)' }}>Last set {new Date(floor.updatedAt).toLocaleDateString()}.</div> : <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--tx-amber, #b45309)' }}>Not set yet — save one so the reminder can wait a month.</div>}
       </div>
       <div style={card}>
         <h2 style={h2}>Zero a rep on the leaderboard</h2>
         <p style={sub}>Use this after a bulk import so old leads and calls assigned to someone do not count. The records stay. Only the board ignores activity from before the reset. The same switch is on the import screen.</p>
-        {team.length === 0 ? <div style={{ fontSize: '12.5px', color: '#71717a' }}>{ws ? 'No teammates yet.' : 'Sign in to a workspace to zero a rep. Previews above still play.'}</div> : (
+        {team.length === 0 ? <div style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>{ws ? 'No teammates yet.' : 'Sign in to a workspace to zero a rep. Previews above still play.'}</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {team.map((t) => {
               const at = floor?.resets[t.id];
               return (
                 <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   <span style={{ fontWeight: 650, fontSize: '13px', minWidth: '140px' }}>{t.name}</span>
-                  <span style={{ fontSize: '12px', color: '#71717a', flex: 1 }}>{at ? `Zeroed ${new Date(at).toLocaleString()}` : 'Counting full history'}</span>
+                  <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)', flex: 1 }}>{at ? `Zeroed ${new Date(at).toLocaleString()}` : 'Counting full history'}</span>
                   {at ? <button type="button" style={btn} disabled={busy} onClick={() => void undo(t.id)}>Count history again</button> : <button type="button" style={btn} disabled={busy} onClick={() => void zero(t.id)}>Zero now</button>}
                 </div>
               );
@@ -180,7 +180,7 @@ export function FloorShowSettings({ isMobile }: { isMobile: boolean }) {
           </div>
         )}
       </div>
-      {note ? <div style={{ fontSize: '12.5px', color: '#0A8560', marginBottom: '12px' }}>{note}</div> : null}
+      {note ? <div style={{ fontSize: '12.5px', color: 'var(--tx-mint, #0a8560)', marginBottom: '12px' }}>{note}</div> : null}
     </div>
   );
 }

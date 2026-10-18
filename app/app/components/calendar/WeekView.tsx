@@ -85,7 +85,7 @@ export function WeekView({ start, days, events, reps, selectedId, onOpen, onCrea
   const nowTop = ((now.getHours() - FIRST_HOUR) * 2 + now.getMinutes() / 30) * ROW;
 
   return (
-    <div className="cal-grid" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1, background: '#fff', borderTop: `1px solid ${LINE}`, overflow: 'hidden' }}>
+    <div className="cal-grid" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1, background: 'var(--surface, #fff)', borderTop: `1px solid ${LINE}`, overflow: 'hidden' }}>
       {/* Day headers — Google: weekday + large circular date */}
       <div style={{ display: 'grid', gridTemplateColumns: `${GUTTER}px repeat(${days}, 1fr)`, borderBottom: `1px solid ${SOFT}`, overflow: 'hidden', scrollbarGutter: 'stable' }}>
         <div />
@@ -104,7 +104,7 @@ export function WeekView({ start, days, events, reps, selectedId, onOpen, onCrea
                   font: `${today ? 500 : 400} ${days === 1 ? 22 : 26}px/1 var(--font-sans)`,
                   letterSpacing: '-0.02em',
                   background: today ? MINT : 'transparent',
-                  color: today ? '#fff' : '#3c4043',
+                  color: today ? 'var(--on-dark, #fff)' : 'var(--ink-4, #3c4043)',
                 }}
               >
                 {d.getDate()}
@@ -122,7 +122,7 @@ export function WeekView({ start, days, events, reps, selectedId, onOpen, onCrea
                     style={{
                       display: 'block', width: '100%', textAlign: 'left', border: 0, cursor: 'pointer',
                       marginTop: 4, padding: '2px 8px', borderRadius: 4,
-                      background: sel ? INK : c, color: '#fff',
+                      background: sel ? INK : c, color: 'var(--on-dark, #fff)',
                       font: '500 11px/1.3 var(--font-sans)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }}
                   >
@@ -184,7 +184,7 @@ export function WeekView({ start, days, events, reps, selectedId, onOpen, onCrea
                         position: 'absolute', top: `${Math.max(0, top)}px`, height: `${h}px`,
                         left: `calc(${lane * w}% + 2px)`, width: `calc(${w}% - 4px)`,
                         textAlign: 'left', border: 0, borderRadius: 4, cursor: 'pointer', padding: '2px 6px', overflow: 'hidden',
-                        background: sel ? INK : c, color: '#fff', zIndex: sel ? 4 : 1,
+                        background: sel ? INK : c, color: 'var(--on-dark, #fff)', zIndex: sel ? 4 : 1,
                         font: '500 12px/1.25 var(--font-sans)',
                         textDecoration: ev.done ? 'line-through' : 'none', opacity: ev.done ? 0.55 : 1,
                         boxShadow: '0 1px 1px rgba(0,0,0,.08)',

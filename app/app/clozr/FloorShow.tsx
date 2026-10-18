@@ -5,15 +5,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ClozrView } from '@/app/clozr/view';
 import {
-  audienceSees, canSpin, catchUp, dayStats, diffFloor, floorBadgeHits, metricLabel,
-  monthlyIsStale, signedFromContracts, signedFromMail, sliceMid, snapFrom, spinWheel, wheelPrizes,
-  type FloorEvent, type WheelPrize,
+  audienceSees, boardRawFor, boardRetryMs, boardSince, CATCH_UP_AFTER_MS, canSpin, catchUp, dayStats, diffFloor, floorBadgeHits, metricLabel,
+  monthlyIsStale, signedFromContracts, signedFromMail, sliceMid, snapFrom, spinWheel, throttleLive, wheelPrizes,
+  type FloorBoard, type FloorEvent, type WheelPrize,
 } from '@/lib/floor-show';
 import { playFloorSound, soundFor, unlockFloorAudio } from '@/lib/floor-audio';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { floorEventSilenced } from '@/lib/floor-notify';
 import { getFloorNotifyPrefs, useFloorNotifyPrefs } from '@/lib/floor-notify-prefs';
 import {
-  getLeaderboardResets, hasSpun, loadFloorSettings, loadSnap, markNudgeShown, notifyWheelResult, nudgeShownToday,
+  getLeaderboardResets, hasSpun, loadFloorBoard, loadFloorSettings, loadSnap, markNudgeShown, notifyWheelResult, nudgeShownToday,
   onFloorPreview, rememberSpin, saveSnap,
 } from '@/lib/floor-store';
 import { applyLeaderboardResets } from '@/lib/leaderboard';
@@ -21,7 +22,7 @@ import type { ReportRaw } from '@/lib/reporting';
 
 type Show = FloorEvent & { big: boolean; preview?: boolean; quiet?: boolean };
 
-const COLORS = ['#12946a', '#1c1d1f', '#c4a35a', '#0e7a57', '#3f3f46', '#b45309', '#166534', '#44403c', '#0f766e', '#854d0e'];
+const COLORS = ['#12946a', 'var(--ink-deep, #1c1d1f)', '#c4a35a', '#0e7a57', 'var(--ink-3, #3f3f46)', '#b45309', '#166534', '#44403c', '#0f766e', '#854d0e'];
 
 function useConfetti(on: boolean) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -79,20 +80,26 @@ function Wheel({ prizes, rotation }: { prizes: WheelPrize[]; rotation: number })
   });
   return (
     <div style={{ position: 'relative', width: 'min(320px, 78vw)', height: 'min(320px, 78vw)', margin: '0 auto' }}>
-      <div style={{ position: 'absolute', left: '50%', top: '-6px', transform: 'translateX(-50%)', zIndex: 2, width: 0, height: 0, borderLeft: '10px solid transparent', borderRight: '10px solid transparent', borderTop: '18px solid #1c1d1f' }} />
+      <div style={{ position: 'absolute', left: '50%', top: '-6px', transform: 'translateX(-50%)', zIndex: 2, width: 0, height: 0, borderLeft: '10px solid transparent', borderRight: '10px solid transparent', borderTop: '18px solid var(--ink-deep, #1c1d1f)' }} />
       <div style={{
         width: '100%', height: '100%', borderRadius: '50%',
         background: `conic-gradient(${stops.join(',')})`,
         transform: `rotate(${rotation}deg)`,
         boxShadow: 'inset 0 0 0 8px #fdfcfa, 0 16px 40px rgba(28,29,31,.2)',
       }} />
-      <div style={{ position: 'absolute', inset: '38%', borderRadius: '50%', background: '#1c1d1f', color: '#fff', display: 'grid', placeItems: 'center', fontSize: '12px', fontWeight: 800, letterSpacing: '.08em' }}>SPIN</div>
+      <div style={{ position: 'absolute', inset: '38%', borderRadius: '50%', background: 'var(--ink-deep, #1c1d1f)', color: 'var(--surface, #fff)', display: 'grid', placeItems: 'center', fontSize: '12px', fontWeight: 800, letterSpacing: '.08em' }}>SPIN</div>
     </div>
   );
 }
 
-/** How often the open, visible tab re-reads the workspace for the board. */
+/** How often the open, visible tab re-reads the board (floor_board, migration 295). */
 const FLOOR_REFRESH_MS = 5 * 60_000;
+/** How long after the screen opens the board makes its first read, so the first load stays the light one. */
+const FLOOR_HOLD_AFTER_MS = 60_000;
+/** Sellers and mail are read as what changed since the last read, with this much overlap (and this far back on the first). */
+const FLOOR_OVERLAP_MS = 5 * 60_000;
+
+type Mail = ClozrView['floorMail'][number];
 
 export function FloorShow({ V }: { V: ClozrView }) {
   const notify = useFloorNotifyPrefs();
@@ -113,18 +120,33 @@ export function FloorShow({ V }: { V: ClozrView }) {
   const seen = useRef(new Set<string>());
   // The first diff after the screen opens is a catch-up (see catchUp in lib/floor-show).
   const caughtUp = useRef(false);
+  // When the board was last diffed: a long gap makes the next look a catch-up again.
+  const lastDiff = useRef(0);
   const confettiOn = current?.kind === 'contract';
   const canvasRef = useConfetti(confettiOn);
+  // The board's own read, for the workspace it was read for.
+  const [board, setBoard] = useState<{ ws: number; data: FloorBoard; mail: Mail[] } | null>(null);
+
+  // The workspace load with the board's read over it (boardRawFor): null until this workspace's
+  // read lands, and while the shell's sellers stand in for a full load that is still coming or failed.
+  const raw = useMemo(
+    () => boardRawFor(V.floorRaw, { ok: V.crmOk, partial: V.crmPartial }, board, V.floorWorkspaceId),
+    [V.floorRaw, V.crmOk, V.crmPartial, V.floorWorkspaceId, board],
+  );
+  const mail = useMemo(() => {
+    if (!board?.mail.length || board.ws !== V.floorWorkspaceId) return V.floorMail;
+    const have = new Set(V.floorMail.map((m) => m.id));
+    return [...V.floorMail, ...board.mail.filter((m) => !have.has(m.id))];
+  }, [V.floorMail, V.floorWorkspaceId, board]);
 
   const feedKey = useMemo(() => {
-    const raw = V.floorRaw;
     if (!raw) return '';
     const filtered = applyLeaderboardResets(raw, getLeaderboardResets());
     const stats = dayStats(filtered);
     const hits = floorBadgeHits(filtered);
-    const contracts = collectContracts(filtered, V.floorMail);
+    const contracts = collectContracts(filtered, mail);
     return JSON.stringify({ stats, hits: hits.map((h) => `${h.personId}:${h.badge.id}@${h.window}`), contracts: contracts.map((c) => c.id), rev: V.floorResetRev });
-  }, [V.floorRaw, V.floorMail, V.floorResetRev]);
+  }, [raw, mail, V.floorResetRev]);
 
   // Unlock on the first click or key, never at mount: building an AudioContext
   // before a gesture logs "AudioContext was not allowed to start" on every load.
@@ -152,6 +174,45 @@ export function FloorShow({ V }: { V: ClozrView }) {
 
   useEffect(() => onFloorPreview((event) => push(event, true)), []);
 
+  // The board diffs offers, deal money, calls, contracts and new leads. It reads
+  // them itself (floor_board, migration 295) a minute after the screen opens,
+  // then every five minutes while the tab is showing, instead of holding the
+  // reporting reads (offer gaps, the long call history) and re-reading the whole
+  // workspace. Sellers and mail come as what changed since the last read. A
+  // workspace switch drops the board, its sellers and its cursor, so nothing
+  // diffs until the new workspace's own read lands.
+  useEffect(() => {
+    const ws = V.floorWorkspaceId;
+    if (!ws) return;
+    let live = true;
+    let busy = false;
+    // When the next read is due. Only a good read waits the full five minutes; a
+    // failed one tries again sooner (boardRetryMs), since nothing diffs without it.
+    let due = Date.now() + FLOOR_HOLD_AFTER_MS;
+    let failures = 0;
+    let changed = new Date(Date.now() - FLOOR_OVERLAP_MS).toISOString();
+    const sellers = new Map<number, FloorBoard['sellers'][number]>();
+    const letters = new Map<string, Mail>();
+    const fail = () => { failures += 1; due = Date.now() + boardRetryMs(failures, FLOOR_REFRESH_MS); };
+    const read = () => {
+      if (busy || document.visibilityState !== 'visible' || Date.now() < due) return;
+      busy = true;
+      const at = Date.now();
+      void loadFloorBoard(ws, new Date(boardSince()).toISOString(), changed).then((r) => {
+        if (!live) return;
+        if (!r) { fail(); return; }
+        failures = 0;
+        due = at + FLOOR_REFRESH_MS;
+        changed = new Date(Date.parse(r.at) - FLOOR_OVERLAP_MS).toISOString();
+        for (const s of r.sellers) sellers.set(s.id, s);
+        for (const m of r.mail) letters.set('ct' + m.id, { id: 'ct' + m.id, subject: m.subject, body: m.body, who: '', ownerId: m.owner_id, ownerName: '' });
+        setBoard({ ws, data: { ...r, sellers: [...sellers.values()] }, mail: [...letters.values()] });
+      }).catch(fail).finally(() => { busy = false; });
+    };
+    const stop = everyWhileVisible(read, 30_000);
+    return () => { live = false; stop(); setBoard(null); };
+  }, [V.floorWorkspaceId]);
+
   // A switch flipped off while a popup is up: drop it, including one already on screen.
   // Deferred so the preference update is not a setState inside the effect body.
   useEffect(() => {
@@ -168,18 +229,28 @@ export function FloorShow({ V }: { V: ClozrView }) {
     // Not before the workspace's leaderboard resets are in. Until then a rep
     // zeroed after an import still has the imported deals, so every login
     // announced their old badges again and the reset took them away a second later.
-    if (!V.floorRaw || !settingsReady) return;
-    const filtered = applyLeaderboardResets(V.floorRaw, getLeaderboardResets());
+    // Not on the workspace load alone either (raw stays null until the board's own read lands):
+    // it has no offers, no deal money and only the newest calls, so the catch-up was spent on it
+    // (with a false "Warm Milk" from the empty offers) and every badge the full read then revealed
+    // popped up one by one with a sound. A failed read leaves the last good one standing.
+    if (!raw || !settingsReady) return;
+    const filtered = applyLeaderboardResets(raw, getLeaderboardResets());
     const stats = dayStats(filtered);
     const hits = floorBadgeHits(filtered);
-    const contracts = collectContracts(filtered, V.floorMail);
+    const contracts = collectContracts(filtered, mail);
     const prev = loadSnap(V.floorWorkspaceId);
     const events = diffFloor(prev, stats, hits, contracts).filter((e) => audienceSees(e, V.floorMe, V.floorAdmin));
     saveSnap(V.floorWorkspaceId, snapFrom(stats, hits, contracts, prev));
-    const first = !caughtUp.current;
+    const now = Date.now();
+    const first = !caughtUp.current || now - lastDiff.current > CATCH_UP_AFTER_MS;
     caughtUp.current = true;
-    if (first) for (const e of catchUp(events)) push(e, false, true);
-    else for (const e of events) push(e, false);
+    lastDiff.current = now;
+    if (first) for (const e of catchUp(events, now)) push(e, false, true);
+    else {
+      const { loud, quiet } = throttleLive(events, now);
+      for (const e of loud) push(e, false);
+      for (const e of quiet) push(e, false, true);
+    }
     // feedKey is the snapshot of the board; the function closes over the latest view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feedKey, settingsReady]);
@@ -189,23 +260,6 @@ export function FloorShow({ V }: { V: ClozrView }) {
     markNudgeShown();
     push({ id: 'nudge:' + new Date().toISOString().slice(0, 10), kind: 'nudge', text: 'The monthly wheel prize is due for a refresh. Pick this month’s prize under Settings, Floor show.' }, false);
   }, [settingsReady, prizeAt, V.floorAdmin]);
-
-  // The board refreshes from a full workspace read, so only the tab someone is
-  // looking at asks for one, and at most every five minutes. Every open tab
-  // re-reading everything each minute kept the database pegged and the app
-  // stuck on its loading screen.
-  useEffect(() => {
-    if (!V.floorWorkspaceId) return;
-    let last = Date.now();
-    const refresh = () => {
-      if (document.visibilityState !== 'visible' || Date.now() - last < FLOOR_REFRESH_MS) return;
-      last = Date.now();
-      V.reloadCrm();
-    };
-    const t = window.setInterval(refresh, 30_000);
-    document.addEventListener('visibilitychange', refresh);
-    return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', refresh); };
-  }, [V.floorWorkspaceId, V.reloadCrm]);
 
   useEffect(() => {
     if (current || !queue.length) return;
@@ -319,22 +373,22 @@ export function FloorShow({ V }: { V: ClozrView }) {
             {current.kind === 'badge' ? (
               <>
                 <div style={{ fontSize: '11px', fontWeight: 800, color: current.tier === 'shame' ? '#b91c1c' : '#0e7a57' }}>{current.tier === 'shame' ? 'Hall of shame' : 'Badge unlocked'}</div>
-                <img src={current.image} alt="" style={{ width: '148px', height: '148px', objectFit: 'cover', borderRadius: '50%', margin: '14px auto', display: 'block', border: `4px solid ${current.tier === 'shame' ? '#fecaca' : '#c4a35a'}`, background: '#eceae3' }} />
+                <img src={current.image} alt="" style={{ width: '148px', height: '148px', objectFit: 'cover', borderRadius: '50%', margin: '14px auto', display: 'block', border: `4px solid ${current.tier === 'shame' ? 'var(--tint-red-2, #fecaca)' : '#c4a35a'}`, background: '#eceae3' }} />
                 <div style={{ fontSize: '26px', fontWeight: 800, letterSpacing: '-0.03em' }}>{current.badgeName}</div>
-                <div style={{ marginTop: '6px', fontSize: '15px', color: '#3f3f46' }}>{current.person}</div>
-                <div style={{ marginTop: '4px', fontSize: '13px', color: '#71717a' }}>{current.hint}</div>
+                <div style={{ marginTop: '6px', fontSize: '15px', color: 'var(--ink-3, #3f3f46)' }}>{current.person}</div>
+                <div style={{ marginTop: '4px', fontSize: '13px', color: 'var(--meta, #71717a)' }}>{current.hint}</div>
               </>
             ) : current.kind === 'contract' ? (
               <>
-                <div style={{ fontSize: '11px', fontWeight: 800, color: '#0e7a57' }}>{current.source === 'email' ? 'Inbox · signed' : 'CLOZR eSign'}</div>
+                <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--tx-green-2, #0e7a57)' }}>{current.source === 'email' ? 'Inbox · signed' : 'CLOZR eSign'}</div>
                 <div style={{ fontSize: '42px', lineHeight: 1, margin: '10px 0' }}>🔔</div>
                 <div style={{ fontSize: '26px', fontWeight: 800, letterSpacing: '-0.03em' }}>Contract signed</div>
                 <div style={{ marginTop: '6px', fontSize: '15px' }}>{current.ownerName}</div>
-                <div style={{ marginTop: '4px', fontSize: '13px', color: '#71717a' }}>{current.title}</div>
+                <div style={{ marginTop: '4px', fontSize: '13px', color: 'var(--meta, #71717a)' }}>{current.title}</div>
                 {canSpin(current, V.floorMe, V.floorAdmin) && !hasSpun(current.contractId) ? (
                   <button type="button" onClick={() => openWheel(current, current.preview)} style={primary}>Spin the wheel</button>
                 ) : (
-                  <div style={{ marginTop: '10px', fontSize: '12.5px', color: '#71717a' }}>{current.ownerName} gets one spin.</div>
+                  <div style={{ marginTop: '10px', fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>{current.ownerName} gets one spin.</div>
                 )}
               </>
             ) : null}
@@ -349,15 +403,24 @@ export function FloorShow({ V }: { V: ClozrView }) {
       <div style={{ position: 'fixed', left: 'calc(16px + var(--clozr-side, 0px))', bottom: 'calc(16px + env(safe-area-inset-bottom, 0px) + var(--clozr-callbar, 0px) + var(--clozr-todaybar, 0px))', zIndex: 96, display: 'flex', flexDirection: 'column', gap: '8px', width: 'min(340px, calc(100vw - 32px))', pointerEvents: 'none' }}>
         {toasts.map((t) => (
           <div key={t.id} style={{ position: 'relative', pointerEvents: 'auto' }}>
-          <button type="button" aria-label="Dismiss" onClick={() => setToasts((all) => all.filter((x) => x.id !== t.id))} style={{ position: 'absolute', top: 4, right: 4, zIndex: 1, width: 28, height: 28, display: 'grid', placeItems: 'center', border: 0, borderRadius: 8, background: 'transparent', color: '#71717a', cursor: 'pointer' }}>
+          <button type="button" aria-label="Dismiss" onClick={() => setToasts((all) => all.filter((x) => x.id !== t.id))} style={{ position: 'absolute', top: 4, right: 4, zIndex: 1, width: 28, height: 28, display: 'grid', placeItems: 'center', border: 0, borderRadius: 8, background: 'transparent', color: 'var(--meta, #71717a)', cursor: 'pointer' }}>
             <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
           </button>
           <button type="button" onClick={() => openBoard(t.id)} style={{ width: '100%', textAlign: 'left', border: '1px solid #e6e3da', background: '#fdfcfa', borderRadius: '14px', padding: '10px 36px 10px 12px', boxShadow: '0 12px 30px rgba(28,29,31,.16)', cursor: 'pointer', animation: 'floorToast .28s ease', color: '#1c1d1f' }}>
             <div style={{ fontSize: '11.5px', fontWeight: 800, color: t.kind === 'badge' && t.tier === 'shame' ? '#b91c1c' : '#0e7a57' }}>{toastKicker(t)}</div>
             <div style={{ marginTop: '3px', fontSize: '13.5px', fontWeight: 700, lineHeight: 1.35 }}>{toastText(t)}</div>
             {t.kind === 'contract' && (t.preview || canSpin(t, V.floorMe, V.floorAdmin)) && (t.preview || !hasSpun(t.contractId)) ? (
-              <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); if (t.kind === 'contract') openWheel(t, t.preview); }} style={{ display: 'inline-block', marginTop: '6px', fontSize: '12px', fontWeight: 700, color: '#0e7a57' }}>Spin the wheel</span>
+              <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); if (t.kind === 'contract') openWheel(t, t.preview); }} style={{ display: 'inline-block', marginTop: '6px', fontSize: '12px', fontWeight: 700, color: 'var(--tx-green-2, #0e7a57)' }}>Spin the wheel</span>
             ) : null}
+            {t.kind === 'digest' ? (() => {
+              // Contracts folded into a catch-up keep their spins: one at a time, next unspun first.
+              const left = (t.contracts ?? []).filter((c) => canSpin(c, V.floorMe, V.floorAdmin) && !hasSpun(c.contractId));
+              return left.length ? (
+                <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); openWheel(left[0]); }} style={{ display: 'inline-block', marginTop: '6px', fontSize: '12px', fontWeight: 700, color: 'var(--tx-green-2, #0e7a57)' }}>
+                  Spin the wheel for {left[0].title}{left.length > 1 ? ` (${left.length} to spin)` : ''}
+                </span>
+              ) : null;
+            })() : null}
           </button>
           </div>
         ))}
@@ -365,11 +428,11 @@ export function FloorShow({ V }: { V: ClozrView }) {
       {wheelFor ? (
         <div role="dialog" aria-label="Spin the wheel" style={{ position: 'fixed', inset: 0, zIndex: 130, background: 'rgba(28,29,31,.62)', display: 'grid', placeItems: 'center', padding: '20px' }}>
           <div style={{ width: 'min(460px, 100%)', background: '#f4f2ec', borderRadius: '22px', padding: '22px 18px 18px', textAlign: 'center' }}>
-            <div style={{ fontSize: '12px', fontWeight: 800, color: '#0e7a57' }}>One spin</div>
+            <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--tx-green-2, #0e7a57)' }}>One spin</div>
             <div style={{ fontSize: '22px', fontWeight: 800, margin: '4px 0 14px' }}>{wheelFor.ownerName}</div>
             <Wheel prizes={prizes} rotation={rotation} />
             <div style={{ marginTop: '14px', minHeight: '44px', fontSize: landed ? '20px' : '15px', fontWeight: 800 }}>{landed ? `You won ${landed.label}` : 'Equal chances. The gold slice is this month’s prize.'}</div>
-            {wheelNote ? <div style={{ fontSize: '12.5px', color: '#71717a' }}>{wheelNote}</div> : null}
+            {wheelNote ? <div style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>{wheelNote}</div> : null}
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '12px' }}>
               <button type="button" disabled={spinning || !!landed} onClick={() => void spin()} style={{ ...primary, opacity: spinning || landed ? 0.55 : 1 }}>{landed ? 'Spun' : spinning ? 'Spinning…' : 'Spin'}</button>
               <button type="button" onClick={() => setWheelFor(null)} style={ghost}>Close</button>
@@ -410,5 +473,5 @@ function toastText(t: Show): string {
   return t.text;
 }
 
-const primary: React.CSSProperties = { marginTop: '8px', height: '36px', padding: '0 14px', borderRadius: '10px', border: '1px solid #1c1d1f', background: '#1c1d1f', color: '#fff', fontWeight: 700, cursor: 'pointer' };
-const ghost: React.CSSProperties = { marginTop: '8px', height: '36px', padding: '0 14px', borderRadius: '10px', border: '1px solid #ddd9ce', background: '#fff', fontWeight: 650, cursor: 'pointer' };
+const primary: React.CSSProperties = { marginTop: '8px', height: '36px', padding: '0 14px', borderRadius: '10px', border: '1px solid var(--ink-deep, #1c1d1f)', background: 'var(--ink-deep, #1c1d1f)', color: 'var(--surface, #fff)', fontWeight: 700, cursor: 'pointer' };
+const ghost: React.CSSProperties = { marginTop: '8px', height: '36px', padding: '0 14px', borderRadius: '10px', border: '1px solid #ddd9ce', background: 'var(--surface, #fff)', fontWeight: 650, cursor: 'pointer' };

@@ -57,7 +57,7 @@ export function RecordCalendar({ workspaceId, sellerId, sellerName, sellerEmail,
     return (
       <button key={ev.id} type="button" className="dc19" onClick={() => setOpen({ event: ev, draft: null, key: ev.id })} style={{
         display: 'grid', gridTemplateColumns: '16px 1fr auto', gap: '8px', width: '100%', textAlign: 'left', padding: '8px 10px', marginBottom: '6px',
-        border: `1px solid ${sel ? INK : LINE}`, borderRadius: '8px', background: '#fff', cursor: 'pointer',
+        border: `1px solid ${sel ? INK : LINE}`, borderRadius: '8px', background: 'var(--surface, #fff)', cursor: 'pointer',
       }}>
         <span style={{ color: r?.color ?? typeColor(ev.type), display: 'inline-flex', marginTop: '5px' }}><Mark label={ev.kind} /></span>
         <span style={{ minWidth: 0 }}>
@@ -72,7 +72,7 @@ export function RecordCalendar({ workspaceId, sellerId, sellerName, sellerEmail,
             </span>
           ) : null}
         </span>
-        <span style={{ fontSize: '11px', color: ev.end < now ? '#a1a1aa' : MINT, fontWeight: 600, whiteSpace: 'nowrap' }}>{ev.end < now ? 'Past' : relative(ev.start, now)}</span>
+        <span style={{ fontSize: '11px', color: ev.end < now ? 'var(--subtle, #a1a1aa)' : MINT, fontWeight: 600, whiteSpace: 'nowrap' }}>{ev.end < now ? 'Past' : relative(ev.start, now)}</span>
       </button>
     );
   };
@@ -95,15 +95,15 @@ export function RecordCalendar({ workspaceId, sellerId, sellerName, sellerEmail,
       ) : null}
 
       {!workspaceId || !sellerId ? (
-        <p style={{ margin: 0, fontSize: '12px', color: '#a1a1aa' }}>Sign in to see this seller&rsquo;s appointments.</p>
+        <p style={{ margin: 0, fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>Sign in to see this seller&rsquo;s appointments.</p>
       ) : cal.loading ? (
         <p style={{ margin: 0, fontSize: '12px', color: MUTED }}>Loading…</p>
       ) : !cal.ok ? (
-        <p style={{ margin: 0, fontSize: '12px', color: '#b91c1c' }}>Couldn&rsquo;t load appointments. <button type="button" onClick={cal.reload} style={{ ...ghost, height: '24px', marginLeft: '6px', fontSize: '11.5px' }}>Retry</button></p>
+        <p style={{ margin: 0, fontSize: '12px', color: 'var(--tx-red, #b91c1c)' }}>Couldn&rsquo;t load appointments. <button type="button" onClick={cal.reload} style={{ ...ghost, height: '24px', marginLeft: '6px', fontSize: '11.5px' }}>Retry</button></p>
       ) : (
         <>
           {upcoming.length ? upcoming.map(row) : (
-            <p style={{ margin: '0 0 6px', fontSize: '12px', color: '#a1a1aa', lineHeight: 1.5 }}>
+            <p style={{ margin: '0 0 6px', fontSize: '12px', color: 'var(--subtle, #a1a1aa)', lineHeight: 1.5 }}>
               Nothing booked with {sellerName.split(' ')[0] || 'this seller'}.{valid ? ' Adding one emails them a calendar invitation.' : sellerPhone ? ' No email on file, so the invite would be by phone.' : ''}
             </p>
           )}

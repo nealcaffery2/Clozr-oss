@@ -89,7 +89,7 @@ export function ContactField({ sellerId, buyerId, workspaceId, field, value, can
       {canWrite && id0 ? (
         <button type="button" aria-label={`Edit ${LABEL[field]}`} title={`Edit ${LABEL[field]}`}
           onClick={() => { cancelled.current = false; setError(null); setDraft(shown); }}
-          style={{ width: '24px', height: '24px', display: 'inline-grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'none', color: '#71717a', cursor: 'pointer', padding: 0, flex: 'none' }}>
+          style={{ width: '24px', height: '24px', display: 'inline-grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'none', color: 'var(--meta, #71717a)', cursor: 'pointer', padding: 0, flex: 'none' }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
           </svg>

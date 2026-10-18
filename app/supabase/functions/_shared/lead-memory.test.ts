@@ -1,7 +1,7 @@
 // Lead memory: cleaning model output, the no-model fallback, the prompt text.
 // Run:  npx tsx supabase/functions/_shared/lead-memory.test.ts
 import {
-  BRIEF_MAX, briefForPrompt, clampBrief, fallbackMemory, historyText, normalizeFacts, parseModelMemory, rowToMemory,
+  BRIEF_MAX, briefForPrompt, clampBrief, fallbackMemory, historyText, normalizeFacts, ourSide, parseModelMemory, rowToMemory,
   type LeadHistory,
 } from '../../../lib/lead-memory.ts';
 
@@ -53,6 +53,12 @@ eq('prompt brief carries do-not-mention', briefForPrompt(parsed), 'Ann inherited
 eq('no memory, no prompt text', briefForPrompt(null), '');
 eq('a stored row reads back', rowToMemory({ workspace_id: 1, record_kind: 'buyer', record_id: 3, brief: 'b', facts: {}, updated_at: 'x' })?.record_kind, 'buyer');
 eq('a row of the wrong kind is null', rowToMemory({ record_kind: 'deal' }), null);
+
+const names = { riley: 'Riley', cody: 'Cody' };
+eq('an AI call names the agent who made it', ourSide({ call_origin: 'ai_agent', ai_agent_key: 'riley' }, names), '(Call by the AI agent Riley; "Rep" in the transcript is Riley.)');
+eq('an AI call by an agent since deleted still says it was an AI agent', ourSide({ call_origin: 'ai_agent', ai_agent_key: 'gone' }, names), '(Call by one of our AI agents; "Rep" in the transcript is that agent.)');
+eq('a text an agent sent names it', ourSide({ ai_agent_key: 'cody', direction: 'outbound' }, names), '(Sent by the AI agent Cody.)');
+eq('a rep call or their reply is not labelled', [ourSide({ direction: 'outbound' }, names), ourSide({ ai_agent_key: 'cody', direction: 'inbound' }, names)], ['', '']);
 
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
 console.log('\nall passed');

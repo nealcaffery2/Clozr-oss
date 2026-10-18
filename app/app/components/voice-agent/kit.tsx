@@ -19,7 +19,7 @@ export const sub: React.CSSProperties = { margin: '3px 0 0', fontSize: 12.5, col
 export const eyebrow: React.CSSProperties = { display: 'block', fontSize: 11.5, color: MUTED, fontWeight: 600, marginBottom: 6 };
 export const input: React.CSSProperties = {
   width: '100%', height: 36, padding: '0 11px', border: `1px solid ${LINE}`, borderRadius: 9, fontSize: 13, outline: 0,
-  background: '#fafafa', color: INK, fontFamily: 'inherit', boxSizing: 'border-box',
+  background: 'var(--canvas, #fafafa)', color: INK, fontFamily: 'inherit', boxSizing: 'border-box',
 };
 export const areaStyle: React.CSSProperties = { ...input, height: 'auto', padding: '9px 11px', lineHeight: 1.5, resize: 'vertical' };
 export const ghost: React.CSSProperties = {
@@ -34,7 +34,7 @@ export const danger = (off?: boolean): React.CSSProperties => ({
 });
 export const mono: React.CSSProperties = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, color: INK, wordBreak: 'break-all' };
 export const linkBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: 0, border: 0, background: 'none', color: GREEN, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-export const invalid: React.CSSProperties = { border: '1px solid #f87171', background: '#fff' };
+export const invalid: React.CSSProperties = { border: '1px solid #f87171', background: 'var(--surface, #fff)' };
 
 /** Shared keyframes and focus rings, scoped by the va- prefix. Rendered once by the screen root. */
 export function VaStyles() {
@@ -49,7 +49,7 @@ export function VaStyles() {
       .va-spin { animation: va-spin .8s linear infinite; }
       .va-skel { background: linear-gradient(90deg, #f4f4f5, #ececee, #f4f4f5); background-size: 200% 100%; animation: va-pulse 1.4s ease-in-out infinite; border-radius: 8px; }
       .va-in { animation: va-rise .18s ease-out; }
-      .va-field:focus { border-color: ${GREEN} !important; background: #fff !important; box-shadow: 0 0 0 3px rgba(10,133,96,.12); }
+      .va-field:focus { border-color: ${GREEN} !important; background: var(--surface, #fff) !important; box-shadow: 0 0 0 3px rgba(10,133,96,.12); }
       .va-btn:focus-visible, .va-row:focus-visible, .va-chip:focus-visible, .va-tab:focus-visible, .va-card:focus-visible { outline: 2px solid ${GREEN}; outline-offset: 2px; }
       .va-row:hover { background: var(--band); }
       .va-ghost:hover:not(:disabled) { background: var(--c-btn-hover, #f4f4f5) !important; }
@@ -98,10 +98,10 @@ export function Switch({ on, onChange, disabled, label, busy, id }: { on: boolea
       type="button" role="switch" id={id} aria-checked={on} aria-label={label} disabled={disabled || busy} onClick={() => onChange(!on)} className="va-btn"
       style={{
         width: 42, height: 24, borderRadius: 999, border: 0, padding: 2, flex: 'none', position: 'relative',
-        background: on ? GREEN : '#d4d4d8', cursor: disabled || busy ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, transition: 'background .15s',
+        background: on ? GREEN : 'var(--line, #d4d4d8)', cursor: disabled || busy ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, transition: 'background .15s',
       }}
     >
-      <span style={{ display: 'grid', placeItems: 'center', width: 20, height: 20, borderRadius: 999, background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,.25)', transform: `translateX(${on ? 18 : 0}px)`, transition: 'transform .15s', color: GREEN }}>
+      <span style={{ display: 'grid', placeItems: 'center', width: 20, height: 20, borderRadius: 999, background: 'var(--surface, #fff)', boxShadow: '0 1px 2px rgba(0,0,0,.25)', transform: `translateX(${on ? 18 : 0}px)`, transition: 'transform .15s', color: GREEN }}>
         {busy ? <Spinner size={11} /> : null}
       </span>
     </button>
@@ -229,7 +229,7 @@ export const AreaField = React.forwardRef<HTMLTextAreaElement, {
 /** A setting with its plain-language explanation on the left and its control on the right. */
 export function SettingRow({ title, help, children, first, id, error }: { title: string; help?: React.ReactNode; children: React.ReactNode; first?: boolean; id?: string; error?: string }) {
   return (
-    <div id={id} style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '12px 0', borderTop: first ? 'none' : '1px solid #f0f0f1', flexWrap: 'wrap' }}>
+    <div id={id} style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '12px 0', borderTop: first ? 'none' : '1px solid var(--divider-2, #f0f0f1)', flexWrap: 'wrap' }}>
       <div style={{ flex: '1 1 220px', minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: INK }}>{title}</div>
         {help ? <p style={{ margin: '2px 0 0', fontSize: 12, color: MUTED, lineHeight: 1.5 }}>{help}</p> : null}
@@ -259,7 +259,7 @@ export function Segmented<T extends string>({ value, options, onChange, label, d
   value: T; options: { id: T; label: string; hint?: string }[]; onChange: (id: T) => void; label: string; disabled?: boolean; id?: string;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} id={id} style={{ display: 'flex', gap: 2, padding: 3, background: '#f4f4f5', borderRadius: 8, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.04)', maxWidth: '100%' }}>
+    <div role="radiogroup" aria-label={label} id={id} style={{ display: 'flex', gap: 2, padding: 3, background: 'var(--surface-2, #f4f4f5)', borderRadius: 8, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.04)', maxWidth: '100%' }}>
       {options.map((o, i) => {
         const on = o.id === value;
         return (
@@ -273,7 +273,7 @@ export function Segmented<T extends string>({ value, options, onChange, label, d
               (e.currentTarget.parentElement?.querySelectorAll('button')[options.indexOf(next)] as HTMLElement | undefined)?.focus();
             }}
             style={{ flex: 1, minHeight: 30, padding: '0 11px', border: 0, borderRadius: 6, cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', font: '600 12.5px/1 var(--font-sans)',
-              background: on ? '#fff' : 'transparent', color: on ? INK : MUTED, boxShadow: on ? '0 1px 2px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.04)' : 'none', opacity: disabled && !on ? 0.6 : 1 }}>
+              background: on ? 'var(--surface, #fff)' : 'transparent', color: on ? INK : MUTED, boxShadow: on ? '0 1px 2px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.04)' : 'none', opacity: disabled && !on ? 0.6 : 1 }}>
             {o.label}
           </button>
         );
@@ -294,7 +294,7 @@ export function ChoiceCards<T extends string>({ value, options, onChange, label,
           <button key={t.id} type="button" role="radio" aria-checked={on} disabled={disabled} className="va-btn" onClick={() => onChange(t.id)}
             style={{
               textAlign: 'left', padding: '10px 12px', borderRadius: 10, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
-              border: `1px solid ${on ? GREEN : LINE}`, background: on ? '#E7F8F1' : '#fff', boxShadow: on ? `0 0 0 1px ${GREEN}` : 'none', opacity: disabled && !on ? 0.6 : 1,
+              border: `1px solid ${on ? GREEN : LINE}`, background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', boxShadow: on ? `0 0 0 1px ${GREEN}` : 'none', opacity: disabled && !on ? 0.6 : 1,
             }}>
             <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: on ? GREEN : INK }}>{t.label}</span>
             <span style={{ display: 'block', marginTop: 2, fontSize: 12, color: MUTED, lineHeight: 1.4 }}>{t.hint}</span>
@@ -318,7 +318,7 @@ export function Slider({ id, label, value, min, max, step, defaultValue, ends, f
         <label htmlFor={id} style={{ ...eyebrow, marginBottom: 0, flex: 1 }}>{label}</label>
         <output htmlFor={id} style={{ fontSize: 12.5, fontWeight: 600, color: value == null ? MUTED : INK, fontVariantNumeric: 'tabular-nums' }}>{value == null ? `Default (${fmt(defaultValue)})` : fmt(value)}</output>
         <button type="button" className="va-btn" disabled={disabled || value == null} onClick={() => onChange(null)} aria-label={`Reset ${label} to default`}
-          style={{ padding: 0, border: 0, background: 'none', fontSize: 12, fontWeight: 600, color: value == null || disabled ? '#d4d4d8' : GREEN, cursor: value == null || disabled ? 'default' : 'pointer', fontFamily: 'inherit' }}>Reset</button>
+          style={{ padding: 0, border: 0, background: 'none', fontSize: 12, fontWeight: 600, color: value == null || disabled ? 'var(--line, #d4d4d8)' : GREEN, cursor: value == null || disabled ? 'default' : 'pointer', fontFamily: 'inherit' }}>Reset</button>
       </div>
       <input id={id} type="range" min={min} max={max} step={step} value={shown} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))}
         style={{ width: '100%', accentColor: GREEN, cursor: disabled ? 'not-allowed' : 'pointer', opacity: value == null ? 0.55 : 1 }} />
@@ -373,10 +373,10 @@ export function ChipList({ id, items, onChange, add, placeholder, disabled, max,
     setText('');
   };
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: 6, border: `1px solid ${LINE}`, borderRadius: 9, background: '#fafafa', minHeight: 40, alignItems: 'center' }}
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: 6, border: `1px solid ${LINE}`, borderRadius: 9, background: 'var(--canvas, #fafafa)', minHeight: 40, alignItems: 'center' }}
       onClick={() => document.getElementById(id)?.focus()}>
       {items.map((c) => (
-        <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 26, padding: '0 4px 0 10px', borderRadius: 999, background: '#fff', border: `1px solid ${LINE}`, fontSize: 12.5, fontWeight: 500, color: INK, maxWidth: '100%' }}>
+        <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 26, padding: '0 4px 0 10px', borderRadius: 999, background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, fontSize: 12.5, fontWeight: 500, color: INK, maxWidth: '100%' }}>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c}</span>
           {!disabled ? (
             <button type="button" className="va-chip" aria-label={`Remove ${c}`} onClick={(e) => { e.stopPropagation(); onChange(items.filter((x) => x !== c)); }}
@@ -425,14 +425,14 @@ export function RuleCard({ id, kind, severity, text, error, i, count, onText, on
     <div id={id} style={{ padding: '9px 10px 9px 12px', borderRadius: 10, border: `1px solid ${error ? '#f87171' : hard ? 'var(--danger-line)' : 'var(--inset-line)'}`, background: hard ? 'var(--danger-bg)' : 'var(--inset)', boxShadow: 'var(--elev-inset)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
         <span style={{ flex: 'none', fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999,
-          background: kind === 'never' ? (hard ? '#fee2e2' : '#f4f4f5') : '#E7F8F1', color: kind === 'never' ? (hard ? RED : '#52525b') : GREEN }}>{kind === 'never' ? 'Never' : 'Always'}</span>
+          background: kind === 'never' ? (hard ? 'var(--negative-soft, #fee2e2)' : 'var(--surface-2, #f4f4f5)') : 'var(--mint-dim, #e7f8f1)', color: kind === 'never' ? (hard ? RED : 'var(--muted, #52525b)') : GREEN }}>{kind === 'never' ? 'Never' : 'Always'}</span>
         <span style={{ flex: 1 }} />
         {edit && onMove ? <ItemControls i={i} count={count} onMove={onMove} onRemove={onRemove} what={`rule ${i + 1}`} /> : null}
       </div>
       {edit ? (
         <textarea aria-label={`${kind === 'never' ? 'Never' : 'Always'} rule ${i + 1}`} className="va-field" rows={2} value={text} onChange={(e) => onText(e.target.value)} placeholder={kind === 'never' ? 'Never quote a price outside the range.' : 'Ask one question at a time.'}
           aria-invalid={!!error} aria-describedby={error ? `${id}-err` : undefined}
-          style={{ ...areaStyle, width: '100%', minHeight: 40, resize: 'vertical', background: '#fff', fontSize: 13 }} />
+          style={{ ...areaStyle, width: '100%', minHeight: 40, resize: 'vertical', background: 'var(--surface, #fff)', fontSize: 13 }} />
       ) : <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: INK, overflowWrap: 'anywhere' }}>{text}</p>}
       {edit && onSeverity ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
@@ -460,7 +460,7 @@ export function HoursEditor({ id, value, onChange, disabled, error, local, noDay
             const on = value.days.includes(d);
             return (
               <button key={d} type="button" aria-pressed={on} aria-label={DAY_NAMES[d]} disabled={disabled} className="va-btn" onClick={() => onChange({ ...value, days: toggleDay(value.days, d) })}
-                style={{ minWidth: 46, height: 34, padding: '0 8px', borderRadius: 9, border: `1px solid ${on ? GREEN : LINE}`, background: on ? '#E7F8F1' : '#fff', color: on ? GREEN : MUTED,
+                style={{ minWidth: 46, height: 34, padding: '0 8px', borderRadius: 9, border: `1px solid ${on ? GREEN : LINE}`, background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: on ? GREEN : MUTED,
                   fontSize: 12.5, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: disabled && !on ? 0.6 : 1 }}>
                 {DAY_LABELS[d]}
               </button>
@@ -523,7 +523,7 @@ export function Dialog({ title, titleId, onClose, children, footer, busy, placem
       style={{ position: 'fixed', inset: 0, zIndex: 98, background: 'rgba(24,24,27,.42)', display: 'flex', alignItems: right ? 'stretch' : 'center', justifyContent: right ? 'flex-end' : 'center', padding: right ? 0 : 16 }}>
       <div ref={box} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className={right ? 'va-drawer' : 'va-modal'}
         style={{
-          background: '#fff', display: 'flex', flexDirection: 'column', width: `min(100%, ${width}px)`, maxHeight: right ? '100%' : 'min(100%, 760px)', height: right ? '100%' : undefined,
+          background: 'var(--surface, #fff)', display: 'flex', flexDirection: 'column', width: `min(100%, ${width}px)`, maxHeight: right ? '100%' : 'min(100%, 760px)', height: right ? '100%' : undefined,
           borderRadius: right ? '14px 0 0 14px' : 14, boxShadow: 'var(--elev-3)', outline: 0, minWidth: 0, boxSizing: 'border-box',
         }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px 12px 18px', borderBottom: '1px solid var(--band-line)', background: 'var(--band)', borderRadius: right ? '14px 0 0 0' : '14px 14px 0 0' }}>
@@ -559,7 +559,7 @@ export function ConfirmDialog({ title, titleId, children, confirmLabel, busy, er
 /** A number with a label, for the stats cards. */
 export function Stat({ label, value, hint, wide }: { label: string; value: string; hint?: string; wide?: boolean }) {
   return (
-    <div title={hint} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid var(--edge)', background: '#fff', boxShadow: 'var(--elev-1)', minWidth: 0, gridColumn: wide ? 'span 2' : undefined }}>
+    <div title={hint} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid var(--edge)', background: 'var(--surface, #fff)', boxShadow: 'var(--elev-1)', minWidth: 0, gridColumn: wide ? 'span 2' : undefined }}>
       <div style={{ fontSize: 11.5, color: MUTED, fontWeight: 600 }}>{label}</div>
       <div style={{ marginTop: 3, fontSize: 20, fontWeight: 600, color: INK, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>{value}</div>
     </div>

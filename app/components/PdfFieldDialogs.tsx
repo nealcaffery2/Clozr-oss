@@ -14,7 +14,7 @@ type Loaded = { key: string; url: string | null; roles: EditorRole[]; fields: Fi
 function Loading({ onClose, text }: { onClose: () => void; text: string }) {
   return (
     <div role="dialog" aria-modal="true" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 150, background: 'rgba(24,24,27,.45)', display: 'grid', placeItems: 'center' }}>
-      <div style={{ background: '#fff', borderRadius: '12px', padding: '18px 22px', fontSize: '13px', color: '#52525b' }}>{text}</div>
+      <div style={{ background: 'var(--surface, #fff)', borderRadius: '12px', padding: '18px 22px', fontSize: '13px', color: 'var(--muted, #52525b)' }}>{text}</div>
     </div>
   );
 }

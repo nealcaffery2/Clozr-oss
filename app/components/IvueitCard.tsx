@@ -9,12 +9,12 @@ import React, { useEffect, useState } from 'react';
 import { type IvueitTemplate, ivueitSettings, saveIvueit, setupIvueit } from '@/lib/ivueit';
 
 const PRODUCTION = 'https://prod.data.ivueit.network';
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
-const muted: React.CSSProperties = { margin: '0 0 12px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.5 };
-const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', fontWeight: 500, color: '#71717a', marginBottom: '4px' };
-const field: React.CSSProperties = { height: '34px', width: '100%', padding: '0 10px', border: '1px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', background: '#fff', color: '#18181b' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
+const muted: React.CSSProperties = { margin: '0 0 12px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 };
+const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', fontWeight: 500, color: 'var(--meta, #71717a)', marginBottom: '4px' };
+const field: React.CSSProperties = { height: '34px', width: '100%', padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', fontSize: '13px', background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)' };
 const btn: React.CSSProperties = { height: '34px', padding: '0 12px', borderRadius: '8px', border: '1px solid #0A8560', background: '#0A8560', color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer' };
-const ghost: React.CSSProperties = { ...btn, background: '#fff', color: '#18181b', borderColor: '#e4e4e7' };
+const ghost: React.CSSProperties = { ...btn, background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)', borderColor: 'var(--divider, #e4e4e7)' };
 
 export function IvueitCard({ workspaceId, admin, demo }: { workspaceId: number | null; admin: boolean; demo: boolean }) {
   const [connected, setConnected] = useState<boolean | null>(null);
@@ -48,9 +48,15 @@ export function IvueitCard({ workspaceId, admin, demo }: { workspaceId: number |
     if (!r.ok) { setNote({ text: r.message, bad: true }); return; }
     setTemplates(r.templates);
     if (!template && r.templates.length === 1) setTemplate(r.templates[0].id);
+    // Which of the three webhooks took (an older function only sends the summary string).
+    const set = r.webhooks_set ?? ['VueCompleted', 'VueCanceled', 'VueEscalated'].filter((t) => new RegExp(`${t} (created|updated)`).test(r.webhook));
+    const hooks = ['VueCompleted', 'VueCanceled', 'VueEscalated'].every((t) => set.includes(t))
+      ? ' Finished, canceled and flagged Vues report back to CLOZR on their own.'
+      : set.includes('VueCompleted')
+        ? ' Finished Vues report back to CLOZR on their own. Canceled and flagged Vues did not connect. Test the connection again to retry.'
+        : ' Finished Vues are picked up every 20 minutes.';
     setNote({
-      text: `Connected to iVueit ${r.staging ? 'staging' : 'production'}. ${r.templates.length} survey${r.templates.length === 1 ? '' : 's'} on the account.`
-        + (r.webhook === 'created' || r.webhook === 'updated' ? ' Finished Vues report back to CLOZR on their own.' : ' Finished Vues are picked up every 20 minutes.'),
+      text: `Connected to iVueit ${r.staging ? 'staging' : 'production'}. ${r.templates.length} survey${r.templates.length === 1 ? '' : 's'} on the account.${hooks}`,
     });
   }
 
@@ -130,7 +136,7 @@ export function IvueitCard({ workspaceId, admin, demo }: { workspaceId: number |
         {connected ? (
           <>
             <button type="button" disabled={off} onClick={() => void test()} style={{ ...ghost, opacity: off ? 0.5 : 1 }}>Test connection</button>
-            <button type="button" disabled={off} onClick={() => void disconnect()} style={{ ...ghost, color: '#b91c1c', opacity: off ? 0.5 : 1 }}>Disconnect</button>
+            <button type="button" disabled={off} onClick={() => void disconnect()} style={{ ...ghost, color: 'var(--tx-red, #b91c1c)', opacity: off ? 0.5 : 1 }}>Disconnect</button>
           </>
         ) : null}
       </div>
@@ -143,7 +149,7 @@ export function IvueitCard({ workspaceId, admin, demo }: { workspaceId: number |
           </select>
         </div>
       ) : null}
-      {note ? <p role={note.bad ? 'alert' : 'status'} style={{ ...muted, margin: '10px 0 0', color: note.bad ? '#b91c1c' : '#3f3f46' }}>{note.text}</p> : null}
+      {note ? <p role={note.bad ? 'alert' : 'status'} style={{ ...muted, margin: '10px 0 0', color: note.bad ? 'var(--tx-red, #b91c1c)' : 'var(--ink-3, #3f3f46)' }}>{note.text}</p> : null}
       {!admin ? <p style={{ ...muted, margin: '10px 0 0' }}>An owner or admin connects iVueit. Anyone on the team can order photos after.</p> : null}
     </section>
   );

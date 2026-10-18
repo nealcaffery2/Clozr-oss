@@ -10,7 +10,7 @@ import type { SavedViews } from '@/lib/saved-views';
 
 const TRIGGER: React.CSSProperties = {
   height: '32px', padding: '0 10px', borderRadius: '10px', border: 0,
-  background: '#fff', fontFamily: 'var(--font-sans)', fontSize: '12.5px', fontWeight: 500, lineHeight: 1, color: CZ.ink2,
+  background: 'var(--surface, #fff)', fontFamily: 'var(--font-sans)', fontSize: '12.5px', fontWeight: 500, lineHeight: 1, color: CZ.ink2,
   cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap',
   boxShadow: SHADOW.ring,
 };
@@ -117,9 +117,9 @@ export function ViewMenu<C>({ sv, current, dirty, onApply, onToast, align = 'rig
                   <input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={80}
                     onKeyDown={(e) => { if (e.key === 'Enter') void save(); if (e.key === 'Escape') setNaming(false); }}
                     placeholder="Name this view — e.g. Morgan's closings" className="dc17"
-                    style={{ height: '32px', padding: '0 10px', border: 0, borderRadius: '10px', fontSize: '12.5px', outline: 0, background: '#fff', fontFamily: 'var(--font-sans)', boxShadow: SHADOW.ring }} />
+                    style={{ height: '32px', padding: '0 10px', border: 0, borderRadius: '10px', fontSize: '12.5px', outline: 0, background: 'var(--surface, #fff)', fontFamily: 'var(--font-sans)', boxShadow: SHADOW.ring }} />
                   {sv.store === 'workspace' ? (
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '12px', color: '#52525b', cursor: 'pointer', padding: '0 4px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '12px', color: 'var(--muted, #52525b)', cursor: 'pointer', padding: '0 4px' }}>
                       <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} style={{ accentColor: 'var(--c-accent)' }} />
                       Share with the team
                     </label>
@@ -134,7 +134,7 @@ export function ViewMenu<C>({ sv, current, dirty, onApply, onToast, align = 'rig
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', padding: '0 2px' }}>
                   <button type="button" className="dc10" onClick={() => setNaming(true)} style={{ ...SMALL, ...primaryBtn, height: '28px' }}>+ Save as new view</button>
                   {a && a.mine && dirty ? <button type="button" className="dc2 cz-btn" onClick={() => void overwrite()} style={SMALL}>Update “{a.name.length > 14 ? a.name.slice(0, 13) + '…' : a.name}”</button> : null}
-                  {a && a.mine ? <button type="button" className="dc2 cz-btn" onClick={() => void drop()} style={{ ...SMALL, color: '#dc2626' }}>Delete</button> : null}
+                  {a && a.mine ? <button type="button" className="dc2 cz-btn" onClick={() => void drop()} style={{ ...SMALL, color: 'var(--tx-hot, #dc2626)' }}>Delete</button> : null}
                 </div>
               )}
               <div className="cz-menu-info" style={menuInfo}>
@@ -184,8 +184,8 @@ export function ColumnPicker({ all, value, onChange, defaults, title = 'Fields i
     <div key={c.key} className="dc2" style={{ display: 'grid', gridTemplateColumns: '18px 1fr auto', gap: '9px', alignItems: 'center', padding: '6px 8px', borderRadius: '8px' }}>
       <button type="button" aria-label={(on ? 'Hide ' : 'Show ') + c.label} disabled={c.locked}
         onClick={() => onChange(on ? shown.filter((k) => k !== c.key) : reorder ? [...shown, c.key] : all.map((x) => x.key).filter((k) => k === c.key || shown.includes(k)))}
-        style={{ width: '18px', height: '18px', padding: 0, borderRadius: '5px', display: 'grid', placeItems: 'center', background: on ? (c.locked ? '#a1a1aa' : CZ.mint) : '#fff', border: 0, boxShadow: on ? 'none' : SHADOW.ring, cursor: c.locked ? 'default' : 'pointer' }}>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+        style={{ width: '18px', height: '18px', padding: 0, borderRadius: '5px', display: 'grid', placeItems: 'center', background: on ? (c.locked ? 'var(--subtle, #a1a1aa)' : CZ.mint) : 'var(--surface, #fff)', border: 0, boxShadow: on ? 'none' : SHADOW.ring, cursor: c.locked ? 'default' : 'pointer' }}>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--surface, #fff)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
       </button>
       <span style={{ fontSize: '12.5px', color: c.locked ? CZ.faint : on ? CZ.ink : CZ.muted, fontWeight: on ? 500 : 400 }}>{c.label}</span>
       {reorder && on && !c.locked ? (
@@ -266,7 +266,7 @@ export function SortMenu({ options, value, resetId, onChange, pill }: {
         <Chevron size={11} color={dirty ? CZ.mint : CZ.faint} dir={open ? 'up' : 'down'} />
       </button>
       {dirty ? (
-        <button type="button" className="dc12" onClick={() => onChange(resetId)} style={{ height: '32px', padding: '0 8px', background: 'none', border: 0, fontSize: '12px', color: '#0A8560', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        <button type="button" className="dc12" onClick={() => onChange(resetId)} style={{ height: '32px', padding: '0 8px', background: 'none', border: 0, fontSize: '12px', color: 'var(--tx-mint, #0a8560)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
           Reset
         </button>
       ) : null}
@@ -297,7 +297,7 @@ export function SortMenu({ options, value, resetId, onChange, pill }: {
   );
 }
 
-const ARROW: React.CSSProperties = { width: '22px', height: '22px', padding: 0, border: 0, borderRadius: '6px', background: '#fff', fontSize: '11px', color: '#52525b', cursor: 'pointer', lineHeight: 1, boxShadow: SHADOW.ring };
+const ARROW: React.CSSProperties = { width: '22px', height: '22px', padding: 0, border: 0, borderRadius: '6px', background: 'var(--surface, #fff)', fontSize: '11px', color: 'var(--muted, #52525b)', cursor: 'pointer', lineHeight: 1, boxShadow: SHADOW.ring };
 const LINK: React.CSSProperties = { background: 'none', border: 0, padding: 0, fontSize: '11.5px', color: 'var(--c-accent)', cursor: 'pointer', fontWeight: 600 };
 
 /** Same members, same order. */

@@ -17,12 +17,11 @@ import { AdoptSignature } from './AdoptSignature';
 import { ApprovalCard, DelegateSheet, SmsCodeGate } from './PeopleActions';
 import { PdfSigning } from './PdfSigning';
 import { SIGNING_CSS } from './signing.css';
-import '../clozr/tokens.css';
 
 type LockedView = { locked: true; hint: string | null; contract?: { name: string }; company?: { name: string };
   /** The link was texted (migration 114): the code can come by text too. */
   sms?: boolean; phone_hint?: string | null };
-type Other = { role: string; label: string | null; name: string | null; status: string };
+type Other = { role: string; label: string | null; name: string | null; status: string; recipient_type?: string };
 type View = {
   contract: { id: number; name: string; kind: string; status: string; expires_at: string | null; message: string | null; html: string;
     /** 'pdf': an uploaded form with fields laid over it (PdfSigning). */
@@ -210,8 +209,17 @@ export default function SignPage() {
     return { cls: 'cz-pill-wait', text: isFiller ? 'Needs your input' : 'Needs your signature' };
   }, [c, completed, alreadySigned, done, isApprover, isFiller, me, answered]);
 
-  const signedCount = (view?.others ?? []).filter((o) => o.status === 'signed' || o.status === 'filled').length + (alreadySigned || done ? 1 : 0);
-  const total = (view?.others.length ?? 0) + 1;
+  const signingParties = (view?.others ?? []).filter((o) => o.recipient_type !== 'cc' && o.recipient_type !== 'viewer');
+  const signedCount = signingParties.filter((o) => o.status === 'signed' || o.status === 'filled').length + (alreadySigned || done ? 1 : 0);
+  const total = signingParties.length + 1;
+  const partyStatus = (p: { status: string; recipient_type?: string }) => {
+    if (p.recipient_type === 'cc') return 'Gets copy when done';
+    if (p.recipient_type === 'viewer') return 'Viewer';
+    if (p.status === 'signed' || p.status === 'filled') return p.status === 'filled' ? 'Filled in' : 'Signed';
+    if (p.status === 'declined') return 'Declined';
+    if (p.status === 'viewed') return 'Viewed';
+    return 'Waiting';
+  };
 
   return (
     <main className="cz-page">
@@ -333,14 +341,15 @@ export default function SignPage() {
                 <ul className="cz-parties">
                   {[{ role: me.role, label: me.label, name: me.name, status: done ? (isFiller ? 'filled' : 'signed') : me.status, mine: true },
                     ...view.others.map((o) => ({ ...o, mine: false }))].map((p) => {
-                    const isDone = p.status === 'signed' || p.status === 'filled';
+                    const isCc = p.recipient_type === 'cc' || p.recipient_type === 'viewer';
+                    const isDone = !isCc && (p.status === 'signed' || p.status === 'filled');
                     return (
-                      <li className="cz-party" key={p.role}>
-                        <span className={`cz-dot${isDone ? ' is-done' : p.mine ? ' is-me' : ''}`} aria-hidden>
+                      <li className="cz-party" key={`${p.role}-${p.mine ? 'me' : 'other'}`}>
+                        <span className={`cz-dot${isDone ? ' is-done' : p.mine ? ' is-me' : isCc ? ' is-cc' : ''}`} aria-hidden>
                           {isDone ? '✓' : initials(p.name, p.label || p.role)}
                         </span>
                         <span className="cz-party-who">{p.name || p.label || p.role}{p.mine ? ' (you)' : ''}</span>
-                        <span className="cz-party-role">{isDone ? (p.status === 'filled' ? 'Filled in' : 'Signed') : p.status === 'declined' ? 'Declined' : p.status === 'viewed' ? 'Viewed' : 'Waiting'}</span>
+                        <span className="cz-party-role">{partyStatus(p)}</span>
                       </li>
                     );
                   })}
@@ -372,7 +381,7 @@ export default function SignPage() {
                 {err ? <div className="cz-err">{err}</div> : null}
                 <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
                   <button type="button" onClick={() => setDeclining(false)} className="cz-btn cz-btn-ghost cz-btn-sm">Back</button>
-                  <button type="button" disabled={busy} onClick={decline} className="cz-btn cz-btn-sm" style={{ background: '#fff', color: '#b91c1c', borderColor: '#fecaca' }}>
+                  <button type="button" disabled={busy} onClick={decline} className="cz-btn cz-btn-sm" style={{ background: 'var(--surface, #fff)', color: 'var(--tx-red, #b91c1c)', borderColor: 'var(--tint-red-2, #fecaca)' }}>
                     {busy ? 'Declining…' : 'Decline document'}
                   </button>
                 </div>

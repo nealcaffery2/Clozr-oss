@@ -35,10 +35,15 @@ import {
   GENERIC_INTRO, chooseIntro, dealCountLabel, dispoBuyerFields, distanceLabel, inSendWindow, offerAsk, propertyTypeLabel, rotate, WINDOW,
 } from '@/supabase/functions/_shared/dispo-rules';
 import { type DemoMarketing, demoIntro } from './demo-data';
-import { audienceView, cadenceLabel, channelWords, launchSentence, mergeCheck, planSummary, plural, tzLabel, whenLabel } from './logic';
+import { audienceView, cadenceLabel, channelWords, closestField, dropToken, dropTokenHtml, launchSentence, mergeCheck, planSummary, plural, swapToken, tzLabel, whenLabel } from './logic';
 import { Avatar, Btn, C, Choice, Dialog, Disclosure, Eyebrow, Icon, Note, Status, Svg, Switch } from './ui';
-import { EmailView, SmsThread } from './Preview';
+import { EmailView, Scaled, SmsThread } from './Preview';
+import { type LightboxDraft, MessageLightbox } from './MessageLightbox';
+import { carrierCheck } from '@/lib/carrier-safe';
+import { htmlToText } from '@/lib/email-text';
+import { type CarrierReview, findingLine, fixHtmlWords, fixWords, reviewMessage } from '@/lib/message-revise';
 import { RvmRecorder } from './RvmRecorder';
+import { GeniusImport } from './GeniusImport';
 import { PushReview, type ReviewSegment, type ReviewVariant } from './PushReview';
 
 export type ComposerProps = {
@@ -53,6 +58,8 @@ export type ComposerProps = {
   onQueue?: (buyerIds: number[]) => void | Promise<void>;
   /** Start the buyer AI agent for these buyers. */
   onAgent?: (buyerIds: number[]) => void | Promise<void>;
+  /** Switch to the one-screen quick send. */
+  onQuick?: () => void;
 };
 
 const TONES = ['casual', 'professional', 'friendly', 'direct', 'urgent'];
@@ -126,7 +133,7 @@ function demoAi(rows: BuyerRow[], tone: string, repFirst: string, deal: Campaign
   }]));
 }
 
-export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, textCtx, prefill, onToast, onLaunched, onClose, demo, reveal, onQueue, onAgent }: ComposerProps) {
+export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, textCtx, prefill, onToast, onLaunched, onClose, demo, reveal, onQueue, onAgent, onQuick }: ComposerProps) {
   const session = useSession();
   const me = session.user?.id ?? null;
   const role = (session as unknown as { workspace?: { role?: string } | null }).workspace?.role ?? '';
@@ -179,7 +186,12 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
     return () => document.removeEventListener('keydown', esc);
   }, [bigPreview]);
   const [sampleTone, setSampleTone] = useState<string | null>(null);
-  const [plainEdit, setPlainEdit] = useState(false);
+  /** The message open in the big editor: intro, brief-sms, brief-email, fu-sms-N or fu-email-N (N indexes the follow-up list). */
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  /** The email's main photo when the rep picked one in the editor; otherwise the deal's own. */
+  const [heroUrl, setHeroUrl] = useState<string | null>(null);
+  /** Deal fields this deal has no value for, typed in from a check for this campaign only. */
+  const [fill, setFill] = useState<Record<string, string>>({});
   const [confirming, setConfirming] = useState(false);
   const [toneSwapped, setToneSwapped] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -256,10 +268,12 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
   // The deal's merge fields, with a photo when the deal fields have none:
   // the public photos this builder already loads (COMPR's first), so
   // {{photo_url}} is never blank while the deal has a picture to show.
-  const fields = useMemo(
-    () => (dealFields.photo_url || !data?.photos.length ? dealFields : { ...dealFields, photo_url: data.photos[0].url }),
-    [dealFields, data],
-  );
+  // A photo the rep picked for the email wins over both.
+  const fields = useMemo(() => {
+    const filled = { ...dealFields, ...Object.fromEntries(Object.entries(fill).filter(([k, v]) => v.trim() && !String(dealFields[k] ?? '').trim())) };
+    const base = filled.photo_url || !data?.photos.length ? filled : { ...filled, photo_url: data.photos[0].url };
+    return heroUrl ? { ...base, photo_url: heroUrl } : base;
+  }, [dealFields, data, heroUrl, fill]);
   const view = useMemo(() => audienceView(rows, filters, include, data?.deal.price ?? null), [rows, filters, include, data]);
   // Realtors in the deal's market join after the buyers. Workspace realtors a
   // match already put in the audience stay where they are; unticking one here
@@ -538,8 +552,88 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
   const pIntroAi = pRow ? ai[pRow.b.id]?.intro : undefined;
   const pGetsAi = !!pRow && aiIntroFor(settings, pRow) && !!pRow.b.phone && pRow.b.preferredChannel !== 'email_only';
 
+  // ---------------------------------------------------------------- carrier check
+  // Every message template, checked the way a carrier (or an inbox filter) reads it, before anything sends.
+  const fuSmsAt = settings.followups.sms ? settings.followups.smsList.map((t, i) => ({ t, i })).filter((x) => x.t.trim()) : [];
+  const fuEmailAt = settings.followups.email ? settings.followups.emailList.map((t, i) => ({ t, i })).filter((x) => x.t.body.trim()) : [];
+  const emailWords = (html: string | null, body: string) => (html ? htmlToText(html) : body);
+  const carrierReviews: CarrierReview[] = [
+    settings.intro.mode !== 'none' ? reviewMessage(settings.intro.mode === 'ai' ? 'Intro template' : 'Intro text', 'intro', 'sms', settings.intro.templateBody) : null,
+    settings.brief.sms ? reviewMessage('Deal brief by text', 'brief-sms', 'sms', settings.brief.smsBody) : null,
+    settings.brief.email ? reviewMessage('Deal brief by email', 'brief-email', 'email', `${settings.brief.emailSubject}\n${emailWords(settings.brief.emailHtml, settings.brief.emailBody)}`) : null,
+    ...fuSmsAt.map(({ t, i }, j) => reviewMessage(`Follow-up text ${j + 1}`, `fu-sms-${i}`, 'sms', t)),
+    ...fuEmailAt.map(({ t, i }, j) => reviewMessage(`Follow-up email ${j + 1}`, `fu-email-${i}`, 'email', `${t.subject}\n${t.body}`)),
+  ].filter((r): r is CarrierReview => !!r);
+  /** The suggested wording, in place: texts take the check's own version, emails the same swaps in their subject, words and HTML. */
+  const fixMessage = (r: CarrierReview) => {
+    const f = r.check.findings;
+    const fu = /^fu-(sms|email)-(\d+)$/.exec(r.target);
+    if (r.target === 'intro') set('intro', { templateBody: carrierCheck(settings.intro.templateBody).text });
+    else if (r.target === 'brief-sms') set('brief', { smsBody: carrierCheck(settings.brief.smsBody).text });
+    else if (r.target === 'brief-email') set('brief', { emailSubject: fixWords(settings.brief.emailSubject, f), emailBody: fixWords(settings.brief.emailBody, f), emailHtml: settings.brief.emailHtml ? fixHtmlWords(settings.brief.emailHtml, f) : null });
+    else if (fu?.[1] === 'sms') set('followups', { smsList: settings.followups.smsList.map((x, i) => (i === Number(fu[2]) ? carrierCheck(x).text : x)) });
+    else if (fu?.[1] === 'email') set('followups', { emailList: settings.followups.emailList.map((x, i) => (i === Number(fu[2]) ? { subject: fixWords(x.subject, f), body: fixWords(x.body, f) } : x)) });
+    onToast(`${r.label}: suggested wording in place`);
+  };
+  const fixAll = () => carrierReviews.filter((r) => r.suggestion).forEach(fixMessage);
+
+  // ---------------------------------------------------------------- the editor
+  const draftOf = (t: string): LightboxDraft | null => {
+    if (t === 'intro') return { subject: '', body: settings.intro.templateBody, html: null };
+    if (t === 'brief-sms') return { subject: '', body: settings.brief.smsBody, html: null };
+    if (t === 'brief-email') return { subject: settings.brief.emailSubject, body: settings.brief.emailBody, html: settings.brief.emailHtml };
+    const fu = /^fu-(sms|email)-(\d+)$/.exec(t);
+    if (fu?.[1] === 'sms') { const x = settings.followups.smsList[Number(fu[2])]; return x == null ? null : { subject: '', body: x, html: null }; }
+    if (fu?.[1] === 'email') { const x = settings.followups.emailList[Number(fu[2])]; return x == null ? null : { subject: x.subject, body: x.body, html: null }; }
+    return null;
+  };
+  const writeDraft = (t: string, d: LightboxDraft, photo = fields.photo_url || null) => {
+    const fu = /^fu-(sms|email)-(\d+)$/.exec(t);
+    if (t === 'intro') set('intro', { templateBody: d.body });
+    else if (t === 'brief-sms') set('brief', { smsBody: d.body });
+    else if (t === 'brief-email') {
+      // Words typed into a plain email are their own template now; a designed one keeps its name.
+      if (!d.html && d.body !== settings.brief.emailBody) setEmailTemplateId('');
+      set('brief', { emailSubject: d.subject, emailBody: d.body, emailHtml: d.html });
+      if (photo !== (fields.photo_url || null)) setHeroUrl(photo);
+    } else if (fu?.[1] === 'sms') set('followups', { smsList: settings.followups.smsList.map((x, i) => (i === Number(fu[2]) ? d.body : x)) });
+    else if (fu?.[1] === 'email') set('followups', { emailList: settings.followups.emailList.map((x, i) => (i === Number(fu[2]) ? { subject: d.subject, body: d.body } : x)) });
+  };
+  const saveDraft = (t: string, d: LightboxDraft, photo: string | null) => {
+    writeDraft(t, d, photo);
+    setLightbox(null);
+    onToast('Saved');
+  };
+  /** One change to a message's subject, words and HTML alike, straight from a check. */
+  const editDraft = (t: string, f: (s: string) => string, fHtml = f) => {
+    const d = draftOf(t);
+    if (d) writeDraft(t, { subject: f(d.subject), body: f(d.body), html: d.html ? fHtml(d.html) : null });
+  };
+  /** Merge fields out of a message, and any email link that pointed at one. */
+  const dropFields = (t: string, names: string[]) => editDraft(t, (s) => names.reduce(dropToken, s), (h) => names.reduce(dropTokenHtml, h));
+  const lightboxTitle = (t: string) => {
+    const fu = /^fu-(sms|email)-(\d+)$/.exec(t);
+    if (t === 'intro') return settings.intro.mode === 'ai' ? 'Intro template, when the AI does not write' : 'Intro text';
+    if (t === 'brief-sms') return 'Deal brief by text';
+    if (t === 'brief-email') return 'Deal brief by email';
+    if (fu) return `Follow-up ${fu[1] === 'sms' ? 'text' : 'email'} ${(fu[1] === 'sms' ? fuSmsAt : fuEmailAt).findIndex((x) => x.i === Number(fu[2])) + 1 || Number(fu[2]) + 1}`;
+    return 'Message';
+  };
+  /** What the sample buyer gets from a draft, with the photo the editor has picked. */
+  const renderDraft = (t: string) => (d: LightboxDraft, photo: string | null) => {
+    const f = photo ? { ...pFields, photo_url: photo } : pFields;
+    if (t === 'intro') return { subject: '', text: renderMerge(chooseIntro(d.body, f).body, f), html: null };
+    if (t === 'brief-sms' || t.startsWith('fu-sms-')) return { subject: '', text: renderMerge(d.body, f), html: null };
+    const e = renderEmail({ subject: d.subject, body_html: d.html, body_text: d.body }, f);
+    return { subject: e.subject, text: e.text, html: e.html };
+  };
+  const openEdit = (target: string) => {
+    if (target.startsWith('lb:')) setLightbox(target.slice(3));
+    else editAt(target);
+  };
+
   // ---------------------------------------------------------------- checks
-  type Issue = { level: 'block' | 'warn' | 'info'; text: React.ReactNode; stage: 0 | 1 | 2 };
+  type Issue = { level: 'block' | 'warn' | 'info'; text: React.ReactNode; stage: 0 | 1 | 2; fix?: () => void; edit?: string; actions?: { label: string; run: () => void }[] };
   const issues: Issue[] = [];
   if (!audience.length) issues.push({ level: 'block', stage: 0, text: 'Nobody is in this campaign. Lower the minimum score, clear a filter, or tick buyers by hand.' });
   else if (!plan.recipients.length && !settings.brief.rvm && !aiBusy) issues.push({ level: 'block', stage: 0, text: `Every buyer in the audience is skipped (${sum.skipped.map(([k, v]) => `${v} ${k}`).join(', ')}), so nobody would get a message.` });
@@ -551,20 +645,59 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
   if (settings.brief.email && !settings.brief.emailBody.trim() && !settings.brief.emailHtml) issues.push({ level: 'block', stage: 1, text: 'The email is empty.' });
   const longSms = pRec?.messages.find((m) => m.channel === 'sms' && m.body.length > 1600);
   if (longSms) issues.push({ level: 'block', stage: 1, text: `A text is ${longSms.body.length.toLocaleString('en-US')} characters, over Talkr's 1,600 limit. Shorten the ${longSms.kind === 'brief' ? 'text brief' : longSms.kind}.` });
-  const bodies = [
-    settings.intro.mode !== 'none' ? settings.intro.templateBody : '', settings.brief.sms ? settings.brief.smsBody : '',
-    settings.brief.email ? `${settings.brief.emailSubject} ${settings.brief.emailHtml ?? settings.brief.emailBody}` : '',
-    settings.followups.sms ? settings.followups.smsList.join(' ') : '', settings.followups.email ? settings.followups.emailList.map((x) => `${x.subject} ${x.body}`).join(' ') : '',
-  ].join('\n');
-  const merge = mergeCheck(bodies, { ...pFields, listing_url: 'x', deal_link: 'x' }, fields);
-  if (merge.unknown.length) issues.push({ level: 'warn', stage: 1, text: <>{merge.unknown.map((t) => `{{${t}}}`).join(', ')} {merge.unknown.length === 1 ? 'is not a merge field, so it goes' : 'are not merge fields, so they go'} out exactly as typed.</> });
-  if (merge.blank.length) issues.push({ level: 'warn', stage: 1, text: <>This deal has no {merge.blank.map((t) => FIELD_LABEL[t] ?? t).join(', ')} on file, so {merge.blank.map((t) => `{{${t}}}`).join(', ')} {merge.blank.length === 1 ? 'is' : 'are'} left out of every message.</> });
+  // Merge fields, checked one message at a time so each warning names the message and the field, with the fix beside it.
+  const knownFields = { ...pFields, listing_url: 'x', deal_link: 'x' };
+  const checkMerge = (text: string) => {
+    const m = mergeCheck(text, knownFields, fields);
+    return { ...m, near: Object.fromEntries(m.unknown.map((u) => [u, closestField(u, Object.keys(knownFields))])) };
+  };
+  const msgTargets = [
+    settings.intro.mode !== 'none' && 'intro', settings.brief.sms && 'brief-sms', settings.brief.email && 'brief-email',
+    ...fuSmsAt.map(({ i }) => `fu-sms-${i}`), ...fuEmailAt.map(({ i }) => `fu-email-${i}`),
+  ].filter((t): t is string => !!t);
+  for (const t of msgTargets) {
+    const d = draftOf(t);
+    if (!d) continue;
+    const m = checkMerge(`${d.subject}\n${d.html ?? d.body}`);
+    const name = lightboxTitle(t);
+    for (const u of m.unknown) {
+      const near = m.near[u];
+      issues.push({
+        level: 'warn', stage: 1, edit: t,
+        text: <><b>{name}</b>: {`{{${u}}}`} is not a merge field, so it goes out exactly as typed.{near ? <> Did you mean {`{{${near}}}`} ({FIELD_LABEL[near] ?? near})?</> : null}</>,
+        actions: near ? [{ label: `Use {{${near}}}`, run: () => { editDraft(t, (s) => swapToken(s, u, near)); onToast(`${name}: {{${near}}} in place`); } }]
+          : [{ label: 'Take it out', run: () => { dropFields(t, [u]); onToast(`${name}: {{${u}}} taken out`); } }],
+      });
+    }
+    if (m.blank.length) {
+      const labels = m.blank.map((b) => FIELD_LABEL[b] ?? b);
+      issues.push({
+        level: 'warn', stage: 1, edit: t,
+        text: (
+          <>
+            <b>{name}</b>: this deal has nothing on file for {m.blank.map((b) => `{{${b}}}`).join(', ')}, so {m.blank.length === 1 ? 'it goes' : 'they go'} out blank. Fill in below for this campaign, or take {m.blank.length === 1 ? 'it' : 'them'} out.
+            {m.blank.map((b) => <FillField key={b} label={FIELD_LABEL[b] ?? b} onUse={(v) => { setFill((x) => ({ ...x, [b]: v })); onToast(`${FIELD_LABEL[b] ?? b} filled in for this campaign`); }} />)}
+          </>
+        ),
+        actions: [{ label: m.blank.length === 1 ? 'Take it out' : 'Take them out', run: () => { dropFields(t, m.blank); onToast(`${name}: ${labels.join(', ')} taken out`); } }],
+      });
+    }
+  }
   if (emailCount && resend && !useResend && !account) issues.push({ level: 'block', stage: 2, text: 'Email needs a sender. Resend is not set up, so pick a connected Gmail account under Sending from, or turn email off.' });
   const room = useResend ? poolRoom(blastPool) : null;
   if (emailCount && useResend && room && room.count === 0) issues.push({ level: 'warn', stage: 2, text: 'Every blast address for you is paused. Emails queue until one is resumed in Settings → Outbound OS.' });
   if (room && room.count && sum.emails && sum.emails > room.left) issues.push({ level: 'warn', stage: 2, text: `Your ${room.count} blast ${room.count === 1 ? 'address' : 'addresses'} can send ${room.left.toLocaleString('en-US')} more today (50 a day while warming, 100 once warm). The rest wait until one of your addresses has room.` });
   if (spam && spam.level !== 'low') issues.push({ level: 'warn', stage: 1, text: `Spam risk is ${spam.level}: ${spam.findings.slice(0, 3).map((f) => f.label.toLowerCase()).join(', ')}.` });
   if (settings.variations.useImage && !data.photos.length) issues.push({ level: 'warn', stage: 1, text: 'Attach a photo is on, but this deal has no photo links. Add one on the Files tab.' });
+  for (const r of carrierReviews) {
+    const blocks = r.check.findings.filter((f) => f.severity === 'block');
+    const shown = (blocks.length ? blocks : r.check.findings).slice(0, 2);
+    const more = r.check.findings.length - shown.length;
+    issues.push({
+      level: blocks.length ? 'block' : 'warn', stage: 1, edit: r.target, fix: r.suggestion ? () => fixMessage(r) : undefined,
+      text: <>{r.label}: {shown.map(findingLine).join(' ')}{more > 0 ? ` ${plural(more, 'more finding')}.` : ''}</>,
+    });
+  }
   if (outside) issues.push({ level: 'info', stage: 1, text: `It is outside ${WINDOW.start} AM–${WINDOW.end - 12} PM ${zone}, so the first messages wait until the window opens (${whenLabel(firstSend ?? null, tz, now)}).` });
   const blocking = issues.filter((i) => i.level === 'block');
 
@@ -592,6 +725,16 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
     const text = `{{${token}}}`;
     set('brief', { smsBody: body.slice(0, at) + text + body.slice(end) });
     requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(at + text.length, at + text.length); });
+  };
+
+  /** Buyers a Genius pull just added or traced: read again (new phones and emails included) and ticked into the audience. */
+  const importBuyers = async (ids: number[]) => {
+    const fresh = await loadCampaignBuyersByIds(workspaceId, ids);
+    const got = new Set(fresh.map((b) => b.id));
+    forgetCampaignData(dealId);
+    setData((d) => (d ? { ...d, buyers: [...d.buyers.filter((b) => !got.has(b.id)), ...fresh] } : d));
+    setInclude((x) => ({ ...x, ...Object.fromEntries(ids.map((id) => [id, true])) }));
+    onToast(`${plural(ids.length, 'buyer')} from Genius in this campaign`);
   };
 
   const audienceBody = () => {
@@ -628,11 +771,13 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
               <Eyebrow>Left out</Eyebrow>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }} data-testid="left-out">
                 {view.filtered.map(([why, n]) => <span key={why} style={pill}><b className="mk-num">{n}</b> {why}</span>)}
-                {sum.skipped.map(([why, n]) => <span key={why} style={{ ...pill, background: C.redSoft, color: '#991b1b' }} title="In the audience, but nothing can be sent to them"><b className="mk-num">{n}</b> {why}</span>)}
+                {sum.skipped.map(([why, n]) => <span key={why} style={{ ...pill, background: C.redSoft, color: 'var(--tx-red-deep, #991b1b)' }} title="In the audience, but nothing can be sent to them"><b className="mk-num">{n}</b> {why}</span>)}
               </div>
             </div>
           ) : null}
         </div>
+
+        <GeniusImport workspaceId={workspaceId} dealId={dealId} address={data.deal.address || null} userId={me} canWrite={canWrite} demo={!!demo} onImported={importBuyers} />
 
         {realtorCard()}
 
@@ -665,7 +810,7 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
                       <span style={{ display: 'block', color: C.muted2, fontSize: '11.5px', marginTop: '1px' }}>
                         L{r.level} {r.levelLabel} · {(r.match?.reasons ?? []).slice(0, 2).join(' · ') || 'not matched'}
                         {!r.b.phone ? <span style={{ color: C.amber }}> · no phone</span> : null}{!r.b.email ? <span style={{ color: C.amber }}> · no email</span> : null}
-                        {out && list === 'matched' ? <span style={{ color: '#92400e' }}> · left out: {out}</span> : null}
+                        {out && list === 'matched' ? <span style={{ color: 'var(--tx-amber-deep, #92400e)' }}> · left out: {out}</span> : null}
                       </span>
                     </span>
                   </label>
@@ -774,11 +919,12 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
       <Section id="mk-sec-sms" title="Deal brief by text" right={<Switch on={settings.brief.sms} set={(v) => set('brief', { sms: v })}><span className="sr-only" style={srOnly}>Send a text brief</span></Switch>}>
         {settings.brief.sms ? (
           <>
-            <textarea id="mk-sms-body" rows={4} value={settings.brief.smsBody} onChange={(e) => set('brief', { smsBody: e.target.value })} className="mk-area" aria-label="Text brief" data-testid="sms-body" />
+            <textarea id="mk-sms-body" rows={rowsFor(settings.brief.smsBody, isMobile ? 40 : 76)} value={settings.brief.smsBody} onChange={(e) => set('brief', { smsBody: e.target.value })} className="mk-area mk-lb-words" aria-label="Text brief" data-testid="sms-body" style={{ resize: 'none', fieldSizing: 'content' } as React.CSSProperties} />
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
               <span style={{ fontSize: '11.5px', color: C.muted2, marginRight: '2px' }}>Insert</span>
               {INSERT.map((t) => <button key={t} type="button" className="mk-chip mk-press" style={{ height: '24px', fontSize: '11px', padding: '0 7px' }} onClick={() => insert(t)}>{FIELD_LABEL[t] ?? t}</button>)}
             </div>
+            <EditBar onEdit={() => setLightbox('brief-sms')} label="the text brief" review={carrierReviews.find((r) => r.target === 'brief-sms')} />
           </>
         ) : <Off>No text brief. Buyers still get the intro{settings.brief.email ? ' and the email' : ''}.</Off>}
       </Section>
@@ -786,29 +932,29 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
       <Section id="mk-sec-email" title="Deal brief by email" right={<Switch on={settings.brief.email} set={(v) => set('brief', { email: v })}><span style={srOnly}>Send an email brief</span></Switch>}>
         {settings.brief.email ? (
           <>
-            <Field label="Subject"><input value={settings.brief.emailSubject} onChange={(e) => set('brief', { emailSubject: e.target.value })} className="mk-field" data-testid="email-subject" /></Field>
+            <Field label="Subject"><input value={settings.brief.emailSubject} onChange={(e) => set('brief', { emailSubject: e.target.value })} className="mk-field" data-testid="email-subject" style={{ height: '36px', fontSize: '13.5px' }} /></Field>
             <Field label="Template">
               <select value={emailTemplateId} onChange={(e) => {
                 const t = data.templates.find((x) => String(x.id) === e.target.value);
                 setEmailTemplateId(e.target.value);
-                setPlainEdit(false);
                 set('brief', t ? { emailSubject: t.subject ?? EMAIL_SUBJECT, emailBody: t.body_text, emailHtml: t.body_html ?? null } : { emailSubject: EMAIL_SUBJECT, emailBody: EMAIL_BRIEF, emailHtml: null });
               }} className="mk-field" style={{ maxWidth: '100%' }}>
                 <option value="">Plain text</option>
                 {emailChoices(data.templates).map((t) => <option key={t.id} value={t.id}>{t.name}{t.body_html ? ' · designed' : ''}</option>)}
               </select>
             </Field>
-            {settings.brief.emailHtml && !plainEdit ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', fontSize: '12px', color: C.muted }}>
-                <span>The designed email, filled in for each buyer. See it in the preview.</span>
-                <Btn size="sm" kind="quiet" onClick={() => { setPlainEdit(true); setPreviewCh('email'); }}>Edit as plain text</Btn>
-              </div>
-            ) : (
-              <>
-                {settings.brief.emailHtml ? <Note level="warn">Editing the words sends plain text instead of the designed email.</Note> : null}
-                <textarea rows={7} value={settings.brief.emailBody} onChange={(e) => { set('brief', { emailBody: e.target.value, emailHtml: null }); setEmailTemplateId(''); }} className="mk-area" aria-label="Email body" />
-              </>
-            )}
+            {(() => {
+              const e = renderDraft('brief-email')({ subject: settings.brief.emailSubject, body: settings.brief.emailBody, html: settings.brief.emailHtml }, fields.photo_url || null);
+              return e.html ? (
+                <div className="mk-msg-open" onClick={() => setLightbox('brief-email')} data-testid="email-card" style={{ cursor: 'pointer' }}>
+                  <div style={{ padding: '8px', pointerEvents: 'none' }}><Scaled html={e.html} /></div>
+                </div>
+              ) : (
+                <textarea rows={rowsFor(settings.brief.emailBody, isMobile ? 40 : 84)} value={settings.brief.emailBody} onChange={(ev) => { set('brief', { emailBody: ev.target.value, emailHtml: null }); setEmailTemplateId(''); }}
+                  className="mk-area mk-lb-words" aria-label="Email body" style={{ resize: 'none', fieldSizing: 'content' } as React.CSSProperties} />
+              );
+            })()}
+            <EditBar onEdit={() => setLightbox('brief-email')} label="the email" extra={settings.brief.emailHtml ? 'Words, HTML and the main photo' : 'Words and subject'} review={carrierReviews.find((r) => r.target === 'brief-email')} />
           </>
         ) : <Off>No email. Buyers with no textable number get nothing but follow-ups.</Off>}
       </Section>
@@ -889,7 +1035,7 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     {data.photos.map((p) => (
                       <button key={p.id} type="button" className="mk-press" aria-pressed={settings.variations.imageUrl === p.url} onClick={() => set('variations', { imageUrl: p.url })} title={p.name}
-                        style={{ width: '84px', height: '60px', borderRadius: '8px', border: `2px solid ${settings.variations.imageUrl === p.url ? 'var(--c-primary)' : C.line}`, background: `#f4f4f5 url(${JSON.stringify(p.url)}) center/cover no-repeat`, cursor: 'pointer', transition: 'transform 160ms ease-out' }} />
+                        style={{ width: '84px', height: '60px', borderRadius: '8px', border: `2px solid ${settings.variations.imageUrl === p.url ? 'var(--c-primary)' : C.line}`, background: `var(--surface-2, #f4f4f5) url(${JSON.stringify(p.url)}) center/cover no-repeat`, cursor: 'pointer', transition: 'transform 160ms ease-out' }} />
                     ))}
                   </div>
                 ) : <span style={{ fontSize: '12px', color: C.muted2 }}>This deal has no photo links yet: add an https photo link on the Files tab.</span>) : null}
@@ -947,6 +1093,7 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
                         <div style={{ display: 'flex', gap: '2px' }}>
                           <Btn size="sm" disabled={i === 0} onClick={() => move(-1)} aria-label="Move up" title={i === 0 ? 'Already first' : 'Move up'}>↑</Btn>
                           <Btn size="sm" disabled={i === items.length - 1} onClick={() => move(1)} aria-label="Move down" title={i === items.length - 1 ? 'Already last' : 'Move down'}>↓</Btn>
+                          <Btn size="sm" onClick={() => setLightbox(`fu-${ch}-${i}`)} aria-label={`Edit follow-up ${i + 1} in the editor`} title="Open in the editor"><Svg d={Icon.edit} size={12} /></Btn>
                           <Btn size="sm" kind="danger" onClick={() => write(items.filter((_, j) => j !== i))} aria-label="Delete">×</Btn>
                         </div>
                       </div>
@@ -977,8 +1124,9 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
           <option value="">Generic intro</option>
           {data!.templates.filter((t) => t.channel === 'sms' && t.category === 'dispo-intro').map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
-        <textarea rows={3} value={settings.intro.templateBody} onChange={(e) => set('intro', { templateBody: e.target.value })} className="mk-area" aria-label="Intro template text" />
-        {c?.fallback ? <span style={{ fontSize: '11.5px', color: '#92400e' }}>{pRow!.b.name} gets the generic intro: no {c.missing.join(', ')} on file.</span> : null}
+        <textarea rows={rowsFor(settings.intro.templateBody, 70)} value={settings.intro.templateBody} onChange={(e) => set('intro', { templateBody: e.target.value })} className="mk-area" aria-label="Intro template text" style={{ resize: 'none', fieldSizing: 'content' } as React.CSSProperties} />
+        <div><Btn size="sm" onClick={() => setLightbox('intro')}><Svg d={Icon.edit} size={12} /> Edit the intro</Btn></div>
+        {c?.fallback ? <span style={{ fontSize: '11.5px', color: 'var(--tx-amber-deep, #92400e)' }}>{pRow!.b.name} gets the generic intro: no {c.missing.join(', ')} on file.</span> : null}
         <span style={{ fontSize: '11.5px', color: C.muted2 }}>When a buyer&apos;s purchase facts are not on file, the generic intro goes instead of a sentence with a gap.</span>
       </div>
     );
@@ -1001,26 +1149,26 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
       out.push({
         key: 'intro', channel: 'sms', title: 'Intro text', reach: has('sms', 'intro').length,
         note: settings.intro.mode === 'ai' ? `The AI writes each buyer's own, in a ${settings.intro.tone} tone. This is ${pRow ? pRow.b.name.split(' ')[0] : 'a sample'}'s${pIntroAi ? '' : ' template until the AI writes it'}.` : undefined,
-        body: mine || renderMerge(chooseIntro(settings.intro.templateBody, f).body, f), edit: 'mk-sec-intro',
+        body: mine || renderMerge(chooseIntro(settings.intro.templateBody, f).body, f), edit: settings.intro.mode === 'ai' ? 'mk-sec-intro' : 'lb:intro',
       });
     }
-    if (settings.brief.sms) out.push({ key: 'brief-sms', channel: 'sms', title: 'Deal brief by text', reach: has('sms', 'brief').length, body: renderMerge(settings.brief.smsBody, f), edit: 'mk-sec-sms' });
+    if (settings.brief.sms) out.push({ key: 'brief-sms', channel: 'sms', title: 'Deal brief by text', reach: has('sms', 'brief').length, body: renderMerge(settings.brief.smsBody, f), edit: 'lb:brief-sms' });
     if (settings.brief.email) {
       const e = renderEmail({ subject: settings.brief.emailSubject, body_html: settings.brief.emailHtml, body_text: settings.brief.emailBody }, f);
-      out.push({ key: 'brief-email', channel: 'email', title: 'Deal brief by email', reach: has('email', 'brief').length, subject: e.subject, body: e.text, html: e.html, edit: 'mk-sec-email' });
+      out.push({ key: 'brief-email', channel: 'email', title: 'Deal brief by email', reach: has('email', 'brief').length, subject: e.subject, body: e.text, html: e.html, edit: 'lb:brief-email' });
     }
-    const fuSms = settings.followups.sms ? settings.followups.smsList.filter((x) => x.trim()) : [];
-    const fuEmail = settings.followups.email ? settings.followups.emailList.filter((x) => x.body.trim()) : [];
+    const fuSms = fuSmsAt.map((x) => x.t);
+    const fuEmail = fuEmailAt.map((x) => x.t);
     const turn = (p: (typeof recs)[number], n: number) => { const i = at.get(p.buyer_id) ?? 0; return ((i % n) + n) % n; };
     fuSms.forEach((t, j) => out.push({
       key: `fu-sms-${j}`, channel: 'sms', title: `Follow-up text ${j + 1} of ${fuSms.length}`, reach: has('sms', 'followup').filter((p) => turn(p, fuSms.length) === j).length,
-      note: settings.followups.smsAi ? 'The AI personalizes each one from this.' : 'Only if they have not replied.', body: renderMerge(t, f), edit: 'mk-sec-advanced',
+      note: settings.followups.smsAi ? 'The AI personalizes each one from this.' : 'Only if they have not replied.', body: renderMerge(t, f), edit: `lb:fu-sms-${fuSmsAt[j].i}`,
     }));
     fuEmail.forEach((t, j) => {
       const e = renderEmail({ subject: t.subject || 'Following up: {{address}}', body_html: null, body_text: t.body }, f);
       out.push({
         key: `fu-email-${j}`, channel: 'email', title: `Follow-up email ${j + 1} of ${fuEmail.length}`, reach: has('email', 'followup').filter((p) => turn(p, fuEmail.length) === j).length,
-        note: settings.followups.emailAi ? 'The AI personalizes each one from this.' : 'Only if they have not replied.', subject: e.subject, body: e.text, edit: 'mk-sec-advanced',
+        note: settings.followups.emailAi ? 'The AI personalizes each one from this.' : 'Only if they have not replied.', subject: e.subject, body: e.text, edit: `lb:fu-email-${fuEmailAt[j].i}`,
       });
     });
     if (settings.brief.rvm) {
@@ -1047,6 +1195,30 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
           </div>
         ) : aiPending ? <Note level="warn" action={<Btn size="sm" onClick={() => go(2)}>Write them</Btn>}>{plural(aiPending, 'AI message')} still to write before this can send.</Note> : null}
 
+        {carrierReviews.length ? (
+          <section className="mk-lb-check" data-state={carrierReviews.some((r) => r.check.blocked) ? 'block' : 'warn'} aria-labelledby="mk-carrier-h" data-testid="carrier-review" style={{ gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <Svg d={Icon.shield} size={15} color={carrierReviews.some((r) => r.check.blocked) ? C.red : C.amber} />
+              <h2 id="mk-carrier-h" style={{ margin: 0, fontSize: '13.5px', fontWeight: 650 }}>Carrier check before this sends</h2>
+              <span style={{ fontSize: '12px', color: C.muted }}>{plural(carrierReviews.length, 'message')} with words carrier or inbox filters score</span>
+              <div style={{ flex: 1 }} />
+              {carrierReviews.filter((r) => r.suggestion).length > 1 ? <Btn size="sm" kind="primary" onClick={fixAll}>Use all suggested wording</Btn> : null}
+            </div>
+            {carrierReviews.map((r) => (
+              <div key={r.target} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: '10px', alignItems: 'start', paddingTop: '10px', borderTop: `1px solid ${r.check.blocked ? 'var(--tint-red-2, #fecaca)' : 'var(--tint-amber-2, #fde68a)'}` }}>
+                <div style={{ minWidth: 0, fontSize: '12.5px', lineHeight: 1.5 }}>
+                  <b>{r.label}</b>
+                  {r.check.findings.map((f, i) => <div key={i} style={{ color: f.severity === 'block' ? C.red : C.ink2 }}>{findingLine(f)}</div>)}
+                </div>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {r.suggestion ? <Btn size="sm" kind="primary" onClick={() => fixMessage(r)}>Use suggested</Btn> : null}
+                  <Btn size="sm" onClick={() => setLightbox(r.target)} aria-label={`Edit ${r.label.toLowerCase()}`}><Svg d={Icon.edit} size={12} /> Edit</Btn>
+                </div>
+              </div>
+            ))}
+          </section>
+        ) : null}
+
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
           <Tile k="Buyers" v={sum.buyers} sub={sum.skippedTotal ? `${sum.skippedTotal} skipped` : 'none skipped'} />
           <Tile k="Texts" v={sum.texts} sub={`≈ ${plural(sum.segments, 'segment')}`} />
@@ -1054,7 +1226,7 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
           <Tile k="First sends" v={cap(whenLabel(firstSend ?? null, tz, now))} sub={zone} />
         </div>
 
-        <PushReview title="Everything in this push" sample={pRow ? `filled in for ${pRow.b.name}` : null} segments={segmentsOf(plan.recipients)} variants={pushVariants()} onEdit={(id) => editAt(id)} />
+        <PushReview title="Everything in this push" sample={pRow ? `filled in for ${pRow.b.name}` : null} segments={segmentsOf(plan.recipients)} variants={pushVariants()} onEdit={openEdit} />
 
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(240px, 320px) minmax(0,1fr)', gap: '12px', alignItems: 'start' }}>
           <div className="mk-card" style={{ overflow: 'hidden' }}>
@@ -1069,7 +1241,7 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
                 const on = sel?.buyer_id === p.buyer_id;
                 return (
                   <button key={p.buyer_id} type="button" onClick={() => { setPick(p.buyer_id); setPreviewId(p.buyer_id); }} aria-pressed={on} className="mk-row"
-                    style={{ display: 'grid', gridTemplateColumns: '32px minmax(0,1fr)', gap: '10px', width: '100%', textAlign: 'left', padding: '10px', border: 0, borderBottom: `1px solid ${C.line2}`, background: on ? C.mintSoft : '#fff', cursor: 'pointer' }}>
+                    style={{ display: 'grid', gridTemplateColumns: '32px minmax(0,1fr)', gap: '10px', width: '100%', textAlign: 'left', padding: '10px', border: 0, borderBottom: `1px solid ${C.line2}`, background: on ? C.mintSoft : 'var(--surface, #fff)', cursor: 'pointer' }}>
                     <Avatar name={p.row.b.name} />
                     <span style={{ minWidth: 0, fontSize: '12px' }}>
                       <b style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.row.b.company || p.row.b.name}</b>
@@ -1126,7 +1298,7 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
                           </div>
                         )}
                         {editing === k ? null : <div style={{ display: 'flex', justifyContent: 'flex-end' }}><Btn size="sm" kind="quiet" onClick={() => setEditing(k)}>Edit for this buyer</Btn></div>}
-                        {aiNote[sel.buyer_id] && m.kind === 'intro' ? <span style={{ fontSize: '11px', color: '#92400e', textAlign: 'right' }}>{aiNote[sel.buyer_id]}</span> : null}
+                        {aiNote[sel.buyer_id] && m.kind === 'intro' ? <span style={{ fontSize: '11px', color: 'var(--tx-amber-deep, #92400e)', textAlign: 'right' }}>{aiNote[sel.buyer_id]}</span> : null}
                       </div>
                     );
                   })}
@@ -1224,7 +1396,7 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
       {bigPreview && typeof document !== 'undefined' ? createPortal(
         <div className="mk mk-scrim" style={{ zIndex: 130, padding: isMobile ? '0' : '24px' }} onMouseDown={(e) => { if (e.target === e.currentTarget) setBigPreview(false); }}>
           <div role="dialog" aria-modal="true" aria-label="Preview, full screen" data-testid="preview-big"
-            style={{ width: isMobile ? '100%' : 'min(1100px, 100%)', height: isMobile ? '100%' : 'min(100%, calc(100dvh - 48px))', background: '#fff', borderRadius: isMobile ? 0 : '16px', boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            style={{ width: isMobile ? '100%' : 'min(1100px, 100%)', height: isMobile ? '100%' : 'min(100%, calc(100dvh - 48px))', background: 'var(--surface, #fff)', borderRadius: isMobile ? 0 : '16px', boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', borderBottom: `1px solid ${C.line2}`, flexWrap: 'wrap' }}>
               <Eyebrow>Preview</Eyebrow>
               {pRow ? <b style={{ fontSize: '13px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pRow.b.name}{pRow.b.company ? ` · ${pRow.b.company}` : ''}</b> : null}
@@ -1256,6 +1428,7 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
         </div>
         <div style={{ flex: 1 }} />
         {demo ? <Status tone="grey">Sample data</Status> : null}
+        {onQuick ? <Btn size="sm" kind="quiet" onClick={onQuick}>Quick send</Btn> : null}
       </div>
 
       <div className="mk-grid" style={{ padding: '16px' }}>
@@ -1291,7 +1464,20 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
             {issues.filter((i) => i.level !== 'info').length ? (
               <div style={{ display: 'grid', gap: '6px', paddingTop: '4px' }} data-testid="issues">
                 {issues.filter((i) => i.level !== 'info').map((i, n) => (
-                  <Note key={n} level={i.level} action={stage !== i.stage ? <Btn size="sm" kind="quiet" onClick={() => go(i.stage)} style={{ height: '22px' }}>Fix</Btn> : undefined}>{i.text}</Note>
+                  <Note key={n} level={i.level} action={i.actions ? undefined : i.edit ? (
+                    <span style={{ display: 'inline-flex', gap: '2px' }}>
+                      {i.fix ? <Btn size="sm" kind="quiet" onClick={i.fix} style={{ height: '24px' }}>Use suggested</Btn> : null}
+                      <Btn size="sm" kind="quiet" onClick={() => setLightbox(i.edit!)} style={{ height: '24px' }}>Edit</Btn>
+                    </span>
+                  ) : stage !== i.stage ? <Btn size="sm" kind="quiet" onClick={() => go(i.stage)} style={{ height: '24px' }}>Fix</Btn> : undefined}>
+                    {i.text}
+                    {i.actions ? (
+                      <span style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+                        {i.actions.map((a) => <Btn key={a.label} size="sm" onClick={a.run} style={{ height: '24px' }}>{a.label}</Btn>)}
+                        {i.edit ? <Btn size="sm" kind="quiet" onClick={() => setLightbox(i.edit!)} style={{ height: '24px' }}>Show me</Btn> : null}
+                      </span>
+                    ) : null}
+                  </Note>
                 ))}
               </div>
             ) : null}
@@ -1327,7 +1513,7 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
       </div>
 
       {/* Sticky on the desk; on a phone the tab's scroll area is too short for a bar that stays put, so it sits at the end. */}
-      <div className="mk-footer" style={{ position: isMobile ? 'static' : 'sticky', bottom: 0, zIndex: 5, display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: isMobile ? '10px 16px 12px' : '10px 76px 10px 16px', borderTop: `1px solid ${C.line}`, background: '#fff', boxShadow: '0 -6px 16px -12px rgba(18,22,40,.18)' }}>
+      <div className="mk-footer" style={{ position: isMobile ? 'static' : 'sticky', bottom: 0, zIndex: 5, display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: isMobile ? '10px 16px 12px' : '10px 76px 10px 16px', borderTop: `1px solid ${C.line}`, background: 'var(--surface, #fff)', boxShadow: '0 -6px 16px -12px rgba(18,22,40,.18)' }}>
         <div id="mk-why" role="status" style={{ flex: '1 1 220px', minWidth: 0, fontSize: '12.5px', color: whyNot && stage === 2 ? '#92400e' : C.muted }}>
           {stage === 2 && whyNot ? whyNot
             : sum.buyers ? <><b className="mk-num" style={{ color: C.ink }}>{plural(sum.buyers, 'buyer')}</b> {channelWords(smsCount, emailCount)} · starts {whenLabel(firstSend ?? null, tz, now)}{whenLabel(firstSend ?? null, tz, now) === 'now' ? '' : ` ${zone}`}{blocking.length ? <span style={{ color: C.red }}> · {plural(blocking.length, 'thing')} to fix</span> : null}</>
@@ -1335,6 +1521,16 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
         </div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto', minWidth: 0, maxWidth: '100%' }}>{next}</div>
       </div>
+
+      {lightbox && draftOf(lightbox) ? (
+        <MessageLightbox key={lightbox} workspaceId={workspaceId} dealId={dealId} demo={!!demo}
+          channel={lightbox === 'brief-email' || lightbox.startsWith('fu-email-') ? 'email' : 'sms'}
+          title={lightboxTitle(lightbox)} sample={pRow ? `Filled in for ${pRow.b.name}` : null}
+          initial={draftOf(lightbox)!} render={renderDraft(lightbox)}
+          photo={lightbox === 'brief-email' ? { url: fields.photo_url || null, folder: demo ? data.photos.map((x) => ({ id: x.id, name: x.name, url: x.url })) : undefined } : undefined}
+          checkMerge={checkMerge} fieldLabel={(f) => FIELD_LABEL[f] ?? f}
+          onSave={(d, photo) => saveDraft(lightbox, d, photo)} onClose={() => setLightbox(null)} />
+      ) : null}
 
       {confirming ? (
         <Dialog title={`Send to ${plural(sum.buyers, 'buyer')}?`} onClose={() => { if (!launching) setConfirming(false); }} actions={
@@ -1351,6 +1547,15 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
               <dt style={dt}>Starts</dt><dd style={dd}>{whenLabel(firstSend ?? null, tz, now) === 'now' ? 'Now' : `${cap(whenLabel(firstSend ?? null, tz, now))} ${zone}`}, then only {WINDOW.start} AM–{WINDOW.end - 12} PM {zone}</dd>
               <dt style={dt}>Follow-ups</dt><dd style={dd}>{cadenceLabel(settings)}; they stop the moment a buyer replies</dd>
               {sum.skippedTotal ? <><dt style={dt}>Skipped</dt><dd style={dd}>{sum.skipped.map(([k, v]) => `${v} ${k}`).join(', ')}</dd></> : null}
+              <dt style={dt}>Carrier check</dt>
+              <dd style={dd} data-testid="confirm-carrier">
+                {carrierReviews.length ? (
+                  <span style={{ display: 'grid', gap: '6px', justifyItems: 'start' }}>
+                    <span style={{ color: 'var(--tx-amber-deep, #92400e)' }}>{carrierReviews.map((r) => `${r.label}: ${plural(r.check.findings.length, 'word')} filters score`).join(' · ')}</span>
+                    {carrierReviews.some((r) => r.suggestion) ? <Btn size="sm" onClick={fixAll} disabled={launching}>Use the suggested wording</Btn> : null}
+                  </span>
+                ) : 'Nothing carrier or inbox filters flag.'}
+              </dd>
             </dl>
             <p style={{ margin: 0, fontSize: '12px', color: C.muted2 }}>Talkr bills texts by the segment. You can pause or stop the campaign from its results.</p>
           </div>
@@ -1406,6 +1611,34 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 const Off = ({ children }: { children: React.ReactNode }) => <div style={{ fontSize: '12.5px', color: C.muted2 }}>{children}</div>;
+/** A deal field a check found blank, typed in right there. */
+function FillField({ label, onUse }: { label: string; onUse: (v: string) => void }) {
+  const [v, setV] = useState('');
+  const use = () => { if (v.trim()) onUse(v.trim()); };
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); use(); }} style={{ display: 'flex', gap: '4px', marginTop: '6px', minWidth: 0 }}>
+      <input value={v} onChange={(e) => setV(e.target.value)} className="mk-field" aria-label={label} placeholder={`${label}…`} style={{ flex: 1, width: 0, height: '26px' }} />
+      <Btn size="sm" type="submit" disabled={!v.trim()} style={{ height: '26px' }}>Use</Btn>
+    </form>
+  );
+}
+/** Rows enough for the whole message at about `perLine` characters a line, where field-sizing cannot do it. */
+const rowsFor = (text: string, perLine: number) => Math.max(3, text.split('\n').reduce((n, l) => n + Math.max(1, Math.ceil(l.length / perLine)), 0) + 1);
+/** Under a message: the way into the big editor, and what the carrier check thinks of it. */
+function EditBar({ onEdit, label, extra, review }: { onEdit: () => void; label: string; extra?: string; review?: CarrierReview }) {
+  const blocks = review?.check.findings.filter((f) => f.severity === 'block').length ?? 0;
+  const n = review?.check.findings.length ?? 0;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+      <Btn onClick={onEdit} aria-label={`Edit ${label}`}><Svg d={Icon.edit} size={13} /> Edit</Btn>
+      {extra ? <span style={{ fontSize: '12px', color: C.muted2 }}>{extra}, and changes with AI</span> : <span style={{ fontSize: '12px', color: C.muted2 }}>Change it with AI, a part or the whole</span>}
+      <div style={{ flex: 1 }} />
+      <span className="mk-status" style={{ color: blocks ? C.red : n ? '#b45309' : 'var(--c-primary)' }}>
+        <Svg d={Icon.shield} size={13} /> {blocks ? 'A carrier would refuse this' : n ? `${plural(n, 'word')} filters score` : 'Carrier check clear'}
+      </span>
+    </div>
+  );
+}
 function RailRow({ k, children }: { k: string; children: React.ReactNode }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '78px minmax(0,1fr)', gap: '8px', fontSize: '12.5px', lineHeight: 1.4, paddingTop: '8px', borderTop: `1px solid ${C.line2}` }}>

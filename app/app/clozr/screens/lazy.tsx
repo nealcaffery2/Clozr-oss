@@ -11,6 +11,8 @@
 
 import { lazy, type FunctionComponent } from 'react';
 import { SkeletonRows } from '@/components/ds/Skeleton';
+import { decodeNavHash } from '@/lib/nav-hash';
+import { canSee, landingFor, type Role } from '@/lib/team';
 
 type Loader = () => Promise<unknown>;
 
@@ -89,39 +91,57 @@ export const Genius = screen(loaders.genius, 'Genius');
 export const Buyr = screen(loaders.buyr, 'Buyr');
 
 /**
- * The screens people open most, first, so the likely next click is already
- * cached. Everything else follows; each fetch waits for an idle slot so it
- * never competes with a click, a call or the first workspace read.
+ * After the first screen and the workspace are up: the screen in view (its
+ * chunk is already on the way) and the few screens most sessions open next.
+ * Everything else loads when it is first opened. Warming all 26 screens used
+ * to fire 150 chunk requests (6 MB) at startup, ahead of the first workspace
+ * read, for screens most sessions never visit.
  */
-const ORDER: Loader[] = [
-  loaders.today, loaders.home, loaders.people, loaders.person, loaders.deals, loaders.inbox,
-  loaders.tasks, loaders.calendar, loaders.dispo, loaders.dispoProperty, loaders.buyers,
-  loaders.buyer, loaders.dialer, loaders.tc, loaders.dealSheet, loaders.reporting,
-  loaders.leaderboard, loaders.coaching, loaders.plans, loaders.automations, loaders.settings,
-  loaders.account, loaders.import, loaders.dealMachine, loaders.genius, loaders.buyr,
-];
+const NEXT: (keyof typeof loaders)[] = ['people', 'person', 'deals'];
 
-let preloading = false;
+const warmed = new Set<string>();
 
-/** Warm every screen's chunk in the background, one at a time, in idle time. */
-export function preloadScreens() {
-  if (preloading || typeof window === 'undefined') return;
-  preloading = true;
+/** Warm the current screen's chunk and the most-used ones, in idle time, once each. */
+export function preloadScreens(current: string) {
+  if (typeof window === 'undefined') return;
   // Respect a data-saver connection: screens still load when they are opened.
   const conn = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
   if (conn?.saveData) return;
   const idle: (cb: () => void) => void =
     'requestIdleCallback' in window
-      ? (cb) => window.requestIdleCallback(cb, { timeout: 2000 })
-      : (cb) => window.setTimeout(cb, 200);
-  let i = 0;
+      ? (cb) => window.requestIdleCallback(cb, { timeout: 3000 })
+      : (cb) => window.setTimeout(cb, 300);
+  const queue = [current, ...NEXT].filter((k): k is keyof typeof loaders => k in loaders && !warmed.has(k));
   const next = () => {
-    if (i >= ORDER.length) return;
-    const loader = ORDER[i++];
-    load(loader).then(() => idle(next), () => idle(next));
+    const k = queue.shift();
+    if (!k) return;
+    warmed.add(k);
+    load(loaders[k] as Loader).then(() => idle(next), () => idle(next));
   };
-  // Give the first screen and the workspace read a head start.
-  window.setTimeout(() => idle(next), 1200);
+  idle(next);
+}
+
+/**
+ * The chunk of the screen /app opens on, decided as useClozr's restore
+ * decides it: the screen the address names when this role may see it, else
+ * the role's landing. With no role yet, the address's screen alone. Null when
+ * there is nothing to load: no role and no address, or a screen with no chunk
+ * of its own (Contracts).
+ */
+export function bootScreen(hash: string, role: Role | null | undefined): keyof typeof loaders | null {
+  const want = decodeNavHash(hash)?.screen;
+  if (want && (!role || canSee(role, want))) return Object.prototype.hasOwnProperty.call(loaders, want) ? want as keyof typeof loaders : null;
+  return role ? landingFor(role) : null;
+}
+
+/**
+ * Start the first screen's chunk now, alongside the session and workspace
+ * reads. The shell mounts only once the workspace is in, so its screen's chunk
+ * used to start only then.
+ */
+export function preloadBootScreen(role: Role | null | undefined) {
+  const k = bootScreen(window.location.hash, role);
+  if (k) void load(loaders[k] as Loader);
 }
 
 /** What a screen shows for the moment its chunk is still on the way. */

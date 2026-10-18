@@ -96,7 +96,7 @@ export function RecentCalls({ api, agentKey, epoch, canScore, onOpenRecord }: {
             const open = openId === c.id;
             const link = c.record_kind && c.record_id != null && onOpenRecord;
             return (
-              <li key={c.id} style={{ borderTop: i ? `1px solid #f0f0f1` : 'none', background: '#fff' }}>
+              <li key={c.id} style={{ borderTop: i ? `1px solid var(--divider-2, #f0f0f1)` : 'none', background: 'var(--surface, #fff)' }}>
                 <div style={{ padding: '12px 14px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, color: MUTED, fontVariantNumeric: 'tabular-nums' }}>
                     <span style={{ color: INK, fontWeight: 600 }}>{timeAgo(c.started_at, now) || 'Unknown time'}</span>
@@ -127,7 +127,7 @@ export function RecentCalls({ api, agentKey, epoch, canScore, onOpenRecord }: {
                     ) : null}
                   </div>
                   {open ? (
-                    <div className="va-in" style={{ marginTop: 10, padding: '10px 12px', borderRadius: 9, background: '#fafafa', border: `1px solid ${LINE}`, display: 'grid', gap: 6, fontSize: 12.5, lineHeight: 1.5 }}>
+                    <div className="va-in" style={{ marginTop: 10, padding: '10px 12px', borderRadius: 9, background: 'var(--canvas, #fafafa)', border: `1px solid ${LINE}`, display: 'grid', gap: 6, fontSize: 12.5, lineHeight: 1.5 }}>
                       {speakerLines(c.transcript_preview).map((l, j) => (
                         <p key={j} style={{ margin: 0, color: INK, overflowWrap: 'anywhere' }}>
                           {l.who ? <strong style={{ color: MUTED, fontWeight: 600 }}>{l.who}: </strong> : null}{l.text}

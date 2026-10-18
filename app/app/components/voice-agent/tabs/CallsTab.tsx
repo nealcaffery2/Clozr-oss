@@ -36,7 +36,7 @@ export function CallsTab({ api, agentKey, epoch, admin, onOpenRecord }: TabCtx) 
             </div>
             <div style={{ margin: '12px 0 0', display: 'grid', gap: 4 }}>
               {Object.entries(load.stats.basis).map(([k, v]) => (
-                <p key={k} style={{ margin: 0, fontSize: 11.5, color: '#71717a', lineHeight: 1.5 }}>
+                <p key={k} style={{ margin: 0, fontSize: 11.5, color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
                   <span style={{ fontWeight: 600 }}>{k === 'booked_and_transferred' ? 'Booked and transferred' : k === 'dnc_requests_and_not_interested' ? 'Do not contact and not interested' : k.replace(/_/g, ' ')}: </span>{v}
                 </p>
               ))}

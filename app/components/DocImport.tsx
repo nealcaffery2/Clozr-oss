@@ -20,15 +20,15 @@ import { autoMapText, type TextTemplate } from '@/lib/doc-text-import';
 import { VAR_HELP } from '@/supabase/functions/_shared/doc-vars';
 import { RecipientPicker } from '@/components/RecipientPicker';
 
-const INK = '#18181b';
-const MUTED = '#71717a';
-const LINE = '#e4e4e7';
+const INK = 'var(--ink, #18181b)';
+const MUTED = 'var(--meta, #71717a)';
+const LINE = 'var(--divider, #e4e4e7)';
 const GREEN = '#0A8560';
-const field: React.CSSProperties = { width: '100%', height: '34px', padding: '0 10px', border: `1px solid ${LINE}`, borderRadius: '9px', fontSize: '13px', background: '#fff', color: INK, boxSizing: 'border-box', fontFamily: 'inherit' };
+const field: React.CSSProperties = { width: '100%', height: '34px', padding: '0 10px', border: `1px solid ${LINE}`, borderRadius: '9px', fontSize: '13px', background: 'var(--surface, #fff)', color: INK, boxSizing: 'border-box', fontFamily: 'inherit' };
 const cap: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: MUTED, fontWeight: 600, marginBottom: '5px' };
 const btn = (primary = false, disabled = false): React.CSSProperties => ({
   height: '34px', padding: '0 14px', borderRadius: '9px', fontSize: '12.5px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
-  border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? GREEN : '#fff', color: primary ? '#fff' : INK, opacity: disabled ? 0.55 : 1,
+  border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? GREEN : 'var(--surface, #fff)', color: primary ? 'var(--surface, #fff)' : INK, opacity: disabled ? 0.55 : 1,
 });
 
 const PARTIES: [string, string][] = [['seller', 'Seller on the record'], ['seller2', 'Second seller'], ['buyer', 'Buyer on the record'], ['company', 'Your company signer'], ['other', 'Someone else (typed in)']];
@@ -75,7 +75,7 @@ export function DocImport({ workspaceId, onToast, onSaved, compact }: {
         const doc = await openPdf(new Uint8Array(await file.arrayBuffer()));
         const layout = await readLayout(doc);
         void doc.destroy();
-        const { found, side } = detectFields(layout.items, layout.pages, layout.shapes, { name, kind });
+        const { found, side } = detectFields(layout.items, layout.pages, layout.shapes, { name, kind, outlined: layout.outlined });
         const blanks = found.length;
         const who = [...new Set(found.filter((f) => f.type === 'signature' || f.type === 'initials' || f.type === 'date_signed').map((f) => f.who).filter((w): w is Who => !!w))];
         who.sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
@@ -179,14 +179,14 @@ export function DocImport({ workspaceId, onToast, onSaved, compact }: {
         onChange={(e) => { const files = e.target.files ? Array.from(e.target.files) : []; e.target.value = ''; if (files.length > 1) void takeMany(files); else if (files[0]) void take(files[0]); }} />
       {compact ? (
         <button type="button" {...dropProps} onClick={() => input.current?.click()} disabled={reading}
-          style={{ ...btn(), height: '32px', border: `1px ${over ? 'solid' : 'dashed'} ${over ? GREEN : '#c4c4c8'}`, background: over ? '#ecfdf5' : '#fff' }}>
+          style={{ ...btn(), height: '32px', border: `1px ${over ? 'solid' : 'dashed'} ${over ? GREEN : '#c4c4c8'}`, background: over ? 'var(--tint-green, #ecfdf5)' : 'var(--surface, #fff)' }}>
           {reading ? 'Reading…' : '⇪ Upload documents'}
         </button>
       ) : (
         <div {...dropProps} role="button" tabIndex={0} onClick={() => input.current?.click()} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.current?.click(); } }}
           style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px', borderRadius: '12px', cursor: 'pointer', marginBottom: '14px',
-            border: `1.5px dashed ${over ? GREEN : '#c4c4c8'}`, background: over ? '#ecfdf5' : '#fff', transition: 'background .15s, border-color .15s' }}>
-          <span aria-hidden style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#f4f4f5', display: 'grid', placeItems: 'center', fontSize: '18px', flex: 'none' }}>⇪</span>
+            border: `1.5px dashed ${over ? GREEN : '#c4c4c8'}`, background: over ? 'var(--tint-green, #ecfdf5)' : 'var(--surface, #fff)', transition: 'background .15s, border-color .15s' }}>
+          <span aria-hidden style={{ width: '42px', height: '42px', borderRadius: '10px', background: 'var(--surface-2, #f4f4f5)', display: 'grid', placeItems: 'center', fontSize: '18px', flex: 'none' }}>⇪</span>
           <span style={{ flex: 1, minWidth: 0 }}>
             <span style={{ display: 'block', fontSize: '13.5px', fontWeight: 650, color: INK }}>{batch && !batch.done ? `Importing ${batch.rows.filter((r) => r.message !== 'Waiting…').length} of ${batch.rows.length}…` : stage.t === 'reading' ? `Reading ${stage.name}…` : 'Drop your documents to make them templates'}</span>
             <span style={{ display: 'block', fontSize: '12px', color: MUTED, marginTop: '2px', lineHeight: 1.45 }}>PDF or Word, one or a whole stack. Your own pages, logo and design stay exactly as they are; signatures, initials and dates are placed for each signer and addresses, prices and dates fill from the record.</span>
@@ -223,13 +223,13 @@ function BatchView({ batch, onClose }: { batch: { rows: Imported[]; done: boolea
   const replaced = ok.map((r) => r.replaced).filter((x): x is string => !!x);
   return (
     <div style={{ display: 'grid', gap: '10px' }}>
-      <div style={{ border: `1px solid ${LINE}`, borderRadius: '10px', background: '#fff', overflow: 'hidden' }}>
+      <div style={{ border: `1px solid ${LINE}`, borderRadius: '10px', background: 'var(--surface, #fff)', overflow: 'hidden' }}>
         {batch.rows.map((r, i) => {
           const waiting = !r.ok && (r.message === 'Waiting…' || r.message === 'Reading and mapping…');
           return (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderTop: i ? '1px solid #f0f0f1' : 0, fontSize: '13px' }}>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderTop: i ? '1px solid var(--divider-2, #f0f0f1)' : 0, fontSize: '13px' }}>
               <span aria-hidden style={{ width: '20px', height: '20px', borderRadius: '999px', display: 'grid', placeItems: 'center', fontSize: '11px', fontWeight: 700, flex: 'none',
-                background: r.ok ? '#dcfce7' : waiting ? '#f4f4f5' : '#fee2e2', color: r.ok ? '#15803d' : waiting ? MUTED : '#b91c1c' }}>{r.ok ? '✓' : waiting ? '…' : '!'}</span>
+                background: r.ok ? 'var(--positive-soft, #dcfce7)' : waiting ? 'var(--surface-2, #f4f4f5)' : 'var(--negative-soft, #fee2e2)', color: r.ok ? 'var(--tx-green, #15803d)' : waiting ? MUTED : '#b91c1c' }}>{r.ok ? '✓' : waiting ? '…' : '!'}</span>
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ display: 'block', fontWeight: 600, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.template?.name ?? r.file}</span>
                 <span style={{ display: 'block', fontSize: '12px', color: r.ok || waiting ? MUTED : '#b91c1c' }}>{r.message}{r.replaced ? ` · replaces the built-in ${r.replaced}` : ''}</span>
@@ -238,10 +238,10 @@ function BatchView({ batch, onClose }: { batch: { rows: Imported[]; done: boolea
           );
         })}
       </div>
-      {batch.skipped ? <div style={{ fontSize: '12px', color: '#b45309' }}>{batch.skipped} file{batch.skipped === 1 ? ' was' : 's were'} not a PDF and {batch.skipped === 1 ? 'was' : 'were'} skipped; drop a Word file on its own.</div> : null}
+      {batch.skipped ? <div style={{ fontSize: '12px', color: 'var(--tx-amber, #b45309)' }}>{batch.skipped} file{batch.skipped === 1 ? ' was' : 's were'} not a PDF and {batch.skipped === 1 ? 'was' : 'were'} skipped; drop a Word file on its own.</div> : null}
       {batch.done ? (
         <>
-          <div style={{ fontSize: '12.5px', color: '#52525b', lineHeight: 1.5 }}>
+          <div style={{ fontSize: '12.5px', color: 'var(--muted, #52525b)', lineHeight: 1.5 }}>
             {ok.length} template{ok.length === 1 ? '' : 's'} added and filed by type. Open one in Templates to preview it or adjust a field.
             {replaced.length ? ` The built-in text version${replaced.length === 1 ? ' is' : 's are'} archived so New contract uses your documents.` : ''}
           </div>
@@ -259,7 +259,7 @@ function PdfSheet({ s, workspaceId, busy, err, onChange, onCreate, onCancel }: {
   const setRole = (i: number, patch: Partial<Role>) => onChange({ ...s, roles: s.roles.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
   return (
     <div style={{ display: 'grid', gap: '12px' }}>
-      <div style={{ fontSize: '12.5px', color: '#065f46', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '9px', padding: '9px 11px' }}>
+      <div style={{ fontSize: '12.5px', color: '#065f46', background: 'var(--tint-green, #ecfdf5)', border: '1px solid #a7f3d0', borderRadius: '9px', padding: '9px 11px' }}>
         {s.blanks ? <><b>{s.blanks} blank{s.blanks === 1 ? '' : 's'} found</b> in {s.file.name}. Confirm who is on it; the next screen shows every field on the pages, already mapped.</>
           : <>No text blanks found in {s.file.name} (it may be a scan). You can still place fields by hand on the next screen.</>}
       </div>
@@ -289,7 +289,7 @@ function PdfSheet({ s, workspaceId, busy, err, onChange, onCreate, onCancel }: {
         ))}
         <button type="button" onClick={() => onChange({ ...s, roles: [...s.roles, { role: '', label: '', party: 'other', filler: false }] })} style={{ border: 0, background: 'none', color: GREEN, fontWeight: 600, fontSize: '12.5px', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>+ Add recipient</button>
       </div>
-      {err ? <div role="alert" style={{ fontSize: '12.5px', color: '#b91c1c', background: '#fee2e2', border: '1px solid #fecaca', borderRadius: '9px', padding: '8px 10px' }}>{err}</div> : null}
+      {err ? <div role="alert" style={{ fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)', background: 'var(--negative-soft, #fee2e2)', border: '1px solid var(--tint-red-2, #fecaca)', borderRadius: '9px', padding: '8px 10px' }}>{err}</div> : null}
       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
         <button type="button" onClick={onCancel} style={btn()}>Cancel</button>
         <button type="button" disabled={busy} onClick={onCreate} style={btn(true, busy)}>{busy ? 'Uploading…' : 'Create and map fields'}</button>
@@ -337,7 +337,7 @@ function WordSheet({ s, busy, err, onChange, onSave, onCancel }: {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
             {s.tpl.mapped.map((m, i) => {
               const fill = m.to.startsWith('Fill.');
-              return <span key={i} style={{ fontSize: '12px', padding: '3px 8px', borderRadius: '999px', background: fill ? '#f4f4f5' : '#ecfdf5', color: fill ? '#52525b' : '#065f46' }}>{m.label} → {fill ? 'typed when sending' : varLabel(m.to)}</span>;
+              return <span key={i} style={{ fontSize: '12px', padding: '3px 8px', borderRadius: '999px', background: fill ? 'var(--surface-2, #f4f4f5)' : 'var(--tint-green, #ecfdf5)', color: fill ? 'var(--muted, #52525b)' : '#065f46' }}>{m.label} → {fill ? 'typed when sending' : varLabel(m.to)}</span>;
             })}
           </div>
         </div>
@@ -346,8 +346,8 @@ function WordSheet({ s, busy, err, onChange, onSave, onCancel }: {
         <span style={cap}>Template text · {'{{variables}}'} fill from the record, [Fill.*] are asked for when sending, {'{{sign:role}}'} places a signature block</span>
         <textarea value={body} onChange={(e) => setBody(e.target.value)} spellCheck={false} style={{ ...field, height: '300px', padding: '10px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '12px', lineHeight: 1.5, resize: 'vertical' }} />
       </label>
-      {missing.length ? <div style={{ fontSize: '12px', color: '#b45309' }}>{missing.map((x) => x.label).join(', ')} {missing.length === 1 ? 'has' : 'have'} no {'{{sign:…}}'} block in the text.</div> : null}
-      {err ? <div role="alert" style={{ fontSize: '12.5px', color: '#b91c1c', background: '#fee2e2', border: '1px solid #fecaca', borderRadius: '9px', padding: '8px 10px' }}>{err}</div> : null}
+      {missing.length ? <div style={{ fontSize: '12px', color: 'var(--tx-amber, #b45309)' }}>{missing.map((x) => x.label).join(', ')} {missing.length === 1 ? 'has' : 'have'} no {'{{sign:…}}'} block in the text.</div> : null}
+      {err ? <div role="alert" style={{ fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)', background: 'var(--negative-soft, #fee2e2)', border: '1px solid var(--tint-red-2, #fecaca)', borderRadius: '9px', padding: '8px 10px' }}>{err}</div> : null}
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
         <span style={{ flex: 1, fontSize: '12px', color: MUTED }}>When the layout matters, upload the PDF instead: it keeps every page exactly as it is.</span>
         <button type="button" onClick={onCancel} style={btn()}>Cancel</button>

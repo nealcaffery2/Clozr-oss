@@ -153,7 +153,7 @@ Deno.serve(async (req) => {
         const existing = await mine();
         if (b.postmaster === true && !existing) return json({ error: 'Connect Google first, then add Postmaster.' }, 409);
         if (b.drive === true && !existing) return json({ error: 'Connect Google first, then add Drive.' }, 409);
-        const scopes = b.postmaster === true ? [...SCOPE.id, SCOPE.postmaster, SCOPE.siteVerification]
+        const scopes = b.postmaster === true ? [...SCOPE.id, SCOPE.postmaster, SCOPE.postmasterDomains, SCOPE.siteVerification]
           : b.drive === true ? [...SCOPE.id, SCOPE.driveRead]
           : b.gmail_read === false ? DEFAULT_SCOPES.filter((s) => s !== SCOPE.gmailRead) : DEFAULT_SCOPES;
         const state = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');

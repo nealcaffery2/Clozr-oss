@@ -20,8 +20,10 @@ import React, { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, type AiAgentDto, type HoldMusicDto, type MeDto, type MessageTemplateDto } from '@/lib/talkr-web/api';
 import { SAFE_WINDOW, callWindow, localZone, tzTime } from '@/lib/talkr-web/time';
 import { displayName, useSession } from '@/lib/session';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { type Role, isAdmin } from '@/lib/team';
 import { type WorkspaceSettings, loadSettings, saveSettings } from '@/lib/integrations';
+import { elsewhereIds, forgetElsewhere } from '@/lib/talkr-elsewhere';
 import { useSoftphone } from '@/app/components/talkr/softphoneAdapter';
 import { Icon, type IconName } from '@/app/components/talkr/Icon';
 import { Mark } from '@/components/ds/mark';
@@ -51,10 +53,10 @@ function useNow(): number | null {
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
     const first = setTimeout(() => setNow(Date.now()), 0);
-    const t = setInterval(() => setNow(Date.now()), 30_000);
+    const stop = everyWhileVisible(() => setNow(Date.now()), 30_000);
     return () => {
       clearTimeout(first);
-      clearInterval(t);
+      stop();
     };
   }, []);
   return now;
@@ -114,6 +116,12 @@ export function TalkrSettings({ tab, onTab, isMobile, nav = true }: { tab: Talkr
           <TalkrPhone demo={s.demo} isMobile={isMobile} talkrUrl={talkrUrl} />
           {offline ? null : <WorkingZone me={me} onChange={setMe} />}
           {clozrAdmin || s.demo ? <TalkrOrigin workspaceId={s.workspace?.id ?? null} admin={clozrAdmin} demo={s.demo} onSaved={(v) => setTalkrUrl(v.talkr_url ?? null)} /> : null}
+          {clozrAdmin && !s.demo && s.workspace ? (
+            <SharedOrg
+              workspaceId={s.workspace.id}
+              others={s.workspaces.filter((w) => w.id !== s.workspace!.id && w.owner_id === s.workspace!.owner_id)}
+            />
+          ) : null}
         </>
       )}
 
@@ -236,6 +244,83 @@ function TalkrOrigin({ workspaceId, admin, demo, onSaved }: { workspaceId: numbe
         )}
       </Card>
     </form>
+  );
+}
+
+/**
+ * The other businesses on this Talkr org (settings.talkr.elsewhere,
+ * lib/talkr-elsewhere). Calls and texts with one of their contacts, who is
+ * nobody here, are filed there and left out of this Inbox and dialer. Only
+ * workspaces with the same owner can be listed; the database ignores any other.
+ */
+function SharedOrg({ workspaceId, others }: { workspaceId: number; others: { id: number; name: string }[] }) {
+  const [loaded, setLoaded] = useState<{ key: number; v: WorkspaceSettings } | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [picked, setPicked] = useState<number[] | null>(null);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let live = true;
+    loadSettings(workspaceId).then(
+      (v) => live && setLoaded({ key: workspaceId, v }),
+      (e: unknown) => live && setFailed(e instanceof Error ? e.message : 'Could not read this workspace’s settings.'),
+    );
+    return () => {
+      live = false;
+    };
+  }, [workspaceId]);
+  const current = loaded && loaded.key === workspaceId ? loaded.v : null;
+  const saved = current ? elsewhereIds(current, workspaceId) : [];
+  const chosen = picked ?? saved;
+  const dirty = picked !== null && [...picked].sort().join(',') !== [...saved].sort().join(',');
+
+  async function save() {
+    if (!current || picked === null) return;
+    setBusy(true);
+    setNote(null);
+    const talkr = { ...(current.talkr ?? {}), elsewhere: picked };
+    const r = await saveSettings(workspaceId, { talkr });
+    setBusy(false);
+    setNote({ ok: r.ok, text: r.ok ? 'Saved' : r.message ?? 'Could not save. Try again.' });
+    if (r.ok) {
+      forgetElsewhere(workspaceId);
+      setLoaded({ key: workspaceId, v: { ...current, talkr } });
+      setPicked(null);
+    }
+  }
+
+  return (
+    <Card className="flex flex-col gap-3">
+      <Head icon="phone" title="Other businesses on this Talkr account" right={note?.ok ? <StatusMarker color="var(--green)" label="Saved" /> : null} />
+      <p style={BODY}>A call or text with someone who is a contact in a checked workspace, and not a contact here, is filed there. It stays out of this workspace&rsquo;s records, Inbox and dialer.</p>
+      {failed ? (
+        <p role="alert" style={{ ...HELP, color: 'var(--red)' }}>{failed} Reload the page to try again.</p>
+      ) : !current ? (
+        <span role="status" style={HELP}>Loading…</span>
+      ) : others.length === 0 ? (
+        <p style={HELP}>You are not in another workspace with the same owner, so there is nothing to keep apart.</p>
+      ) : (
+        <>
+          <div role="group" aria-label="Workspaces whose calls and texts stay out of this one" className="flex flex-col gap-2">
+            {others.map((w) => (
+              <label key={w.id} className="flex cursor-pointer items-center gap-2" style={{ minHeight: 24 }}>
+                <input
+                  type="checkbox"
+                  checked={chosen.includes(w.id)}
+                  onChange={(e) => setPicked(e.target.checked ? [...chosen.filter((id) => id !== w.id), w.id] : chosen.filter((id) => id !== w.id))}
+                  style={{ accentColor: 'var(--accent)', width: 16, height: 16 }}
+                />
+                <span style={{ font: '600 12.5px/1.3 var(--sans)' }}>{w.name}</span>
+              </label>
+            ))}
+          </div>
+          <div>
+            <Button tone="accent" disabled={!dirty || busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </>
+      )}
+      {note && !note.ok && <p role="alert" style={{ ...HELP, color: 'var(--red)' }}>{note.text}</p>}
+    </Card>
   );
 }
 

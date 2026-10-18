@@ -225,9 +225,17 @@ export function validateValue(f: Pick<FieldDef, 'type' | 'options' | 'validation
   return { ok: false, error: 'unknown field type' };
 }
 
+/** Signers may fix CRM prefills on these types; amounts and formulas stay locked when bound. */
+export function effectiveReadOnly(f: Pick<ContractField, 'type' | 'read_only' | 'variable_key'>): boolean {
+  if (f.type === 'date_signed' || f.type === 'formula') return true;
+  if (!f.read_only) return false;
+  if (f.variable_key && (f.type === 'text' || f.type === 'date' || f.type === 'email' || f.type === 'phone')) return false;
+  return true;
+}
+
 /** Required fields this signer still has to fill. date_signed is stamped by the server, so it never blocks. */
-export function missingRequired<T extends Pick<ContractField, 'signer_id' | 'type' | 'required' | 'read_only' | 'value'>>(fields: T[], signerId: number): T[] {
-  return fields.filter((f) => f.signer_id === signerId && f.required && !f.read_only && f.type !== 'date_signed' && !(f.value ?? '').trim());
+export function missingRequired<T extends Pick<ContractField, 'signer_id' | 'type' | 'required' | 'read_only' | 'variable_key' | 'value'>>(fields: T[], signerId: number): T[] {
+  return fields.filter((f) => f.signer_id === signerId && f.required && !effectiveReadOnly(f) && f.type !== 'date_signed' && !(f.value ?? '').trim());
 }
 
 /** A variable's value, canonical for the field's type. Null when the record has no answer. */
@@ -282,8 +290,8 @@ export function bindToSigners(
       template_field_id: opts.fromTemplate && typeof f.id === 'number' ? f.id : null,
       type: f.type, page: f.page, x: f.x, y: f.y, w: f.w, h: f.h,
       required: !!f.required,
-      // A binding the record could not answer stays open for the recipient to type.
-      read_only: f.type === 'date_signed' || (!!f.variable_key && bound != null) || (!f.variable_key && !!f.read_only),
+      // Bound text/dates stay editable so signers can fix CRM typos; amounts stay locked.
+      read_only: f.type === 'date_signed' || (!!f.variable_key && bound != null && f.type !== 'text' && f.type !== 'date' && f.type !== 'email' && f.type !== 'phone') || (!f.variable_key && !!f.read_only),
       label: f.label ?? null, default_value: f.default_value ?? null, variable_key: f.variable_key ?? null,
       options: f.options ?? null, validation: f.validation ?? null,
       field_key: f.field_key ?? null, group_key: f.group_key ?? null, conditions: f.conditions ?? null, formula: f.formula ?? null, placeholder: f.placeholder ?? null,

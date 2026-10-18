@@ -4,6 +4,7 @@
 // from the same leaderboard engine as the board, after any bulk-import reset.
 
 import { BADGES, type BadgeDef, type LeaderboardRaw, type SalesPerson, badgesFor, buildBadgeContext, buildLeaderboard, getCalls, periodRange, qualifies } from './leaderboard';
+import type { ReportRaw } from './reporting';
 
 export type PassMetric = 'calls' | 'offers' | 'talk';
 
@@ -51,8 +52,11 @@ export type FloorEvent =
   | { id: string; kind: 'pass'; metric: PassMetric; passerId: string; passer: string; passedId: string; passed: string; value: string }
   | { id: string; kind: 'contract'; contractId: string; title: string; ownerId: string | null; ownerName: string; source: 'esign' | 'email' }
   | { id: string; kind: 'nudge'; text: string }
-  /** Badges earned while this screen was closed, gathered into one quiet toast on the way in. */
-  | { id: string; kind: 'digest'; text: string };
+  /**
+   * Badges or contracts from while this screen was closed, gathered into one
+   * quiet toast on the way in. `contracts` keeps a folded contract's spin.
+   */
+  | { id: string; kind: 'digest'; text: string; contracts?: Extract<FloorEvent, { kind: 'contract' }>[] };
 
 export const EMPTY_SNAP: FloorSnap = { seeded: false, badges: {}, stats: {}, contracts: [] };
 
@@ -129,6 +133,59 @@ const WINDOWS: BadgeWindow[] = ['today', 'this-week', 'this-month', 'last-7-days
 export function windowKey(w: BadgeWindow, now = Date.now()): string {
   const from = w === 'last-7-days' ? 'this-week' : w;
   return `${w}:${new Date(periodRange(from, now).start ?? 0).toISOString().slice(0, 10)}`;
+}
+
+/** Where the board's own read starts: the widest window it judges, less a day. */
+export function boardSince(now = Date.now()): number {
+  return Math.min(...WINDOWS.map((w) => periodRange(w, now).start ?? now)) - 86_400_000;
+}
+
+/** How long after `failures` board reads in a row failed to try again: 30 s, doubling, never past the regular refresh. */
+export function boardRetryMs(failures: number, refreshMs: number): number {
+  return Math.min(refreshMs, 30_000 * 2 ** Math.max(0, failures - 1));
+}
+
+/** What floor_board (migration 295) returns. Buyers carry only what the board counts. */
+export type FloorBoard = Pick<ReportRaw, 'deals' | 'offers' | 'comms' | 'contracts'> & {
+  appointments: NonNullable<ReportRaw['appointments']>;
+  buyers: { id: number; created_at: string; created_by: string | null }[];
+  /** Sellers changed since the workspace load; an archived one leaves the board. */
+  sellers: (ReportRaw['sellers'][number] & { archived_at?: string | null })[];
+};
+
+/** The comms read's cap (floor_board, like report_comms). */
+const BOARD_COMMS_CAP = 10_000;
+
+/** The workspace load with the board's own read over it: its rows win, and a changed seller replaces its row. */
+export function boardRaw(base: ReportRaw, board: FloorBoard): ReportRaw {
+  const changed = new Map(board.sellers.map((s) => [s.id, s]));
+  const sellers = base.sellers.filter((s) => !changed.has(s.id));
+  for (const { archived_at, ...s } of changed.values()) if (!archived_at) sellers.push(s);
+  return {
+    ...base,
+    sellers,
+    deals: board.deals,
+    offers: board.offers,
+    comms: board.comms,
+    commsCapped: board.comms.length >= BOARD_COMMS_CAP,
+    contracts: board.contracts,
+    appointments: board.appointments,
+    // The leaderboard reads a buyer's created_at and created_by, nothing else.
+    buyers: board.buyers as ReportRaw['buyers'],
+    partial: undefined,
+  };
+}
+
+/**
+ * The board to diff, or null. Only over a full workspace load that read cleanly
+ * (the shell's first 1,000 sellers, or a failed full read that left them
+ * standing, would diff half a roster), and only with this workspace's own read.
+ */
+export function boardRawFor(
+  base: ReportRaw | null, load: { ok: boolean; partial: boolean }, board: { ws: number; data: FloorBoard } | null, ws: number | null,
+): ReportRaw | null {
+  if (!base || !load.ok || load.partial || !board || board.ws !== ws) return null;
+  return boardRaw(base, board.data);
 }
 
 /** The runs open right now; a remembered badge from any other run is over. */
@@ -424,17 +481,52 @@ export function audienceSees(event: FloorEvent, _me: string | null, admin: boole
  */
 export function catchUp(events: FloorEvent[], now = Date.now()): FloorEvent[] {
   const badges = events.filter((e): e is Extract<FloorEvent, { kind: 'badge' }> => e.kind === 'badge');
-  const rest = events.filter((e) => e.kind !== 'badge' && e.kind !== 'pass');
-  if (badges.length <= 2) return [...badges, ...rest];
+  const contracts = events.filter((e): e is Extract<FloorEvent, { kind: 'contract' }> => e.kind === 'contract');
+  const rest = events.filter((e) => e.kind !== 'badge' && e.kind !== 'pass' && e.kind !== 'contract');
+  const out: FloorEvent[] = [];
+  if (badges.length <= 2) out.push(...badges);
+  else out.push(badgeDigest(badges, now, 'while you were away'));
+  // A long weekend of signed contracts is one toast, not a stack that pushes each other off screen.
+  if (contracts.length <= 2) out.push(...contracts);
+  else {
+    const named = contracts.slice(0, 3).map((c) => c.title).join(', ');
+    const more = contracts.length - 3;
+    out.push({ id: `digest:contracts:${new Date(now).toISOString().slice(0, 13)}:${contracts.length}`, kind: 'digest', text: `${contracts.length} contracts signed while you were away: ${named}${more > 0 ? ` and ${more} more` : ''}.`, contracts });
+  }
+  return [...out, ...rest];
+}
+
+function badgeDigest(badges: Extract<FloorEvent, { kind: 'badge' }>[], now: number, when: string): FloorEvent {
   const named = badges.slice(0, 3).map((b) => `${b.person} got ${b.badgeName}`).join(', ');
   const more = badges.length - 3;
-  const digest: FloorEvent = {
-    id: `digest:${new Date(now).toISOString().slice(0, 13)}:${badges.length}`,
+  return {
+    id: `digest:${new Date(now).toISOString().slice(0, 13)}:${badges.length}:${badges[0]?.id ?? ''}`,
     kind: 'digest',
-    text: `${badges.length} badges while you were away — ${named}${more > 0 ? ` and ${more} more` : ''}.`,
+    text: `${badges.length} badges ${when} — ${named}${more > 0 ? ` and ${more} more` : ''}.`,
   };
-  return [digest, ...rest];
 }
+
+/** How many badges take over the screen from one look at the board; the rest fold into one toast. */
+export const LIVE_BADGE_TAKEOVERS = 2;
+
+/**
+ * A live look at the board (not the catch-up): at most two badges get the
+ * full-screen moment, the rest fold into one quiet toast, so a big refresh never
+ * plays ten popups and ten sounds in a row.
+ */
+export function throttleLive(events: FloorEvent[], now = Date.now(), max = LIVE_BADGE_TAKEOVERS): { loud: FloorEvent[]; quiet: FloorEvent[] } {
+  const badges = events.filter((e): e is Extract<FloorEvent, { kind: 'badge' }> => e.kind === 'badge');
+  if (badges.length <= max) return { loud: events, quiet: [] };
+  const keep = new Set(badges.slice(0, max).map((b) => b.id));
+  const folded = badges.slice(max);
+  return {
+    loud: events.filter((e) => e.kind !== 'badge' || keep.has(e.id)),
+    quiet: [badgeDigest(folded, now, 'just now')],
+  };
+}
+
+/** Away from the board this long, the next look is a quiet catch-up again (a tab left open over a weekend). */
+export const CATCH_UP_AFTER_MS = 30 * 60_000;
 
 export function canSpin(event: Extract<FloorEvent, { kind: 'contract' }>, me: string | null, admin: boolean): boolean {
   if (!me) return admin;

@@ -3,8 +3,26 @@
 
 import { supabase } from './supabase';
 import { loadSettings, saveSettings, type WorkspaceSettings } from './integrations';
-import type { FloorEvent, FloorSnap } from './floor-show';
+import type { FloorBoard, FloorEvent, FloorSnap } from './floor-show';
 import { EMPTY_SNAP } from './floor-show';
+
+export type FloorBoardRead = FloorBoard & {
+  /** The server's clock when it read, for the next read's `changed`. */
+  at: string;
+  /** Emails filed since `changed` that this person may read, for the signed-by-email popup. */
+  mail: { id: number; subject: string; body: string; owner_id: string | null }[];
+};
+
+/**
+ * The board's own read (migration 295): deals, offers and calls inside the
+ * board's windows, contracts, and the sellers and mail changed since `changed`.
+ * Null when it failed or this person is not in the workspace.
+ */
+export async function loadFloorBoard(workspaceId: number, since: string, changed: string): Promise<FloorBoardRead | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc('floor_board' as never, { p_ws: workspaceId, p_since: since, p_changed: changed } as never);
+  return error || !data ? null : (data as unknown as FloorBoardRead);
+}
 
 const SNAP_KEY = 'clozr.floor.snap.v1';
 const SPIN_KEY = 'clozr.floor.spins.v1';

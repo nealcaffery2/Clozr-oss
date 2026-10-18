@@ -27,12 +27,12 @@ import {
 } from '@/lib/talkr';
 import { TalkrMark } from '@/app/components/brand/TalkrMark';
 
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
-const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: '#71717a', fontWeight: 600, marginBottom: '5px' };
-const field: React.CSSProperties = { height: '34px', padding: '0 10px', border: '1px solid #e4e4e7', borderRadius: '9px', fontSize: '13px', outline: 0, background: '#fafafa', color: '#18181b' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
+const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600, marginBottom: '5px' };
+const field: React.CSSProperties = { height: '34px', padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', fontSize: '13px', outline: 0, background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)' };
 const btn = (primary = false, disabled = false): React.CSSProperties => ({
   height: '32px', padding: '0 12px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer',
-  border: `1px solid ${primary ? '#0A8560' : '#e4e4e7'}`, background: primary ? (disabled ? '#7fcbb2' : '#0A8560') : '#fff', color: primary ? '#fff' : disabled ? '#a1a1aa' : '#18181b',
+  border: `1px solid ${primary ? '#0A8560' : 'var(--divider, #e4e4e7)'}`, background: primary ? (disabled ? '#7fcbb2' : '#0A8560') : '#fff', color: primary ? '#fff' : disabled ? '#a1a1aa' : '#18181b',
 });
 
 type Note = { ok: boolean; text: string } | null;
@@ -116,28 +116,28 @@ export function TalkrPhone({ demo, isMobile, talkrUrl }: { demo: boolean; isMobi
   const liveCount = active.filter((n) => !blockOf(n)).length;
   const selectedId = me?.caller_id_mode === 'local_presence' ? 'local_presence' : me?.default_phone_number_id ?? mine[0]?.id ?? active[0]?.id ?? '';
   const selectedBlock = active.find((n) => n.id === selectedId);
-  const dot = status === 'ok' ? '#16a34a' : status === 'loading' ? '#a1a1aa' : '#d97706';
+  const dot = status === 'ok' ? '#16a34a' : status === 'loading' ? 'var(--subtle, #a1a1aa)' : '#d97706';
 
   return (
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
         <TalkrMark size={16} />
         <h2 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Phone</h2>
-        <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Talkr</span>
+        <span style={{ fontSize: '11px', color: 'var(--subtle, #a1a1aa)' }}>Talkr</span>
       </div>
-      <p style={{ margin: '0 0 12px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.5 }}>
+      <p style={{ margin: '0 0 12px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
         Calls, texts, recordings and the live coach run on Talkr. Your CLOZR sign-in is your Talkr sign-in — there is no second password.
       </p>
 
       {demo ? (
-        <div style={{ padding: '10px 12px', borderRadius: '9px', background: '#f4f4f5', fontSize: '12.5px', color: '#52525b' }}>
+        <div style={{ padding: '10px 12px', borderRadius: '9px', background: 'var(--surface-2, #f4f4f5)', fontSize: '12.5px', color: 'var(--muted, #52525b)' }}>
           The demo has no phone. Sign in to a workspace to connect Talkr.
         </div>
       ) : (
         <>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 12px', borderRadius: '9px', background: status === 'ok' ? '#dcfce7' : '#fafafa', border: `1px solid ${status === 'ok' ? '#bbf7d0' : '#e4e4e7'}` }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 12px', borderRadius: '9px', background: status === 'ok' ? 'var(--positive-soft, #dcfce7)' : 'var(--canvas, #fafafa)', border: `1px solid ${status === 'ok' ? 'var(--tint-green-3, #bbf7d0)' : 'var(--divider, #e4e4e7)'}` }}>
             <span style={{ width: '8px', height: '8px', borderRadius: '999px', background: dot, marginTop: '5px', flex: 'none' }} />
-            <div style={{ fontSize: '12.5px', color: status === 'ok' ? '#15803d' : '#52525b', lineHeight: 1.5, flex: 1 }}>
+            <div style={{ fontSize: '12.5px', color: status === 'ok' ? '#15803d' : 'var(--muted, #52525b)', lineHeight: 1.5, flex: 1 }}>
               {status === 'loading' ? 'Checking Talkr…' : statusText}
             </div>
             <button onClick={reload} style={btn()}>Re-check</button>
@@ -149,7 +149,7 @@ export function TalkrPhone({ demo, isMobile, talkrUrl }: { demo: boolean; isMobi
               <div style={{ marginTop: '14px' }}>
                 <span style={label}>Your caller ID</span>
                 {active.length === 0 ? (
-                  <div style={{ fontSize: '12.5px', color: '#71717a' }}>No numbers on the org yet{canManage ? ' — buy one below.' : '. Ask an admin to buy one.'}</div>
+                  <div style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>No numbers on the org yet{canManage ? ' — buy one below.' : '. Ask an admin to buy one.'}</div>
                 ) : (
                   <>
                   <select
@@ -181,7 +181,7 @@ export function TalkrPhone({ demo, isMobile, talkrUrl }: { demo: boolean; isMobi
                     {(liveCount > 1 || me.caller_id_mode === 'local_presence') ? <option value="local_presence">Local presence · match the seller’s area code</option> : null}
                   </select>
                   {selectedBlock && blockOf(selectedBlock) && (
-                    <div style={{ marginTop: '6px', fontSize: '12px', color: '#b91c1c' }}>
+                    <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--tx-red, #b91c1c)' }}>
                       This line is off live calls: {blockOf(selectedBlock)}. Pick a different caller ID.
                     </div>
                   )}
@@ -189,14 +189,14 @@ export function TalkrPhone({ demo, isMobile, talkrUrl }: { demo: boolean; isMobi
                 )}
               </div>
 
-              <div style={{ marginTop: '12px', fontSize: '12px', color: '#71717a' }}>
+              <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--meta, #71717a)' }}>
                 {canManage ? 'Lines, owners, routing, importing and buying live in Phone numbers below.' : `Your lines: ${mine.length ? mine.map((n) => formatPhone(n.phone_e164)).join(', ') : 'none yet — ask an admin'}.`}
               </div>
             </>
           ) : null}
 
           {note ? (
-            <div role="status" style={{ marginTop: '10px', padding: '9px 11px', borderRadius: '9px', fontSize: '12.5px', lineHeight: 1.5, background: note.ok ? '#dcfce7' : '#fee2e2', border: `1px solid ${note.ok ? '#bbf7d0' : '#fecaca'}`, color: note.ok ? '#15803d' : '#b91c1c' }}>
+            <div role="status" style={{ marginTop: '10px', padding: '9px 11px', borderRadius: '9px', fontSize: '12.5px', lineHeight: 1.5, background: note.ok ? 'var(--positive-soft, #dcfce7)' : 'var(--negative-soft, #fee2e2)', border: `1px solid ${note.ok ? 'var(--tint-green-3, #bbf7d0)' : 'var(--tint-red-2, #fecaca)'}`, color: note.ok ? 'var(--tx-green, #15803d)' : '#b91c1c' }}>
               {note.text}
             </div>
           ) : null}

@@ -86,7 +86,17 @@ export type PlanStepDraft = {
    * the conversational AI agent on for the record instead.
    */
   allowed?: Capability[];
+  /**
+   * ai_agent hand-off (no `allowed`): how the AI agent may reach the lead
+   * (action_plan_steps.config.channels, migration 330). Absent on older steps,
+   * which keeps their text and email only.
+   */
+  channels?: HandoffChannel[];
 };
+
+export type HandoffChannel = 'sms' | 'email' | 'call';
+export const HANDOFF_CHANNELS: { v: HandoffChannel; label: string }[] = [{ v: 'sms', label: 'Text' }, { v: 'email', label: 'Email' }, { v: 'call', label: 'Call' }];
+const cleanChannels = (v: unknown[]): HandoffChannel[] => HANDOFF_CHANNELS.map((c) => c.v).filter((c) => v.includes(c));
 
 /** Where a lead goes when the plan ends (migration 142, action_plans.on_complete). */
 export type RouteMode = 'none' | 'fixed' | 'smart';
@@ -142,6 +152,8 @@ export type PlanSettings = {
   audience?: string;
   /** Auto-enroll skips a seller who already wears one of these tags. National sources use this. */
   skip_tags?: string[];
+  /** A Compr campaign plan: the Suggested bucket on the Compr Buyers screen it starts for (migration 271). */
+  compr_bucket?: string;
 };
 
 export type PlanDraft = {
@@ -167,7 +179,8 @@ export type PlanSummary = {
 };
 
 export type EnrolledRow = {
-  id: number; seller_id: number; name: string; addr: string;
+  /** Exactly one of seller_id and buyer_id is set (migration 50). */
+  id: number; seller_id: number | null; buyer_id?: number | null; name: string; addr: string;
   status: string; step: number; total: number; enrolled_at: string; stopped_reason: string | null;
   /** Migration 142: where the lead went when this run ended, and why. */
   routed?: { plan_id: number | null; reason: string; pending: boolean } | null;
@@ -305,6 +318,7 @@ export function parseSettings(j: Json | null | undefined): PlanSettings {
     tone: typeof o.tone === 'string' ? o.tone : '',
     ...(typeof o.audience === 'string' && o.audience ? { audience: o.audience } : {}),
     ...(Array.isArray(o.skip_tags) ? { skip_tags: o.skip_tags.filter((t): t is string => typeof t === 'string' && t.length > 0) } : {}),
+    ...(typeof o.compr_bucket === 'string' && o.compr_bucket ? { compr_bucket: o.compr_bucket } : {}),
   };
 }
 
@@ -326,6 +340,7 @@ export function stepFromRow(r: StepRow): PlanStepDraft {
     ...(r.channel === 'rvm' && typeof cfg.library_id === 'number' ? { libraryId: cfg.library_id } : {}),
     ...(r.channel === 'ai_agent' ? { goal: typeof cfg.goal === 'string' ? cfg.goal : '' } : {}),
     ...(r.channel === 'ai_agent' && Array.isArray(cfg.allowed) ? { allowed: cleanAllowed(cfg.allowed) } : {}),
+    ...(r.channel === 'ai_agent' && Array.isArray(cfg.channels) ? { channels: cleanChannels(cfg.channels) } : {}),
   };
 }
 
@@ -414,10 +429,15 @@ const catalogEnsured = new Set<number>();
 /**
  * Insert any Acme Homes catalog plan this workspace does not already have,
  * matched by name. An edited plan keeps its name and is not overwritten.
+ * A Compr workspace sells software, not houses: it gets none of them
+ * (migration 271 seeds its own plans).
  */
 export async function ensureCatalogPlans(workspaceId: number, userId: string | null): Promise<void> {
   if (!supabase || catalogEnsured.has(workspaceId)) return;
   catalogEnsured.add(workspaceId);
+  const ws = await supabase.from('workspaces').select('buyer_profile:settings->>buyer_profile').eq('id', workspaceId).maybeSingle();
+  if (ws.error) { catalogEnsured.delete(workspaceId); return; }
+  if ((ws.data as { buyer_profile?: unknown } | null)?.buyer_profile === 'compr') return;
   const { data, error } = await supabase.from('action_plans').select('name').eq('workspace_id', workspaceId);
   if (error) { catalogEnsured.delete(workspaceId); return; }
   const have = new Set((data ?? []).map((r) => r.name));
@@ -513,16 +533,16 @@ export async function loadPlan(planId: number): Promise<{ ok: boolean; plan?: Pl
 export async function listEnrolled(planId: number): Promise<EnrolledRow[]> {
   if (!supabase) return [];
   type Row = {
-    id: number; seller_id: number | null; status: string; step_index: number; enrolled_at: string; stopped_reason: string | null;
-    sellers: unknown; routed_plan_id?: number | null; routed_reason?: string | null; route_state?: string | null;
+    id: number; seller_id: number | null; buyer_id: number | null; status: string; step_index: number; enrolled_at: string; stopped_reason: string | null;
+    sellers: unknown; buyers: unknown; routed_plan_id?: number | null; routed_reason?: string | null; route_state?: string | null;
   };
   let rows: Row[] = [];
   const r = await supabase.from('enrollments')
-    .select('id,seller_id,status,step_index,enrolled_at,stopped_reason,routed_plan_id,routed_reason,route_state,sellers(name,property_address)')
+    .select('id,seller_id,buyer_id,status,step_index,enrolled_at,stopped_reason,routed_plan_id,routed_reason,route_state,sellers(name,property_address),buyers(name,company,email)')
     .eq('plan_id', planId).order('enrolled_at', { ascending: false }).limit(200);
   if (before142(r.error)) {
     const old = await supabase.from('enrollments')
-      .select('id,seller_id,status,step_index,enrolled_at,stopped_reason,sellers(name,property_address)')
+      .select('id,seller_id,buyer_id,status,step_index,enrolled_at,stopped_reason,sellers(name,property_address),buyers(name,company,email)')
       .eq('plan_id', planId).order('enrolled_at', { ascending: false }).limit(200);
     rows = (old.data ?? []) as Row[];
   } else rows = (r.data ?? []) as Row[];
@@ -548,10 +568,14 @@ export async function listEnrolled(planId: number): Promise<EnrolledRow[]> {
     }
   }
 
-  return rows.filter((e) => e.seller_id !== null).map((e) => {
+  return rows.filter((e) => e.seller_id !== null || e.buyer_id !== null).map((e) => {
     const s = e.sellers as { name: string; property_address: string | null } | null;
+    const b = e.buyers as { name: string | null; company: string | null; email: string | null } | null;
+    const who = e.seller_id !== null
+      ? { name: s?.name ?? 'Seller', addr: s?.property_address ?? '' }
+      : { name: b?.name?.trim() || b?.email || 'Buyer', addr: b?.company?.trim() || b?.email || '' };
     return {
-      id: e.id, seller_id: e.seller_id!, name: s?.name ?? 'Seller', addr: s?.property_address ?? '',
+      id: e.id, seller_id: e.seller_id, buyer_id: e.buyer_id, ...who,
       status: e.status, step: e.step_index, total: count ?? 0, enrolled_at: e.enrolled_at, stopped_reason: e.stopped_reason,
       routed: e.routed_reason ? { plan_id: e.routed_plan_id ?? null, reason: e.routed_reason, pending: e.route_state === 'pending' } : null,
       agent: notes.get(e.id) ?? [],
@@ -633,6 +657,7 @@ export async function savePlanDraft(workspaceId: number, plan: PlanDraft, userId
       else if (st.type === 'rvm') config.variant_group = st.variantGroup?.trim() || 'default';
       if (st.type === 'ai_agent') config.goal = st.goal?.trim() ?? '';
       if (st.type === 'ai_agent' && st.allowed) config.allowed = cleanAllowed(st.allowed);
+      if (st.type === 'ai_agent' && !st.allowed && st.channels) config.channels = cleanChannels(st.channels);
       return {
         workspace_id: workspaceId, plan_id: planId!, position: i,
         channel: st.type, delay_minutes: mins, delay_hours: Math.round(cumulative / 60),
@@ -703,6 +728,28 @@ export async function stopEnrollment(enrollmentId: number): Promise<SaveResult> 
   if (error) return { ok: false, message: error.message };
   await supabase.from('tasks').delete().eq('enrollment_id', enrollmentId).eq('done', false);
   return { ok: true };
+}
+
+/**
+ * stopEnrollment for many (the bulk bars): one update and one task delete per
+ * 200 ids instead of two requests each. `done` counts the ids in batches that
+ * saved; `ok` is false, with the first refusal in `message`, when any batch
+ * was refused (the others still go).
+ */
+export async function stopEnrollments(enrollmentIds: number[]): Promise<SaveResult & { done: number }> {
+  if (!supabase) return { ok: false, done: 0, message: 'Supabase is not configured.' };
+  let done = 0;
+  let message: string | undefined;
+  for (let i = 0; i < enrollmentIds.length; i += 200) {
+    const ids = enrollmentIds.slice(i, i + 200);
+    const { error } = await supabase.from('enrollments')
+      .update({ status: 'done', completed_at: new Date().toISOString(), stopped_reason: 'manual' })
+      .in('id', ids);
+    if (error) { message ??= error.message; continue; }
+    await supabase.from('tasks').delete().in('enrollment_id', ids).eq('done', false);
+    done += ids.length;
+  }
+  return message ? { ok: false, done, message } : { ok: true, done };
 }
 
 // ---- the AI's shape --------------------------------------------------------------------

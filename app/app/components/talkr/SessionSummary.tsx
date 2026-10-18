@@ -36,12 +36,12 @@ export function sessionTiles(s: StatsInput): { label: string; value: string; ton
 
 export function SessionStats({ stats, dark = false, columns = 3 }: { stats: StatsInput; dark?: boolean; columns?: number }) {
   const muted = dark ? 'rgba(255,255,255,.6)' : 'var(--muted)';
-  const text = dark ? '#fff' : 'var(--text)';
+  const text = dark ? 'var(--surface, #fff)' : 'var(--text)';
   return (
     <div data-testid="session-stats" className="grid gap-x-3 gap-y-2.5" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
       {sessionTiles(stats).map((tile) => (
         <span key={tile.label} className="flex min-w-0 flex-col gap-1">
-          <span style={{ font: '700 15px/1 var(--sans)', fontVariantNumeric: 'tabular-nums', color: tile.tone === 'good' ? 'var(--green, #0A8560)' : tile.tone === 'bad' ? 'var(--red, #b91c1c)' : text }}>
+          <span style={{ font: '700 15px/1 var(--sans)', fontVariantNumeric: 'tabular-nums', color: tile.tone === 'good' ? 'var(--green, #0a8560)' : tile.tone === 'bad' ? 'var(--red, #b91c1c)' : text }}>
             {tile.value}
           </span>
           <span className="truncate" style={{ font: '500 11px/1.2 var(--sans)', color: muted }}>{tile.label}</span>
@@ -55,7 +55,7 @@ export function SessionStats({ stats, dark = false, columns = 3 }: { stats: Stat
 export function SessionMeter({ percent, dark = false }: { percent: number; dark?: boolean }) {
   return (
     <span aria-hidden style={{ display: 'block', height: 4, borderRadius: 99, background: dark ? 'rgba(255,255,255,.14)' : 'var(--line)', overflow: 'hidden' }}>
-      <span style={{ display: 'block', height: '100%', width: `${Math.min(100, Math.max(0, percent))}%`, background: 'var(--green, #0A8560)', transition: 'width .3s' }} />
+      <span style={{ display: 'block', height: '100%', width: `${Math.min(100, Math.max(0, percent))}%`, background: 'var(--green, #0a8560)', transition: 'width .3s' }} />
     </span>
   );
 }

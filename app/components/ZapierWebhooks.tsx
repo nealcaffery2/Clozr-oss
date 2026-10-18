@@ -16,14 +16,14 @@ import {
   sendTest, setSubscriptionActive, subscribe,
 } from '@/lib/webhooks';
 
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
-const sub: React.CSSProperties = { margin: '16px 0 6px', fontSize: '12.5px', fontWeight: 600, color: '#18181b' };
-const muted: React.CSSProperties = { margin: '0 0 8px', fontSize: '12px', color: '#71717a', lineHeight: 1.55 };
-const field: React.CSSProperties = { height: '32px', padding: '0 10px', border: '1px solid #e4e4e7', borderRadius: '8px', fontSize: '12.5px', background: '#fff', color: '#18181b', outline: 0, minWidth: 0, fontFamily: 'inherit' };
-const btn: React.CSSProperties = { height: '30px', padding: '0 11px', borderRadius: '8px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer', color: '#18181b', flex: 'none' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
+const sub: React.CSSProperties = { margin: '16px 0 6px', fontSize: '12.5px', fontWeight: 600, color: 'var(--ink, #18181b)' };
+const muted: React.CSSProperties = { margin: '0 0 8px', fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.55 };
+const field: React.CSSProperties = { height: '32px', padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', fontSize: '12.5px', background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)', outline: 0, minWidth: 0, fontFamily: 'inherit' };
+const btn: React.CSSProperties = { height: '30px', padding: '0 11px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', color: 'var(--ink, #18181b)', flex: 'none' };
 const primary: React.CSSProperties = { ...btn, border: '1px solid #0A8560', background: '#0A8560', color: '#fff' };
-const codeBox: React.CSSProperties = { display: 'block', fontSize: '11.5px', background: '#fafafa', border: '1px solid #e4e4e7', borderRadius: '7px', padding: '8px 10px', overflowX: 'auto', whiteSpace: 'pre', fontFamily: 'ui-monospace, monospace', margin: 0 };
-const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', padding: '9px 0', borderTop: '1px solid #f0f0f1' };
+const codeBox: React.CSSProperties = { display: 'block', fontSize: '11.5px', background: 'var(--canvas, #fafafa)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '7px', padding: '8px 10px', overflowX: 'auto', whiteSpace: 'pre', fontFamily: 'ui-monospace, monospace', margin: 0 };
+const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', padding: '9px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)' };
 
 function Copy({ text, label = 'Copy' }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
@@ -35,7 +35,7 @@ function Copy({ text, label = 'Copy' }: { text: string; label?: string }) {
 }
 
 function statusColor(s: string | null) {
-  return s === 'delivered' ? '#0A8560' : s === 'failed' ? '#b91c1c' : s ? '#92400e' : '#a1a1aa';
+  return s === 'delivered' ? '#0A8560' : s === 'failed' ? '#b91c1c' : s ? '#92400e' : 'var(--subtle, #a1a1aa)';
 }
 
 export function ZapierWebhooks({ workspaceId, admin, demo }: { workspaceId: number | null; admin: boolean; demo: boolean }) {
@@ -110,7 +110,7 @@ export function ZapierWebhooks({ workspaceId, admin, demo }: { workspaceId: numb
       ) : (
         <>
           {note ? (
-            <div role="status" style={{ margin: '8px 0', padding: '9px 11px', borderRadius: '9px', fontSize: '12.5px', background: note.ok ? '#dcfce7' : '#fee2e2', border: `1px solid ${note.ok ? '#bbf7d0' : '#fecaca'}`, color: note.ok ? '#15803d' : '#b91c1c' }}>{note.text}</div>
+            <div role="status" style={{ margin: '8px 0', padding: '9px 11px', borderRadius: '9px', fontSize: '12.5px', background: note.ok ? 'var(--positive-soft, #dcfce7)' : 'var(--negative-soft, #fee2e2)', border: `1px solid ${note.ok ? 'var(--tint-green-3, #bbf7d0)' : 'var(--tint-red-2, #fecaca)'}`, color: note.ok ? 'var(--tx-green, #15803d)' : '#b91c1c' }}>{note.text}</div>
           ) : null}
 
           {/* ------------------------------------------------------------ inbound */}
@@ -121,8 +121,8 @@ export function ZapierWebhooks({ workspaceId, admin, demo }: { workspaceId: numb
           </div>
 
           {minted ? (
-            <div style={{ marginTop: '10px', padding: '12px 13px', borderRadius: '10px', background: '#E7F8F1', border: '1px solid #A8ECD2' }}>
-              <div style={{ fontSize: '11.5px', color: '#0A8560', fontWeight: 700, marginBottom: '8px' }}>
+            <div style={{ marginTop: '10px', padding: '12px 13px', borderRadius: '10px', background: 'var(--mint-dim, #e7f8f1)', border: '1px solid #A8ECD2' }}>
+              <div style={{ fontSize: '11.5px', color: 'var(--tx-mint, #0a8560)', fontWeight: 700, marginBottom: '8px' }}>
                 Copy now — the key isn&rsquo;t shown again
               </div>
               <div style={{ ...row, borderTop: 0, padding: '3px 0' }}>
@@ -141,7 +141,7 @@ export function ZapierWebhooks({ workspaceId, admin, demo }: { workspaceId: numb
           ) : null}
 
           <p style={{ ...muted, marginTop: '12px' }}>
-            <strong style={{ color: '#18181b' }}>Zapier:</strong> 1. Add an action step <em>Webhooks by Zapier → POST</em>.
+            <strong style={{ color: 'var(--ink, #18181b)' }}>Zapier:</strong> 1. Add an action step <em>Webhooks by Zapier → POST</em>.
             2. URL: the key URL above (or the plain URL with header <code>Authorization: Bearer clz_…</code>). Payload type: <em>JSON</em>.
             3. Data: one row per field below — <code>event</code> plus the fields you have. Lead and buyer events create or merge a record;
             <code> note.add</code>, <code>activity.log</code> and <code>email.opened</code> only attach to an existing seller or buyer matched by email or phone and never create a lead.
@@ -156,15 +156,15 @@ export function ZapierWebhooks({ workspaceId, admin, demo }: { workspaceId: numb
           <p style={{ ...muted, marginTop: '6px' }}>Response: <code>{'{ "ok": true, "id": 812, "deduped": false, "matched": true }'}</code>. Send a stable <code>external_id</code> so retries dedupe.</p>
 
           <p style={{ ...muted, marginTop: '12px' }}>
-            <strong style={{ color: '#18181b' }}>Jotform:</strong> create one Jotform key per form, then in Jotform open the form → <em>Settings → Integrations</em> →
+            <strong style={{ color: 'var(--ink, #18181b)' }}>Jotform:</strong> create one Jotform key per form, then in Jotform open the form → <em>Settings → Integrations</em> →
             search <em>WebHooks</em> → paste the key URL (with <code>?key=</code>) → <em>Complete integration</em>. A disposition request fills What we know
             (entity, occupancy, closing date, beds, ARV, rehab, garage, photos, MLS, InvestorLift, lease, contract). Anything still unrecognised is kept as a note.
           </p>
           {keys.filter((k) => k.name === 'zapier').map((k) => (
-            <div key={k.id} style={{ margin: '8px 0', padding: '11px 13px', borderRadius: '10px', background: '#fafafa', border: '1px solid #e4e4e7' }}>
+            <div key={k.id} style={{ margin: '8px 0', padding: '11px 13px', borderRadius: '10px', background: 'var(--canvas, #fafafa)', border: '1px solid var(--divider, #e4e4e7)' }}>
               <div style={{ ...row, borderTop: 0, padding: 0 }}>
-                <span style={{ fontSize: '12.5px', fontWeight: 600, flex: '1 1 160px', color: k.active ? '#18181b' : '#a1a1aa' }}>
-                  {k.label || 'Zapier / Webhook'} <span style={{ fontWeight: 400, color: '#a1a1aa', fontFamily: 'ui-monospace, monospace' }}>{k.key_prefix}…</span>
+                <span style={{ fontSize: '12.5px', fontWeight: 600, flex: '1 1 160px', color: k.active ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)' }}>
+                  {k.label || 'Zapier / Webhook'} <span style={{ fontWeight: 400, color: 'var(--subtle, #a1a1aa)', fontFamily: 'ui-monospace, monospace' }}>{k.key_prefix}…</span>
                 </span>
                 <Creates k={k} busy={busy} run={run} />
               </div>
@@ -184,8 +184,8 @@ export function ZapierWebhooks({ workspaceId, admin, demo }: { workspaceId: numb
           </p>
 
           {secret ? (
-            <div style={{ margin: '8px 0', padding: '12px 13px', borderRadius: '10px', background: '#E7F8F1', border: '1px solid #A8ECD2' }}>
-              <div style={{ fontSize: '11.5px', color: '#0A8560', fontWeight: 700, marginBottom: '8px' }}>Signing secret — shown once</div>
+            <div style={{ margin: '8px 0', padding: '12px 13px', borderRadius: '10px', background: 'var(--mint-dim, #e7f8f1)', border: '1px solid #A8ECD2' }}>
+              <div style={{ fontSize: '11.5px', color: 'var(--tx-mint, #0a8560)', fontWeight: 700, marginBottom: '8px' }}>Signing secret — shown once</div>
               <div style={{ ...row, borderTop: 0, padding: 0 }}>
                 <code style={{ ...codeBox, flex: '1 1 240px' }}>{secret}</code>
                 <Copy text={secret} />
@@ -197,8 +197,8 @@ export function ZapierWebhooks({ workspaceId, admin, demo }: { workspaceId: numb
           {subs.map((s) => (
             <div key={s.id} style={row}>
               <span style={{ flex: '1 1 220px', minWidth: 0 }}>
-                <span style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, color: s.active ? '#18181b' : '#a1a1aa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.description || s.url}</span>
-                <span style={{ display: 'block', fontSize: '11.5px', color: '#a1a1aa' }}>
+                <span style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, color: s.active ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.description || s.url}</span>
+                <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--subtle, #a1a1aa)' }}>
                   {s.description ? `${s.url} · ` : ''}{s.events.join(', ')}
                 </span>
                 {s.last_status ? (
@@ -209,19 +209,19 @@ export function ZapierWebhooks({ workspaceId, admin, demo }: { workspaceId: numb
               </span>
               <button type="button" className="dc2" style={btn} disabled={busy} onClick={() => void run(() => sendTest(s.id), 'Test queued — refresh in a minute for the response.')}>Send test</button>
               <button type="button" className="dc2" style={btn} disabled={busy} onClick={() => void run(() => setSubscriptionActive(s.id, !s.active))}>{s.active ? 'Pause' : 'Resume'}</button>
-              <button type="button" className="dc2" style={{ ...btn, color: '#b91c1c' }} disabled={busy} onClick={() => { if (window.confirm('Delete this webhook and its delivery history?')) void run(() => deleteSubscription(s.id)); }}>Delete</button>
+              <button type="button" className="dc2" style={{ ...btn, color: 'var(--tx-red, #b91c1c)' }} disabled={busy} onClick={() => { if (window.confirm('Delete this webhook and its delivery history?')) void run(() => deleteSubscription(s.id)); }}>Delete</button>
             </div>
           ))}
 
-          <form onSubmit={(e) => void add(e)} style={{ marginTop: '10px', padding: '12px 13px', borderRadius: '10px', background: '#fafafa', border: '1px solid #e4e4e7' }}>
+          <form onSubmit={(e) => void add(e)} style={{ marginTop: '10px', padding: '12px 13px', borderRadius: '10px', background: 'var(--canvas, #fafafa)', border: '1px solid var(--divider, #e4e4e7)' }}>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <input type="url" required placeholder="https://hooks.zapier.com/hooks/catch/…" value={url} onChange={(e) => setUrl(e.target.value)} style={{ ...field, flex: '2 1 260px' }} />
               <input placeholder="Description (optional)" value={desc} onChange={(e) => setDesc(e.target.value)} style={{ ...field, flex: '1 1 160px' }} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '4px 12px', margin: '10px 0' }}>
               {WEBHOOK_EVENTS.map((ev) => (
-                <label key={ev.name} style={{ display: 'flex', gap: '7px', alignItems: 'center', fontSize: '12px', color: '#3f3f46', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={events.includes(ev.name)} style={{ accentColor: '#0A8560' }}
+                <label key={ev.name} style={{ display: 'flex', gap: '7px', alignItems: 'center', fontSize: '12px', color: 'var(--ink-3, #3f3f46)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={events.includes(ev.name)} style={{ accentColor: 'var(--tx-mint, #0a8560)' }}
                     onChange={(e) => setEvents((cur) => e.target.checked ? [...cur, ev.name] : cur.filter((x) => x !== ev.name))} />
                   {ev.label}
                 </label>
@@ -240,7 +240,7 @@ export function ZapierWebhooks({ workspaceId, admin, demo }: { workspaceId: numb
                 <div key={d.id} style={{ ...row, padding: '6px 0', fontSize: '12px' }}>
                   <code style={{ fontSize: '11.5px', flex: '0 0 170px' }}>{d.event}</code>
                   <span style={{ color: statusColor(d.status), fontWeight: 600, flex: '0 0 70px' }}>{d.status}</span>
-                  <span style={{ color: '#71717a', flex: '1 1 160px', minWidth: 0 }}>
+                  <span style={{ color: 'var(--meta, #71717a)', flex: '1 1 160px', minWidth: 0 }}>
                     {d.response_code ? `HTTP ${d.response_code}` : ''}{d.error ? ` ${d.error}` : ''} · {d.attempts} attempt{d.attempts === 1 ? '' : 's'} · {new Date(d.created_at).toLocaleString()}
                   </span>
                   {d.status === 'failed' || d.status === 'retrying' ? (
@@ -262,7 +262,7 @@ function Creates({ k, busy, run }: {
   run: (fn: () => Promise<{ ok: boolean; message?: string }>, done?: string) => Promise<boolean>;
 }) {
   return (
-    <label style={{ fontSize: '12px', color: '#52525b' }}>
+    <label style={{ fontSize: '12px', color: 'var(--muted, #52525b)' }}>
       Creates{' '}
       <select value={k.creates} disabled={busy} style={field} aria-label={`What ${k.label || k.name} creates`}
         onChange={(e) => void run(() => setKeySetting(k.id, 'creates', e.target.value), 'That key now files ' + (e.target.value === 'wholesaler' ? 'wholesalers' : e.target.value === 'buyer' ? 'buyers' : 'sellers') + '.')}>
@@ -310,10 +310,10 @@ function JotformKey({ row: k, workspaceId, busy, run }: {
   }
 
   return (
-    <div style={{ margin: '8px 0', padding: '11px 13px', borderRadius: '10px', background: '#fafafa', border: '1px solid #e4e4e7' }}>
+    <div style={{ margin: '8px 0', padding: '11px 13px', borderRadius: '10px', background: 'var(--canvas, #fafafa)', border: '1px solid var(--divider, #e4e4e7)' }}>
       <div style={{ ...row, borderTop: 0, padding: 0 }}>
-        <span style={{ fontSize: '12.5px', fontWeight: 600, flex: '1 1 160px', color: k.active ? '#18181b' : '#a1a1aa' }}>
-          {k.label || 'Jotform'} <span style={{ fontWeight: 400, color: '#a1a1aa', fontFamily: 'ui-monospace, monospace' }}>{k.key_prefix}…</span>
+        <span style={{ fontSize: '12.5px', fontWeight: 600, flex: '1 1 160px', color: k.active ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)' }}>
+          {k.label || 'Jotform'} <span style={{ fontWeight: 400, color: 'var(--subtle, #a1a1aa)', fontFamily: 'ui-monospace, monospace' }}>{k.key_prefix}…</span>
         </span>
         <Creates k={k} busy={busy} run={run} />
       </div>
@@ -340,7 +340,7 @@ function JotformKey({ row: k, workspaceId, busy, run }: {
       ) : null}
       {k.sync_form && k.sync_form !== 'off' ? (
         <div style={{ ...row, borderTop: 0, padding: '8px 0 0' }}>
-          <span style={{ fontSize: '12px', color: '#15803d', fontWeight: 600, flex: '1 1 220px' }}>
+          <span style={{ fontSize: '12px', color: 'var(--tx-green, #15803d)', fontWeight: 600, flex: '1 1 220px' }}>
             Auto-sync on — form {forms?.find((f) => f.id === k.sync_form)?.title ?? k.sync_form} is pulled every five minutes, webhook or not: new submissions are added and edited ones update their record.
           </span>
           <button type="button" className="dc2" style={btn} disabled={busy}

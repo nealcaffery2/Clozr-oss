@@ -33,8 +33,8 @@ export function ScenarioList({ scenarios, value, onChange, disabled }: { scenari
         return (
           <button key={s.id} type="button" role="radio" aria-checked={on} disabled={disabled} className="va-btn" onClick={() => onChange(s.id)}
             style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 10, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', border: `1px solid ${on ? '#0A8560' : LINE}`,
-              background: on ? '#E7F8F1' : '#fff', boxShadow: on ? '0 0 0 1px #0A8560' : 'none', opacity: disabled && !on ? 0.6 : 1 }}>
-            <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: on ? '#0A8560' : INK }}>{s.title}</span>
+              background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', boxShadow: on ? '0 0 0 1px #0A8560' : 'none', opacity: disabled && !on ? 0.6 : 1 }}>
+            <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: on ? 'var(--tx-mint, #0a8560)' : INK }}>{s.title}</span>
             <span style={{ display: 'block', marginTop: 2, fontSize: 12, color: MUTED, lineHeight: 1.4 }}>{s.summary}</span>
           </button>
         );
@@ -50,9 +50,9 @@ export function ScenarioLoading() {
 /** What to say on the call (the persona) and what the agent is expected to do (the checklist). */
 export function ScenarioCard({ scenario }: { scenario: Scenario }) {
   return (
-    <div className="va-in" style={{ border: `1px solid ${LINE}`, borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
-      <div style={{ padding: '10px 14px', background: '#fffbeb', borderBottom: '1px solid #fde68a' }}>
-        <div style={{ fontSize: 11.5, color: '#92400e', fontWeight: 700 }}>You play the {scenario.audience === 'buyer' ? 'cash buyer' : scenario.audience === 'any' ? 'caller' : 'seller'}. Say this to the agent</div>
+    <div className="va-in" style={{ border: `1px solid ${LINE}`, borderRadius: 10, overflow: 'hidden', background: 'var(--surface, #fff)' }}>
+      <div style={{ padding: '10px 14px', background: 'var(--tint-amber, #fffbeb)', borderBottom: '1px solid var(--tint-amber-2, #fde68a)' }}>
+        <div style={{ fontSize: 11.5, color: 'var(--tx-amber-deep, #92400e)', fontWeight: 700 }}>You play the {scenario.audience === 'buyer' ? 'cash buyer' : scenario.audience === 'any' ? 'caller' : 'seller'}. Say this to the agent</div>
         <p style={{ margin: '4px 0 0', fontSize: 13, lineHeight: 1.55, color: INK }}>{scenario.persona}</p>
       </div>
       <div style={{ padding: '10px 14px' }}>
@@ -60,7 +60,7 @@ export function ScenarioCard({ scenario }: { scenario: Scenario }) {
         <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'grid', gap: 6 }}>
           {scenario.checklist.map((c) => (
             <li key={c.id} style={{ display: 'flex', gap: 8, fontSize: 12.5, lineHeight: 1.5, color: INK }}>
-              <span aria-hidden="true" style={{ width: 14, height: 14, marginTop: 3, flex: 'none', borderRadius: 4, border: `1.5px solid #d4d4d8` }} />
+              <span aria-hidden="true" style={{ width: 14, height: 14, marginTop: 3, flex: 'none', borderRadius: 4, border: `1.5px solid var(--line, #d4d4d8)` }} />
               <span>{c.text}</span>
             </li>
           ))}
@@ -70,12 +70,12 @@ export function ScenarioCard({ scenario }: { scenario: Scenario }) {
   );
 }
 
-const TONE = { good: { fg: '#0A8560', bg: '#E7F8F1' }, mid: { fg: '#92400e', bg: '#fef3c7' }, bad: { fg: RED, bg: '#fee2e2' } };
+const TONE = { good: { fg: '#0A8560', bg: 'var(--mint-dim, #e7f8f1)' }, mid: { fg: '#92400e', bg: 'var(--caution-soft, #fef3c7)' }, bad: { fg: RED, bg: 'var(--negative-soft, #fee2e2)' } };
 
 export function ScoreCard({ result, scenario, demo }: { result: ScoreResult; scenario?: Scenario; demo?: boolean }) {
   const tone = TONE[scoreTone(result.score)];
   return (
-    <div className="va-in" role="region" aria-label="Score" style={{ border: `1px solid ${LINE}`, borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+    <div className="va-in" role="region" aria-label="Score" style={{ border: `1px solid ${LINE}`, borderRadius: 10, overflow: 'hidden', background: 'var(--surface, #fff)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderBottom: `1px solid ${LINE}`, flexWrap: 'wrap' }}>
         <span aria-label={`Score ${result.score} percent`} style={{ display: 'grid', placeItems: 'center', width: 54, height: 54, borderRadius: 999, background: tone.bg, color: tone.fg, fontSize: 17, fontWeight: 700, fontVariantNumeric: 'tabular-nums', flex: 'none' }}>{result.score}%</span>
         <div style={{ flex: '1 1 160px', minWidth: 0 }}>
@@ -88,19 +88,19 @@ export function ScoreCard({ result, scenario, demo }: { result: ScoreResult; sce
       </div>
       <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
         {gradesSorted(result.items).map((g, i) => (
-          <li key={g.id} style={{ display: 'flex', gap: 10, padding: '11px 14px', borderTop: i ? '1px solid #f0f0f1' : 'none' }}>
+          <li key={g.id} style={{ display: 'flex', gap: 10, padding: '11px 14px', borderTop: i ? '1px solid var(--divider-2, #f0f0f1)' : 'none' }}>
             <span aria-hidden="true" style={{ width: 20, height: 20, marginTop: 1, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 999, background: g.pass ? '#0A8560' : '#dc2626', color: '#fff' }}>
               {g.pass ? <Check size={13} strokeWidth={3} /> : <X size={13} strokeWidth={3} />}
             </span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: INK }}>{g.text}</span>
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: g.pass ? '#0A8560' : RED }}>{g.pass ? 'Passed' : 'Failed'}</span>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: g.pass ? 'var(--tx-mint, #0a8560)' : RED }}>{g.pass ? 'Passed' : 'Failed'}</span>
               </div>
               {g.quote ? (
-                <blockquote style={{ margin: '6px 0 0', padding: '6px 10px', borderLeft: `3px solid ${g.pass ? '#86efac' : '#fca5a5'}`, background: '#fafafa', borderRadius: '0 8px 8px 0', fontSize: 12.5, lineHeight: 1.5, color: INK }}>
+                <blockquote style={{ margin: '6px 0 0', padding: '6px 10px', borderLeft: `3px solid ${g.pass ? '#86efac' : '#fca5a5'}`, background: 'var(--canvas, #fafafa)', borderRadius: '0 8px 8px 0', fontSize: 12.5, lineHeight: 1.5, color: INK }}>
                   &ldquo;{g.quote}&rdquo;
-                  {!g.quote_found ? <span style={{ display: 'block', marginTop: 2, fontSize: 11.5, color: '#92400e' }}>Not found word for word in the transcript.</span> : null}
+                  {!g.quote_found ? <span style={{ display: 'block', marginTop: 2, fontSize: 11.5, color: 'var(--tx-amber-deep, #92400e)' }}>Not found word for word in the transcript.</span> : null}
                 </blockquote>
               ) : null}
               {g.note ? <p style={{ margin: '6px 0 0', fontSize: 12, color: MUTED, lineHeight: 1.5 }}>{g.note}</p> : null}

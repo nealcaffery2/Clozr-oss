@@ -9,10 +9,10 @@ import {
   type IvueitStatus, type PhotoOrderRow, cancelPhotoOrder, checkPhotoOrder, ivueitStatus, listPhotoOrders, orderLine, orderPhotos,
 } from '@/lib/ivueit';
 
-const btn: React.CSSProperties = { height: '30px', padding: '0 11px', borderRadius: '8px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer', color: '#18181b', whiteSpace: 'nowrap' };
+const btn: React.CSSProperties = { height: '30px', padding: '0 11px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', color: 'var(--ink, #18181b)', whiteSpace: 'nowrap' };
 const primary: React.CSSProperties = { ...btn, background: '#0A8560', borderColor: '#0A8560', color: '#fff' };
-const link: React.CSSProperties = { border: 0, background: 'none', padding: '4px 2px', minHeight: '24px', font: 'inherit', fontSize: '12px', fontWeight: 600, color: '#0A8560', cursor: 'pointer' };
-const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', fontWeight: 500, color: '#71717a', marginBottom: '4px' };
+const link: React.CSSProperties = { border: 0, background: 'none', padding: '4px 2px', minHeight: '24px', font: 'inherit', fontSize: '12px', fontWeight: 600, color: 'var(--tx-mint, #0a8560)', cursor: 'pointer' };
+const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', fontWeight: 500, color: 'var(--meta, #71717a)', marginBottom: '4px' };
 const STALE_MS = 10 * 60_000;
 
 export function PhotoOrderPanel({ workspaceId, dealId, canWrite, open, onClose, onToast, onPhotosIn }: {
@@ -104,34 +104,34 @@ export function PhotoOrderPanel({ workspaceId, dealId, canWrite, open, onClose, 
   return (
     <>
       {open ? (
-        <section aria-label="Order photos from iVueit" data-testid="ivueit-order" style={{ marginTop: '10px', border: '1px solid #e4e4e7', borderRadius: '10px', padding: '12px', background: '#fafafa' }}>
+        <section aria-label="Order photos from iVueit" data-testid="ivueit-order" style={{ marginTop: '10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px', padding: '12px', background: 'var(--canvas, #fafafa)' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '13px', fontWeight: 650, color: '#18181b' }}>Order photos from iVueit</span>
-            {s?.staging ? <span style={{ fontSize: '11px', fontWeight: 600, color: '#b45309', background: '#fef3c7', borderRadius: '6px', padding: '1px 6px' }}>Staging</span> : null}
+            <span style={{ fontSize: '13px', fontWeight: 650, color: 'var(--ink, #18181b)' }}>Order photos from iVueit</span>
+            {s?.staging ? <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--tx-amber, #b45309)', background: 'var(--caution-soft, #fef3c7)', borderRadius: '6px', padding: '1px 6px' }}>Staging</span> : null}
           </div>
           {status === null ? (
-            <p style={{ margin: '8px 0 0', fontSize: '12.5px', color: '#71717a' }}>Checking iVueit…</p>
+            <p style={{ margin: '8px 0 0', fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>Checking iVueit…</p>
           ) : 'error' in status ? (
-            <p role="alert" style={{ margin: '8px 0 0', fontSize: '12.5px', color: '#b91c1c' }}>{status.error}</p>
+            <p role="alert" style={{ margin: '8px 0 0', fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)' }}>{status.error}</p>
           ) : !status.connected ? (
-            <p style={{ margin: '8px 0 0', fontSize: '12.5px', color: '#3f3f46', lineHeight: 1.5 }}>
+            <p style={{ margin: '8px 0 0', fontSize: '12.5px', color: 'var(--ink-3, #3f3f46)', lineHeight: 1.5 }}>
               iVueit is not connected yet. An owner or admin adds the API key and secret under Settings → Integrations, then anyone on the team can order.
             </p>
           ) : (
             <div style={{ display: 'grid', gap: '10px', marginTop: '8px' }}>
-              <p style={{ margin: 0, fontSize: '12.5px', color: '#3f3f46', lineHeight: 1.5 }}>
-                A local Vuer photographs <strong style={{ fontWeight: 650, color: '#18181b' }}>{status.address || 'this house'}</strong>
+              <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--ink-3, #3f3f46)', lineHeight: 1.5 }}>
+                A local Vuer photographs <strong style={{ fontWeight: 650, color: 'var(--ink, #18181b)' }}>{status.address || 'this house'}</strong>
                 {tpl?.slaHours ? `, usually within ${tpl.slaHours} hours` : ''}. The photos and the report PDF land on this deal by themselves.
               </p>
               {!status.address_ok ? (
-                <p role="alert" style={{ margin: 0, fontSize: '12.5px', color: '#b91c1c' }}>iVueit needs the street, city, state and ZIP. Fix the address on the record first.</p>
+                <p role="alert" style={{ margin: 0, fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)' }}>iVueit needs the street, city, state and ZIP. Fix the address on the record first.</p>
               ) : null}
-              {status.problem ? <p role="alert" style={{ margin: 0, fontSize: '12.5px', color: '#b91c1c' }}>{status.problem}</p> : null}
+              {status.problem ? <p role="alert" style={{ margin: 0, fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)' }}>{status.problem}</p> : null}
               {status.templates.length > 1 ? (
                 <div>
                   <label htmlFor={`ivu-tpl-${dealId}`} style={label}>Survey</label>
                   <select id={`ivu-tpl-${dealId}`} value={template} onChange={(e) => setTemplate(e.target.value)}
-                    style={{ height: '32px', width: '100%', maxWidth: '420px', padding: '0 8px', border: '1px solid #e4e4e7', borderRadius: '8px', background: '#fff', fontSize: '13px', color: '#18181b' }}>
+                    style={{ height: '32px', width: '100%', maxWidth: '420px', padding: '0 8px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', background: 'var(--surface, #fff)', fontSize: '13px', color: 'var(--ink, #18181b)' }}>
                     <option value="">Pick a survey</option>
                     {status.templates.map((t) => (
                       <option key={t.id} value={t.id}>{t.name}{t.cost != null ? ` · $${t.cost.toFixed(2)}` : ''}</option>
@@ -143,10 +143,10 @@ export function PhotoOrderPanel({ workspaceId, dealId, canWrite, open, onClose, 
                 <label htmlFor={`ivu-notes-${dealId}`} style={label}>Access notes for the Vuer</label>
                 <textarea id={`ivu-notes-${dealId}`} value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} maxLength={2000}
                   placeholder="Lockbox 1234 on the back door. Occupied: text the seller 30 minutes ahead."
-                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #e4e4e7', borderRadius: '8px', fontSize: '12.5px', resize: 'vertical', background: '#fff', color: '#18181b' }} />
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', fontSize: '12.5px', resize: 'vertical', background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)' }} />
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: '#3f3f46', minHeight: '24px', cursor: 'pointer', width: 'fit-content' }}>
-                <input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} style={{ width: '16px', height: '16px', accentColor: '#0A8560' }} />
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: 'var(--ink-3, #3f3f46)', minHeight: '24px', cursor: 'pointer', width: 'fit-content' }}>
+                <input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} style={{ width: '16px', height: '16px', accentColor: 'var(--tx-mint, #0a8560)' }} />
                 Rush order (iVueit charges more)
               </label>
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -155,7 +155,7 @@ export function PhotoOrderPanel({ workspaceId, dealId, canWrite, open, onClose, 
                   {busy === 'order' ? 'Ordering…' : 'Order photos'}
                 </button>
                 <button type="button" style={btn} onClick={onClose}>Not now</button>
-                {tpl?.cost != null ? <span style={{ fontSize: '12px', color: '#71717a' }}>${tpl.cost.toFixed(2)} per order{urgent ? ' plus the rush fee' : ''}</span> : null}
+                {tpl?.cost != null ? <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>${tpl.cost.toFixed(2)} per order{urgent ? ' plus the rush fee' : ''}</span> : null}
               </div>
             </div>
           )}
@@ -165,13 +165,13 @@ export function PhotoOrderPanel({ workspaceId, dealId, canWrite, open, onClose, 
       {shownOrders.length ? (
         <ul aria-label="iVueit photo orders" style={{ listStyle: 'none', margin: '10px 0 0', padding: 0, display: 'grid', gap: '4px' }}>
           {shownOrders.map((o) => (
-            <li key={o.id} data-testid="ivueit-order-line" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '12.5px', color: '#3f3f46' }}>
+            <li key={o.id} data-testid="ivueit-order-line" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '12.5px', color: 'var(--ink-3, #3f3f46)' }}>
               <span style={{ fontSize: '11px', fontWeight: 600, borderRadius: '6px', padding: '1px 6px', ...TONE[o.status] }}>{WORD[o.status]}</span>
-              <span style={{ color: o.status === 'failed' ? '#b91c1c' : '#3f3f46', minWidth: 0 }}>iVueit · {orderLine(o)}</span>
+              <span style={{ color: o.status === 'failed' ? '#b91c1c' : 'var(--ink-3, #3f3f46)', minWidth: 0 }}>iVueit · {orderLine(o)}</span>
               {o.status === 'ordered' && canWrite ? (
                 <>
                   <button type="button" style={link} disabled={!!busy} onClick={() => void check(o)}>{busy === 'check:' + o.id ? 'Checking…' : 'Check now'}</button>
-                  <button type="button" style={{ ...link, color: '#71717a' }} disabled={!!busy} onClick={() => void cancel(o)}>{busy === 'cancel:' + o.id ? 'Canceling…' : 'Cancel order'}</button>
+                  <button type="button" style={{ ...link, color: 'var(--meta, #71717a)' }} disabled={!!busy} onClick={() => void cancel(o)}>{busy === 'cancel:' + o.id ? 'Canceling…' : 'Cancel order'}</button>
                 </>
               ) : null}
             </li>
@@ -184,8 +184,8 @@ export function PhotoOrderPanel({ workspaceId, dealId, canWrite, open, onClose, 
 
 const WORD: Record<PhotoOrderRow['status'], string> = { ordered: 'On order', completed: 'Photos in', canceled: 'Canceled', failed: 'Failed' };
 const TONE: Record<PhotoOrderRow['status'], React.CSSProperties> = {
-  ordered: { background: '#fef3c7', color: '#b45309' },
-  completed: { background: '#E7F5EF', color: '#0A8560' },
-  canceled: { background: '#f4f4f5', color: '#71717a' },
-  failed: { background: '#fee2e2', color: '#b91c1c' },
+  ordered: { background: 'var(--caution-soft, #fef3c7)', color: 'var(--tx-amber, #b45309)' },
+  completed: { background: 'var(--c-action-soft, #e7f5ef)', color: 'var(--tx-mint, #0a8560)' },
+  canceled: { background: 'var(--surface-2, #f4f4f5)', color: 'var(--meta, #71717a)' },
+  failed: { background: 'var(--negative-soft, #fee2e2)', color: 'var(--tx-red, #b91c1c)' },
 };

@@ -15,7 +15,6 @@ import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { ClozrMark } from '@/components/ds/ClozrMark';
 import { HCAPTCHA_SITE_KEY, captchaEnabled, loadHcaptcha } from '@/lib/captcha';
 import { useSession } from '@/lib/session';
-import '../clozr/tokens.css';
 
 type Mode = 'signin' | 'signup' | 'magic' | 'reset' | 'mfa';
 
@@ -30,7 +29,7 @@ const COPY: Record<Mode, { title: string; sub: string; submit: string }> = {
 const label: React.CSSProperties = {
   display: 'block',
   fontSize: '11.5px',
-  color: '#71717a',
+  color: 'var(--meta, #71717a)',
   fontWeight: 500,
   marginBottom: '6px',
 };
@@ -39,12 +38,12 @@ const field: React.CSSProperties = {
   width: '100%',
   height: '38px',
   padding: '0 11px',
-  border: '1px solid #e4e4e7',
+  border: '1px solid var(--divider, #e4e4e7)',
   borderRadius: '9px',
   fontSize: '13.5px',
   outline: 0,
-  background: '#fafafa',
-  color: '#18181b',
+  background: 'var(--canvas, #fafafa)',
+  color: 'var(--ink, #18181b)',
 };
 
 /**
@@ -191,20 +190,20 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: '#fafafa', padding: '24px 16px' }}>
+    <main style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: 'var(--canvas, #fafafa)', padding: '24px 16px' }}>
       <div style={{ width: '100%', maxWidth: '400px' }}>
         <a href="/" style={{ display: 'inline-flex', marginBottom: '22px', textDecoration: 'none' }}>
           <ClozrMark size={22} />
         </a>
 
-        <div style={{ background: '#fff', border: '1px solid #e4e4e7', borderRadius: '14px', padding: '24px', boxShadow: '0 1px 2px rgba(18,20,28,.05), 0 10px 28px -10px rgba(18,22,40,.13)' }}>
+        <div style={{ background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '14px', padding: '24px', boxShadow: '0 1px 2px rgba(18,20,28,.05), 0 10px 28px -10px rgba(18,22,40,.13)' }}>
           <h1 style={{ margin: 0, fontSize: '19px', fontWeight: 700, letterSpacing: '-0.02em' }}>{c.title}</h1>
-          <p style={{ margin: '5px 0 20px', fontSize: '13px', color: '#71717a' }}>{c.sub}</p>
+          <p style={{ margin: '5px 0 20px', fontSize: '13px', color: 'var(--meta, #71717a)' }}>{c.sub}</p>
 
           {s.demo ? (
-            <div style={{ marginBottom: '16px', padding: '11px 12px', borderRadius: '10px', background: '#fef3c7', border: '1px solid #fde68a', fontSize: '12.5px', color: '#92400e', lineHeight: 1.5 }}>
+            <div style={{ marginBottom: '16px', padding: '11px 12px', borderRadius: '10px', background: 'var(--caution-soft, #fef3c7)', border: '1px solid var(--tint-amber-2, #fde68a)', fontSize: '12.5px', color: 'var(--tx-amber-deep, #92400e)', lineHeight: 1.5 }}>
               Supabase isn&rsquo;t configured for this deployment, so sign-in is inactive.{' '}
-              <a href="/demo" style={{ color: '#92400e', fontWeight: 600 }}>Open the demo</a> to browse CLOZR on sample data.
+              <a href="/demo" style={{ color: 'var(--tx-amber-deep, #92400e)', fontWeight: 600 }}>Open the demo</a> to browse CLOZR on sample data.
             </div>
           ) : null}
 
@@ -251,7 +250,7 @@ export default function LoginPage() {
             {showCaptcha ? <div ref={captchaBox} style={{ marginBottom: '13px', minHeight: '78px' }} /> : null}
 
             {note ? (
-              <div role="status" style={{ margin: '4px 0 13px', padding: '10px 11px', borderRadius: '9px', fontSize: '12.5px', lineHeight: 1.5, background: note.ok ? '#dcfce7' : '#fee2e2', border: `1px solid ${note.ok ? '#bbf7d0' : '#fecaca'}`, color: note.ok ? '#15803d' : '#b91c1c' }}>
+              <div role="status" style={{ margin: '4px 0 13px', padding: '10px 11px', borderRadius: '9px', fontSize: '12.5px', lineHeight: 1.5, background: note.ok ? 'var(--positive-soft, #dcfce7)' : 'var(--negative-soft, #fee2e2)', border: `1px solid ${note.ok ? 'var(--tint-green-3, #bbf7d0)' : 'var(--tint-red-2, #fecaca)'}`, color: note.ok ? 'var(--tx-green, #15803d)' : '#b91c1c' }}>
                 {note.text}
               </div>
             ) : null}
@@ -262,13 +261,13 @@ export default function LoginPage() {
           </form>
 
           {installed && mode !== 'mfa' ? (
-            <p role="note" style={{ margin: '14px 0 0', padding: '10px 11px', borderRadius: '9px', background: '#f4f4f5', fontSize: '12.5px', lineHeight: 1.5, color: '#52525b' }}>
+            <p role="note" style={{ margin: '14px 0 0', padding: '10px 11px', borderRadius: '9px', background: 'var(--surface-2, #f4f4f5)', fontSize: '12.5px', lineHeight: 1.5, color: 'var(--muted, #52525b)' }}>
               In the installed app, sign in with your password. Email links open in Safari, not here
               {mode === 'reset' ? ' — reset your password in Safari, then sign in here with the new one.' : '.'}
             </p>
           ) : null}
 
-          <div style={{ marginTop: '16px', paddingTop: '15px', borderTop: '1px solid #f0f0f1', display: 'flex', flexWrap: 'wrap', gap: '10px 16px', fontSize: '12.5px' }}>
+          <div style={{ marginTop: '16px', paddingTop: '15px', borderTop: '1px solid var(--divider-2, #f0f0f1)', display: 'flex', flexWrap: 'wrap', gap: '10px 16px', fontSize: '12.5px' }}>
             {mode === 'mfa' ? (
               <Alt onClick={() => void cancelMfa()}>Use a different account</Alt>
             ) : (
@@ -282,11 +281,11 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <p style={{ margin: '16px 2px 0', fontSize: '12px', color: '#a1a1aa', display: 'flex', gap: '14px' }}>
-          <a href="/" style={{ color: '#71717a' }}>Back to clozr.com</a>
+        <p style={{ margin: '16px 2px 0', fontSize: '12px', color: 'var(--subtle, #a1a1aa)', display: 'flex', gap: '14px' }}>
+          <a href="/" style={{ color: 'var(--meta, #71717a)' }}>Back to clozr.com</a>
           {/* Still reachable once sign-in works, for anyone who landed here
               wanting a look rather than an account. */}
-          <a href="/demo" style={{ color: '#71717a' }}>Browse the demo</a>
+          <a href="/demo" style={{ color: 'var(--meta, #71717a)' }}>Browse the demo</a>
         </p>
       </div>
     </main>
@@ -295,7 +294,7 @@ export default function LoginPage() {
 
 function Alt({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   return (
-    <button type="button" onClick={onClick} style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: '#0A8560', fontWeight: 500, fontSize: '12.5px' }}>
+    <button type="button" onClick={onClick} style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'var(--tx-mint, #0a8560)', fontWeight: 500, fontSize: '12.5px' }}>
       {children}
     </button>
   );

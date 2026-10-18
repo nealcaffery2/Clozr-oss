@@ -66,8 +66,8 @@ export function HistoryTab({ api, agentKey, epoch, canEdit, detail, form, jump, 
         ) : (
           <div role="radiogroup" aria-label="Version to inspect" style={{ display: 'grid', gap: 6 }}>
             <button type="button" role="radio" aria-checked={sel.kind === 'draft'} className="va-btn va-row" onClick={() => setSel({ kind: 'draft' })}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', padding: '10px 12px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${sel.kind === 'draft' ? GREEN : LINE}`, background: sel.kind === 'draft' ? '#E7F8F1' : '#fff', boxShadow: sel.kind === 'draft' ? `0 0 0 1px ${GREEN}` : 'none' }}>
-              <span aria-hidden="true" style={{ width: 30, height: 30, borderRadius: 999, flex: 'none', display: 'grid', placeItems: 'center', background: '#fef3c7', color: '#92400e' }}><History size={15} /></span>
+              style={{ display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', padding: '10px 12px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${sel.kind === 'draft' ? GREEN : LINE}`, background: sel.kind === 'draft' ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', boxShadow: sel.kind === 'draft' ? `0 0 0 1px ${GREEN}` : 'none' }}>
+              <span aria-hidden="true" style={{ width: 30, height: 30, borderRadius: 999, flex: 'none', display: 'grid', placeItems: 'center', background: 'var(--caution-soft, #fef3c7)', color: 'var(--tx-amber-deep, #92400e)' }}><History size={15} /></span>
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: INK }}>Draft against live</span>
                 <span style={{ display: 'block', fontSize: 12, color: MUTED }}>{detail.has_unpublished_changes || form.dirty ? 'What publishing would change' : 'The draft matches what is live'}</span>
@@ -77,10 +77,10 @@ export function HistoryTab({ api, agentKey, epoch, canEdit, detail, form, jump, 
             {versions.length === 0 ? <Empty title="No versions yet">The first publish creates version 1.</Empty> : versions.map((v) => {
               const on = sel.kind === 'version' && sel.v === v.version;
               return (
-                <div key={v.version} style={{ display: 'flex', alignItems: 'center', gap: 8, borderRadius: 10, border: `1px solid ${on ? GREEN : LINE}`, background: on ? '#E7F8F1' : '#fff', boxShadow: on ? `0 0 0 1px ${GREEN}` : 'none', flexWrap: 'wrap', padding: '2px 4px 2px 0' }}>
+                <div key={v.version} style={{ display: 'flex', alignItems: 'center', gap: 8, borderRadius: 10, border: `1px solid ${on ? GREEN : LINE}`, background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', boxShadow: on ? `0 0 0 1px ${GREEN}` : 'none', flexWrap: 'wrap', padding: '2px 4px 2px 0' }}>
                   <button type="button" role="radio" aria-checked={on} className="va-btn" onClick={() => setSel({ kind: 'version', v: v.version })}
                     style={{ flex: '1 1 220px', minWidth: 0, display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', padding: '9px 12px', border: 0, background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    <span style={{ width: 34, height: 34, borderRadius: 9, flex: 'none', display: 'grid', placeItems: 'center', background: v.is_live ? GREEN : '#f4f4f5', color: v.is_live ? '#fff' : INK, fontSize: 12.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>v{v.version}</span>
+                    <span style={{ width: 34, height: 34, borderRadius: 9, flex: 'none', display: 'grid', placeItems: 'center', background: v.is_live ? GREEN : 'var(--surface-2, #f4f4f5)', color: v.is_live ? 'var(--surface, #fff)' : INK, fontSize: 12.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>v{v.version}</span>
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 13, fontWeight: 600, color: INK }}>{v.note || 'No note'}</span>

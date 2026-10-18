@@ -26,21 +26,21 @@ const TemplateFieldsDialog = React.lazy(() => import('@/components/PdfFieldDialo
 import { blockToken, blocksIn } from '@/supabase/functions/_shared/doc-blocks';
 import { diffLines, diffStat, folderAndBelow, folderTree, versionLabel } from '@/supabase/functions/_shared/doc-library';
 
-const INK = '#18181b';
-const MUTED = '#71717a';
-const LINE = '#e4e4e7';
-const HAIR = '#f0f0f1';
+const INK = 'var(--ink, #18181b)';
+const MUTED = 'var(--meta, #71717a)';
+const LINE = 'var(--divider, #e4e4e7)';
+const HAIR = 'var(--divider-2, #f0f0f1)';
 const GREEN = '#0A8560';
 const MONO = 'ui-monospace, Menlo, monospace';
 
 const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: MUTED, fontWeight: 600, marginBottom: '5px' };
-const field: React.CSSProperties = { width: '100%', height: '32px', padding: '0 9px', border: `1px solid ${LINE}`, borderRadius: '8px', fontSize: '12.5px', outline: 0, background: '#fff', color: INK, fontFamily: 'inherit' };
+const field: React.CSSProperties = { width: '100%', height: '32px', padding: '0 9px', border: `1px solid ${LINE}`, borderRadius: '8px', fontSize: '12.5px', outline: 0, background: 'var(--surface, #fff)', color: INK, fontFamily: 'inherit' };
 const btn = (primary = false, disabled = false): React.CSSProperties => ({
   height: '30px', padding: '0 11px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
   border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? (disabled ? '#7fcbb2' : GREEN) : '#fff', color: primary ? '#fff' : INK, opacity: !primary && disabled ? 0.6 : 1,
 });
 const link: React.CSSProperties = { fontSize: '12px', color: GREEN, background: 'none', border: 0, cursor: 'pointer', padding: 0, fontWeight: 600, fontFamily: 'inherit' };
-const panel: React.CSSProperties = { background: '#fff', border: `1px solid ${LINE}`, borderRadius: '12px', minWidth: 0 };
+const panel: React.CSSProperties = { background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', minWidth: 0 };
 const badge = (color: string, bg: string): React.CSSProperties => ({ fontSize: '11px', fontWeight: 700, color, background: bg, borderRadius: '999px', padding: '2px 7px', whiteSpace: 'nowrap' });
 
 type FolderSel = 'all' | 'none' | number;
@@ -272,10 +272,10 @@ export function TemplateLibrary({ workspaceId, onToast, onUse }: {
   const willVersion = !!selected && (selected.built_in || selected.used_this > 0);
   const saveLabel = !draft?.template_id ? 'Create template' : willVersion ? `Save as v${(selected?.version ?? 1) + 1}` : 'Save';
 
-  if (!lib) return <div style={{ padding: '24px', textAlign: 'center', color: loaded?.err ? '#b91c1c' : MUTED, fontSize: '13px' }}>{loaded && loaded.key === workspaceId && loaded.err ? loaded.err : 'Loading templates…'}</div>;
+  if (!lib) return <div style={{ padding: '24px', textAlign: 'center', color: loaded?.err ? 'var(--tx-red, #b91c1c)' : MUTED, fontSize: '13px' }}>{loaded && loaded.key === workspaceId && loaded.err ? loaded.err : 'Loading templates…'}</div>;
 
   const tabBtn = (id: 'templates' | 'sections', text: string) => (
-    <button type="button" onClick={() => setTab(id)} style={{ height: '30px', padding: '0 12px', borderRadius: '999px', fontSize: '12.5px', fontWeight: tab === id ? 650 : 500, cursor: 'pointer', border: `1px solid ${tab === id ? GREEN : LINE}`, background: tab === id ? '#E7F8F1' : '#fff', color: tab === id ? GREEN : '#27272a', fontFamily: 'inherit' }}>{text}</button>
+    <button type="button" onClick={() => setTab(id)} style={{ height: '30px', padding: '0 12px', borderRadius: '999px', fontSize: '12.5px', fontWeight: tab === id ? 650 : 500, cursor: 'pointer', border: `1px solid ${tab === id ? GREEN : LINE}`, background: tab === id ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: tab === id ? GREEN : 'var(--ink-2, #27272a)', fontFamily: 'inherit' }}>{text}</button>
   );
 
   return (
@@ -302,11 +302,11 @@ export function TemplateLibrary({ workspaceId, onToast, onUse }: {
             {!ro ? (
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', padding: '8px 6px 2px', borderTop: `1px solid ${HAIR}`, marginTop: '6px' }}>
                 <button type="button" onClick={() => void folder('create')} style={link}>+ Folder</button>
-                {typeof folderSel === 'number' ? <button type="button" onClick={() => void folder('rename')} style={{ ...link, color: '#52525b' }}>Rename</button> : null}
-                {typeof folderSel === 'number' ? <button type="button" onClick={() => void folder('delete')} style={{ ...link, color: '#b91c1c' }}>Delete</button> : null}
+                {typeof folderSel === 'number' ? <button type="button" onClick={() => void folder('rename')} style={{ ...link, color: 'var(--muted, #52525b)' }}>Rename</button> : null}
+                {typeof folderSel === 'number' ? <button type="button" onClick={() => void folder('delete')} style={{ ...link, color: 'var(--tx-red, #b91c1c)' }}>Delete</button> : null}
               </div>
             ) : null}
-            {!ro && tree.length ? <div style={{ fontSize: '11px', color: '#a1a1aa', padding: '6px' }}>Drag a template onto a folder to file it.</div> : null}
+            {!ro && tree.length ? <div style={{ fontSize: '11px', color: 'var(--subtle, #a1a1aa)', padding: '6px' }}>Drag a template onto a folder to file it.</div> : null}
           </div>
 
           {/* Gallery */}
@@ -340,7 +340,7 @@ export function TemplateLibrary({ workspaceId, onToast, onUse }: {
               ) : null}
               {builtIns.length ? (
                 <div style={{ marginTop: '18px' }}>
-                  <button type="button" onClick={() => setShowBuiltIns(!builtInsOpen)} style={{ ...link, color: '#52525b', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <button type="button" onClick={() => setShowBuiltIns(!builtInsOpen)} style={{ ...link, color: 'var(--muted, #52525b)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                     <span aria-hidden style={{ display: 'inline-block', transform: builtInsOpen ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>›</span>
                     Built-in text templates · {builtIns.length}
                     <span style={{ fontWeight: 400, color: MUTED }}>— CLOZR’s plain fallbacks, laid out under your letterhead</span>
@@ -353,7 +353,7 @@ export function TemplateLibrary({ workspaceId, onToast, onUse }: {
                 </div>
               ) : null}
               {archivedCount ? (
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '14px', fontSize: '12px', color: '#52525b' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '14px', fontSize: '12px', color: 'var(--muted, #52525b)' }}>
                   <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived ({archivedCount})
                 </label>
               ) : null}
@@ -363,7 +363,7 @@ export function TemplateLibrary({ workspaceId, onToast, onUse }: {
           {/* Editor / history (text templates) */}
           {draft ? (
           <div style={{ ...panel, flex: '4 1 520px', padding: '14px 16px' }}>
-            <button type="button" onClick={() => setDraft(null)} style={{ ...link, color: '#52525b', marginBottom: '10px' }}>← All templates</button>
+            <button type="button" onClick={() => setDraft(null)} style={{ ...link, color: 'var(--muted, #52525b)', marginBottom: '10px' }}>← All templates</button>
             {view === 'history' && selected ? (
               <History
                 current={selected} versions={versions} compareId={compareId} busy={busy || ro}
@@ -443,27 +443,27 @@ export function TemplateLibrary({ workspaceId, onToast, onUse }: {
                 <textarea ref={bodyRef} value={draft.body_md} disabled={ro} onChange={(e) => setDraft({ ...draft, body_md: e.target.value })} rows={20} spellCheck={false}
                   style={{ ...field, height: 'auto', padding: '10px', fontFamily: MONO, fontSize: '12px', lineHeight: 1.5, resize: 'vertical' }} />
                 {placed.length ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px', fontSize: '11.5px', color: '#52525b' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px', fontSize: '11.5px', color: 'var(--muted, #52525b)' }}>
                     Sections placed:
                     {placed.map((id) => {
                       const b = blocksById.get(id);
-                      return <span key={id} style={badge(b ? (b.locked ? '#6d28d9' : GREEN) : '#b91c1c', b ? (b.locked ? '#ede9fe' : '#E7F8F1') : '#fee2e2')}>{b ? `${b.name}${b.locked ? ' · locked' : ''}` : `#${id} deleted`}</span>;
+                      return <span key={id} style={badge(b ? (b.locked ? '#6d28d9' : GREEN) : '#b91c1c', b ? (b.locked ? 'var(--tint-violet, #ede9fe)' : 'var(--mint-dim, #e7f8f1)') : 'var(--negative-soft, #fee2e2)')}>{b ? `${b.name}${b.locked ? ' · locked' : ''}` : `#${id} deleted`}</span>;
                     })}
                   </div>
                 ) : null}
-                <details style={{ marginTop: '8px', fontSize: '12px', color: '#52525b' }}>
+                <details style={{ marginTop: '8px', fontSize: '12px', color: 'var(--muted, #52525b)' }}>
                   <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Variables and tokens you can use</summary>
                   <p style={{ margin: '6px 0', lineHeight: 1.5 }}>
                     {'{{deal.purchase_price|currency}}'} fills from the deal (formatters: currency, words, date:long, upper, default:&quot;N/A&quot;); {'{{#if property.state == "TX"}}…{{/if}}'} adds a rider; [Deal.EMD]-style tokens still work; {'{{sign:role}}'} places a signature; a line with --- starts a new page; {'{{block:12}}'} places a saved section. Click one to insert it.
                   </p>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '2px 12px' }}>
                     {VAR_HELP.map(([k, v]) => (
-                      <button key={k} type="button" disabled={ro} onClick={() => insertAtCursor(`{{${k}}}`)} style={{ ...link, fontWeight: 400, color: '#52525b', textAlign: 'left' }}>
+                      <button key={k} type="button" disabled={ro} onClick={() => insertAtCursor(`{{${k}}}`)} style={{ ...link, fontWeight: 400, color: 'var(--muted, #52525b)', textAlign: 'left' }}>
                         <code style={{ fontSize: '11px', color: GREEN }}>{`{{${k}}}`}</code> {v}
                       </button>
                     ))}
                     {TOKEN_HELP.filter(([n]) => /^[A-Z]/.test(n)).map(([n, v]) => (
-                      <button key={n} type="button" disabled={ro} onClick={() => insertAtCursor(`[${n}]`)} style={{ ...link, fontWeight: 400, color: '#52525b', textAlign: 'left' }}>
+                      <button key={n} type="button" disabled={ro} onClick={() => insertAtCursor(`[${n}]`)} style={{ ...link, fontWeight: 400, color: 'var(--muted, #52525b)', textAlign: 'left' }}>
                         <code style={{ fontSize: '11px' }}>[{n}]</code> {v}
                       </button>
                     ))}
@@ -521,7 +521,7 @@ function SectionPicker({ blocks, onPick, onClose }: { blocks: DocBlock[]; onPick
   const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
   const shown = blocks.filter((b) => terms.every((t) => `${b.name} ${(b.tags ?? []).join(' ')}`.toLowerCase().includes(t)));
   return (
-    <div style={{ border: `1px solid ${LINE}`, borderRadius: '10px', padding: '8px', marginBottom: '8px', background: '#fafafa' }}>
+    <div style={{ border: `1px solid ${LINE}`, borderRadius: '10px', padding: '8px', marginBottom: '8px', background: 'var(--canvas, #fafafa)' }}>
       <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
         <input autoFocus type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search sections by name or tag…" aria-label="Search sections" style={field} />
         <button type="button" onClick={onClose} style={btn()}>Close</button>
@@ -531,7 +531,7 @@ function SectionPicker({ blocks, onPick, onClose }: { blocks: DocBlock[]; onPick
         {shown.map((b) => (
           <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px', borderBottom: `1px solid ${HAIR}` }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '12.5px', fontWeight: 600 }}>{b.name} {b.locked ? <span style={badge('#6d28d9', '#ede9fe')}>Locked</span> : null}</div>
+              <div style={{ fontSize: '12.5px', fontWeight: 600 }}>{b.name} {b.locked ? <span style={badge('#6d28d9', 'var(--tint-violet, #ede9fe)')}>Locked</span> : null}</div>
               <div style={{ fontSize: '11.5px', color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.body}</div>
             </div>
             <button type="button" onClick={() => onPick(b, false)} title="Places {{block:id}}: the section's current text goes in when a contract is made" style={btn(true)}>Insert</button>
@@ -566,9 +566,9 @@ function History({ current, versions, compareId, busy, onCompare, onRestore, onB
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ fontWeight: 600 }}>{v.name}</span>
               <span style={{ color: MUTED }}> · {new Date(v.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} · used {v.used}×{v.built_in ? ' · built-in' : ''}</span>
-              {v.id !== current.id ? <span style={{ color: MUTED }}> · <span style={{ color: '#15803d' }}>+{st.added}</span> <span style={{ color: '#b91c1c' }}>−{st.removed}</span> lines to current</span> : null}
+              {v.id !== current.id ? <span style={{ color: MUTED }}> · <span style={{ color: 'var(--tx-green, #15803d)' }}>+{st.added}</span> <span style={{ color: 'var(--tx-red, #b91c1c)' }}>−{st.removed}</span> lines to current</span> : null}
             </span>
-            {v.id === current.id ? <span style={badge(GREEN, '#E7F8F1')}>Current</span> : (
+            {v.id === current.id ? <span style={badge(GREEN, 'var(--mint-dim, #e7f8f1)')}>Current</span> : (
               <>
                 <button type="button" onClick={() => onCompare(compareId === v.id ? null : v.id)} style={btn(compareId === v.id)}>{compareId === v.id ? 'Hide changes' : 'Compare'}</button>
                 <button type="button" disabled={busy} onClick={() => onRestore(v)} style={btn(false, busy)}>Restore</button>
@@ -582,10 +582,10 @@ function History({ current, versions, compareId, busy, onCompare, onRestore, onB
           <div style={{ fontSize: '12px', color: MUTED, marginBottom: '5px' }}>v{cmp.version ?? 1} → v{current.version ?? 1} (current). Red lines were taken out, green lines were added.</div>
           <div style={{ border: `1px solid ${LINE}`, borderRadius: '8px', maxHeight: '48vh', overflow: 'auto', fontFamily: MONO, fontSize: '11.5px', lineHeight: 1.5 }}>
             {diff.map((d, i) => (
-              <div key={i} style={{ display: 'flex', background: d.op === 'add' ? '#dcfce7' : d.op === 'del' ? '#fee2e2' : '#fff' }}>
-                <span style={{ width: '36px', flex: 'none', textAlign: 'right', paddingRight: '6px', color: '#a1a1aa', userSelect: 'none' }}>{d.a ?? ''}</span>
-                <span style={{ width: '36px', flex: 'none', textAlign: 'right', paddingRight: '6px', color: '#a1a1aa', userSelect: 'none' }}>{d.b ?? ''}</span>
-                <span style={{ width: '14px', flex: 'none', color: d.op === 'add' ? '#15803d' : d.op === 'del' ? '#b91c1c' : '#a1a1aa', userSelect: 'none' }}>{d.op === 'add' ? '+' : d.op === 'del' ? '−' : ' '}</span>
+              <div key={i} style={{ display: 'flex', background: d.op === 'add' ? 'var(--positive-soft, #dcfce7)' : d.op === 'del' ? 'var(--negative-soft, #fee2e2)' : 'var(--surface, #fff)' }}>
+                <span style={{ width: '36px', flex: 'none', textAlign: 'right', paddingRight: '6px', color: 'var(--subtle, #a1a1aa)', userSelect: 'none' }}>{d.a ?? ''}</span>
+                <span style={{ width: '36px', flex: 'none', textAlign: 'right', paddingRight: '6px', color: 'var(--subtle, #a1a1aa)', userSelect: 'none' }}>{d.b ?? ''}</span>
+                <span style={{ width: '14px', flex: 'none', color: d.op === 'add' ? '#15803d' : d.op === 'del' ? '#b91c1c' : 'var(--subtle, #a1a1aa)', userSelect: 'none' }}>{d.op === 'add' ? '+' : d.op === 'del' ? '−' : ' '}</span>
                 <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: INK, textDecoration: d.op === 'del' ? 'line-through' : 'none' }}>{d.text || ' '}</span>
               </div>
             ))}
@@ -646,7 +646,7 @@ function SectionsTab({ workspaceId, lib, ro, onToast, onChanged }: { workspaceId
               style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 0, borderBottom: `1px solid ${HAIR}`, background: draft?.id === b.id ? '#F0FBF6' : '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ fontSize: '13px', fontWeight: 600, flex: 1, minWidth: 0 }}>{b.name}</span>
-                {b.locked ? <span style={badge('#6d28d9', '#ede9fe')}>Locked</span> : null}
+                {b.locked ? <span style={badge('#6d28d9', 'var(--tint-violet, #ede9fe)')}>Locked</span> : null}
               </div>
               <div style={{ fontSize: '11.5px', color: MUTED, marginTop: '2px' }}>{(b.tags ?? []).map((t) => `#${t}`).join(' ') || 'No tags'} · in {usedBy(b.id).length} template{usedBy(b.id).length === 1 ? '' : 's'}</div>
             </button>
@@ -660,7 +660,7 @@ function SectionsTab({ workspaceId, lib, ro, onToast, onChanged }: { workspaceId
         {!ro ? (
           <div style={{ padding: '8px', borderTop: `1px solid ${HAIR}` }}>
             <button type="button" disabled={busy} onClick={() => void starters()} style={btn(false, busy)}>Add starter clauses</button>
-            <div style={{ fontSize: '11px', color: '#a1a1aa', marginTop: '4px' }}>EMD, inspection and option period, as-is, assignment, title company. Plain-language starting points for Texas; have your attorney review them.</div>
+            <div style={{ fontSize: '11px', color: 'var(--subtle, #a1a1aa)', marginTop: '4px' }}>EMD, inspection and option period, as-is, assignment, title company. Plain-language starting points for Texas; have your attorney review them.</div>
           </div>
         ) : null}
       </div>
@@ -690,7 +690,7 @@ function SectionsTab({ workspaceId, lib, ro, onToast, onChanged }: { workspaceId
                 <button type="button" disabled={busy || !draft.name.trim()} onClick={() => void save()} style={btn(true, busy || !draft.name.trim())}>{busy ? 'Saving…' : 'Save section'}</button>
                 <button type="button" onClick={() => setDraft(null)} style={btn()}>Close</button>
                 <span style={{ flex: 1 }} />
-                {draft.id ? <button type="button" disabled={busy} onClick={() => void remove()} style={{ ...btn(false, busy), color: '#b91c1c' }}>Delete</button> : null}
+                {draft.id ? <button type="button" disabled={busy} onClick={() => void remove()} style={{ ...btn(false, busy), color: 'var(--tx-red, #b91c1c)' }}>Delete</button> : null}
               </div>
             ) : null}
           </>

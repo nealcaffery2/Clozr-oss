@@ -9,7 +9,9 @@
 import { SmsFromPicker } from '@/components/SmsFromPicker';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ClozrView } from '@/app/clozr/view';
-import { MentionField } from './MentionField';
+import { MentionField, type Mentionable } from './MentionField';
+
+const NO_TEAM: Mentionable[] = [];
 import { ghostBtn, primaryBtn } from './ui';
 import { TemplatePicker } from '@/app/components/templates/TemplatePicker';
 import { TemplatesManager } from '@/app/components/templates/TemplatesManager';
@@ -19,6 +21,7 @@ import { displayName, useSession } from '@/lib/session';
 import { type Role, isAdmin } from '@/lib/team';
 import type { MessageTemplate } from '@/lib/message-templates';
 import { draftFor, keepDraft } from '@/lib/compose-drafts';
+import { useComposerText } from '@/app/clozr/composerStore';
 
 const CHANNEL_KEY = 'clozr.composer.channel';
 /**
@@ -39,6 +42,8 @@ function saveChannel(v: string) {
 
 export function Composer({ V, inputRef, docked }: { V: ClozrView; inputRef: React.MutableRefObject<HTMLTextAreaElement | null>; docked?: boolean }) {
   const pid = V.P.id;
+  // The box's text lives in composerStore: typing re-renders this component, not the view model.
+  const composerText = useComposerText();
   const tab = V.composerTab === 'Email' || V.composerTab === 'Note' ? V.composerTab : 'Text';
   const [subject, setSubject] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -87,6 +92,7 @@ export function Composer({ V, inputRef, docked }: { V: ClozrView; inputRef: Reac
 
   // Remember the channel you pick.
   const lastTab = useRef(tab);
+  const flushRef = useRef<(() => string) | null>(null);
   useEffect(() => { if (lastTab.current !== tab) { lastTab.current = tab; saveChannel(tab); setPickerOpen(false); } }, [tab]);
 
   // A draft per record. Switching records swaps the box's contents; typing saves.
@@ -98,14 +104,14 @@ export function Composer({ V, inputRef, docked }: { V: ClozrView; inputRef: Reac
       const d = draftFor(draftKey(pid));
       setSubject(d?.subject ?? '');
       setPickerOpen(false);
-      if (!V.composerText || V.composerText === prev) {
-        if ((d?.text ?? '') !== V.composerText) V.setComposerText(d?.text ?? '');
+      if (!composerText || composerText === prev) {
+        if ((d?.text ?? '') !== composerText) V.setComposerText(d?.text ?? '');
       }
       return;
     }
-    keepDraft(draftKey(pid), { text: V.composerText, subject });
+    keepDraft(draftKey(pid), { text: composerText, subject });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pid, V.composerText, subject]);
+  }, [pid, composerText, subject]);
 
   const blocked = tab === 'Email' && !email ? `Add an email address for ${first} under What we know to email them.`
     : tab === 'Text' && !phone ? `Add a phone number for ${first} under What we know to text them.` : '';
@@ -117,7 +123,9 @@ export function Composer({ V, inputRef, docked }: { V: ClozrView; inputRef: Reac
   // button, so the next note typed went to the record's letter keys instead.
   const send = () => {
     if (blocked) return;
-    void V.send(tab === 'Email' ? { subject: subject.trim() || street } : undefined);
+    // What is in the box now: the field hands typing to the app a beat late.
+    const text = flushRef.current?.() ?? composerText;
+    void V.send(tab === 'Email' ? { subject: subject.trim() || street, text } : { text });
     requestAnimationFrame(() => inputRef.current?.focus());
   };
   const onKeys = (e: React.KeyboardEvent) => {
@@ -219,13 +227,9 @@ export function Composer({ V, inputRef, docked }: { V: ClozrView; inputRef: Reac
             <input aria-label="Subject" placeholder={street || 'Subject'} value={subject} onChange={(e) => setSubject(e.target.value)} className="dc17"
               style={{ ...input, height: '40px', padding: '0 12px', minHeight: 0 }} />
           ) : null}
-          {tab === 'Note' ? (
-            <MentionField inputRef={inputRef} team={V.mentionTeam} className="dc17" value={V.composerText} onChange={V.setComposerText}
-              placeholder={V.composerPlaceholder + ' @ to mention'} rows={1} style={input} />
-          ) : (
-            <textarea ref={inputRef} aria-label={tab === 'Email' ? 'Email to ' + first : 'Text to ' + first} className="dc17" value={V.composerText} onChange={V.setComposer}
-              placeholder={V.composerPlaceholder} rows={1} style={input} />
-          )}
+          <MentionField inputRef={inputRef} flushRef={flushRef} team={tab === 'Note' ? V.mentionTeam : NO_TEAM} className="dc17" value={composerText} onChange={V.setComposerText}
+            aria-label={tab === 'Email' ? 'Email to ' + first : tab === 'Text' ? 'Text to ' + first : 'Note on ' + first}
+            placeholder={tab === 'Note' ? V.composerPlaceholder + ' @ to mention' : V.composerPlaceholder} rows={1} style={input} />
         </form>
       </div>
       </>
@@ -256,13 +260,9 @@ export function Composer({ V, inputRef, docked }: { V: ClozrView; inputRef: Reac
           <input aria-label="Subject" placeholder={street || 'Subject'} value={subject} onChange={(e) => setSubject(e.target.value)} className="dc17"
             style={{ ...box, height: '34px', padding: '0 12px' }} />
         ) : null}
-        {tab === 'Note' ? (
-          <MentionField inputRef={inputRef} team={V.mentionTeam} className="dc17" value={V.composerText} onChange={V.setComposerText}
-            placeholder={V.composerPlaceholder + ' @ to mention'} rows={2} style={box} />
-        ) : (
-          <textarea ref={inputRef} aria-label={tab === 'Email' ? 'Email to ' + first : 'Text to ' + first} className="dc17" value={V.composerText} onChange={V.setComposer}
-            placeholder={V.composerPlaceholder} rows={2} style={box} />
-        )}
+        <MentionField inputRef={inputRef} flushRef={flushRef} team={tab === 'Note' ? V.mentionTeam : NO_TEAM} className="dc17" value={composerText} onChange={V.setComposerText}
+            aria-label={tab === 'Email' ? 'Email to ' + first : tab === 'Text' ? 'Text to ' + first : 'Note on ' + first}
+            placeholder={tab === 'Note' ? V.composerPlaceholder + ' @ to mention' : V.composerPlaceholder} rows={2} style={box} />
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', minWidth: 0 }}>
           {templateBtn}
           {tab === 'Text' ? <SmsFromPicker compact /> : null}

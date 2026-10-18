@@ -1,0 +1,127 @@
+/* Reporting diagrams (components/reporting/diagrams). Colour lives here as
+   --dia-* so the diagrams can swap to the blueprint look in dark mode without
+   touching tokens.css. Light: one colour per category, cold-to-hot for funnel
+   stages, every colour with a word beside it. Dark: near-black paper, white and
+   grey strokes, a dotted grid, mono captions, and CLOZR green for the one node
+   that matters. */
+
+.dia {
+  --dia-paper: var(--surface, #fff);
+  --dia-paper-2: var(--surface-2, #fafafa);
+  --dia-ink: var(--ink, #18181b);
+  --dia-ink-2: var(--ink-2, #3f3f46);
+  --dia-muted: var(--muted, #71717a);
+  --dia-soft: #a1a1aa;
+  --dia-rule: var(--divider, #e4e4e7);
+  --dia-hair: var(--divider-2, #f0f0f1);
+  --dia-dot: transparent;
+  --dia-hi: #0A8560;
+  --dia-hi-tint: #E7F5EF;
+  --dia-caption-font: inherit;
+  --dia-mono: inherit;
+  /* Heat (lib/heat.ts): Cold at the top of a funnel, Hot at the close. */
+  --dia-heat-cold: #2563eb;
+  --dia-heat-cool: #0284c7;
+  --dia-heat-mild: #d97706;
+  --dia-heat-warm: #ea580c;
+  --dia-heat-hot: #dc2626;
+  --dia-heat-hot-2: #b91c1c;
+  /* Categories (sources, systems, roles): validated with the dataviz palette script. */
+  --dia-cat-1: #2563eb;
+  --dia-cat-2: #ea580c;
+  --dia-cat-3: #0d9488;
+  --dia-cat-4: #7c3aed;
+  --dia-cat-5: #db2777;
+  --dia-cat-6: #b45309;
+  --dia-cat-7: #0A8560;
+  --dia-cat-8: #9f1239;
+  --dia-cat-other: #71717a;
+  --dia-ribbon-opacity: 0.55;
+  --dia-ribbon-hover: 0.85;
+  --dia-marker: #0A8560;
+  --dia-node-fill: var(--dia-paper);
+  --dia-node-stroke: var(--dia-ink);
+  position: relative;
+  background: var(--dia-paper);
+  color: var(--dia-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-theme="dark"] .dia,
+.dia[data-theme="dark"] {
+  --dia-paper: #0a0a0a;
+  --dia-paper-2: #141414;
+  --dia-ink: #e5e5e5;
+  --dia-ink-2: #d4d4d4;
+  --dia-muted: #a3a3a3;
+  --dia-soft: #737373;
+  --dia-rule: #404040;
+  --dia-hair: #262626;
+  --dia-dot: rgba(229, 229, 229, 0.16);
+  --dia-hi: #0A8560;
+  --dia-hi-tint: rgba(10, 133, 96, 0.18);
+  --dia-caption-font: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --dia-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --dia-heat-cold: #525252;
+  --dia-heat-cool: #737373;
+  --dia-heat-mild: #8a8a8a;
+  --dia-heat-warm: #a3a3a3;
+  --dia-heat-hot: #d4d4d4;
+  --dia-heat-hot-2: #e5e5e5;
+  --dia-cat-1: #e5e5e5;
+  --dia-cat-2: #a3a3a3;
+  --dia-cat-3: #737373;
+  --dia-cat-4: #d4d4d4;
+  --dia-cat-5: #8a8a8a;
+  --dia-cat-6: #525252;
+  --dia-cat-7: #bdbdbd;
+  --dia-cat-8: #636363;
+  --dia-cat-other: #404040;
+  --dia-ribbon-opacity: 0.5;
+  --dia-ribbon-hover: 0.9;
+  --dia-marker: #e5e5e5;
+  --dia-node-fill: #0a0a0a;
+  --dia-node-stroke: #e5e5e5;
+}
+
+.dia-head { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--dia-hair); }
+.dia-head h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--dia-ink); }
+.dia-head p { margin: 2px 0 0; font-size: 11.5px; color: var(--dia-muted); font-family: var(--dia-caption-font); }
+.dia-dl {
+  flex: none; margin-left: auto; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--dia-rule);
+  background: var(--dia-paper); color: var(--dia-ink); font: 500 12px/1 inherit; font-family: inherit; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; touch-action: manipulation;
+}
+.dia-dl svg { width: 14px; height: 14px; }
+@media (hover: hover) and (pointer: fine) { .dia-dl:hover { background: var(--dia-paper-2); } }
+.dia-dl:focus-visible, .dia-node:focus-visible { outline: 2px solid var(--dia-hi); outline-offset: 2px; }
+.dia-dl:active { transform: scale(.97); }
+
+.dia-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
+.dia-svg { display: block; }
+.dia-svg text { font-family: inherit; }
+.dia-svg .dia-mono { font-family: var(--dia-mono); }
+.dia-node { cursor: default; outline: none; }
+.dia-node:focus-visible rect, .dia-node:focus-visible circle, .dia-node:focus-visible polygon { stroke: var(--dia-hi); stroke-width: 2; }
+.dia-ribbon { opacity: var(--dia-ribbon-opacity); transition: opacity 120ms ease; }
+.dia-ribbon:hover, .dia-ribbon:focus-visible { opacity: var(--dia-ribbon-hover); }
+
+.dia-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 16px 12px; font-size: 11.5px; color: var(--dia-ink-2); border-top: 1px solid var(--dia-hair); font-family: var(--dia-caption-font); }
+.dia-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.dia-legend i { width: 14px; height: 8px; border-radius: 2px; display: inline-block; }
+.dia-empty { padding: 22px 16px; font-size: 12.5px; color: var(--dia-muted); }
+
+.dia-tip {
+  position: absolute; z-index: 3; pointer-events: none; max-width: 260px;
+  padding: 6px 9px; border-radius: 8px; font-size: 11.5px; line-height: 1.4;
+  background: var(--dia-ink); color: var(--dia-paper); white-space: pre-line;
+  font-family: var(--dia-caption-font); font-variant-numeric: tabular-nums;
+}
+.dia-tip b { font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .dia-ribbon { transition: none; } }
+
+/* Per-diagram dark-mode highlights: one green element per diagram, the rest grey. */
+:root[data-theme="dark"] .dia .dia-funnel-worst,
+:root[data-theme="dark"] .dia .dia-hi-dark { fill: var(--dia-hi); }
+:root[data-theme="dark"] .dia .dia-hi-dark-stroke { stroke: var(--dia-hi); }
+:root[data-theme="dark"] .dia .dia-on-fill { display: none; }

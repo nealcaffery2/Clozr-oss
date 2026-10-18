@@ -107,6 +107,55 @@ export function outboundAllowedNow(s: AgentSettings, nowMs: number): boolean {
   return withinHours(s.call_handling.call_hours, nowMs);
 }
 
+// ---- Numbers that never connect --------------------------------------------------
+
+/**
+ * Why an outbound call never rang through, from the error ElevenLabs gives
+ * back: 'busy' when the far end refused it (SIP 486/600 busy, 603 declined,
+ * which is what a call blocker or a full line answers every time), 'unreachable'
+ * when the carrier never answered or has no such line (timed out, 404, 408,
+ * 410, 480, 484). Anything else (a 5xx, a refused request, ElevenLabs down) is
+ * our side or theirs for a moment, never the lead's number: null.
+ */
+export type DialFailure = 'busy' | 'unreachable';
+export function dialFailure(reason: string): DialFailure | null {
+  const r = reason.toLowerCase();
+  if (/\b(486|600|603)\b/.test(r) || /\bbusy\b|\bdeclined?\b/.test(r)) return 'busy';
+  if (/\b(404|408|410|480|484)\b/.test(r) || /timed out|timeout|not found|temporarily unavailable|no answer/.test(r)) return 'unreachable';
+  return null;
+}
+
+/** Dial failures in a row on one number before the agent stops calling it. */
+export const DIAL_FAILURE_LIMIT = 3;
+/** A busy or dead line is not retried sooner than this: the same number answers the same way six hours later. */
+export const DIAL_RETRY_HOURS = 24;
+
+/** The tag a dial failure's reason carries, so a new number on the record starts a fresh count. */
+export const dialedTag = (key: string) => `[to ${key}]`;
+const TAG_RE = /\[to (\d+)\]/;
+
+/**
+ * How many dial failures in a row the number `key` has had, from the record's
+ * call_placed actions, newest first. A placed call ends the run. Failures that
+ * say nothing about the number (outside call hours, a paused line, ElevenLabs
+ * trouble) are passed over. A failure tagged with another number is passed over
+ * too; an untagged one (written before the tag) counts, since the number on file
+ * then is the number on file now unless someone changed it.
+ */
+export function dialFailureStreak(rows: { status: string; summary: string | null }[], key: string): number {
+  let n = 0;
+  for (const r of rows) {
+    if (r.status === 'done') break;
+    if (r.status !== 'failed') continue;
+    const s = r.summary ?? '';
+    if (!dialFailure(s)) continue;
+    const tagged = TAG_RE.exec(s)?.[1];
+    if (tagged && tagged !== key) continue;
+    n++;
+  }
+  return n;
+}
+
 // ---- Stats ----------------------------------------------------------------------
 
 export type CallRow = {

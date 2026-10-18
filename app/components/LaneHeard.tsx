@@ -13,7 +13,7 @@ import { supabase } from '@/lib/supabase';
 const KIND: Record<LaneUpdate['kind'], string> = {
   tick: 'Checklist', task_done: 'Task done', date: 'Date', task_add: 'New task', party: 'Deal team', note: 'Note',
 };
-const btn: React.CSSProperties = { height: '26px', padding: '0 10px', borderRadius: '7px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#18181b', whiteSpace: 'nowrap' };
+const btn: React.CSSProperties = { height: '26px', padding: '0 10px', borderRadius: '7px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px', cursor: 'pointer', color: 'var(--ink, #18181b)', whiteSpace: 'nowrap' };
 const ago = (iso: string) => {
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
   return m < 60 ? `${Math.max(1, m)}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -68,14 +68,14 @@ export function LaneHeard({ transactionId, workspaceId, me, canWrite, onChanged,
   };
 
   const row = (u: LaneUpdate) => (
-    <div key={u.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: '10px', alignItems: 'start', padding: '9px 0', borderTop: '1px solid #f0f0f1', opacity: u.status === 'undone' ? 0.55 : 1 }}>
+    <div key={u.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: '10px', alignItems: 'start', padding: '9px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)', opacity: u.status === 'undone' ? 0.55 : 1 }}>
       <span style={{ minWidth: 0 }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--c-lane)' }}>{KIND[u.kind]}</span>
-          <span style={{ fontSize: '13px', fontWeight: 600, color: '#18181b', textDecoration: u.status === 'undone' ? 'line-through' : 'none' }}>{u.summary}</span>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ink, #18181b)', textDecoration: u.status === 'undone' ? 'line-through' : 'none' }}>{u.summary}</span>
         </span>
-        {u.evidence ? <span style={{ display: 'block', fontSize: '11.5px', color: '#71717a', marginTop: '2px', lineHeight: 1.45 }}>“{u.evidence}”</span> : null}
-        <span style={{ display: 'block', fontSize: '10.5px', color: '#a1a1aa', marginTop: '2px' }}>
+        {u.evidence ? <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)', marginTop: '2px', lineHeight: 1.45 }}>“{u.evidence}”</span> : null}
+        <span style={{ display: 'block', fontSize: '10.5px', color: 'var(--subtle, #a1a1aa)', marginTop: '2px' }}>
           {ago(u.created_at)}{u.status === 'applied' && !u.decided_by ? ' · applied by Lane' : u.status === 'applied' ? ' · accepted' : u.status === 'undone' ? ' · undone' : u.confidence === 'medium' ? ' · check this one' : ''}
         </span>
       </span>
@@ -95,14 +95,14 @@ export function LaneHeard({ transactionId, workspaceId, me, canWrite, onChanged,
   );
 
   return (
-    <div style={{ background: '#fff', border: '1px solid #e4e4e7', borderTop: '3px solid var(--c-lane)', borderRadius: '12px', padding: '12px 16px', marginBottom: '14px' }}>
+    <div style={{ background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderTop: '3px solid var(--c-lane)', borderRadius: '12px', padding: '12px 16px', marginBottom: '14px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
         <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--c-lane)' }}>Lane heard</span>
-        <span style={{ fontSize: '12px', color: '#71717a' }}>
+        <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>
           {rows === null ? 'Loading…' : pending.length ? `${pending.length} to review` : 'Nothing waiting'} · calls, texts, email and tasks with seller, buyer and title
         </span>
         <div style={{ flex: 1 }} />
-        {done.length ? <button style={{ ...btn, border: 0, color: '#71717a' }} onClick={() => setShowDone((v) => !v)}>{showDone ? 'Hide' : 'Show'} what Lane applied ({done.length})</button> : null}
+        {done.length ? <button style={{ ...btn, border: 0, color: 'var(--meta, #71717a)' }} onClick={() => setShowDone((v) => !v)}>{showDone ? 'Hide' : 'Show'} what Lane applied ({done.length})</button> : null}
         {canWrite ? <button style={btn} disabled={busy === 'catch'} onClick={() => void catchUp()}>{busy === 'catch' ? 'Listening…' : 'Catch Lane up'}</button> : null}
       </div>
       {pending.map(row)}

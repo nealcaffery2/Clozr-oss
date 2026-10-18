@@ -41,17 +41,17 @@ type Props = {
 };
 type SignerLite = { contract_id: number; role: string; label: string | null; name: string | null; email: string | null; status: string; signed_at: string | null; viewed_at?: string | null; view_seconds?: number | null; last_delivery_status?: string | null };
 
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
 const h2: React.CSSProperties = { margin: 0, fontSize: '14px', fontWeight: 700, letterSpacing: '-0.01em' };
-const sub: React.CSSProperties = { margin: '2px 0 0', fontSize: '12px', color: '#71717a' };
-const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: '#71717a', fontWeight: 600, marginBottom: '5px' };
-const field: React.CSSProperties = { width: '100%', height: '34px', padding: '0 10px', border: '1px solid #e4e4e7', borderRadius: '9px', fontSize: '13px', outline: 0, background: '#fafafa', color: '#18181b' };
+const sub: React.CSSProperties = { margin: '2px 0 0', fontSize: '12px', color: 'var(--meta, #71717a)' };
+const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600, marginBottom: '5px' };
+const field: React.CSSProperties = { width: '100%', height: '34px', padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', fontSize: '13px', outline: 0, background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)' };
 const btn = (primary = false, disabled = false): React.CSSProperties => ({
   height: '30px', padding: '0 11px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
-  border: `1px solid ${primary ? '#0A8560' : '#e4e4e7'}`, background: primary ? (disabled ? '#7fcbb2' : '#0A8560') : '#fff', color: primary ? '#fff' : '#18181b', opacity: !primary && disabled ? 0.6 : 1,
+  border: `1px solid ${primary ? '#0A8560' : 'var(--divider, #e4e4e7)'}`, background: primary ? (disabled ? '#7fcbb2' : '#0A8560') : '#fff', color: primary ? '#fff' : '#18181b', opacity: !primary && disabled ? 0.6 : 1,
 });
 const SIGN_SUBJECT = 'Please review and sign';
-const link: React.CSSProperties = { fontSize: '12px', color: '#0A8560', background: 'none', border: 0, cursor: 'pointer', padding: 0, fontWeight: 500 };
+const link: React.CSSProperties = { fontSize: '12px', color: 'var(--tx-mint, #0a8560)', background: 'none', border: 0, cursor: 'pointer', padding: 0, fontWeight: 500 };
 const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null);
 // [Fill.ForwardingAddress] from an imported Word template reads as "Forwarding address".
 const tokenLabel = (name: string) => TOKEN_HELP.find(([n]) => n === name)?.[1] ?? VAR_HELP.find(([n]) => n === name)?.[1]
@@ -61,18 +61,18 @@ const tokenLabel = (name: string) => TOKEN_HELP.find(([n]) => n === name)?.[1] ?
 const ContractFieldsDialog = React.lazy(() => import('@/components/PdfFieldDialogs').then((m) => ({ default: m.ContractFieldsDialog })));
 
 const DOC_CSS = `
-.cz-doc { font: 13px/1.55 Georgia, 'Times New Roman', serif; color: #18181b; background: #fff; padding: 28px 32px; }
+.cz-doc { font: 13px/1.55 Georgia, 'Times New Roman', serif; color: var(--ink, #18181b); background: var(--surface, #fff); padding: 28px 32px; }
 .cz-doc h1 { font: 700 17px/1.25 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; text-transform: uppercase; text-align: center; margin: 18px 0 12px; }
 .cz-doc h2 { font: 700 14px/1.3 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 16px 0 6px; }
-.cz-doc h3 { font: 700 11px/1.3 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; text-transform: uppercase; letter-spacing: .06em; color: #3f3f46; margin: 14px 0 5px; }
-.cz-doc .small { font: 11px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #71717a; }
+.cz-doc h3 { font: 700 11px/1.3 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3, #3f3f46); margin: 14px 0 5px; }
+.cz-doc .small { font: 11px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: var(--meta, #71717a); }
 .cz-doc p { margin: 0 0 8px; } .cz-doc ul { margin: 0 0 8px 20px; padding: 0; }
-.cz-doc hr.page { border: 0; border-top: 1px dashed #d4d4d8; margin: 22px 0; }
-.cz-doc .sig { border: 1px solid #e4e4e7; border-radius: 8px; padding: 10px 12px; margin: 12px 0; background: #fafafa; }
-.cz-doc .sig-label { font: 700 10px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; letter-spacing: .1em; text-transform: uppercase; color: #71717a; }
-.cz-doc .sig-line { height: 40px; display: flex; align-items: flex-end; border-bottom: 1px solid #18181b; margin: 4px 0; }
-.cz-doc .sig-line .blank { color: #a1a1aa; font: 11px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding-bottom: 3px; }
-.cz-doc .sig-meta { font: 11px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #52525b; }
+.cz-doc hr.page { border: 0; border-top: 1px dashed var(--line, #d4d4d8); margin: 22px 0; }
+.cz-doc .sig { border: 1px solid var(--divider, #e4e4e7); border-radius: 8px; padding: 10px 12px; margin: 12px 0; background: var(--canvas, #fafafa); }
+.cz-doc .sig-label { font: 700 10px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; letter-spacing: .1em; text-transform: uppercase; color: var(--meta, #71717a); }
+.cz-doc .sig-line { height: 40px; display: flex; align-items: flex-end; border-bottom: 1px solid var(--ink, #18181b); margin: 4px 0; }
+.cz-doc .sig-line .blank { color: var(--subtle, #a1a1aa); font: 11px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding-bottom: 3px; }
+.cz-doc .sig-meta { font: 11px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: var(--muted, #52525b); }
 `;
 
 export function ContractsCard({ workspaceId, sellerId, dealId, buyerId, seller, buyer, canWrite, compact, onToast, onChanged, onNewContract, startTemplateId }: Props) {
@@ -192,8 +192,8 @@ export function ContractsCard({ workspaceId, sellerId, dealId, buyerId, seller, 
       ) : null}
 
       <div style={{ marginTop: '12px' }}>
-        {rows === null ? <div style={{ fontSize: '12.5px', color: '#a1a1aa' }}>Loading…</div>
-          : rows.length === 0 ? <div style={{ fontSize: '12.5px', color: '#a1a1aa' }}>No contracts yet.</div>
+        {rows === null ? <div style={{ fontSize: '12.5px', color: 'var(--subtle, #a1a1aa)' }}>Loading…</div>
+          : rows.length === 0 ? <div style={{ fontSize: '12.5px', color: 'var(--subtle, #a1a1aa)' }}>No contracts yet.</div>
           : rows.map((c) => {
             const partly = ['sent', 'viewed'].includes(c.status) && signers.some((s) => s.contract_id === c.id && (s.status === 'signed' || s.status === 'filled'));
             const st = partly ? { ...statusLabel(c.status), text: 'Partially signed' } : statusLabel(c.status);
@@ -209,18 +209,18 @@ export function ContractsCard({ workspaceId, sellerId, dealId, buyerId, seller, 
             const ls = links[c.id];
             const showPeople = c.provider === 'clozr' && (people[c.id] ?? (c.status === 'awaiting_approval' || (c.status === 'draft' && !!(c as ContractRow & { approval_rejected_reason?: string | null }).approval_rejected_reason)));
             return (
-              <div key={c.id} style={{ borderTop: '1px solid #f0f0f1', padding: '10px 0' }}>
+              <div key={c.id} style={{ borderTop: '1px solid var(--divider-2, #f0f0f1)', padding: '10px 0' }}>
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: '180px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: '13px', fontWeight: 600 }}>{c.name}</span>
                       <span style={{ fontSize: '11px', fontWeight: 700, color: st.color, background: st.bg, padding: '2px 7px', borderRadius: '6px' }}>{st.text}</span>
-                      {c.provider === 'pandadoc' ? <span style={{ fontSize: '11.5px', color: '#71717a' }}>PandaDoc</span> : null}
+                      {c.provider === 'pandadoc' ? <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>PandaDoc</span> : null}
                     </div>
-                    <div style={{ fontSize: '11.5px', color: '#71717a', marginTop: '2px' }}>{KIND_LABELS[(c.kind as ContractKind)] ?? c.kind} · {when}{who ? ` · ${who}` : ''}</div>
-                    {c.provider === 'clozr' ? <div style={{ fontSize: '11.5px', color: '#52525b', marginTop: '2px' }}>Only the email on each signer can open the link.{c.needs_notary ? ` · Notary: ${c.notary_status || c.notary_mode}` : ''}</div> : null}
+                    <div style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', marginTop: '2px' }}>{KIND_LABELS[(c.kind as ContractKind)] ?? c.kind} · {when}{who ? ` · ${who}` : ''}</div>
+                    {c.provider === 'clozr' ? <div style={{ fontSize: '11.5px', color: 'var(--muted, #52525b)', marginTop: '2px' }}>Only the email on each signer can open the link.{c.needs_notary ? ` · Notary: ${c.notary_status || c.notary_mode}` : ''}</div> : null}
                     {mine.some((s) => s.viewed_at || s.signed_at) ? (
-                      <div style={{ fontSize: '11.5px', color: '#3f3f46', marginTop: '3px' }}>
+                      <div style={{ fontSize: '11.5px', color: 'var(--ink-3, #3f3f46)', marginTop: '3px' }}>
                         {mine.map((s) => {
                           const mins = s.view_seconds ? `${Math.max(1, Math.round(s.view_seconds / 60))} min open` : null;
                           const bits = [s.label || s.role, s.status === 'signed' ? `signed ${fmtDate(s.signed_at)}` : s.viewed_at ? `viewed ${fmtDate(s.viewed_at)}` : null, mins].filter(Boolean);
@@ -229,11 +229,11 @@ export function ContractsCard({ workspaceId, sellerId, dealId, buyerId, seller, 
                       </div>
                     ) : null}
                     {mine.some((s) => ['bounced', 'failed', 'complained'].includes(String(s.last_delivery_status))) ? (
-                      <div style={{ fontSize: '11.5px', color: '#b91c1c', marginTop: '3px' }}>
+                      <div style={{ fontSize: '11.5px', color: 'var(--tx-red, #b91c1c)', marginTop: '3px' }}>
                         Email did not arrive: {mine.filter((s) => ['bounced', 'failed', 'complained'].includes(String(s.last_delivery_status))).map((s) => `${s.name || s.label || s.role} (${s.email})`).join(', ')}. Fix the address under Recipients and resend.
                       </div>
                     ) : null}
-                    {err ? <div style={{ fontSize: '11.5px', color: '#b91c1c', marginTop: '2px' }}>{err}</div> : null}
+                    {err ? <div style={{ fontSize: '11.5px', color: 'var(--tx-red, #b91c1c)', marginTop: '2px' }}>{err}</div> : null}
                   </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                     {c.pdf_path || c.status === 'completed' ? <button type="button" style={link} onClick={() => setTerms((t) => ({ ...t, [c.id]: !t[c.id] }))}>{terms[c.id] ? 'Hide terms' : c.extract_status === 'running' ? 'Reading terms…' : 'Terms'}</button> : null}
@@ -243,18 +243,18 @@ export function ContractsCard({ workspaceId, sellerId, dealId, buyerId, seller, 
                         <button type="button" style={link} onClick={() => setPeople((p) => ({ ...p, [c.id]: !showPeople }))}>{showPeople ? 'Hide recipients' : c.status === 'awaiting_approval' ? 'Approval' : 'Recipients'}</button>
                         {canWrite && draft && isPdfContract(c) ? <button type="button" style={link} disabled={!!busy} onClick={() => setFieldsFor(c)} title="The filled-in contract: change anything on the page, then send">Review &amp; send</button> : null}
                         {canWrite && draft ? <button type="button" style={link} disabled={!!busy} onClick={() => act('send', c)}>{busy === `send:${c.id}` ? 'Sending…' : 'Send'}</button> : null}
-                        {canWrite && !draft && !done ? <button type="button" style={{ ...link, color: '#52525b' }} disabled={!!busy} onClick={() => act('remind', c)}>Remind</button> : null}
-                        <button type="button" style={{ ...link, color: '#52525b' }} disabled={!!busy} onClick={() => act('pdf', c)}>{busy === `pdf:${c.id}` ? 'Fetching…' : 'PDF'}</button>
-                        {canWrite && ['sent', 'viewed', 'expired'].includes(c.status) ? <button type="button" style={{ ...link, color: '#52525b' }} disabled={!!busy} onClick={() => act('extend', c)}>{c.status === 'expired' ? 'Revive' : 'Extend'}</button> : null}
-                        {canWrite && ['sent', 'viewed', 'declined', 'expired', 'awaiting_approval'].includes(c.status) ? <button type="button" style={{ ...link, color: '#52525b' }} disabled={!!busy} onClick={() => act('correct', c)} title="Back to a draft: fix it and send it again">Edit &amp; resend</button> : null}
-                        {canWrite ? <button type="button" style={{ ...link, color: '#52525b' }} disabled={!!busy} onClick={() => act('duplicate', c)}>Duplicate</button> : null}
-                        {canWrite && !done ? <button type="button" style={{ ...link, color: '#b91c1c' }} disabled={!!busy} onClick={() => act('void', c)}>Void</button> : null}
-                        {canWrite && ['draft', 'voided', 'declined', 'expired'].includes(c.status) ? <button type="button" style={{ ...link, color: '#b91c1c' }} disabled={!!busy} onClick={() => act('delete', c)}>Delete</button> : null}
+                        {canWrite && !draft && !done ? <button type="button" style={{ ...link, color: 'var(--muted, #52525b)' }} disabled={!!busy} onClick={() => act('remind', c)}>Remind</button> : null}
+                        <button type="button" style={{ ...link, color: 'var(--muted, #52525b)' }} disabled={!!busy} onClick={() => act('pdf', c)}>{busy === `pdf:${c.id}` ? 'Fetching…' : 'PDF'}</button>
+                        {canWrite && ['sent', 'viewed', 'expired'].includes(c.status) ? <button type="button" style={{ ...link, color: 'var(--muted, #52525b)' }} disabled={!!busy} onClick={() => act('extend', c)}>{c.status === 'expired' ? 'Revive' : 'Extend'}</button> : null}
+                        {canWrite && ['sent', 'viewed', 'declined', 'expired', 'awaiting_approval'].includes(c.status) ? <button type="button" style={{ ...link, color: 'var(--muted, #52525b)' }} disabled={!!busy} onClick={() => act('correct', c)} title="Back to a draft: fix it and send it again">Edit &amp; resend</button> : null}
+                        {canWrite ? <button type="button" style={{ ...link, color: 'var(--muted, #52525b)' }} disabled={!!busy} onClick={() => act('duplicate', c)}>Duplicate</button> : null}
+                        {canWrite && !done ? <button type="button" style={{ ...link, color: 'var(--tx-red, #b91c1c)' }} disabled={!!busy} onClick={() => act('void', c)}>Void</button> : null}
+                        {canWrite && ['draft', 'voided', 'declined', 'expired'].includes(c.status) ? <button type="button" style={{ ...link, color: 'var(--tx-red, #b91c1c)' }} disabled={!!busy} onClick={() => act('delete', c)}>Delete</button> : null}
                         {canWrite ? (
                           <>
                             <button type="button" style={link} disabled={!!busy} onClick={() => act('notary-digital', c)}>Email notary</button>
-                            <button type="button" style={{ ...link, color: '#52525b' }} disabled={!!busy} onClick={() => act('notary-wet', c)}>Print & stamp</button>
-                            <button type="button" style={{ ...link, color: '#52525b' }} disabled={!!busy} onClick={() => act('notary-vendor', c)}>Vendor</button>
+                            <button type="button" style={{ ...link, color: 'var(--muted, #52525b)' }} disabled={!!busy} onClick={() => act('notary-wet', c)}>Print & stamp</button>
+                            <button type="button" style={{ ...link, color: 'var(--muted, #52525b)' }} disabled={!!busy} onClick={() => act('notary-vendor', c)}>Vendor</button>
                           </>
                         ) : null}
                       </>
@@ -286,19 +286,19 @@ export function ContractsCard({ workspaceId, sellerId, dealId, buyerId, seller, 
 function PandaLinks({ recipients, onToast, waiting }: { recipients: Recipient[]; onToast: (m: string) => void; waiting: boolean }) {
   const links = sharedLinks(recipients);
   if (!links.length) {
-    return waiting ? <div style={{ marginTop: '6px', fontSize: '12px', color: '#71717a' }}>Waiting on PandaDoc. After Casey sends, each signer’s link lands here.</div> : null;
+    return waiting ? <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--meta, #71717a)' }}>Waiting on PandaDoc. After Casey sends, each signer’s link lands here.</div> : null;
   }
   const copy = (url: string, who: string) => { void navigator.clipboard?.writeText(url).then(() => onToast(`Link for ${who} copied`)); };
   return (
-    <div style={{ marginTop: '8px', padding: '10px 12px', background: '#fafafa', border: '1px solid #e4e4e7', borderRadius: '9px' }}>
+    <div style={{ marginTop: '8px', padding: '10px 12px', background: 'var(--canvas, #fafafa)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px' }}>
       {links.map((s, i) => {
         const who = s.name || s.email || s.role || 'Signer';
         const mail = s.email ? `mailto:${s.email}?subject=${encodeURIComponent('Please review and sign')}&body=${encodeURIComponent(`Here is the document to review and sign:\n${s.url}`)}` : null;
         return (
           <div key={`${s.url}-${i}`} style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', padding: '5px 0', fontSize: '12.5px' }}>
             <span style={{ fontWeight: 600, minWidth: '90px' }}>{s.role || 'Signer'}</span>
-            <span style={{ color: '#52525b', flex: 1, minWidth: '120px' }}>{who}{s.email && s.name ? ` · ${s.email}` : ''}</span>
-            <span style={{ fontSize: '11px', fontWeight: 700, color: s.done ? '#0A8560' : '#71717a' }}>{s.done ? 'Signed' : 'Waiting'}</span>
+            <span style={{ color: 'var(--muted, #52525b)', flex: 1, minWidth: '120px' }}>{who}{s.email && s.name ? ` · ${s.email}` : ''}</span>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: s.done ? 'var(--tx-mint, #0a8560)' : 'var(--meta, #71717a)' }}>{s.done ? 'Signed' : 'Waiting'}</span>
             {!s.done ? (
               <span style={{ display: 'flex', gap: '8px' }}>
                 <button type="button" style={link} onClick={() => copy(s.url, who)}>Copy link</button>
@@ -315,25 +315,25 @@ function PandaLinks({ recipients, onToast, waiting }: { recipients: Recipient[];
 function SignerLinks({ signers, onToast }: { signers: SignerLink[]; onToast: (m: string) => void }) {
   const copy = (s: SignerLink) => { void navigator.clipboard?.writeText(s.url).then(() => onToast(`Link for ${s.name || s.label || s.role} copied`)); };
   return (
-    <div style={{ marginTop: '8px', padding: '10px 12px', background: '#fafafa', border: '1px solid #e4e4e7', borderRadius: '9px' }}>
+    <div style={{ marginTop: '8px', padding: '10px 12px', background: 'var(--canvas, #fafafa)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px' }}>
       {signers.map((s) => {
         // A CC or viewer is copied: they get the signed copy, never a "review and sign" link.
         if (s.recipient_type === 'cc' || s.recipient_type === 'viewer') {
           return (
             <div key={s.id} style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', padding: '5px 0', fontSize: '12.5px' }}>
               <span style={{ fontWeight: 600, minWidth: '90px' }}>{s.label || (s.recipient_type === 'cc' ? 'CC' : 'Viewer')}</span>
-              <span style={{ color: '#52525b', flex: 1, minWidth: '120px' }}>{s.name || '—'}{s.email ? ` · ${s.email}` : ''}</span>
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#71717a' }}>{s.recipient_type === 'cc' ? 'Gets the signed copy' : 'Can view'}</span>
+              <span style={{ color: 'var(--muted, #52525b)', flex: 1, minWidth: '120px' }}>{s.name || '—'}{s.email ? ` · ${s.email}` : ''}</span>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--meta, #71717a)' }}>{s.recipient_type === 'cc' ? 'Gets the signed copy' : 'Can view'}</span>
             </div>
           );
         }
-        const st = s.status === 'signed' ? { text: 'Signed', color: '#15803d' } : s.status === 'viewed' ? { text: 'Viewed', color: '#b45309' } : s.status === 'declined' ? { text: 'Declined', color: '#b91c1c' } : { text: 'Waiting', color: '#71717a' };
+        const st = s.status === 'signed' ? { text: 'Signed', color: 'var(--tx-green, #15803d)' } : s.status === 'viewed' ? { text: 'Viewed', color: 'var(--tx-amber, #b45309)' } : s.status === 'declined' ? { text: 'Declined', color: 'var(--tx-red, #b91c1c)' } : { text: 'Waiting', color: 'var(--meta, #71717a)' };
         const sms = s.phone ? `sms:${s.phone.replace(/[^\d+]/g, '')}?&body=${encodeURIComponent(`Here is the document to review and sign: ${s.url}`)}` : null;
         const mail = s.email ? `mailto:${s.email}?subject=${encodeURIComponent('Please review and sign')}&body=${encodeURIComponent(`Here is the document to review and sign:\n${s.url}`)}` : null;
         return (
           <div key={s.id} style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', padding: '5px 0', fontSize: '12.5px' }}>
             <span style={{ fontWeight: 600, minWidth: '90px' }}>{s.label || s.role}</span>
-            <span style={{ color: '#52525b', flex: 1, minWidth: '120px' }}>{s.name || '—'}{s.email ? ` · ${s.email}` : ''}{s.phone ? ` · ${s.phone}` : ''}</span>
+            <span style={{ color: 'var(--muted, #52525b)', flex: 1, minWidth: '120px' }}>{s.name || '—'}{s.email ? ` · ${s.email}` : ''}{s.phone ? ` · ${s.phone}` : ''}</span>
             <span style={{ fontSize: '11px', fontWeight: 700, color: st.color }}>{st.text}</span>
             {s.status !== 'signed' ? (
               <span style={{ display: 'flex', gap: '8px' }}>
@@ -376,9 +376,9 @@ type RoleType = 'signer' | 'filler' | 'cc';
 function StepHead({ n, title, hint }: { n: number; title: string; hint?: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '14px 0 6px' }}>
-      <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#18181b', color: '#fff', fontSize: '11px', fontWeight: 700, display: 'inline-grid', placeItems: 'center', flex: 'none' }}>{n}</span>
-      <span style={{ fontSize: '13px', fontWeight: 700, color: '#18181b' }}>{title}</span>
-      {hint ? <span style={{ fontSize: '12px', color: '#71717a' }}>{hint}</span> : null}
+      <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: 'var(--ink, #18181b)', color: 'var(--surface, #fff)', fontSize: '11px', fontWeight: 700, display: 'inline-grid', placeItems: 'center', flex: 'none' }}>{n}</span>
+      <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--ink, #18181b)' }}>{title}</span>
+      {hint ? <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>{hint}</span> : null}
     </div>
   );
 }
@@ -659,8 +659,8 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
     return (
       <div style={{ marginTop: '12px', padding: '12px', border: '1px solid #A8ECD2', borderRadius: '10px', background: '#F0FBF6' }}>
         <div style={{ fontSize: '13px', fontWeight: 700 }}>{packetDone.contract.name}</div>
-        <div style={{ fontSize: '12px', color: '#52525b', marginTop: '2px' }}>Copy these fields into the Acme Homes PandaDoc template, proof it, and send. Status and signing links come back here.</div>
-        <pre style={{ margin: '10px 0 0', padding: '10px 12px', background: '#fff', border: '1px solid #e4e4e7', borderRadius: '8px', fontSize: '12px', whiteSpace: 'pre-wrap', maxHeight: '220px', overflow: 'auto' }}>{packetDone.packet || 'No fields yet — fill the record first.'}</pre>
+        <div style={{ fontSize: '12px', color: 'var(--muted, #52525b)', marginTop: '2px' }}>Copy these fields into the Acme Homes PandaDoc template, proof it, and send. Status and signing links come back here.</div>
+        <pre style={{ margin: '10px 0 0', padding: '10px 12px', background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', fontSize: '12px', whiteSpace: 'pre-wrap', maxHeight: '220px', overflow: 'auto' }}>{packetDone.packet || 'No fields yet — fill the record first.'}</pre>
         <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
           <button type="button" onClick={() => { void navigator.clipboard?.writeText(packetDone.packet).then(() => onToast('Fields copied')); }} style={btn(true)}>Copy fields</button>
           <a href="https://app.pandadoc.com" target="_blank" rel="noreferrer" style={{ ...btn(), display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>Open PandaDoc</a>
@@ -674,7 +674,7 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
     return (
       <div style={{ marginTop: '12px', padding: '12px', border: '1px solid #A8ECD2', borderRadius: '10px', background: '#F0FBF6' }}>
         <div style={{ fontSize: '13px', fontWeight: 700 }}>{result.contract.name}</div>
-            <div style={{ fontSize: '12px', color: '#52525b', marginTop: '2px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--muted, #52525b)', marginTop: '2px' }}>
           {result.awaiting_approval ? 'Waiting on the approver. It goes out to the signers as soon as they approve; you will get a notification.' : result.contract.status === 'draft' ? 'Saved as a draft. Send it from the list below when ready.' : result.texted ? `Sent: ${result.emailed} emailed, ${result.texted} texted. Opening a link is tracked on the deal.` : result.emailed ? `Emailed to ${result.emailed} signer${result.emailed === 1 ? '' : 's'}. Opening the link is tracked on the deal — no code.` : 'Each signer has their own link. Opening it is tracked on the deal. Copy it and text or email it — or set an email provider in Settings to send automatically.'}
         </div>
         <SignerLinks signers={result.signers} onToast={onToast} />
@@ -684,13 +684,13 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
   }
 
   return (
-    <div style={{ marginTop: '12px', padding: '12px', border: '1px solid #e4e4e7', borderRadius: '10px', background: '#fafafa' }}>
+    <div style={{ marginTop: '12px', padding: '12px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px', background: 'var(--canvas, #fafafa)' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '10px 12px' }}>
         <div>
           <label style={label}>Template</label>
           {startTemplateId != null && startTemplateId !== -1 && !changingTpl && choice ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minHeight: '34px' }}>
-              <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#18181b' }}>{choice.label}{isPdfTemplate(choice.clozr) ? ' (PDF)' : ''}</span>
+              <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--ink, #18181b)' }}>{choice.label}{isPdfTemplate(choice.clozr) ? ' (PDF)' : ''}</span>
               <button type="button" onClick={() => setChangingTpl(true)} style={link}>Change</button>
             </div>
           ) : <>
@@ -737,9 +737,9 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
         <>
           <div>
             <StepHead n={1} title="Recipients" hint="Who signs, and who gets a copy" />
-            {!rendered ? <div style={{ fontSize: '12px', color: '#a1a1aa' }}>Filling the template from the record…</div> : signerRows.map((s) => (
+            {!rendered ? <div style={{ fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>Filling the template from the record…</div> : signerRows.map((s) => (
               <div key={s.role} style={{ display: 'grid', gridTemplateColumns: '90px minmax(0, 1.3fr) minmax(0, 1.4fr) minmax(0, 1fr) 104px', gap: '8px', marginBottom: '6px', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', fontWeight: 600, color: s.optional ? '#a1a1aa' : '#18181b' }}>{s.label}{s.optional ? ' (opt.)' : ''}</span>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: s.optional ? 'var(--subtle, #a1a1aa)' : 'var(--ink, #18181b)' }}>{s.label}{s.optional ? ' (opt.)' : ''}</span>
                 <RecipientPicker workspaceId={workspaceId} value={s.name ?? ''} onChange={(v) => typeSigner(s.role, v)} onPick={(c) => pickSigner(s.role, c)} linked={linkLabel(s)} onUnlink={() => setSignerEdits((x) => ({ ...x, [s.role]: { ...x[s.role], ...NO_LINK, unlinked: true } }))} placeholder="Full name — or search" />
                 <input value={s.email ?? ''} onChange={(e) => setSignerEdits((x) => ({ ...x, [s.role]: { ...x[s.role], email: e.target.value } }))} placeholder={buyerRole(s.role) ? 'Email *' : 'email@example.com'} type="email" style={field} />
                 <input value={s.phone ?? ''} onChange={(e) => setSignerEdits((x) => ({ ...x, [s.role]: { ...x[s.role], phone: e.target.value } }))} placeholder={buyerRole(s.role) ? 'Phone *' : 'Phone (for texting)'} style={field} />
@@ -753,22 +753,22 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
                 </select>
               </div>
             ))}
-            {rendered && buyerGap ? <div style={{ fontSize: '12px', color: '#b91c1c', marginBottom: '6px' }}>{buyerGap}</div> : null}
+            {rendered && buyerGap ? <div style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)', marginBottom: '6px' }}>{buyerGap}</div> : null}
             {rendered && signerRows.some((s) => ['seller', 'seller2', 'buyer'].includes(String(s.party)) && (s.name ?? '').trim() && !isLinked(s as ContactLink)) ? (
-              <div style={{ fontSize: '12px', color: '#52525b', marginBottom: '6px' }}>
+              <div style={{ fontSize: '12px', color: 'var(--muted, #52525b)', marginBottom: '6px' }}>
                 Not in the CRM yet: {signerRows.filter((s) => ['seller', 'seller2', 'buyer'].includes(String(s.party)) && (s.name ?? '').trim() && !isLinked(s as ContactLink)).map((s) => s.name).join(', ')}. They are added (or matched by email and phone) and put on the deal when you send.
               </div>
             ) : null}
             {rendered ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px', marginTop: '8px' }}>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#52525b' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--muted, #52525b)' }}>
                   Order
                   <select value={orderMode} onChange={(e) => setOrderMode(e.target.value as 'parallel' | 'sequential')} style={{ ...field, width: 'auto', height: '30px' }} title="Sequential sends each signer their link only after the one above them has signed">
                     <option value="parallel">Everyone at once</option>
                     <option value="sequential">In order, top to bottom</option>
                   </select>
                 </label>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#52525b' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--muted, #52525b)' }}>
                   Reminders
                   <select value={remind} onChange={(e) => setRemind(e.target.value as Remind)} style={{ ...field, width: 'auto', height: '30px' }} title="Automatic nudges to whoever has not signed, 8am to 8pm Central">
                     <option value="default">After 1 day, then every 2</option>
@@ -802,24 +802,24 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
                 <select value={e.delivery} onChange={(ev) => setExtras((x) => x.map((y, j) => (j === i ? { ...y, delivery: ev.target.value as Extra['delivery'] } : y)))} style={{ ...field, padding: '0 6px' }} title="How the link goes out">
                   <option value="email">Email</option><option value="sms">Text</option><option value="both">Both</option>
                 </select>
-                <button type="button" onClick={() => setExtras((x) => x.filter((_, j) => j !== i))} style={{ ...link, color: '#b91c1c', justifySelf: 'start' }}>Remove</button>
+                <button type="button" onClick={() => setExtras((x) => x.filter((_, j) => j !== i))} style={{ ...link, color: 'var(--tx-red, #b91c1c)', justifySelf: 'start' }}>Remove</button>
               </div>
             ))}
-            {extras.some((e) => e.type === 'approver') ? <div style={{ marginTop: '6px', fontSize: '12px', color: '#0A8560' }}>Goes to the approver first. The signers get it only after every approver approves; a rejection brings it back here as a draft.</div> : null}
+            {extras.some((e) => e.type === 'approver') ? <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--tx-mint, #0a8560)' }}>Goes to the approver first. The signers get it only after every approver approves; a rejection brings it back here as a draft.</div> : null}
           </div>
           {rendered?.missing_sections?.length ? (
-            <div role="alert" style={{ marginTop: '10px', padding: '8px 10px', borderRadius: '8px', background: '#fee2e2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: '12px' }}>
+            <div role="alert" style={{ marginTop: '10px', padding: '8px 10px', borderRadius: '8px', background: 'var(--negative-soft, #fee2e2)', border: '1px solid var(--tint-red-2, #fecaca)', color: 'var(--tx-red, #b91c1c)', fontSize: '12px' }}>
               This template places a section that was deleted (#{rendered.missing_sections.join(', #')}). Fix the template under Contracts → Templates before sending.
             </div>
           ) : null}
           {mapped.length || fillNames.length ? <StepHead n={2} title="Details" hint="Filled from this record. Change anything, or fill in what's blank." /> : null}
           {fillNames.length ? (
             <div style={{ marginTop: '4px' }}>
-              <label style={{ ...label, color: '#b45309' }}>Blank · fill in</label>
+              <label style={{ ...label, color: 'var(--tx-amber, #b45309)' }}>Blank · fill in</label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px' }}>
                 {fillNames.map((n) => (
                   <div key={n}>
-                    <div style={{ fontSize: '11.5px', color: '#52525b', marginBottom: '3px' }}>{tokenLabel(n)}</div>
+                    <div style={{ fontSize: '11.5px', color: 'var(--muted, #52525b)', marginBottom: '3px' }}>{tokenLabel(n)}</div>
                     <input value={fills[n] ?? ''} onChange={(e) => setFills((f) => ({ ...f, [n]: e.target.value }))} placeholder={n.includes('Date') || n.includes('Deadline') ? 'September 20, 2026' : n.includes('EMD') || n.includes('Fee') || n.includes('Price') ? '$500' : ''} style={field} />
                   </div>
                 ))}
@@ -832,7 +832,7 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px' }}>
                 {mapped.map((m) => (
                   <div key={m.name}>
-                    <div style={{ fontSize: '11.5px', color: '#52525b', marginBottom: '3px' }} title={m.name}>{tokenLabel(m.name)}</div>
+                    <div style={{ fontSize: '11.5px', color: 'var(--muted, #52525b)', marginBottom: '3px' }} title={m.name}>{tokenLabel(m.name)}</div>
                     {/* Typed values ride along as tokens, which win over the record's value. */}
                     <input value={fills[m.name] ?? m.value} onChange={(e) => setFills((f) => ({ ...f, [m.name]: e.target.value }))} style={field} />
                   </div>
@@ -840,7 +840,7 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
               </div>
             </div>
           ) : null}
-          {companyMissing.length ? <div style={{ marginTop: '8px', fontSize: '12px', color: '#b45309' }}>Company details are blank on this template ({companyMissing.map(tokenLabel).join(', ')}). Fill them in Settings → Contracts and offers.</div> : null}
+          {companyMissing.length ? <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--tx-amber, #b45309)' }}>Company details are blank on this template ({companyMissing.map(tokenLabel).join(', ')}). Fill them in Settings → Contracts and offers.</div> : null}
         </>
       ) : choice?.engine === 'upload' ? (
         <div style={{ marginTop: '10px' }}>
@@ -879,7 +879,7 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
           })}
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px', marginTop: '4px' }}>
             <button type="button" onClick={() => setUpRecips([...upList, { role: `signer${upList.length + 1}`, label: '', name: '', email: '', phone: '', type: 'signer' }])} style={link}>+ Add recipient</button>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#52525b' }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--muted, #52525b)' }}>
               Order
               <select value={orderMode} onChange={(e) => setOrderMode(e.target.value as 'parallel' | 'sequential')} style={{ ...field, width: 'auto', height: '30px' }}>
                 <option value="parallel">Everyone at once</option>
@@ -887,7 +887,7 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
               </select>
             </label>
           </div>
-          <div style={{ marginTop: '6px', fontSize: '12px', color: '#71717a' }}>Next you place the fields on the pages — signature, initials, dates, text, checkboxes — and give each one to a recipient. It stays a draft until you send it.</div>
+          <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--meta, #71717a)' }}>Next you place the fields on the pages — signature, initials, dates, text, checkboxes — and give each one to a recipient. It stays a draft until you send it.</div>
         </div>
       ) : (
         <div style={{ marginTop: '10px' }}>
@@ -904,7 +904,7 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
           {packetPreview ? (
             <div style={{ marginTop: '10px' }}>
               <label style={label}>Fields to paste into PandaDoc</label>
-              <pre style={{ margin: 0, padding: '10px 12px', background: '#fff', border: '1px solid #e4e4e7', borderRadius: '8px', fontSize: '12px', whiteSpace: 'pre-wrap', maxHeight: '180px', overflow: 'auto' }}>{packetPreview}</pre>
+              <pre style={{ margin: 0, padding: '10px 12px', background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', fontSize: '12px', whiteSpace: 'pre-wrap', maxHeight: '180px', overflow: 'auto' }}>{packetPreview}</pre>
               <button type="button" onClick={() => { void navigator.clipboard?.writeText(packetPreview).then(() => onToast('Fields copied')); }} style={{ ...link, marginTop: '6px' }}>Copy fields</button>
             </div>
           ) : null}
@@ -912,7 +912,7 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
       )}
 
       <div style={{ marginTop: '10px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <label style={{ ...label, margin: 0, display: 'inline-flex', alignItems: 'center', gap: '6px', textTransform: 'none', letterSpacing: 0, fontSize: '12.5px', color: '#18181b' }}>
+        <label style={{ ...label, margin: 0, display: 'inline-flex', alignItems: 'center', gap: '6px', textTransform: 'none', letterSpacing: 0, fontSize: '12.5px', color: 'var(--ink, #18181b)' }}>
           <input type="checkbox" checked={needsNotary} onChange={(e) => setNeedsNotary(e.target.checked)} /> Needs notarization
         </label>
         {needsNotary ? (
@@ -950,13 +950,13 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
       {askCrm ? <SaveToCrmDialog rows={askCrm} busy={busy === 'send'} confirmLabel="Save and send" onCancel={() => setAskCrm(null)} onDone={(c) => void go(true, c)} /> : null}
       {preview ? (
         <div role="dialog" aria-modal="true" aria-label="Contract preview" data-testid="contract-preview" onClick={() => { setPreview(null); setPreviewToSend(false); }} style={{ position: 'fixed', inset: 0, background: 'rgba(24,24,27,.55)', zIndex: 200, display: 'grid', placeItems: 'center', padding: '20px' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(860px, 100%)', maxHeight: '90vh', overflow: 'auto', background: '#fff', borderRadius: '12px', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderBottom: '1px solid #e4e4e7', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(860px, 100%)', maxHeight: '90vh', overflow: 'auto', background: 'var(--surface, #fff)', borderRadius: '12px', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderBottom: '1px solid var(--divider, #e4e4e7)', position: 'sticky', top: 0, background: 'var(--surface, #fff)', zIndex: 1 }}>
               <span style={{ fontSize: '13px', fontWeight: 700, flex: 1, minWidth: 0 }}>Preview · {choice?.label}</span>
               <button type="button" onClick={() => { setPreview(null); setPreviewToSend(false); }} style={btn()}>Close</button>
               <button type="button" disabled={!valid || !!busy} onClick={() => { setPreview(null); setPreviewToSend(false); void go(true); }} style={btn(true, !valid || !!busy)}>{busy === 'send' ? 'Sending…' : 'Send for signatures'}</button>
             </div>
-            <div style={{ padding: '8px 14px', fontSize: '12px', color: '#52525b', background: '#fafafa', borderBottom: '1px solid #f0f0f1' }}>
+            <div style={{ padding: '8px 14px', fontSize: '12px', color: 'var(--muted, #52525b)', background: 'var(--canvas, #fafafa)', borderBottom: '1px solid var(--divider-2, #f0f0f1)' }}>
               {mapped.length} field{mapped.length === 1 ? '' : 's'} filled from this record{fillNames.length ? ` · ${fillNames.length} still blank` : ''}
             </div>
             <style>{DOC_CSS}</style>

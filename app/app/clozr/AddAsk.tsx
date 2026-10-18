@@ -12,17 +12,17 @@ import type { ClozrView } from './view';
 
 const choice: React.CSSProperties = {
   display: 'grid', gap: '2px', width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: '10px',
-  border: '1px solid #e4e4e7', background: '#fff', cursor: 'pointer', color: '#18181b', font: 'inherit',
+  border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', cursor: 'pointer', color: 'var(--ink, #18181b)', font: 'inherit',
 };
 const title: React.CSSProperties = { fontSize: '13px', fontWeight: 650 };
-const why: React.CSSProperties = { fontSize: '12px', color: '#71717a', lineHeight: 1.45 };
+const why: React.CSSProperties = { fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.45 };
 
 function Choice({ label, note, onClick, primary, disabled, testId }: {
   label: string; note: string; onClick: () => void; primary?: boolean; disabled?: boolean; testId?: string;
 }) {
   return (
     <button type="button" className="dc2" data-testid={testId} onClick={onClick} disabled={disabled}
-      style={{ ...choice, ...(primary ? { borderColor: '#18181b' } : {}), ...(disabled ? { cursor: 'not-allowed', opacity: 0.55, background: '#fafafa' } : {}) }}>
+      style={{ ...choice, ...(primary ? { borderColor: 'var(--ink, #18181b)' } : {}), ...(disabled ? { cursor: 'not-allowed', opacity: 0.55, background: 'var(--canvas, #fafafa)' } : {}) }}>
       <span style={title}>{label}</span>
       <span style={why}>{note}</span>
     </button>
@@ -39,7 +39,7 @@ export function AddAsk({ V }: { V: ClozrView }) {
     const names = ask.others.slice(0, 3).map((o) => o.name).join(', ') + (n > 3 ? ` and ${n - 3} more` : '');
     return (
       <div role="group" aria-label="Who moves to the new address" style={{ display: 'grid', gap: '8px' }}>
-        <div style={{ padding: '10px 12px', borderRadius: '10px', background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: '12.5px', color: '#1e3a8a', lineHeight: 1.5 }}>
+        <div style={{ padding: '10px 12px', borderRadius: '10px', background: 'var(--tint-blue, #eff6ff)', border: '1px solid #bfdbfe', fontSize: '12.5px', color: '#1e3a8a', lineHeight: 1.5 }}>
           <strong>{n} other seller{n === 1 ? ' is' : 's are'} on {ask.address || 'this property'}</strong>: {names}. Who moves to the new address?
         </div>
         <Choice primary testId="ask-scope-seller" label={`Just ${first}`} note={`Moves ${first} and their open deals. The others stay at the old address.`} onClick={() => V.resolveAddAsk('seller')} />
@@ -55,23 +55,23 @@ export function AddAsk({ V }: { V: ClozrView }) {
   const typedAddr = !!(V.addFields.find((f) => f.key === 'addr')?.value ?? '').trim();
   return (
     <div role="group" aria-label="Already in CLOZR" style={{ display: 'grid', gap: '8px' }}>
-      <div style={{ padding: '10px 12px', borderRadius: '10px', background: '#fffbeb', border: '1px solid #fde68a' }}>
+      <div style={{ padding: '10px 12px', borderRadius: '10px', background: 'var(--tint-amber, #fffbeb)', border: '1px solid var(--tint-amber-2, #fde68a)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '11px', fontWeight: 600, color: '#92400e' }}>
+          <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--tx-amber-deep, #92400e)' }}>
             Already in CLOZR · same {d.by}
           </span>
           <span style={{ flex: 1 }} />
-          <button type="button" onClick={V.openAddAskRecord} style={{ border: 0, background: 'none', padding: 0, color: '#0A8560', fontSize: '12px', fontWeight: 650, cursor: 'pointer' }}>
+          <button type="button" onClick={V.openAddAskRecord} style={{ border: 0, background: 'none', padding: 0, color: 'var(--tx-mint, #0a8560)', fontSize: '12px', fontWeight: 650, cursor: 'pointer' }}>
             Open {seller ? 'the record' : 'the buyer'}
           </button>
         </div>
-        <div style={{ fontSize: '14px', fontWeight: 700, color: '#18181b', marginTop: '4px' }}>{d.name}</div>
-        {d.detail.length ? <div style={{ fontSize: '12px', color: '#52525b', marginTop: '1px' }}>{d.detail.join(' · ')}</div> : null}
+        <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--ink, #18181b)', marginTop: '4px' }}>{d.name}</div>
+        {d.detail.length ? <div style={{ fontSize: '12px', color: 'var(--muted, #52525b)', marginTop: '1px' }}>{d.detail.join(' · ')}</div> : null}
         {d.archived ? (
-          <div style={{ fontSize: '12px', color: '#92400e', marginTop: '6px', fontWeight: 600 }}>This {seller ? 'seller' : 'buyer'} is archived. Add to or Override takes them out of the archive and opens the record.</div>
+          <div style={{ fontSize: '12px', color: 'var(--tx-amber-deep, #92400e)', marginTop: '6px', fontWeight: 600 }}>This {seller ? 'seller' : 'buyer'} is archived. Add to or Override takes them out of the archive and opens the record.</div>
         ) : null}
         {d.otherPerson ? (
-          <div style={{ fontSize: '12px', color: '#92400e', marginTop: '6px' }}>A different name at this address — a co-owner or an heir, most likely. Create new adds them as another seller on the property.</div>
+          <div style={{ fontSize: '12px', color: 'var(--tx-amber-deep, #92400e)', marginTop: '6px' }}>A different name at this address — a co-owner or an heir, most likely. Create new adds them as another seller on the property.</div>
         ) : null}
       </div>
       <Choice primary testId="ask-dupe-fill" label={`Add to ${first}`}

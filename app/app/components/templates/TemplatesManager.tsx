@@ -155,7 +155,7 @@ export function TemplatesManager({ data, userId, isAdmin, talkrAuthed, ctx, init
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
                     height: 34, padding: '0 10px', borderRadius: 8, border: 0, cursor: 'pointer',
-                    background: on ? '#ecfdf5' : 'transparent', color: on ? ACCENT : '#27272a',
+                    background: on ? 'var(--tint-green, #ecfdf5)' : 'transparent', color: on ? ACCENT : 'var(--ink-2, #27272a)',
                     font: `${on ? 650 : 500} 12.5px/1 var(--sans)`, textAlign: 'left',
                   }}
                 >
@@ -179,7 +179,7 @@ export function TemplatesManager({ data, userId, isAdmin, talkrAuthed, ctx, init
               {data.error && <p className="p-4" style={{ font: '400 12.5px/1.5 var(--sans)', color: 'var(--red)' }}>{data.error}</p>}
               {!data.error && !data.loading && shown.length === 0 && (
                 <div className="flex flex-col items-center gap-3 p-10 text-center">
-                  <span className="inline-grid place-items-center rounded-full" style={{ width: 48, height: 48, background: '#ecfdf5', color: ACCENT }}>
+                  <span className="inline-grid place-items-center rounded-full" style={{ width: 48, height: 48, background: 'var(--tint-green, #ecfdf5)', color: ACCENT }}>
                     <Icon name="template" size={22} />
                   </span>
                   <p style={{ margin: 0, font: '600 14px/1.3 var(--sans)' }}>No templates here yet</p>
@@ -203,7 +203,7 @@ export function TemplatesManager({ data, userId, isAdmin, talkrAuthed, ctx, init
                   </div>
                   {items.map((t) => (
                     <div key={t.id} className="flex flex-wrap items-center gap-3 px-4 py-3" style={{ borderBottom: '1px solid var(--panel-2, #f4f4f5)' }}>
-                      <span className="inline-grid shrink-0 place-items-center rounded-full" style={{ width: 34, height: 34, background: t.channel === 'sms' ? '#ffe9ec' : '#eff6ff', color: t.channel === 'sms' ? '#e6142e' : '#2563eb' }}>
+                      <span className="inline-grid shrink-0 place-items-center rounded-full" style={{ width: 34, height: 34, background: t.channel === 'sms' ? 'var(--c-talkr-soft, #ffe9ec)' : 'var(--tint-blue, #eff6ff)', color: t.channel === 'sms' ? '#e6142e' : '#2563eb' }}>
                         <Icon name={t.channel === 'sms' ? 'msg' : 'send'} size={15} />
                       </span>
                       <div className="flex min-w-0 flex-1 flex-col gap-1">

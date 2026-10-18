@@ -21,10 +21,10 @@ import { formatPhone } from '@/lib/talkr';
 
 const row = (mobile: boolean): React.CSSProperties => ({
   display: 'grid', gridTemplateColumns: mobile ? 'minmax(0,86px) minmax(0,1fr)' : '88px 1fr', gap: '10px',
-  padding: '8px 0', borderBottom: '1px solid #f0f0f1', fontSize: '12.5px', alignItems: 'baseline',
+  padding: '8px 0', borderBottom: '1px solid var(--divider-2, #f0f0f1)', fontSize: '12.5px', alignItems: 'baseline',
 });
 const badge = (color: string, bg: string): React.CSSProperties => ({ fontSize: '10px', fontWeight: 700, color, background: bg, borderRadius: '5px', padding: '1px 5px', letterSpacing: '0.02em' });
-const quiet: React.CSSProperties = { border: 0, background: 'none', color: '#a1a1aa', cursor: 'pointer', fontSize: '12px', padding: 0 };
+const quiet: React.CSSProperties = { border: 0, background: 'none', color: 'var(--subtle, #a1a1aa)', cursor: 'pointer', fontSize: '12px', padding: 0 };
 const line: React.CSSProperties = { marginTop: '3px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 };
 
 /** "+ Add …" that turns into a one-line input; Enter adds, Escape closes. */
@@ -85,6 +85,8 @@ export function BuyerContact({ V }: { V: ClozrView }) {
     void reload();
     return true;
   };
+  // The main phone and email are the buyer's own row: that buyer re-reads, not the workspace.
+  const savedRow = () => (buyerId != null ? V.refreshBuyerCrm(buyerId) : V.reloadCrm());
   const reachAt = (ch: 'text' | 'email', to: { phone?: string; email?: string }) => openReach(ch, {
     name: V.B.name, phone: to.phone ?? phone, email: to.email ?? email, buyerId: buyerId ?? undefined, audience: 'buyer',
   });
@@ -95,7 +97,7 @@ export function BuyerContact({ V }: { V: ClozrView }) {
       : await promoteBuyerEmail(ws, buyerId, r as BuyerEmailRow, email);
     if (!res.ok) return toast(res.message || 'That did not save.');
     toast(kind === 'phone' ? 'Main number changed' : 'Main email changed');
-    V.reloadCrm();
+    savedRow();
     void reload();
   };
 
@@ -105,10 +107,10 @@ export function BuyerContact({ V }: { V: ClozrView }) {
   return (
     <div data-testid="buyer-contact">
       <div style={row(mobile)}>
-        <span style={{ color: '#71717a' }}>Phones</span>
+        <span style={{ color: 'var(--meta, #71717a)' }}>Phones</span>
         <div style={{ minWidth: 0 }}>
-          <ContactField field="phone" sellerId={null} buyerId={buyerId} value={phone} canWrite={canWrite} onSaved={V.reloadCrm} onToast={toast}>
-            {phone ? <a href="#" className="clozr-contact" onClick={(e) => { e.preventDefault(); V.callBuyer(); }} style={{ fontWeight: 500 }}>{phone}</a> : <span style={{ color: '#a1a1aa' }}>—</span>}
+          <ContactField field="phone" sellerId={null} buyerId={buyerId} value={phone} canWrite={canWrite} onSaved={savedRow} onToast={toast}>
+            {phone ? <a href="#" className="clozr-contact" onClick={(e) => { e.preventDefault(); V.callBuyer(); }} style={{ fontWeight: 500 }}>{phone}</a> : <span style={{ color: 'var(--subtle, #a1a1aa)' }}>—</span>}
           </ContactField>
           {others.map((r) => {
             const label = formatPhone(r.phone);
@@ -116,13 +118,13 @@ export function BuyerContact({ V }: { V: ClozrView }) {
             return (
               <div key={r.id} style={line}>
                 {bad ? (
-                  <span className="clozr-contact" style={{ fontWeight: 500, color: '#71717a' }}>{label}</span>
+                  <span className="clozr-contact" style={{ fontWeight: 500, color: 'var(--meta, #71717a)' }}>{label}</span>
                 ) : (
                   <a href="#" className="clozr-contact" onClick={(e) => { e.preventDefault(); V.callBuyerAt(r.phone, r.id); }} style={{ fontWeight: 500 }}>{label}</a>
                 )}
-                {r.is_dnc ? <span style={badge('#b91c1c', '#fef2f2')}>DNC</span> : null}
-                {(r.kind ?? '').toLowerCase() === 'wrong' ? <span style={badge('#b45309', '#fffbeb')} title="Marked as a wrong number">Wrong</span> : null}
-                {!bad ? <button type="button" onClick={() => reachAt('text', { phone: r.phone })} title={`Text ${label}`} style={{ ...quiet, color: '#0A8560', fontSize: '11.5px' }}>Text</button> : null}
+                {r.is_dnc ? <span style={badge('#b91c1c', 'var(--tint-red, #fef2f2)')}>DNC</span> : null}
+                {(r.kind ?? '').toLowerCase() === 'wrong' ? <span style={badge('#b45309', 'var(--tint-amber, #fffbeb)')} title="Marked as a wrong number">Wrong</span> : null}
+                {!bad ? <button type="button" onClick={() => reachAt('text', { phone: r.phone })} title={`Text ${label}`} style={{ ...quiet, color: 'var(--tx-mint, #0a8560)', fontSize: '11.5px' }}>Text</button> : null}
                 {canWrite && live && !bad ? <button type="button" onClick={() => void promote('phone', r)} title="Make this their main number" style={{ ...quiet, fontSize: '11.5px' }}>Make main</button> : null}
                 {canWrite && live ? (
                   <button type="button" title={`Remove ${label}`} aria-label={`Remove ${label}`} onClick={() => ws != null && void removeBuyerPhone(ws, r.id).then((x) => after(x, 'Number removed'))} style={quiet}>×</button>
@@ -136,10 +138,10 @@ export function BuyerContact({ V }: { V: ClozrView }) {
         </div>
       </div>
       <div style={row(mobile)}>
-        <span style={{ color: '#71717a' }}>Emails</span>
+        <span style={{ color: 'var(--meta, #71717a)' }}>Emails</span>
         <div style={{ minWidth: 0, fontWeight: 500 }}>
-          <ContactField field="email" sellerId={null} buyerId={buyerId} value={email} canWrite={canWrite} onSaved={V.reloadCrm} onToast={toast}>
-            {email ? <a href="#" className="clozr-contact" onClick={(e) => { e.preventDefault(); reachAt('email', { email }); }}>{email}</a> : <span style={{ color: '#a1a1aa' }}>—</span>}
+          <ContactField field="email" sellerId={null} buyerId={buyerId} value={email} canWrite={canWrite} onSaved={savedRow} onToast={toast}>
+            {email ? <a href="#" className="clozr-contact" onClick={(e) => { e.preventDefault(); reachAt('email', { email }); }}>{email}</a> : <span style={{ color: 'var(--subtle, #a1a1aa)' }}>—</span>}
           </ContactField>
           {moreEmails.map((r) => (
             <div key={r.id} style={{ ...line, fontWeight: 500 }}>
@@ -156,9 +158,9 @@ export function BuyerContact({ V }: { V: ClozrView }) {
         </div>
       </div>
       <div style={row(mobile)}>
-        <span style={{ color: '#71717a' }}>Assigned to</span>
+        <span style={{ color: 'var(--meta, #71717a)' }}>Assigned to</span>
         <select aria-label="Assigned to" value={V.B.assignedId} disabled={!canWrite && live} onChange={(e) => V.B.assignTo(e.target.value)}
-          style={{ border: 0, background: 'transparent', font: 'inherit', fontWeight: 500, color: '#18181b', cursor: 'pointer', padding: 0, minWidth: 0 }}>
+          style={{ border: 0, background: 'transparent', font: 'inherit', fontWeight: 500, color: 'var(--ink, #18181b)', cursor: 'pointer', padding: 0, minWidth: 0 }}>
           <option value="">Unassigned</option>
           {V.B.assignOptions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>

@@ -34,7 +34,7 @@ export const TALKR = '#ff233b';
  *  for fills that carry a white label. */
 export const TALKR_INK = '#e6142e';
 /** Talkr's tint, for chips and avatars. */
-export const TALKR_TINT = '#ffe9ec';
+export const TALKR_TINT = 'var(--c-talkr-soft, #ffe9ec)';
 
 /**
  * Deal Machine — the Chrome extension that scrapes deals and cash buyers and
@@ -48,7 +48,7 @@ export const TALKR_TINT = '#ffe9ec';
  */
 export const DEAL_MACHINE = '#ea580c';
 /** Deal Machine's tint, for chips and empty states. */
-export const DEAL_MACHINE_TINT = '#fff7ed';
+export const DEAL_MACHINE_TINT = 'var(--tint-orange, #fff7ed)';
 
 /**
  * Buyr — wholesale sniping, Homefull, and Facebook buyer comments.
@@ -65,4 +65,4 @@ export const BUYR_TINT = '#f0fdfa';
  */
 export const LANE = '#db2777';
 /** Lane's tint, for chips and the drawer's reference tags. */
-export const LANE_TINT = '#fdf2f8';
+export const LANE_TINT = 'var(--c-lane-soft, #fdf2f8)';

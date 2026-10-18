@@ -5,14 +5,15 @@
 // before HTML was kept, or larger than the sync will store) asks Gmail once
 // and writes the HTML back, so the next open does not wait on that.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { cachedEmailHtml, emailHtmlCached, storeEmailHtml } from '@/lib/email-document-cache';
 import { emailPlain, looksLikeHtml } from '@/lib/email-html';
 import { emailHtml } from '@/lib/google';
 
 export function useEmailDocument(body: string | null | undefined, opts?: { workspaceId?: number | null; communicationId?: number | null }) {
   const stored = String(body ?? '');
-  const storedHtml = looksLikeHtml(stored) ? stored : null;
+  // A stored body runs to tens of kilobytes; the feed redraws far more often than it changes.
+  const storedHtml = useMemo(() => (looksLikeHtml(stored) ? stored : null), [stored]);
   const id = opts?.communicationId ?? null;
   const workspaceId = opts?.workspaceId ?? null;
   const cached = id != null ? cachedEmailHtml(id) : undefined;
@@ -32,9 +33,10 @@ export function useEmailDocument(body: string | null | undefined, opts?: { works
     return () => { cancel = true; };
   }, [storedHtml, workspaceId, id]);
 
+  const text = useMemo(() => (html ? emailPlain(html) : stored), [html, stored]);
   return {
     html,
-    text: html ? emailPlain(html) : stored,
+    text,
     loading: !html && !!workspaceId && id != null && !storedHtml && !(id != null && emailHtmlCached(id)),
   };
 }

@@ -34,6 +34,7 @@ import { CallFlowModal, SmsFlowModal, type Person } from './NumberFlows';
 import { CallerReputation } from './Reputation';
 import { RvmPool } from './RvmPool';
 import { attachToCampaign, ensureAssignable, isPhoneAdmin, refreshPhoneAdmin, usePhoneAdmin } from './store';
+import { importOrphanLinesToTalkr } from '@/lib/talkr-number-sync';
 import { ensureOnTalkr, syncTeamToTalkr } from './TeammatePhone';
 import { errText } from './ui';
 
@@ -96,14 +97,6 @@ export function NumbersPage({ isMobile }: { isMobile: boolean }) {
     return () => { live = false; };
   }, [ws, admin, nonce]);
 
-  // Everyone on the CLOZR team gets a Talkr seat (what Team phones did before).
-  const synced = React.useRef(false);
-  useEffect(() => {
-    if (synced.current || !team || !talkrAdmin) return;
-    synced.current = true;
-    void syncTeamToTalkr(team).catch(() => undefined);
-  }, [team, talkrAdmin]);
-
   const book = useMemo(() => buildNumberBook({
     team: team ?? [],
     rows: db?.rows ?? [],
@@ -120,6 +113,46 @@ export function NumbersPage({ isMobile }: { isMobile: boolean }) {
     forgetLineNames();
     setNonce((n) => n + 1);
   }, [ws]);
+
+  const syncedTeam = React.useRef(false);
+  const syncedLines = React.useRef(false);
+  useEffect(() => {
+    syncedTeam.current = false;
+    syncedLines.current = false;
+  }, [nonce]);
+
+  useEffect(() => {
+    if (!team || !talkrAdmin || phone.status !== 'ready') return;
+    if (syncedTeam.current) return;
+    syncedTeam.current = true;
+    void syncTeamToTalkr(team).then((r) => {
+      const parts: string[] = [];
+      if (r.added) parts.push(`Added ${r.added} teammate${r.added === 1 ? '' : 's'} to Talkr`);
+      if (r.activated) parts.push(`activated ${r.activated} seat${r.activated === 1 ? '' : 's'}`);
+      if (parts.length) setNote({ ok: true, text: parts.join(' · ') + '.' });
+      if (r.errors.length) setNote({ ok: false, text: r.errors.slice(0, 3).join('\n') });
+      if (r.added || r.activated) reload();
+    }).catch((err) => setNote({ ok: false, text: errText(err) }));
+  }, [team, talkrAdmin, phone.status, reload]);
+
+  useEffect(() => {
+    if (!ws || !talkrAdmin || phone.status !== 'ready') return;
+    if (syncedLines.current) return;
+    const hasOrphans = [...book.people.flatMap((p) => p.lines), ...book.company].some((l) => !l.talkr);
+    if (!hasOrphans) return;
+    syncedLines.current = true;
+    void importOrphanLinesToTalkr(book, async (line) => {
+      const person = book.people.find((p) => p.lines.some((x) => x.phone === line.phone));
+      return ensureAssignable(person?.talkr?.id ?? null);
+    }).then(async (r) => {
+      if (r.imported.length) {
+        await Promise.all(r.imported.map((p) => attachToCampaign(ws, [p])));
+        await refreshPhoneAdmin();
+        reload();
+        setNote({ ok: true, text: `Imported ${r.imported.length} number${r.imported.length === 1 ? '' : 's'} from the carrier onto Talkr.` });
+      } else if (r.errors.length) setNote({ ok: false, text: r.errors.slice(0, 2).join('\n') });
+    });
+  }, [ws, talkrAdmin, phone.status, book, reload]);
 
   /** One write with a status line; reloads both sides after. */
   async function run(key: string, fn: () => Promise<string>) {
@@ -219,7 +252,7 @@ export function NumbersPage({ isMobile }: { isMobile: boolean }) {
             key={p.member.user_id}
             p={p}
             self={p.member.user_id === me}
-            onTalkr={phone.status !== 'ready' || phone.members.length === 0 || !!p.talkr || p.member.user_id === me}
+            onTalkr={phone.status !== 'ready' || !!p.talkr}
             company={book.company}
             isMobile={isMobile}
             {...lineProps}
@@ -262,7 +295,7 @@ export function NumbersPage({ isMobile }: { isMobile: boolean }) {
       </Card>
 
       <Collapsed title="RVM pool" meta={`${book.pool.length} line${book.pool.length === 1 ? '' : 's'}`}>
-        <RvmPool numbers={phone.numbers.filter((n) => n.status === 'active' || !n.status).map((n) => ({ phone_e164: n.phone_e164, label: n.label }))} admin={talkrAdmin} onBuy={admin ? () => setOpen({ kind: 'add' }) : undefined} />
+        <RvmPool numbers={phone.numbers.filter((n) => n.status === 'active' || !n.status).map((n) => ({ phone_e164: n.phone_e164, label: n.label, assigned_user_id: n.assigned_user_id }))} admin={talkrAdmin} onBuy={admin ? () => setOpen({ kind: 'add' }) : undefined} />
       </Collapsed>
       {talkrAdmin ? <Collapsed title="Caller reputation" meta="Registrations, spam checks, 10DLC"><CallerReputation enabled /></Collapsed> : null}
       {book.agentLines ? <Collapsed title="AI agent lines" meta={`${book.agentLines} · managed under AI agents`} /> : null}
@@ -381,6 +414,7 @@ function PersonCard({ p, self, onTalkr, company, isMobile, setCallerId, give, ad
           <span className="truncate" style={{ font: '650 13.5px/1.2 var(--sans)' }}>{name}{self ? <span style={META}> · you</span> : null}</span>
           <span style={META}>{ROLE_LABEL[p.member.role as Role] ?? p.member.role} · {p.lines.length ? `${p.lines.length} number${p.lines.length === 1 ? '' : 's'}` : 'No number'}</span>
         </span>
+        {!p.talkr && !onTalkr ? <ChipView chip={{ text: 'Not on Talkr', tone: 'warn', detail: 'Add them so lines can ring and text through Talkr.' }} /> : null}
         {!onTalkr && admin ? <Button tone="ghost" disabled={!!busy || !p.member.email} onClick={addToTalkr}>Add to Talkr</Button> : null}
         {canEdit && (p.talkr || self) ? <Button tone="quiet" onClick={() => onOpen({ kind: 'voicemail', person: p })}><Icon name="voicemail" size={13} /> Voicemail</Button> : null}
         {admin && company.length ? (

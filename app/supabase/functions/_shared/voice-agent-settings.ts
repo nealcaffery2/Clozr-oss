@@ -11,7 +11,7 @@
 // is not built cannot be switched on), and text that tells the agent to deny
 // being an AI is refused (see deniesAi).
 import { toE164 } from './voice-agent.ts';
-import { DYNAMIC_VARIABLES } from './voice-agent.ts';
+import { DYNAMIC_VARIABLES, TOOL_ONLY_VARIABLES } from './voice-agent.ts';
 
 // ---- Keys, tools, variables ---------------------------------------------------
 
@@ -47,7 +47,7 @@ export const TOOL_LABELS: Record<ToolKey, string> = {
 };
 
 /** Variables the personalize webhook returns on every call; the only {{names}} a prompt may use besides system__*. */
-export const PROMPT_VARIABLES: readonly string[] = DYNAMIC_VARIABLES;
+export const PROMPT_VARIABLES: readonly string[] = DYNAMIC_VARIABLES.filter((v) => !TOOL_ONLY_VARIABLES.includes(v));
 
 /** {{name}} stays when it is a variable the agent has; any other {{...}} loses its braces (ElevenLabs fails a call on a variable it does not know). */
 export function sanitizeVars(text: string): string {
@@ -63,18 +63,36 @@ export type Tone = (typeof TONES)[number];
 export const TTS_MODELS = ['eleven_v4_turbo', 'eleven_v4', 'eleven_flash_v2_5', 'eleven_multilingual_v2', 'eleven_v3_conversational'] as const;
 /**
  * The agent's brain: the LLM ElevenLabs runs the conversation on
- * (conversation_config.agent.prompt.llm). Unset, ElevenLabs picked its own
- * default. Gemini Flash answers fastest; Claude Sonnet follows a script and
- * holds a line under pressure best, a beat slower.
+ * (conversation_config.agent.prompt.llm). The default is the model ElevenLabs
+ * itself picks for new agents (Qwen 3.5): it answered in under a second on our
+ * calls, where Gemini Flash stalled mid-reply and handed turns to the 7-8 s
+ * backup cascade. Claude Sonnet follows a script and holds a line under
+ * pressure best, a beat slower.
  */
-export const LLMS = ['gemini-3.8-flash', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-4-5'] as const;
+export const LLMS = ['qwen35-397b-a17b', 'gemini-3.8-flash', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5', 'claude-haiku-4-5'] as const;
 export type Llm = (typeof LLMS)[number];
-export const DEFAULT_LLM: Llm = 'gemini-3.8-flash';
-/** How much the brain thinks before it talks: the model's own default, or reasoning_effort low / medium. More is smarter and slower. */
-export const THINKING = ['auto', 'light', 'deep'] as const;
+export const DEFAULT_LLM: Llm = 'qwen35-397b-a17b';
+/**
+ * How much the brain thinks before it talks: none (reasoning_effort none, the
+ * quickest reply and the default for live calls), the model's own default, or
+ * reasoning_effort low / medium. More is smarter and slower: on a phone call a
+ * reasoning pass is dead air before every reply.
+ */
+export const THINKING = ['off', 'auto', 'light', 'deep'] as const;
 export type Thinking = (typeof THINKING)[number];
-/** The model that performs sound tags ([laughs], [clears throat]); on the others a tag is read out, so the prompt only teaches tags here. */
+/**
+ * The agents-only v3 model. Text to Speech has no such id, so a preview of it
+ * speaks with eleven_v3 (voice-agent-admin previewSpeech).
+ */
 export const EXPRESSIVE_TTS_MODEL: TtsModel = 'eleven_v3_conversational';
+/**
+ * The models that perform sound tags ([laughs], [sighs], [pause]). v4 Turbo and
+ * v4 list audio tags as a feature (https://elevenlabs.io/docs/overview/models,
+ * read 2026-10-14); on Flash and Multilingual a tag would be read out, so the
+ * prompt only teaches tags on these.
+ */
+export const TAG_TTS_MODELS: readonly TtsModel[] = ['eleven_v4_turbo', 'eleven_v4', 'eleven_v3_conversational'];
+export const speaksTags = (m: TtsModel): boolean => TAG_TTS_MODELS.includes(m);
 export const EXPRESSIVENESS = ['off', 'natural', 'expressive'] as const;
 export type Expressiveness = (typeof EXPRESSIVENESS)[number];
 export type TtsModel = (typeof TTS_MODELS)[number];
@@ -134,7 +152,7 @@ const tool = (enabled: boolean, key: ToolKey): ToolSetting => ({ enabled, availa
 export function defaultSettings(): AgentSettings {
   return {
     identity: { name: '', company: '', role: 'lead_manager', introduce_as: 'virtual_assistant', languages: ['en'] },
-    voice: { voice_id: DEFAULT_VOICE_ID, tts_model: 'eleven_v4_turbo', stability: null, similarity: null, speed: null, llm: DEFAULT_LLM, thinking: 'light' },
+    voice: { voice_id: DEFAULT_VOICE_ID, tts_model: 'eleven_v4_turbo', stability: null, similarity: null, speed: null, llm: DEFAULT_LLM, thinking: 'off' },
     personality: { tone: 'warm', energy: 3, verbosity: 2, warmth: 3, formality: 3, use_fillers: true, humor: 0, expressiveness: 'natural' },
     script: { template_id: '', sections: [], raw_prompt_override: null, master_script_text: '' },
     rules: {

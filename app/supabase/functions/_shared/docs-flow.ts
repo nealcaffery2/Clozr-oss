@@ -13,14 +13,16 @@
  * that secret nothing is texted and the result says so; email still goes.
  */
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { type Any, type Company, applySent, emailSigners, ensureTcCc, logContractFeed, logEvent, signUrl } from './docs.ts';
+import { type Any, type Company, applySent, emailSigners, ensureTcCc, logContractFeed, logEvent, signUrl, signingSender } from './docs.ts';
 import { needsApproval, pendingApprovals, sendTo } from './signing-order.ts';
 import { codeText, delegatedRole, insertAt, normalizeDelivery, phoneE164, signingText, wantsEmail, wantsSms } from './docs-people.ts';
 import { sendResend, transactionalFrom } from './resend.ts';
+import { signingResendEnv } from './workspace-email.ts';
 import { onDelegated } from './delegate.ts';
-import { isBlacklisted } from '../../../lib/blacklist.ts';
-import { activeTalkrBinding, gateTalkrWrite, readTalkrOrg, TALKR_NOT_CONNECTED } from './talkr-binding.ts';
-import { loadTalkrConnections } from './talkr-connect.ts';
+import { type BlacklistDb, loadBlocked, textBlock } from '../../../lib/blacklist.ts';
+import { carrierCheck, carrierReport } from '../../../lib/carrier-safe.ts';
+import { gateTalkrWrite, readTalkrOrg, TALKR_NOT_CONNECTED } from './talkr-binding.ts';
+import { textingBinding } from './talkr-connect.ts';
 
 export const SIGNER_COLS = 'id, workspace_id, contract_id, role, label, name, email, phone, status, sort, recipient_type, token, delivery, seller_id, buyer_id, vendor_id, user_id, signed_at, viewed_at, view_seconds, reminder_count, last_reminded_at, approved_at, rejected_at, reject_reason, delegated_from, delegated_to, delegate_reason';
 
@@ -57,12 +59,15 @@ async function partnerToken(user: { id: string; email: string | null }): Promise
   return `${head}.${body}.${b64url(sig)}`;
 }
 
-export type TextResult = { ok: true; communication_id?: number | null } | { ok: false; reason: string };
+/** `carrier_fixed`: what the carrier check reworded before it went (lib/carrier-safe), for the sender's log. */
+export type TextResult = { ok: true; communication_id?: number | null; carrier_fixed?: string } | { ok: false; reason: string };
 
 /**
  * One text to one recipient, as the sender. Blacklisted records and numbers
  * Talkr has suppressed (they replied STOP) are never texted; quiet hours are
- * Talkr's to enforce and come back as a reason.
+ * Talkr's to enforce and come back as a reason. A blacklist read that fails
+ * comes back as BLACKLIST_UNREAD (lib/blacklist): nothing went out, and the
+ * caller holds the text and tries again rather than counting it as a no.
  */
 export async function textRecipient(
   admin: SupabaseClient, row: Record<string, Any>, to: { phone?: string | null; seller_id?: number | null; buyer_id?: number | null; vendor_id?: number | null },
@@ -72,18 +77,20 @@ export async function textRecipient(
 ): Promise<TextResult> {
   const phone = phoneE164(to.phone);
   if (!phone) return { ok: false, reason: 'no mobile number' };
-  if (to.seller_id) {
-    const { data } = await admin.from('sellers').select('tags').eq('id', to.seller_id).maybeSingle();
-    if (isBlacklisted(data as Any)) return { ok: false, reason: 'blocked: on the blacklist' };
-  }
-  if (to.buyer_id) {
-    const { data } = await admin.from('buyers').select('tags, blacklisted_at').eq('id', to.buyer_id).maybeSingle();
-    if (isBlacklisted(data as Any)) return { ok: false, reason: 'blocked: on the blacklist' };
-  }
+  // Every server text is outreach or a template: carrier trigger wording is
+  // swapped for safe wording, and a text a carrier would block is refused.
+  const carrier = carrierCheck(body);
+  if (carrier.blocked) return { ok: false, reason: `carrier would block it: ${carrierReport(carrier)}` };
+  body = carrier.text;
+  const carrierFixed = carrierReport(carrier, ['fix']);
+  const listed = await loadBlocked(admin as unknown as BlacklistDb, { sellerIds: [to.seller_id], buyerIds: [to.buyer_id] });
+  if (!listed.ok) console.error('textRecipient', listed.message);
+  const block = textBlock(listed, to);
+  if (block) return { ok: false, reason: block };
   const { data: ws } = await admin.from('workspaces').select('settings, owner_id').eq('id', row.workspace_id).maybeSingle();
   const settings = (ws?.settings ?? {}) as Record<string, Any>;
   const wsId = Number(row.workspace_id);
-  const binding = activeTalkrBinding({ id: wsId, settings }, (await loadTalkrConnections(admin, [wsId]))[0] ?? null);
+  const binding = await textingBinding(admin, { id: wsId, settings });
   if (!binding) return { ok: false, reason: TALKR_NOT_CONNECTED };
   let userId = senderId ?? row.created_by ?? null;
   userId = userId ?? ws?.owner_id ?? null;
@@ -120,12 +127,17 @@ export async function textRecipient(
     return { ok: false, reason: `Talkr refused: ${code || res.status}` };
   }
   const msg = res.body?.message ?? {};
+  // Who sent it and from which line, so the record, the Inbox and the
+  // leaderboard agree (lib/sms-record on the browser side writes the same).
+  // Talkr names the line on the message (from_number); an older Talkr does
+  // not, and the row then carries only the sender.
   const { data: comm } = await admin.from('communications').upsert({
     workspace_id: row.workspace_id, seller_id: to.seller_id ?? null, buyer_id: to.buyer_id ?? null, vendor_id: to.vendor_id ?? null, deal_id: row.deal_id ?? null,
     channel: 'sms', direction: 'outbound', occurred_at: new Date().toISOString(), to_phone: phone, body,
+    rep_id: userId, talkr_user_id: msg.created_by ?? null, from_phone: msg.from_number ?? null,
     status: msg.status || 'queued', source: 'talkr', source_id: 'msg:' + (msg.id ?? crypto.randomUUID()),
   }, { onConflict: 'workspace_id,source,source_id' }).select('id').maybeSingle();
-  return { ok: true, communication_id: (comm as Any)?.id ?? null };
+  return { ok: true, communication_id: (comm as Any)?.id ?? null, ...(carrierFixed ? { carrier_fixed: carrierFixed } : {}) };
 }
 
 /** The access code by text, for a recipient whose delivery is sms or both. */
@@ -136,8 +148,9 @@ export async function textCode(admin: SupabaseClient, row: Record<string, Any>, 
 // -------------------------------------------------------------- deliveries
 export type Delivered = { emailed: number; texted: number; failed: { id: number; reason: string }[] };
 
-async function emailApprovers(company: Company, row: Record<string, Any>, list: (Any & { url: string })[]): Promise<number> {
-  const from = transactionalFrom();
+async function emailApprovers(admin: SupabaseClient, company: Company, row: Record<string, Any>, list: (Any & { url: string })[]): Promise<number> {
+  const env = await signingResendEnv(admin, row.workspace_id as number);
+  const from = transactionalFrom(env);
   if (!from) return 0;
   let sent = 0;
   for (const s of list) {
@@ -148,7 +161,7 @@ async function emailApprovers(company: Company, row: Record<string, Any>, list: 
       text: `${who ? `${who}, ` : ''}${row.name} needs your approval before it goes out for signature.\n\nReview it: ${s.url}\n\nApprove or reject it from that page (or from the Contracts screen in CLOZR).`,
       html: `<p>${who ? `${esc(who)}, ` : ''}<strong>${esc(String(row.name))}</strong> needs your approval before it goes out for signature.</p><p><a href="${esc(s.url)}" style="display:inline-block;background:#0A8560;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:600">Review and approve</a></p><p style="color:#71717a;font-size:13px">You can approve or reject it from that page, or from the Contracts screen in CLOZR.</p>`,
       replyTo: company.email || null, tags: { kind: 'signing_approval' },
-    });
+    }, env);
     if (ok) sent++;
   }
   return sent;
@@ -166,10 +179,12 @@ export async function deliverLinks(
   const withUrl = list.filter((s) => s.token).map((s) => ({ ...s, url: signUrl(ctx.origin, s.token) }));
   const mail = withUrl.filter((s) => wantsEmail(s));
   const cc = opts.approve ? [] : await ensureTcCc(admin, row);
+  const mailEnv = await signingResendEnv(admin, row.workspace_id as number);
+  const sender = await signingSender(admin, ctx.senderId ?? row.created_by ?? null);
   if (mail.length) {
     out.emailed = opts.approve
-      ? await emailApprovers(ctx.company, row, mail)
-      : await emailSigners(ctx.company, String(row.name), opts.message ?? row.message ?? null, mail, { reminder: opts.reminder, expiresAt: row.expires_at, cc, contractId: row.id });
+      ? await emailApprovers(admin, ctx.company, row, mail)
+      : await emailSigners(ctx.company, String(row.name), opts.message ?? row.message ?? null, mail, { reminder: opts.reminder, expiresAt: row.expires_at, cc, contractId: row.id, env: mailEnv, sender });
   }
   for (const s of withUrl.filter((x) => wantsSms(x))) {
     const r = await textRecipient(admin, row, s, signingText({ company: ctx.company.name, name: s.name, doc: String(row.name ?? ''), url: s.url, reminder: opts.reminder, approve: opts.approve }), ctx.senderId ?? null);

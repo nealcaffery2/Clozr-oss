@@ -16,6 +16,7 @@ import { ComprIcon } from '@/components/ds/ComprIcon';
 import { nextOfferBand } from './record-logic';
 import { InlineField } from '@/components/ds/InlineField';
 import { RepPicker } from '@/components/ds/RepPicker';
+import { Mail, MapPin, Phone } from 'lucide-react';
 
 export function Identity({ V, compact }: { V: ClozrView; compact?: boolean }) {
   return (
@@ -26,12 +27,44 @@ export function Identity({ V, compact }: { V: ClozrView; compact?: boolean }) {
         </span>
         <div style={{ minWidth: 0 }}>
           <EditableName V={V} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', fontSize: '12px', color: '#71717a' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', fontSize: '12px', color: 'var(--muted, #52525b)' }}>
             <TypeChip kind="Seller" />
             {V.P.market}
           </div>
+          <div style={{ marginTop: '3px', fontSize: '12px', color: 'var(--muted, #52525b)' }}>Last communication <span style={{ color: 'var(--ink-2, #27272a)' }}>{V.lastTouch}</span></div>
         </div>
       </div>}
+      {compact ? null : (
+        <div className="rec-contact" data-testid="record-contact-rows">
+          <div className="rec-contact-row">
+            <Phone size={13} aria-hidden />
+            {V.P.phone && V.P.phone !== '—' ? (
+              <>
+                <button type="button" className="rec-contact-link" onClick={V.callPerson} title="Call (C)">{V.P.phone}</button>
+                <button type="button" className="rec-contact-act" onClick={() => V.openQuickReach('text')} title="Text (T)">Send text</button>
+              </>
+            ) : <span className="rec-contact-none">No phone</span>}
+          </div>
+          <div className="rec-contact-row">
+            <Mail size={13} aria-hidden />
+            {V.P.email.includes('@') ? (
+              <button type="button" className="rec-contact-link" onClick={() => V.openQuickReach('email')} title="Email (E)" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{V.P.email}</button>
+            ) : <span className="rec-contact-none">No email</span>}
+          </div>
+          <div className="rec-contact-row" style={{ alignItems: 'flex-start' }}>
+            <MapPin size={13} aria-hidden style={{ marginTop: '6px' }} />
+            {V.P.addr && V.P.addr !== '—' ? (() => {
+              const full = [V.P.addr, V.P.cityLine.replace(/^,\s*|\s+$/g, '').replace(/,\s*$/, '')].filter((x) => x && x.trim() && x.trim() !== ',').join(', ');
+              return (
+                <a className="rec-contact-link" href={'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(full)} target="_blank" rel="noopener noreferrer"
+                  title="Open in Google Maps" style={{ minWidth: 0, lineHeight: 1.35, padding: '4px 0', color: 'var(--ink-2, #27272a)' }}>
+                  {full}
+                </a>
+              );
+            })() : V.canEditAddress ? <button type="button" className="rec-contact-act" onClick={V.editAddress}>Add address</button> : <span className="rec-contact-none">No address</span>}
+          </div>
+        </div>
+      )}
       <div style={{ marginTop: compact ? 0 : '10px', display: 'grid', gap: '3px', fontSize: '12px', color: '#71717a' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: '8px', margin: '2px 0 4px' }}>
           <RepPicker label="Assigned to" team={V.team} roles={['acq']} value={V.P.assignedId || null} noneLabel="Unassigned"
@@ -39,7 +72,6 @@ export function Identity({ V, compact }: { V: ClozrView; compact?: boolean }) {
           <RepPicker label="Underwriter" team={V.team} roles={['underwriter']} value={V.P.underwriterId || null} noneLabel="Nobody"
             onChange={(id) => V.P.underwriterTo(id ?? '')} readOnlyReason={V.recordReadOnly} />
         </div>
-        <div>Last touch: <span style={{ color: '#27272a' }}>{V.lastTouch}</span></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           Deal type
           {V.P.dealType ? (() => {
@@ -125,12 +157,22 @@ const PROP_FIELDS: Record<string, string> = {
   Type: 'property.type',
 };
 
-export function PropertyCard({ V }: { V: ClozrView }) {
+/**
+ * `side`: the deal page's right column, where Property details already shows
+ * the facts, the lookups and the APN, so the card is the photo, COMPR, the
+ * underwriting and the offer.
+ */
+export function PropertyCard({ V, side = false }: { V: ClozrView; side?: boolean }) {
   const o = V.offerCard;
   const canEdit = !!V.liveIds?.canWrite || !V.liveIds;
+  const triage = V.propertyUwTriage;
+  const triageBorder = triage?.bucket === 'green' ? '2px solid #16a34a'
+    : triage?.bucket === 'decline' ? '2px solid #dc2626'
+      : triage?.bucket === 'review' ? '2px solid #ca8a04'
+        : '1px solid #e4e4e7';
   const rule: React.CSSProperties = { borderTop: '1px solid #f0f0f1' };
   return (
-    <div data-testid="record-property" style={{ border: '1px solid #e4e4e7', borderRadius: '12px', overflow: 'hidden', background: '#fff' }}>
+    <div data-testid="record-property" style={{ border: triageBorder, borderRadius: '12px', overflow: 'hidden', background: '#fff' }}>
       <button type="button" data-testid="subject-photo" onClick={() => (V.P.photos.length ? V.openPhotoShow(V.P.addr, V.P.photos, V.P.dealDbId) : V.P.lookups[0].go())}
         aria-label={V.P.photos.length ? `View photos of ${V.P.addr}` : `Open Street View of ${V.P.addr}`}
         style={{ position: 'relative', display: 'block', width: '100%', height: '130px', padding: 0, border: 0, background: '#e4e4e7', cursor: 'pointer', textAlign: 'left' }}>
@@ -144,6 +186,12 @@ export function PropertyCard({ V }: { V: ClozrView }) {
       </button>
 
       <div style={{ padding: '10px 12px 12px' }}>
+        {triage ? (
+          <div data-testid="uw-triage-badge" style={{ ...hint, marginBottom: '10px', padding: '6px 8px', borderRadius: '8px', background: triage.bucket === 'green' ? '#f0fdf4' : triage.bucket === 'decline' ? '#fef2f2' : '#fefce8', color: triage.bucket === 'green' ? '#15803d' : triage.bucket === 'decline' ? '#b91c1c' : '#a16207', fontWeight: 600 }}>
+            {triage.label} — {triage.hint}
+          </div>
+        ) : null}
+        {side ? null : <>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: '6px' }}>
           {V.P.lookups.map((l) => (
             <button key={l.label} type="button" className="dc2 rec-press rec-ghost" onClick={l.go} title={`Open ${l.label} in a popup`}
@@ -174,10 +222,11 @@ export function PropertyCard({ V }: { V: ClozrView }) {
             );
           })}
         </div>
+        </>}
         {V.comprLinked ? (
           <button type="button" data-testid="open-in-compr" className="clozr-compr-btn rec-press rec-compr" onClick={V.openCompr}
             title="The COMPR report in its own window. Put it on your second screen once; every next house opens there."
-            style={{ ...comprBtn, width: '100%', height: '32px', marginTop: '14px' }}>
+            style={{ ...comprBtn, width: '100%', height: '32px', marginTop: side ? 0 : '14px' }}>
             <span style={{ color: '#7fcbb2', display: 'inline-flex' }}><ComprIcon size={14} /></span>
             Open in COMPR
           </button>
@@ -185,7 +234,7 @@ export function PropertyCard({ V }: { V: ClozrView }) {
           <button type="button" data-testid="run-compr" className="clozr-compr-btn rec-press rec-compr" onClick={V.runCompr}
             disabled={V.comprRunning} aria-busy={V.comprRunning || undefined}
             title="Underwrites this house in COMPR with every photo on the record. ARV, rehab and MAO fill in below."
-            style={{ ...comprBtn, width: '100%', height: '32px', marginTop: '14px', ...(V.comprRunning ? { opacity: 0.7, cursor: 'progress' } : null) }}>
+            style={{ ...comprBtn, width: '100%', height: '32px', marginTop: side ? 0 : '14px', ...(V.comprRunning ? { opacity: 0.7, cursor: 'progress' } : null) }}>
             <span style={{ color: '#7fcbb2', display: 'inline-flex' }}><ComprIcon size={14} /></span>
             {V.comprRunning ? 'Running COMPR…' : 'Run COMPR'}
           </button>
@@ -228,9 +277,6 @@ export function PropertyCard({ V }: { V: ClozrView }) {
             <BandField testId="offer-high" title="High offer" amount={o.high} setByHand={o.highSet} onSave={(n) => V.saveOfferBand('high', n)} />
           </div>
         </div>
-        <div style={{ ...hint, marginTop: '6px' }}>
-          High is COMPR&apos;s offer, low is $20k under it. Type either to set it by hand; COMPR then leaves it alone.
-        </div>
         {V.showUnderwriterChips ? <UnderwriterStages V={V} /> : null}
       </section>
 
@@ -251,7 +297,7 @@ export function PropertyCard({ V }: { V: ClozrView }) {
         {o.history ? <OfferHistory h={o.history} refreshKey={String(o.sent ?? '')} /> : null}
       </section>
 
-      <div style={{ ...rule, padding: '10px 12px 12px' }}>
+      {side ? null : <div style={{ ...rule, padding: '10px 12px 12px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr', gap: '6px' }}>
           <button type="button" className="dc2 rec-press rec-ghost" onClick={V.openPropertyData} style={{ ...ghostBtn, height: '28px', fontSize: '12px', padding: 0, whiteSpace: 'nowrap' }}>Property data</button>
           <button type="button" className="dc2 rec-press rec-ghost" onClick={V.openMap} style={{ ...ghostBtn, height: '28px', fontSize: '12px', padding: 0, whiteSpace: 'nowrap' }}>Map</button>
@@ -266,7 +312,7 @@ export function PropertyCard({ V }: { V: ClozrView }) {
             </button>
           ) : null}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

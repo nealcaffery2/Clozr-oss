@@ -7,17 +7,18 @@
    tokens it builds on live in app/clozr/tokens.css; the generated hover and
    focus rules live in app/clozr/clozr.css.
 
-   Note the font stack: the prototype deliberately uses the system sans rather
-   than Inter, so figures render without slashed zeros.
+   The face is Inter on every platform (loaded in app/layout.tsx), with the
+   system sans only as a fallback. Its default zero is unslashed, and
+   tabular figures stay on below.
    ============================================================ */
 
 html,
 body {
   margin: 0;
   height: 100%;
-  background: #fafafa;
-  color: #18181b;
-  font-family: 'SF Pro Text', 'SF Pro Display', -apple-system, BlinkMacSystemFont, var(--font-inter), 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: var(--canvas, #fafafa);
+  color: var(--ink, #18181b);
+  font-family: var(--font-inter), 'Inter', 'SF Pro Text', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   font-feature-settings: 'tnum' 1;
   font-variant-numeric: tabular-nums;
@@ -28,12 +29,12 @@ body {
 }
 
 a {
-  color: #0A8560;
+  color: var(--tx-mint, #0a8560);
   text-decoration: none;
 }
 
 a:hover {
-  color: #08694C;
+  color: var(--tx-mint-deep, #08694c);
 }
 
 button {
@@ -50,7 +51,7 @@ select {
 
 input::placeholder,
 textarea::placeholder {
-  color: #a1a1aa;
+  color: var(--subtle, #a1a1aa);
 }
 
 ::-webkit-scrollbar {
@@ -59,9 +60,9 @@ textarea::placeholder {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #e4e4e7;
+  background: var(--divider, #e4e4e7);
   border-radius: 10px;
-  border: 2px solid #fafafa;
+  border: 2px solid var(--canvas, #fafafa);
 }
 
 ::-webkit-scrollbar-track {
@@ -168,7 +169,7 @@ textarea::placeholder {
     max-width: none !important;
     border-right: 0 !important;
     border-left: 0 !important;
-    border-bottom: 1px solid #e4e4e7 !important;
+    border-bottom: 1px solid var(--divider, #e4e4e7) !important;
     overflow: visible !important;
   }
 
@@ -235,7 +236,7 @@ textarea::placeholder {
     gap: 4px;
     padding: 8px 10px !important;
     border-right: 0 !important;
-    border-bottom: 1px solid #e4e4e7;
+    border-bottom: 1px solid var(--divider, #e4e4e7);
     overflow-x: auto !important;
   }
   [data-screen-label='Live database'] > aside > div {
@@ -446,7 +447,7 @@ html[data-phone='up'] .clozr-viewas {
    ------------------------------------------------------------------ */
 @media (display-mode: standalone), (display-mode: fullscreen) {
   html {
-    background: #18181b;
+    background: var(--ink, #18181b);
   }
   body {
     padding-top: env(safe-area-inset-top, 0px);
@@ -461,8 +462,42 @@ html[data-phone='up'] .clozr-viewas {
     left: 0;
     right: 0;
     height: env(safe-area-inset-top, 0px);
-    background: #18181b;
+    background: var(--ink, #18181b);
     z-index: 64;
     pointer-events: none;
+  }
+}
+
+/* ------------------------------------------------------------------
+   Dark mode (tokens.css carries the values; lib/theme.ts sets the attribute).
+   What the tokens cannot reach on their own.
+   ------------------------------------------------------------------ */
+/* The hero panels (offer, AI) are near-black in both themes; on a dark page
+   they need an edge to read as a panel. The codemod leaves their fill as
+   var(--ink-hero, ...), which is what this matches. */
+:root[data-theme='dark'] [style*='var(--ink-hero'] {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+/* Photos and logos drawn on white (the Acme Homes logo, provider marks) sit
+   on a small white tile instead of bleeding white into the page. */
+:root[data-theme='dark'] img[src$='company-logo.svg'],
+:root[data-theme='dark'] img[src$='company-mark.svg'] {
+  background: var(--surface, #fff);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+/* The native pickers and scrollbars follow the theme. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) [style*='var(--ink-hero'] {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  }
+  :root:not([data-theme='light']) img[src$='company-logo.svg'],
+  :root:not([data-theme='light']) img[src$='company-mark.svg'] {
+    background: var(--surface, #fff);
+    border-radius: 6px;
+    padding: 2px 6px;
   }
 }

@@ -11,6 +11,7 @@
 import React from 'react';
 import type { ClozrView } from '@/app/clozr/view';
 import { picksOf, togglePick } from '@/lib/multi-filter';
+import { AttackGapFields, DateRangeFields } from '@/app/components/filters/RangeFilters';
 
 const label: React.CSSProperties = { display: 'block', fontSize: 11.5, color: '#71717a', fontWeight: 500, marginBottom: 4 };
 const field: React.CSSProperties = { width: '100%', height: 32, padding: '0 8px', border: '1px solid #e4e4e7', borderRadius: 8, fontSize: 12.5, background: '#fafafa', color: '#18181b', fontFamily: 'inherit', boxSizing: 'border-box' };
@@ -83,6 +84,8 @@ export function MoreFiltersFields({ V }: { V: ClozrView }) {
   const set = m.set as (patch: Record<string, string>) => void;
   return (
     <>
+      <DateRangeFields when={f.addedWhen} from={f.addedFrom} to={f.addedTo} onChange={(patch) => set({ addedWhen: patch.when, ...(patch.from != null ? { addedFrom: patch.from } : {}), ...(patch.to != null ? { addedTo: patch.to } : {}) })} />
+      <AttackGapFields basis={f.attackBasis} gap={f.attackGap} onBasis={(v) => set({ attackBasis: v })} onGap={(v) => set({ attackGap: v })} />
       <section>
         <h3 style={head}>Stage history</h3>
         <div style={grid2}>

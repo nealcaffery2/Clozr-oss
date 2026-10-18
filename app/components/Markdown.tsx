@@ -17,8 +17,8 @@ function inline(nodes: Inline[], key = 'i'): React.ReactNode[] {
       }
       case 'strong': return <strong key={k} style={{ fontWeight: 600 }}>{inline(n.c, k)}</strong>;
       case 'em': return <em key={k}>{inline(n.c, k)}</em>;
-      case 'code': return <code key={k} style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.92em', background: '#f4f4f5', borderRadius: 4, padding: '1px 4px' }}>{n.v}</code>;
-      case 'link': return <a key={k} href={n.href} target="_blank" rel="noopener noreferrer" style={{ color: '#0369A1', textDecoration: 'underline' }}>{inline(n.c, k)}</a>;
+      case 'code': return <code key={k} style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.92em', background: 'var(--surface-2, #f4f4f5)', borderRadius: 4, padding: '1px 4px' }}>{n.v}</code>;
+      case 'link': return <a key={k} href={n.href} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--tx-sky, #0369a1)', textDecoration: 'underline' }}>{inline(n.c, k)}</a>;
     }
   });
 }

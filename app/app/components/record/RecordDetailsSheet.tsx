@@ -154,7 +154,7 @@ export function RecordDetailsSheet({ V, me, at, onClosed }: { V: ClozrView; me: 
 
           <Section k="team" component="DealTeam">
             {live?.sellerId != null ? (
-              <DealTeam bare sellerId={live.sellerId} dealId={live.dealId} onCall={V.callParty} onOpenSeller={(id) => V.openPerson('s' + id)} onOpenBuyer={(id) => V.openBuyerRecord('b' + id)} onOpenVendor={V.openVendorContact} onChanged={V.reloadCrm} />
+              <DealTeam bare sellerId={live.sellerId} dealId={live.dealId} onCall={V.callParty} onOpenSeller={(id) => V.openPerson('s' + id)} onOpenBuyer={(id) => V.openBuyerRecord('b' + id)} onOpenVendor={V.openVendorContact} onChanged={V.dealTeamSaved} />
             ) : <div style={empty}>Title, agents, attorneys and lenders on this deal are listed {SIGNED_IN}.</div>}
           </Section>
 

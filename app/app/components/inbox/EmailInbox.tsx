@@ -12,7 +12,7 @@ import { useEmailDocument } from '@/app/components/email/useEmailDocument';
 import { SpamRiskBadge } from '@/app/components/deliverability/SpamRiskBadge';
 import { GoogleConnect } from '@/components/GoogleConnect';
 import { Icon } from '@/app/components/talkr/Icon';
-import { Avatar, Button, FIELD } from '@/app/components/talkr/ui';
+import { Button, FIELD } from '@/app/components/talkr/ui';
 import { Bubble, TimeSeparator, needsStamp } from '@/app/components/talkr/Bubble';
 import { type EmailRow, type EmailThread, type RecordFor, baseSubject, type useEmail } from './data';
 import { InboxRow } from './InboxRow';
@@ -132,7 +132,7 @@ export function EmailInbox({ workspaceId, demo, userId, email, recordFor, mergeF
   );
 }
 
-/** One iOS Messages-style row: dot, avatar, name, time ›, two-line preview. Shared with the All and Calls tabs. */
+/** The open email: name, subject, and the thread. Shared with the All and Calls tabs. */
 // Exported so the Gmail chrome can mount it: it carries the send path, the
 // template picker, merge fields, the spam badge, record linking and
 // click-to-call, none of which should be rewritten just to restyle a list.
@@ -161,7 +161,6 @@ export function EmailThreadPane({ thread, isNew, workspaceId, userId, email, rec
         <div className="flex min-w-0 flex-1 flex-col items-center gap-0.5">
           {thread || to ? (
             <>
-              <Avatar name={name || '?'} size={40} />
               <button type="button" disabled={!rec} onClick={rec?.open} className="inline-flex max-w-full items-center gap-0.5" style={{ font: '500 12px/1.2 var(--sans)', color: 'var(--text)', cursor: rec ? 'pointer' : 'default' }} title={rec ? 'Go to record' : 'Not in CLOZR'}>
                 <span className="truncate">{name}</span>{rec && <Icon name="chevron-right" size={11} style={{ color: '#8e8e93' }} />}
               </button>

@@ -1,7 +1,8 @@
 // Resend from-address parse, event mapping, webhook verify.
 // Run: npx tsx tools/resend.test.ts
 import assert from 'node:assert/strict';
-import { classifyResendEvent, parseFrom, suggestBlastFrom, verifyResendWebhook, workspaceResendEnv } from '../supabase/functions/_shared/resend-rules';
+import { classifyResendEvent, parseFrom, resendTags, suggestBlastFrom, verifyResendWebhook, workspaceResendEnv } from '../supabase/functions/_shared/resend-rules';
+import { transactionalFrom } from '../supabase/functions/_shared/resend';
 import { campaignChecklist, poolRoom, type Overview, type ResendSender } from '../lib/deliverability';
 
 assert.equal(parseFrom(''), null);
@@ -19,6 +20,21 @@ assert.equal(classifyResendEvent('email.bounced', 'transient'), 'ignored');
 assert.equal(classifyResendEvent('email.complained'), 'complaint');
 assert.equal(classifyResendEvent('email.delivered'), 'delivered');
 assert.equal(classifyResendEvent('email.opened'), 'ignored');
+
+assert.deepEqual(resendTags({ kind: 'action_plan', plan: 'Compr · Activate new signups' }), [
+  { name: 'kind', value: 'action_plan' },
+  { name: 'plan', value: 'Compr_Activate_new_signups' },
+]);
+assert.deepEqual(resendTags({ stage: '', 'bad key!': 'Café' }), [
+  { name: 'stage', value: 'none' },
+  { name: 'bad_key', value: 'Cafe' },
+]);
+
+const proj = { get: (k: string) => (k === 'RESEND_API_KEY' ? 're_project' : k === 'MAIL_FROM' ? 'Acme Homes <contracts@deals.yourcompany.com>' : undefined) };
+const wsOnlyKey = workspaceResendEnv(proj, { key: 're_workspace', from: null });
+assert.equal(transactionalFrom(wsOnlyKey), null, 'blast env with workspace key but no sender is intentionally off');
+const signingLike = workspaceResendEnv(proj, { key: 're_workspace', from: suggestBlastFrom('Acme Homes', 'sam@yourcompany.com')! });
+assert.equal(transactionalFrom(signingLike)?.email, 'deals@deals.yourcompany.com');
 
 const secret = 'whsec_' + btoa('test-secret-bytes!!');
 const raw = '{"type":"email.bounced"}';

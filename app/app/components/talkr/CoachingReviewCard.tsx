@@ -11,9 +11,9 @@ import {
 } from '@/lib/call-coaching';
 import { FrameworkSummary, ReviewSectionsView } from '@/app/components/coaching/parts';
 
-const INK = '#18181b';
-const MUTED = '#71717a';
-const LINE = '#e4e4e7';
+const INK = 'var(--ink, #18181b)';
+const MUTED = 'var(--meta, #71717a)';
+const LINE = 'var(--divider, #e4e4e7)';
 
 function gradeColor(n: number): string {
   if (n >= 70) return '#0A8560';
@@ -23,7 +23,7 @@ function gradeColor(n: number): string {
 
 export function CoachingReviewView({ review }: { review: CallCoachingReview }) {
   return (
-    <div style={{ display: 'grid', gap: '10px', fontSize: '13px', lineHeight: 1.5, color: '#27272a' }}>
+    <div style={{ display: 'grid', gap: '10px', fontSize: '13px', lineHeight: 1.5, color: 'var(--ink-2, #27272a)' }}>
       <div>
         <div style={{ fontSize: '18px', fontWeight: 700, letterSpacing: '-0.02em', color: INK }}>
           <span style={{ color: gradeColor(review.overall) }}>{review.overall}/100</span>
@@ -73,7 +73,7 @@ function Lines({ label, items }: { label: string; items: string[] }) {
 
 function Frame({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: '10px', padding: '14px 16px' }}>
+    <div style={{ background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '10px', padding: '14px 16px' }}>
       {children}
     </div>
   );
@@ -148,7 +148,7 @@ export function CoachingReviewCard({
     return <Frame><p style={{ margin: 0, fontSize: '13px', color: MUTED }}>Coaching this call...</p></Frame>;
   }
   if (status === 'error') {
-    return <Frame><p style={{ margin: 0, fontSize: '13px', color: '#b91c1c' }}>{error || 'Coaching failed.'}</p></Frame>;
+    return <Frame><p style={{ margin: 0, fontSize: '13px', color: 'var(--tx-red, #b91c1c)' }}>{error || 'Coaching failed.'}</p></Frame>;
   }
   if (review) return <Frame><CoachingReviewView review={review} /></Frame>;
   if (transcript.trim().length > 0 && transcript.trim().length < 40) {

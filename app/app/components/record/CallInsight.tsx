@@ -9,7 +9,7 @@
 // finished falls back to Talkr live.
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { type Suggestion, applySuggestion, describeSuggestion, loadCallMedia, type CallMedia, suggestForCall } from '@/lib/record-suggest';
 import type { CallScoreDto } from '@/lib/talkr-web/api';
 import { requestCallCoaching } from '@/lib/call-coach';
@@ -24,7 +24,7 @@ const btn: React.CSSProperties = { height: '26px', padding: '0 10px', borderRadi
 const eyebrow: React.CSSProperties = { fontSize: '11.5px', color: MUTED, fontWeight: 600, marginBottom: '6px' };
 
 /** The Apply / Dismiss list, shared with SmsSuggestions. */
-export function SuggestionList({ workspaceId, sellerId, me, canWrite = true, state, onToast, onChanged }: {
+export function SuggestionList({ workspaceId, sellerId, me, canWrite = true, state, onToast, onChanged, onSettled }: {
   workspaceId: number;
   sellerId: number;
   me: string | null;
@@ -32,6 +32,8 @@ export function SuggestionList({ workspaceId, sellerId, me, canWrite = true, sta
   state: { loading: boolean; error: string | null; items: Suggestion[] | null };
   onToast?: (msg: string) => void;
   onChanged?: () => void;
+  /** A suggestion applied or dismissed, so a cached list can drop it. */
+  onSettled?: (s: Suggestion) => void;
 }) {
   const [gone, setGone] = useState<Record<number, 'applied' | 'dismissed' | 'busy'>>({});
   if (state.loading) return <div style={{ fontSize: '12px', color: MUTED }}>Reading for updates…</div>;
@@ -45,7 +47,7 @@ export function SuggestionList({ workspaceId, sellerId, me, canWrite = true, sta
     const r = await applySuggestion(workspaceId, sellerId, me, s);
     setGone((g) => { const n = { ...g }; if (r.ok) n[i] = 'applied'; else delete n[i]; return n; });
     onToast?.(r.ok ? 'Applied · ' + describeSuggestion(s) : r.message ?? 'Could not apply.');
-    if (r.ok) onChanged?.();
+    if (r.ok) { onSettled?.(s); onChanged?.(); }
   };
 
   return (
@@ -58,7 +60,7 @@ export function SuggestionList({ workspaceId, sellerId, me, canWrite = true, sta
               <button type="button" className="dc3" disabled={gone[i] === 'busy'} onClick={() => apply(s, i)}
                 style={{ ...btn, border: 0, background: '#0A8560', color: '#fff' }}>{gone[i] === 'busy' ? 'Applying…' : 'Apply'}</button>
             ) : null}
-            <button type="button" className="dc2" onClick={() => setGone((g) => ({ ...g, [i]: 'dismissed' }))}
+            <button type="button" className="dc2" onClick={() => { setGone((g) => ({ ...g, [i]: 'dismissed' })); onSettled?.(s); }}
               style={{ ...btn, border: `1px solid ${LINE}`, background: '#fff', color: INK }}>Dismiss</button>
           </div>
           <div style={{ fontSize: '12px', color: MUTED, marginTop: '4px', lineHeight: 1.45 }}>
@@ -115,6 +117,62 @@ function Coaching({ score }: { score: CallScoreDto }) {
   );
 }
 
+/**
+ * What one call's insight has read already, for the session: a record's feed
+ * draws a CallInsight per call, and each used to read the whole row ('*', the
+ * transcript and its segments), sign the recording and ask the record-suggest
+ * model again every time the record opened or the feed redrew. A copy that is
+ * still settling (no transcript yet, or audio held as a blob URL the card
+ * revokes) is not kept, and nothing is kept past CACHE_MS.
+ */
+const CACHE_MS = 10 * 60_000;
+type SugResult = Awaited<ReturnType<typeof suggestForCall>>;
+const mediaCache = new Map<number, { at: number; media: CallMedia }>();
+const sugCache = new Map<string, { at: number; result: SugResult & { ok: true } }>();
+const unexpired = <T extends { at: number }>(e: T | undefined): T | undefined => (e && Date.now() - e.at < CACHE_MS ? e : undefined);
+function loadCallMediaCached(id: number): Promise<CallMedia> {
+  const hit = unexpired(mediaCache.get(id));
+  if (hit) return Promise.resolve(hit.media);
+  return loadCallMedia(id).then((m) => {
+    if (m.transcript && !m.audioUrl?.startsWith('blob:')) mediaCache.set(id, { at: Date.now(), media: m });
+    return m;
+  });
+}
+function suggestForCallCached(workspaceId: number, sellerId: number, transcript: string, id: number): Promise<SugResult> {
+  const key = `${workspaceId}:${sellerId}:${id}`;
+  const hit = unexpired(sugCache.get(key));
+  if (hit) return Promise.resolve(hit.result);
+  return suggestForCall(workspaceId, sellerId, transcript, id).then((r) => {
+    if (r.ok) sugCache.set(key, { at: Date.now(), result: r });
+    return r;
+  });
+}
+/** A suggestion acted on leaves the cached list, so the card does not offer it again on the next open. */
+function settleCached(workspaceId: number, sellerId: number, id: number, s: Suggestion) {
+  const key = `${workspaceId}:${sellerId}:${id}`;
+  const hit = sugCache.get(key);
+  if (hit) sugCache.set(key, { ...hit, result: { ...hit.result, suggestions: hit.result.suggestions.filter((x) => x !== s) } });
+}
+
+/**
+ * True once the element is within a screen or so of the viewport. The feed
+ * draws thirty entries at a time; a call further down waits until the rep
+ * scrolls toward it before it reads its recording or asks for suggestions.
+ */
+function useNearView(ref: React.RefObject<HTMLElement | null>): boolean {
+  const [near, setNear] = useState(() => typeof IntersectionObserver === 'undefined');
+  useEffect(() => {
+    const el = ref.current;
+    if (near || !el) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) { setNear(true); io.disconnect(); }
+    }, { rootMargin: '800px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [ref, near]);
+  return near;
+}
+
 export function CallInsight({ communicationId, workspaceId, sellerId, me, canWrite = true, prospectName, repName, onToast, onChanged }: {
   communicationId: number;
   workspaceId: number;
@@ -128,27 +186,31 @@ export function CallInsight({ communicationId, workspaceId, sellerId, me, canWri
   onToast?: (msg: string) => void;
   onChanged?: () => void;
 }) {
-  const [media, setMedia] = useState<CallMedia | null>(null);
+  const holder = useRef<HTMLDivElement | null>(null);
+  const near = useNearView(holder);
+  const [media, setMedia] = useState<CallMedia | null>(() => unexpired(mediaCache.get(communicationId))?.media ?? null);
   const [sug, setSug] = useState<{ loading: boolean; error: string | null; items: Suggestion[] | null }>({ loading: false, error: null, items: null });
   const [fresh, setFresh] = useState<CallCoachingReview | null>(null);
   const [coaching, setCoaching] = useState<'idle' | 'working' | 'error'>('idle');
   const [coachErr, setCoachErr] = useState<string | null>(null);
 
-  // Load once per call; suggestions are asked for once, when a transcript exists.
+  // Load once per call, when it nears the screen; suggestions are asked for
+  // once, when a transcript exists. Both are kept for the session (above).
   useEffect(() => {
+    if (!near) return;
     let alive = true;
     let url: string | null = null;
-    loadCallMedia(communicationId).then(async (m) => {
+    loadCallMediaCached(communicationId).then(async (m) => {
       if (m.audioUrl?.startsWith('blob:')) url = m.audioUrl;
       if (!alive) { if (url) URL.revokeObjectURL(url); return; }
       setMedia(m);
       if (!m.transcript || sellerId === null) return;
       setSug({ loading: true, error: null, items: null });
-      const r = await suggestForCall(workspaceId, sellerId, m.transcript, communicationId);
+      const r = await suggestForCallCached(workspaceId, sellerId, m.transcript, communicationId);
       if (alive) setSug(r.ok ? { loading: false, error: null, items: r.suggestions } : { loading: false, error: r.message, items: null });
     });
     return () => { alive = false; if (url) URL.revokeObjectURL(url); };
-  }, [communicationId, workspaceId, sellerId]);
+  }, [near, communicationId, workspaceId, sellerId]);
 
   const review = fresh ?? media?.review ?? null;
   const coach = async () => {
@@ -166,6 +228,9 @@ export function CallInsight({ communicationId, workspaceId, sellerId, me, canWri
     });
     if (r.ok) {
       setFresh(r.review);
+      // The kept copy carries the new review, so the next open shows it.
+      const kept = mediaCache.get(communicationId);
+      if (kept) mediaCache.set(communicationId, { ...kept, media: { ...kept.media, review: r.review } });
       setCoaching('idle');
       onToast?.('Coaching saved on this call.');
       onChanged?.();
@@ -175,7 +240,7 @@ export function CallInsight({ communicationId, workspaceId, sellerId, me, canWri
     }
   };
 
-  if (!media) return <div style={{ marginTop: '10px', fontSize: '12px', color: MUTED }}>Loading call…</div>;
+  if (!media) return <div ref={holder} style={{ marginTop: '10px', fontSize: '12px', color: MUTED }}>Loading call…</div>;
   // A call nobody picked up has nothing to play or read; the timeline row already says so.
   if (!media.audioUrl && !media.transcript && !media.transcriptNote) return null;
   const n = media.notes;
@@ -188,7 +253,7 @@ export function CallInsight({ communicationId, workspaceId, sellerId, me, canWri
   ].filter((x): x is [string, string] => !!x) : [];
 
   return (
-    <div style={{ marginTop: '10px', padding: '10px', border: `1px solid ${LINE}`, borderRadius: '10px', background: '#fafafa', display: 'grid', gap: '8px' }}>
+    <div ref={holder} style={{ marginTop: '10px', padding: '10px', border: `1px solid ${LINE}`, borderRadius: '10px', background: '#fafafa', display: 'grid', gap: '8px' }}>
       {media.audioUrl || media.segments.length ? (
         <CallRecording
           audioUrl={media.audioUrl} segments={media.segments} estimated={media.estimated} durationS={media.durationS}
@@ -223,7 +288,8 @@ export function CallInsight({ communicationId, workspaceId, sellerId, me, canWri
       {media.transcript && sellerId !== null ? (
         <div>
           <div style={eyebrow}>Suggestions</div>
-          <SuggestionList workspaceId={workspaceId} sellerId={sellerId} me={me} canWrite={canWrite} state={sug} onToast={onToast} onChanged={onChanged} />
+          <SuggestionList workspaceId={workspaceId} sellerId={sellerId} me={me} canWrite={canWrite} state={sug} onToast={onToast} onChanged={onChanged}
+            onSettled={(x) => settleCached(workspaceId, sellerId, communicationId, x)} />
         </div>
       ) : null}
     </div>

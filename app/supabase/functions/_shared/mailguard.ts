@@ -22,8 +22,9 @@
  * too. A paused mailbox refuses, bulk is held to the window and to the
  * domain's launch-blocking checks, then email_send_claim() counts and
  * reserves under a lock. Transactional sends always pass the claim but are
- * still counted. A verification lookup that errors (the columns are not
- * applied yet) does not block the send.
+ * still counted. A suppression or verification read that errors refuses
+ * with code check_failed (nothing sent, nothing claimed, try again): "could
+ * not check" is not "clear". Transactional mail still goes, as with the claim.
  *
  * scanBounces() runs inside the Gmail sync: mailer-daemon notices become a
  * bounced send, a bounced communication, a suppression, and — past the
@@ -58,9 +59,23 @@ export async function settingsFor(admin: SupabaseClient, account: { id: number; 
   return { ...row, ramp_increase_pct: Number(row.ramp_increase_pct), window_days: (row.window_days ?? []).map(Number) };
 }
 
-export type Guard = { ok: true; ids: number[] } | { ok: false; code: Refusal['code'] | 'suppressed' | 'domain' | 'unverified_unsafe'; message: string; next_at: string | null; suppressed?: string[]; unsafe?: string[] };
+export type Guard = { ok: true; ids: number[] } | {
+  ok: false; code: Refusal['code'] | 'suppressed' | 'domain' | 'unverified_unsafe' | 'check_failed'; message: string; next_at: string | null; suppressed?: string[]; unsafe?: string[];
+  /** On a cap refusal: how many recipients would still fit today and this hour, so a batch can send that many. */
+  room?: number;
+};
 
-export type GuardOptions = { allowUnverified?: boolean };
+export type GuardOptions = {
+  allowUnverified?: boolean;
+  /** workspaces.settings.require_verified_email as the caller read it this tick; when set, verificationBlock does not read it again. */
+  requireVerified?: boolean;
+};
+
+/** A read the guard needs failed: nothing is sent and nothing is claimed, and the caller tries again. */
+const checkFailed = (what: string, err: unknown): Extract<Guard, { ok: false }> => {
+  console.error(`mailguard: could not check ${what}`, err instanceof Error ? err.message : err);
+  return { ok: false, code: 'check_failed', next_at: null, message: `Could not check ${what}, so nothing was sent. Try again in a moment.` };
+};
 
 const ADDRESS_TABLES = [
   { table: 'buyers', keyed: false },
@@ -73,17 +88,25 @@ function addressKey(row: Any): string {
   return String(row.email_key ?? row.email ?? '').trim().toLowerCase();
 }
 
-/** Flags per address, or null when a read failed — the send is then allowed. */
-async function verificationFlags(admin: SupabaseClient, workspaceId: number, emails: string[]): Promise<Map<string, (boolean | null)[]> | null> {
+/** Flags per address. Throws when a read fails: "could not check" is not "safe to send". */
+async function verificationFlags(admin: SupabaseClient, workspaceId: number, emails: string[]): Promise<Map<string, (boolean | null)[]>> {
   const flags = new Map<string, (boolean | null)[]>(emails.map((e) => [e, []]));
+  // One call that probes the (workspace_id, lower(email)) indexes (migration
+  // 276). The per-table `ilike` reads below scanned every buyer in the
+  // workspace before each send; they stay only for a database without 276.
+  const rpc = await admin.rpc('email_safety_flags', { p_ws: workspaceId, p_emails: emails });
+  if (!rpc.error && Array.isArray(rpc.data)) {
+    for (const row of rpc.data as Any[]) {
+      const bucket = flags.get(addressKey(row));
+      if (bucket) bucket.push(row.safe ?? null);
+    }
+    return flags;
+  }
   for (const t of ADDRESS_TABLES) {
     let q = admin.from(t.table).select(t.keyed ? 'email, email_key, email_safe_to_send' : 'email, email_safe_to_send').eq('workspace_id', workspaceId);
     q = t.keyed ? q.in('email_key', emails) : q.or(emails.map((e) => `email.ilike.${e}`).join(','));
     const { data, error } = await q;
-    if (error) {
-      console.error('email verification lookup skipped', t.table, error.message);
-      return null;
-    }
+    if (error) throw new Error(`email verification unread (${t.table}): ${error.message}`);
     for (const row of (data ?? []) as Any[]) {
       const key = addressKey(row);
       const bucket = flags.get(key);
@@ -94,19 +117,22 @@ async function verificationFlags(admin: SupabaseClient, workspaceId: number, ema
   return flags;
 }
 
-/** The verification refusal, or null when every recipient may be sent. */
+/**
+ * The verification refusal, or null when every recipient may be sent. Throws
+ * when the workspace setting or the flags cannot be read, so the caller holds
+ * the send and tries again (guardSend turns that into a check_failed refusal).
+ */
 export async function verificationBlock(admin: SupabaseClient, workspaceId: number, recipients: string[], kind: SendKind, opts: GuardOptions = {}): Promise<Extract<Guard, { ok: false }> | null> {
   if (kind === 'transactional' || opts.allowUnverified || (kind !== 'bulk' && kind !== 'one_to_one')) return null;
   const to = [...new Set(recipients.map((r) => r.trim().toLowerCase()).filter((e) => e.includes('@')))];
   if (!to.length) return null;
-  let requireVerified = false;
-  if (kind === 'bulk') {
+  let requireVerified = opts.requireVerified === true;
+  if (kind === 'bulk' && opts.requireVerified === undefined) {
     const { data, error } = await admin.from('workspaces').select('settings').eq('id', workspaceId).maybeSingle();
-    if (error) console.error('require_verified_email unread', error.message);
-    else requireVerified = (data?.settings as Any)?.require_verified_email === true;
+    if (error) throw new Error(`require_verified_email unread: ${error.message}`);
+    requireVerified = (data?.settings as Any)?.require_verified_email === true;
   }
   const flags = await verificationFlags(admin, workspaceId, to);
-  if (!flags) return null;
   const unsafe: string[] = [];
   const unverified: string[] = [];
   for (const email of to) {
@@ -126,13 +152,15 @@ export async function verificationBlock(admin: SupabaseClient, workspaceId: numb
 export async function guardSend(admin: SupabaseClient, account: { id: number; workspace_id: number; email: string }, recipients: string[], kind: SendKind, opts: GuardOptions = {}): Promise<Guard> {
   const ws = account.workspace_id;
   const to = recipients.map((r) => r.trim().toLowerCase());
-  const { data: sup } = await admin.from('email_suppressions').select('email, reason').eq('workspace_id', ws).in('email', to);
+  const { data: sup, error: supErr } = await admin.from('email_suppressions').select('email, reason').eq('workspace_id', ws).in('email', to);
+  // Like the claim below: a one-off transactional email (a signing link, a test to yourself) is owed and still goes.
+  if (supErr && kind !== 'transactional') return checkFailed('the suppression list', supErr.message);
   const blocked = ((sup ?? []) as Any[]).filter((s) => kind !== 'transactional' || s.reason === 'hard_bounce');
   if (blocked.length) {
     const why: Record<string, string> = { hard_bounce: 'bounced', unsubscribe: 'unsubscribed', complaint: 'reported spam', manual: 'is on the do-not-email list' };
     return { ok: false, code: 'suppressed', next_at: null, suppressed: blocked.map((s) => s.email), message: `Not sent: ${blocked.map((s) => `${s.email} ${why[s.reason] ?? 'is suppressed'}`).join('; ')}. Remove them from the suppression list in Settings only if you are sure.` };
   }
-  const unverified = await verificationBlock(admin, ws, to, kind, opts);
+  const unverified = await verificationBlock(admin, ws, to, kind, opts).catch((e) => checkFailed('email verification', e));
   if (unverified) return unverified;
 
   const m = await settingsFor(admin, account);
@@ -164,7 +192,63 @@ export async function guardSend(admin: SupabaseClient, account: { id: number; wo
   }
   const c = data as { ok: boolean; today: number; last_hour: number; hour_oldest: string | null; last_sent_at: string | null; ids: number[] };
   if (c.ok) return { ok: true, ids: c.ids ?? [] };
-  return { ok: false, ...refusal(m, kind, c, to.length, now) };
+  const room = Math.max(0, Math.min(l.daily - c.today, l.hourly - c.last_hour));
+  return { ok: false, ...refusal(m, kind, c, to.length, now), room };
+}
+
+export type ManyGuard =
+  | { ok: true; claims: Record<string, number>; refused: { email: string; code: string; message: string }[] }
+  | { ok: false; code: Extract<Guard, { ok: false }>['code']; message: string; next_at: string | null; refused: { email: string; code: string; message: string }[] };
+
+/**
+ * One claim for a whole bulk send. A refusal that names addresses
+ * (suppressed, failed verification) drops only those and claims the rest; a
+ * cap with room left claims what fits and refuses the tail; the gap, the
+ * window, a pause or an unchecked domain refuse the lot. A composer sending
+ * to seven people used to claim them one at a time: the second claim, seconds
+ * after the first, hit the 60s spacing and the other six were never tried.
+ */
+export async function guardSendMany(admin: SupabaseClient, account: { id: number; workspace_id: number; email: string }, recipients: string[], kind: SendKind, opts: GuardOptions = {}): Promise<ManyGuard> {
+  let pool = [...new Set(recipients.map((r) => r.trim().toLowerCase()).filter(Boolean))];
+  const refused: { email: string; code: string; message: string }[] = [];
+  for (let attempt = 0; attempt < 4 && pool.length; attempt++) {
+    const g = await guardSend(admin, account, pool, kind, opts);
+    if (g.ok) {
+      const { data: rows } = await admin.from('email_send_log').select('id, recipient').in('id', g.ids);
+      const claims: Record<string, number> = {};
+      for (const r of (rows ?? []) as { id: number; recipient: string }[]) claims[r.recipient] = r.id;
+      return { ok: true, claims, refused };
+    }
+    if (g.code === 'suppressed' || g.code === 'unverified_unsafe') {
+      const drop = new Set((g.code === 'suppressed' ? g.suppressed : g.unsafe) ?? []);
+      if (!drop.size || !pool.some((e) => drop.has(e))) return { ok: false, code: g.code, message: g.message, next_at: g.next_at, refused };
+      for (const e of pool) if (drop.has(e)) refused.push({ email: e, code: g.code, message: g.message });
+      pool = pool.filter((e) => !drop.has(e));
+      continue;
+    }
+    if ((g.code === 'daily_cap' || g.code === 'hourly_cap') && (g.room ?? 0) > 0 && (g.room ?? 0) < pool.length) {
+      for (const e of pool.slice(g.room)) refused.push({ email: e, code: g.code, message: g.message });
+      pool = pool.slice(0, g.room);
+      continue;
+    }
+    return { ok: false, code: g.code, message: g.message, next_at: g.next_at, refused };
+  }
+  return { ok: true, claims: {}, refused };
+}
+
+/** A claim made by guardSendMany that the send now spends: this account's, for this address, not yet sent, recent. Null when it is not. */
+export async function claimedFor(admin: SupabaseClient, account: { id: number }, claimId: number, recipient: string): Promise<number[] | null> {
+  if (!Number.isFinite(claimId)) return null;
+  const { data } = await admin.from('email_send_log').select('id')
+    .eq('id', claimId).eq('account_id', account.id).eq('recipient', recipient.trim().toLowerCase()).is('provider_id', null)
+    .gte('sent_at', new Date(Date.now() - 30 * 60_000).toISOString()).maybeSingle();
+  return data ? [Number((data as Any).id)] : null;
+}
+
+/** Claims a send never spent (the composer stopped early): gone, so they stop counting against the caps. */
+export async function releaseUnspent(admin: SupabaseClient, account: { id: number }, claimIds: number[]): Promise<void> {
+  const ids = claimIds.filter((n) => Number.isFinite(n));
+  if (ids.length) await admin.from('email_send_log').delete().in('id', ids).eq('account_id', account.id).is('provider_id', null);
 }
 
 export const SENDER_COLUMNS = 'id, workspace_id, from_email, from_name, reply_to, user_id, domain, active, daily_cap, hourly_cap, min_gap_seconds, window_start, window_end, window_days, timezone, ramp_enabled, ramp_start, ramp_increase_pct, ramp_target, ramp_started_on, paused, paused_reason, paused_at, paused_auto';
@@ -279,13 +363,15 @@ export async function senderById(admin: SupabaseClient, id: number): Promise<Sen
 export async function guardSendResend(admin: SupabaseClient, sender: SenderRow, recipients: string[], kind: SendKind, opts: GuardOptions = {}): Promise<Guard> {
   const ws = sender.workspace_id;
   const to = recipients.map((r) => r.trim().toLowerCase());
-  const { data: sup } = await admin.from('email_suppressions').select('email, reason').eq('workspace_id', ws).in('email', to);
+  const { data: sup, error: supErr } = await admin.from('email_suppressions').select('email, reason').eq('workspace_id', ws).in('email', to);
+  // Like the claim below: a one-off transactional email (a signing link, a test to yourself) is owed and still goes.
+  if (supErr && kind !== 'transactional') return checkFailed('the suppression list', supErr.message);
   const blocked = ((sup ?? []) as Any[]).filter((s) => kind !== 'transactional' || s.reason === 'hard_bounce');
   if (blocked.length) {
     const why: Record<string, string> = { hard_bounce: 'bounced', unsubscribe: 'unsubscribed', complaint: 'reported spam', manual: 'is on the do-not-email list' };
     return { ok: false, code: 'suppressed', next_at: null, suppressed: blocked.map((s) => s.email), message: `Not sent: ${blocked.map((s) => `${s.email} ${why[s.reason] ?? 'is suppressed'}`).join('; ')}. Remove them from the suppression list in Settings only if you are sure.` };
   }
-  const unverified = await verificationBlock(admin, ws, to, kind, opts);
+  const unverified = await verificationBlock(admin, ws, to, kind, opts).catch((e) => checkFailed('email verification', e));
   if (unverified) return unverified;
 
   const now = new Date();

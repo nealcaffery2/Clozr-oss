@@ -29,6 +29,7 @@ import {
   type SequenceStepDto,
 } from '@/lib/talkr-web/api';
 import { useSoftphone } from '@/app/components/talkr/softphoneAdapter';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { Icon } from '@/app/components/talkr/Icon';
 import {
   Button,
@@ -69,6 +70,7 @@ import {
   unknownMergeFields,
 } from '@/lib/talkr-web/sequences';
 import { SeqHead } from './SequenceList';
+import { carrierCheck, carrierReport } from '@/lib/carrier-safe';
 
 const NO_RULES: SequenceExitRulesDto = { stop_on_reply: true, stop_on_statuses: [], stop_on_call_answered: false };
 const ACTIVE = new Set(['pending', 'running', 'waiting']);
@@ -100,7 +102,10 @@ function stepProblem(step: SequenceStepDto): string | null {
       if (!body && !step.template_id) return 'Write the message or pick a template.';
       if ([...body].length > SMS_MAX_CHARS) return `Over ${SMS_MAX_CHARS} characters.`;
       const unknown = unknownMergeFields(body);
-      return unknown.length ? `Unknown merge field {${unknown[0]}}.` : null;
+      if (unknown.length) return `Unknown merge field {${unknown[0]}}.`;
+      // Wording a carrier filters is reworded when it sends; what it would block cannot be saved.
+      const carrier = carrierCheck(body);
+      return carrier.blocked ? `A carrier would block this text. ${carrierReport(carrier)}.` : null;
     }
     case 'wait':
       return (step.days ?? 0) * 1440 + (step.hours ?? 0) * 60 + (step.minutes ?? 0) < 1 ? 'A wait needs a duration.' : null;
@@ -142,8 +147,7 @@ export function SequenceBuilder({ id, onOpen, onBack, headerLeft }: { id: string
 
   useEffect(() => {
     setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(t);
+    return everyWhileVisible(() => setNow(Date.now()), 30_000);
   }, []);
 
   const applySequence = useCallback((s: SequenceDto) => {
@@ -205,8 +209,7 @@ export function SequenceBuilder({ id, onOpen, onBack, headerLeft }: { id: string
   // Refresh the run table while leads are moving through the sequence.
   useEffect(() => {
     if (!authed || isNew || !runs.some((r) => ACTIVE.has(r.status))) return;
-    const t = setInterval(() => void load(), 30_000);
-    return () => clearInterval(t);
+    return everyWhileVisible(() => { void load(); }, 30_000);
   }, [authed, isNew, runs, load]);
 
   const problems = useMemo(() => steps.map(stepProblem), [steps]);

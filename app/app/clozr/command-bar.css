@@ -7,43 +7,43 @@
    picked row moves the instant an arrow key is pressed. */
 
 .clozr-cmd-backdrop{position:fixed;inset:0;z-index:70;display:flex;justify-content:center;align-items:flex-start;padding-top:12vh;background:rgba(24,24,27,.35);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
-.clozr-cmd{width:640px;max-width:calc(100% - 40px);max-height:calc(100dvh - 12vh - 24px);background:#fff;border:1px solid #e4e4e7;border-radius:14px;box-shadow:var(--shadow-lg);overflow:hidden;display:flex;flex-direction:column;animation:none;color:#18181b;font-size:13px;line-height:1.45}
+.clozr-cmd{width:640px;max-width:calc(100% - 40px);max-height:calc(100dvh - 12vh - 24px);background:var(--surface, #fff);border:1px solid var(--divider, #e4e4e7);border-radius:14px;box-shadow:var(--shadow-lg);overflow:hidden;display:flex;flex-direction:column;animation:none;color:var(--ink, #18181b);font-size:13px;line-height:1.45}
 
 .clozr-cmd-field:focus-within{box-shadow:inset 0 -2px 0 var(--c-focus,#0A8560)}
-.clozr-cmd-field{display:flex;align-items:center;gap:10px;height:50px;padding:0 14px;border-bottom:1px solid #e4e4e7;flex:none;min-width:0}
-.clozr-cmd-label{display:grid;place-items:center;color:#71717a;flex:none;cursor:text}
+.clozr-cmd-field{display:flex;align-items:center;gap:10px;height:50px;padding:0 14px;border-bottom:1px solid var(--divider, #e4e4e7);flex:none;min-width:0}
+.clozr-cmd-label{display:grid;place-items:center;color:var(--meta, #71717a);flex:none;cursor:text}
 .clozr-cmd-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-.clozr-cmd-input{flex:1;min-width:0;height:100%;border:0;outline:0;background:none;font:inherit;font-size:14px;color:#18181b}
-.clozr-cmd-input::placeholder{color:#a1a1aa}
-.clozr-cmd-chip{flex:none;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:600;color:#18181b;background:#f4f4f5;border:1px solid #e4e4e7;border-radius:6px;padding:2px 7px}
-.clozr-cmd-esc{flex:none;font:inherit;font-size:11px;line-height:1.4;color:#a1a1aa;border:1px solid #e4e4e7;border-radius:5px;padding:1px 5px;background:#fff;cursor:pointer}
+.clozr-cmd-input{flex:1;min-width:0;height:100%;border:0;outline:0;background:none;font:inherit;font-size:14px;color:var(--ink, #18181b)}
+.clozr-cmd-input::placeholder{color:var(--subtle, #a1a1aa)}
+.clozr-cmd-chip{flex:none;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:600;color:var(--ink, #18181b);background:var(--surface-2, #f4f4f5);border:1px solid var(--divider, #e4e4e7);border-radius:6px;padding:2px 7px}
+.clozr-cmd-esc{flex:none;font:inherit;font-size:11px;line-height:1.4;color:var(--subtle, #a1a1aa);border:1px solid var(--divider, #e4e4e7);border-radius:5px;padding:1px 5px;background:var(--surface, #fff);cursor:pointer}
 .clozr-cmd-cancel{flex:none;height:44px;padding:0 4px 0 8px;border:0;background:none;font:inherit;font-size:15px;font-weight:500;color:var(--c-accent);cursor:pointer}
 
 .clozr-cmd-list{flex:1 1 auto;min-height:0;max-height:56vh;overflow:auto;padding:6px;overscroll-behavior:contain;scroll-padding:28px 0 6px}
-.clozr-cmd-group{padding:8px 10px 4px;font-size:11px;font-weight:600;color:#71717a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.clozr-cmd-group{padding:8px 10px 4px;font-size:11px;font-weight:600;color:var(--meta, #71717a);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .clozr-cmd-row{display:flex;align-items:center;gap:10px;min-height:44px;padding:6px 10px;border-radius:8px;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
-.clozr-cmd-row[aria-selected="true"]{background:#f4f4f5}
+.clozr-cmd-row[aria-selected="true"]{background:var(--surface-2, #f4f4f5)}
 /* Press feedback is a shade, never movement: a keyboard user sees no jump. */
 .clozr-cmd-row:active{background:#ececef}
 .clozr-cmd-text{min-width:0;flex:1;display:flex;flex-direction:column}
-.clozr-cmd-title{font-size:13px;font-weight:500;color:#18181b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.clozr-cmd-title{font-size:13px;font-weight:500;color:var(--ink, #18181b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .clozr-cmd-verb{font-weight:600}
-.clozr-cmd-sub{font-size:11.5px;color:#71717a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.clozr-cmd-sub{font-size:11.5px;color:var(--meta, #71717a);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .clozr-cmd-num{font-variant-numeric:tabular-nums}
-.clozr-cmd-enter{flex:none;font-size:11px;color:#a1a1aa}
-.clozr-cmd-empty{padding:22px 12px;font-size:13px;color:#71717a;text-align:center}
+.clozr-cmd-enter{flex:none;font-size:11px;color:var(--subtle, #a1a1aa)}
+.clozr-cmd-empty{padding:22px 12px;font-size:13px;color:var(--meta, #71717a);text-align:center}
 
-.clozr-cmd-foot{display:flex;align-items:center;gap:14px;padding:8px 14px;border-top:1px solid #f0f0f1;font-size:11px;color:#a1a1aa;flex:none;white-space:nowrap;overflow:hidden}
+.clozr-cmd-foot{display:flex;align-items:center;gap:14px;padding:8px 14px;border-top:1px solid var(--divider-2, #f0f0f1);font-size:11px;color:var(--subtle, #a1a1aa);flex:none;white-space:nowrap;overflow:hidden}
 .clozr-cmd-foot > span{display:inline-flex;align-items:center;gap:5px}
-.clozr-cmd-kbd{font:inherit;font-size:10.5px;line-height:16px;min-width:16px;text-align:center;color:#71717a;border:1px solid #e4e4e7;border-radius:4px;padding:0 4px;background:#fff}
+.clozr-cmd-kbd{font:inherit;font-size:10.5px;line-height:16px;min-width:16px;text-align:center;color:var(--meta, #71717a);border:1px solid var(--divider, #e4e4e7);border-radius:4px;padding:0 4px;background:var(--surface, #fff)}
 .clozr-cmd-foot-note{margin-left:auto}
 
 @media (hover:hover) and (pointer:fine){
-  .clozr-cmd-esc:hover{color:#18181b;border-color:#c7c7cc}
+  .clozr-cmd-esc:hover{color:var(--ink, #18181b);border-color:#c7c7cc}
 }
 
 /* A phone: the whole screen, the input on top, the list under it. */
-.clozr-cmd-backdrop[data-mobile]{padding:0;background:#fff;backdrop-filter:none;-webkit-backdrop-filter:none}
+.clozr-cmd-backdrop[data-mobile]{padding:0;background:var(--surface, #fff);backdrop-filter:none;-webkit-backdrop-filter:none}
 .clozr-cmd[data-mobile]{width:100%;max-width:none;height:100dvh;max-height:none;border:0;border-radius:0;box-shadow:none;padding-top:env(safe-area-inset-top,0px)}
 .clozr-cmd[data-mobile] .clozr-cmd-field{height:56px;padding:0 12px 0 16px}
 /* 16px keeps iOS from zooming into the field. */
@@ -52,3 +52,8 @@
 .clozr-cmd[data-mobile] .clozr-cmd-row{min-height:52px}
 .clozr-cmd[data-mobile] .clozr-cmd-title{font-size:14.5px}
 .clozr-cmd[data-mobile] .clozr-cmd-sub{font-size:12.5px}
+/* What was said (lib/comm-search.ts): two lines of the words around the match, the match bold. */
+.clozr-cmd-snip{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;line-height:1.4}
+.clozr-cmd-hit{background:none;color:var(--ink, #18181b);font-weight:600}
+.clozr-cmd-row[aria-selected="true"] .clozr-cmd-snip{color:var(--muted, #52525b)}
+.clozr-cmd-status{padding:8px 10px 10px;font-size:12px;color:var(--meta, #71717a)}

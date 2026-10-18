@@ -44,7 +44,7 @@ export function DispoCampaign(props: Props) {
     return <Campaigns {...props} workspaceId={DEMO_WORKSPACE_ID} dealId={DEMO_DEAL_ID} dealFields={props.dealFields} textCtx={props.textCtx} demo={demo} />;
   }
   if (!workspaceId || !dealId || !props.dealFields || !props.textCtx) {
-    return <div className="mk-card" style={{ padding: '16px', fontSize: '13px', color: C.muted2, background: '#fff', border: `1px solid ${C.line}`, borderRadius: '12px' }}>Campaigns run on a signed-in workspace, for a real deal. Sign in to build one.</div>;
+    return <div className="mk-card" style={{ padding: '16px', fontSize: '13px', color: C.muted2, background: 'var(--surface, #fff)', border: `1px solid ${C.line}`, borderRadius: '12px' }}>Campaigns run on a signed-in workspace, for a real deal. Sign in to build one.</div>;
   }
   return <Campaigns key={dealId} {...props} workspaceId={workspaceId} dealId={dealId} dealFields={props.dealFields} textCtx={props.textCtx} demo={null} />;
 }
@@ -54,8 +54,8 @@ function Campaigns({ workspaceId, dealId, canWrite, isMobile, dealFields, textCt
 }) {
   const [results, setResults] = useState<CampaignResults | null>(() => (demo ? demo.results : null));
   const [building, setBuilding] = useState(false);
-  // The one-screen campaign opens first; the full composer is a click away.
-  const [advanced, setAdvanced] = useState(false);
+  // The full builder opens first; the one-screen quick send is a click away.
+  const [advanced, setAdvanced] = useState(true);
   /** The builder fills the screen below the top menu; the rep can shrink it back into the tab. */
   const [full, setFull] = useState(true);
   const [prefill] = useState(() => (demo ? [] : takePrefill(dealId, false)));
@@ -75,13 +75,13 @@ function Campaigns({ workspaceId, dealId, canWrite, isMobile, dealFields, textCt
   const names = (id: number) => buyer?.(id) ?? demo?.names.get(id) ?? null;
   const composer = open ? (advanced || demo ? (
     <Composer workspaceId={workspaceId} dealId={dealId} canWrite={canWrite} isMobile={isMobile} dealFields={dealFields} textCtx={textCtx} prefill={prefill}
-      onToast={onToast} onLaunched={() => { setBuilding(false); setAdvanced(false); if (!demo) { refresh(); onChanged(); } }}
-      onClose={hasCampaigns ? () => { setBuilding(false); setAdvanced(false); } : null} demo={demo} reveal={building}
-      onQueue={onQueue} onAgent={onAgent} />
+      onToast={onToast} onLaunched={() => { setBuilding(false); setAdvanced(true); if (!demo) { refresh(); onChanged(); } }}
+      onClose={hasCampaigns ? () => { setBuilding(false); setAdvanced(true); } : null} demo={demo} reveal={building}
+      onQueue={onQueue} onAgent={onAgent} onQuick={demo ? undefined : () => setAdvanced(false)} />
   ) : (
     <QuickCampaign workspaceId={workspaceId} dealId={dealId} canWrite={canWrite} isMobile={isMobile} dealFields={dealFields} textCtx={textCtx} prefill={prefill}
-      onToast={onToast} onLaunched={() => { setBuilding(false); refresh(); onChanged(); }} onAdvanced={() => setAdvanced(true)}
-      onClose={hasCampaigns ? () => setBuilding(false) : null} />
+      onToast={onToast} onLaunched={() => { setBuilding(false); setAdvanced(true); refresh(); onChanged(); }} onAdvanced={() => setAdvanced(true)}
+      onClose={hasCampaigns ? () => { setBuilding(false); setAdvanced(true); } : null} />
   )) : null;
   const where = dealFields.full_address || dealFields.address || 'This deal';
   return (
@@ -98,7 +98,7 @@ function Campaigns({ workspaceId, dealId, canWrite, isMobile, dealFields, textCt
             bottom: isMobile ? 'calc(var(--clozr-callbar, 0px) + 58px)' : 'var(--clozr-callbar, 0px)',
           }}>
           {/* Outside the scroll area, so the builder scrolling itself into view never hides the way out. */}
-          <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, padding: isMobile ? '8px 10px' : '8px 20px', borderBottom: `1px solid ${C.line}`, background: '#fff' }}>
+          <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, padding: isMobile ? '8px 10px' : '8px 20px', borderBottom: `1px solid ${C.line}`, background: 'var(--surface, #fff)' }}>
             <span className="mk-status" style={{ color: C.muted2 }}>Marketing</span>
             <b style={{ fontSize: '14px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{where}</b>
             <div style={{ flex: 1 }} />

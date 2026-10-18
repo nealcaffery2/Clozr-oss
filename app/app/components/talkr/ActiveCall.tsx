@@ -16,21 +16,27 @@
  * surface never offered it.
  *
  * CLOZR seam (copied from Talkr apps/web/components/ActiveCall.tsx):
- * `useSoftphone` is softphoneAdapter.tsx, and the seller-lead badge and avatar
- * also read the CLOZR record on the line.
+ * `useSoftphone` is softphoneAdapter.tsx, and the seller-lead badge
+ * also reads the CLOZR record on the line.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Icon, HangupIcon } from './Icon';
-import { Avatar, Eyebrow } from './ui';
+import { Eyebrow } from './ui';
 import { IosSegmented, PhoneSheet } from './ios';
 import { ProspectTime } from './ProspectTime';
 import { useSoftphone } from './softphoneAdapter';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { api, type ContactDto, type ParticipantDto, type TeamMemberDto } from '@/lib/talkr-web/api';
 import { duration, formatPhone, toE164, tzTime, zoneForNumber } from '@/lib/talkr-web/time';
 import { isIOSDevice } from '@/lib/phone-audio';
 import { Keys, formatDialed } from './DialerParts';
 import { VmDropButton } from './VmDropButton';
+import { CalendarIcon, openMeetingInvite } from '@/app/components/meeting/MeetingInvite';
+import { WARM_TRANSFER_EVENT, openRequestDialog } from '@/lib/contract-request-store';
+
+/** Warm transfers asked for from Request contract, by event id: one per ask however many call cards are mounted. */
+const warmHandled = new Set<string>();
 
 const PILL: React.CSSProperties = {
   border: '1px solid var(--line)',
@@ -243,7 +249,6 @@ function TeammateRow({
       className="flex flex-wrap items-center gap-2.5 py-2"
       style={{ borderBottom: '1px solid var(--line)' }}
     >
-      <Avatar name={member.display_name} size={28}  />
       <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="truncate" style={{ font: '600 12px/1 var(--sans)', color: 'var(--text)' }}>
           {member.display_name}
@@ -420,14 +425,15 @@ export function ActiveCall({
 
   const startedAt = active?.startedAt ?? null;
   useEffect(() => {
-    setNow(Date.now());
-    const t = setInterval(() => {
+    const tick = () => {
       setNow(Date.now());
       // A held call is still connected; the timer keeps running, as it does on
-      // every phone the rep has ever used.
+      // every phone the rep has ever used. A hidden tab pauses and catches up
+      // from the start time when it is shown.
       if (startedAt) setElapsed(Math.floor((Date.now() - startedAt) / 1000));
-    }, 1000);
-    return () => clearInterval(t);
+    };
+    tick();
+    return everyWhileVisible(tick, 1000);
   }, [startedAt]);
 
   /**
@@ -491,6 +497,22 @@ export function ActiveCall({
     [transfer, mode],
   );
 
+  // Request contract's "Warm transfer to Casey" (components/contract-request):
+  // the same live transfer as this panel's, so Complete transfer shows here.
+  useEffect(() => {
+    const onWarm = (e: Event) => {
+      const { userId, id } = (e as CustomEvent<{ userId?: string; id?: string }>).detail ?? {};
+      if (!userId || !id || warmHandled.has(id)) return;
+      warmHandled.add(id);
+      setMode('warm');
+      void transfer({ mode: 'warm', user_id: userId });
+      setWarmPending(true);
+      setPanel('none');
+    };
+    window.addEventListener(WARM_TRANSFER_EVENT, onWarm);
+    return () => window.removeEventListener(WARM_TRANSFER_EVENT, onWarm);
+  }, [transfer]);
+
   const fillFromContact = useCallback((number: string) => {
     const filled = isNanp(number) ? formatPhone(number) : number;
     setTarget(filled);
@@ -530,6 +552,15 @@ export function ActiveCall({
         : undefined;
 
   const named = active.record.contact_name;
+  // Book and send a Meet invite without leaving the call: the modal opens over
+  // this surface, prefilled with whoever is on the line.
+  const openAppointment = () => openMeetingInvite({
+    name: record?.name ?? named ?? '',
+    phone: counterparty, email: record?.email ?? '',
+    sellerId: record?.sellerId ?? null, buyerId: record?.buyerId ?? null,
+    address: record?.kind === 'seller' ? record.address || null : null,
+    typeKey: record?.kind === 'seller' ? 'walkthrough' : 'demo',
+  });
   const KEYS: Array<[string, string]> = [
     ['1', ''], ['2', 'ABC'], ['3', 'DEF'], ['4', 'GHI'], ['5', 'JKL'], ['6', 'MNO'],
     ['7', 'PQRS'], ['8', 'TUV'], ['9', 'WXYZ'], ['*', ''], ['0', '+'], ['#', ''],
@@ -657,7 +688,6 @@ export function ActiveCall({
                       cursor: 'pointer',
                     }}
                   >
-                    <Avatar name={c.display_name} size={22}  />
                     <span className="min-w-0 flex-1 truncate" style={{ font: '600 11.5px/1 var(--sans)', color: 'var(--text)' }}>
                       {c.display_name}
                     </span>
@@ -836,7 +866,6 @@ export function ActiveCall({
             const ringing = p.state === 'ringing';
             return (
               <div key={p.id} className="flex flex-wrap items-center gap-2.5 px-3 py-2" style={{ borderBottom: ROW_LINE }}>
-                <Avatar name={partyName(p)} size={24}  />
                 <span className="flex min-w-0 flex-1 flex-col gap-1">
                   <span className="truncate" style={{ font: '600 12px/1 var(--sans)', color: 'var(--text)' }}>
                     {partyName(p)}
@@ -921,12 +950,6 @@ export function ActiveCall({
     const statusLine =
       callState === 'connecting' ? 'Calling…' : callState === 'ringing' ? 'Ringing…' : `${onHold ? 'On hold · ' : ''}${duration(sinceStart)}`;
     const audioReason = demo ? 'No audio devices in the demo' : undefined;
-    const initials = who
-      .split(/\s+/)
-      .filter((w) => /[A-Za-z]/.test(w))
-      .slice(0, 2)
-      .map((w) => w[0]!.toUpperCase())
-      .join('');
     const ctl = (
       id: string,
       icon: React.ReactNode,
@@ -968,19 +991,10 @@ export function ActiveCall({
       <section className="flex min-h-0 flex-1 flex-col" aria-label="Active call">
         {/* Who, and how long. */}
         <div className="flex flex-none flex-col items-center px-6 text-center" style={{ marginTop: 8 }}>
-          {!keypadOpen && (
-            <span
-              className="phone-tall-only mb-3 inline-flex items-center justify-center"
-              aria-hidden
-              style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(255,255,255,.14)', font: '600 28px/1 var(--sans)', color: '#fff' }}
-            >
-              {initials || <Icon name="user" size={30} />}
-            </span>
-          )}
           <span
             data-testid="call-name"
             style={{
-              maxWidth: '100%', color: '#fff', overflow: 'hidden', display: '-webkit-box', WebkitBoxOrient: 'vertical',
+              maxWidth: '100%', color: 'var(--on-dark, #fff)', overflow: 'hidden', display: '-webkit-box', WebkitBoxOrient: 'vertical',
               WebkitLineClamp: keypadOpen ? 1 : 2, font: keypadOpen ? '600 22px/1.2 var(--sans)' : '600 34px/1.12 var(--sans)',
               letterSpacing: '-0.01em', wordBreak: 'break-word',
             }}
@@ -988,7 +1002,7 @@ export function ActiveCall({
             {who}
           </span>
           {keypadOpen ? (
-            <span style={{ marginTop: 6, minHeight: 34, font: '400 28px/1.2 var(--sans)', letterSpacing: '0.08em', color: '#fff' }}>{dtmf}</span>
+            <span style={{ marginTop: 6, minHeight: 34, font: '400 28px/1.2 var(--sans)', letterSpacing: '0.08em', color: 'var(--on-dark, #fff)' }}>{dtmf}</span>
           ) : (
             <>
               {who !== displayNumber(counterparty) && (
@@ -1084,6 +1098,14 @@ export function ActiveCall({
             </button>
           </div>
         )}
+        {!keypadOpen && !warmPending && (
+          <div className="flex flex-none justify-center pb-3">
+            <button type="button" className="phone-pill" data-testid="call-appointment" onClick={openAppointment}>
+              <CalendarIcon size={16} />
+              Appointment
+            </button>
+          </div>
+        )}
         {(hint || (message && panel === 'none')) && (
           <p role="status" className="flex-none px-6 pb-3 text-center" style={{ font: '400 13px/1.35 var(--sans)', color: hint ? 'rgba(255,255,255,.72)' : '#FF6961' }}>
             {hint ?? message}
@@ -1149,6 +1171,10 @@ export function ActiveCall({
           {rows(
             <>
               {moreRow('Transfer', <Icon name="transfer" size={20} />, () => setPanel('transfer'), connecting || !inCall ? waitReason : undefined)}
+              {moreRow('Request contract', <Icon name="template" size={20} />, () => {
+                setPanel('none');
+                openRequestDialog();
+              })}
               {onText && moreRow('Message', <Icon name="msg" size={20} />, () => {
                 setPanel('none');
                 onText(counterparty);
@@ -1205,8 +1231,7 @@ export function ActiveCall({
       style={{ borderRadius: 'var(--r-lg)', background: 'var(--panel)' }}
       aria-label="Active call"
     >
-      <Avatar name={named ?? (active.record.lead_id ? 'Seller Lead' : formatPhone(counterparty))} size={72} />
-      <div className="mt-3 flex max-w-full flex-col items-center gap-1 text-center">
+      <div className="flex max-w-full flex-col items-center gap-1 text-center">
         <span className="display max-w-full truncate" style={{ font: '600 26px/1.1 var(--sans)' }}>
           {named ?? formatPhone(counterparty)}
         </span>
@@ -1319,10 +1344,10 @@ export function ActiveCall({
         {/* Texting mid-call is how a rep sends the address, the offer or the
             calendar link while the seller is still on the phone. It was two
             screens away; it belongs on the call. */}
-        {onText && (
-          // Alone on its row, so it sits under the middle column rather than
-          // hanging off the left edge of a three-across grid.
-          <div style={{ gridColumn: 2 }}>
+        {/* Text and Appointment share the last row, centred under the grid.
+            Appointment books a Google Meet and sends the invite mid-call. */}
+        <div className="flex justify-center gap-4" style={{ gridColumn: '1 / -1' }}>
+          {onText && (
             <ControlButton
               icon={<Icon name="msg" size={24} />}
               label="Text"
@@ -1330,8 +1355,9 @@ export function ActiveCall({
               disabled={!counterparty}
               disabledReason="No number to text on this call."
             />
-          </div>
-        )}
+          )}
+          <ControlButton icon={<CalendarIcon size={24} />} label="Appointment" onClick={openAppointment} />
+        </div>
       </div>
 
       {/* Merge only means something once a second party is in; it sits under the grid then. */}

@@ -109,7 +109,7 @@ export function RvmRecorder({ attached, onUse, onRemove, disabled }: {
         <div style={{ display: 'grid', gap: '8px' }}>
           {attached.url ? <audio controls src={attached.url} style={{ width: '100%', height: '36px' }} aria-label="Play the attached recording" data-testid="rvm-attached" /> : null}
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-            <span className="mk-num" style={{ fontSize: '11.5px', color: '#0A8560', fontWeight: 600 }}>Attached · {clock(attached.seconds)}</span>
+            <span className="mk-num" style={{ fontSize: '11.5px', color: 'var(--tx-mint, #0a8560)', fontWeight: 600 }}>Attached · {clock(attached.seconds)}</span>
             <div style={{ flex: 1 }} />
             <Btn size="sm" kind="quiet" onClick={onRemove} disabled={disabled}>Remove</Btn>
             <Btn size="sm" onClick={() => void start()} disabled={disabled} data-testid="rvm-rerecord"><Svg d={Icon.mic} size={12} /> Record again</Btn>

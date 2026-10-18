@@ -52,7 +52,7 @@ export const orderPhotos = (ws: number, dealId: number, o: { templateId?: string
 export const checkPhotoOrder = (ws: number, orderId: number) => call<{ status: string; photos: number }>(ws, { action: 'check', order_id: orderId });
 export const cancelPhotoOrder = (ws: number, orderId: number) => call<object>(ws, { action: 'cancel', order_id: orderId });
 export const setupIvueit = (ws: number) =>
-  call<{ templates: IvueitTemplate[]; template_id: string | null; webhook: string; staging: boolean }>(ws, { action: 'setup' });
+  call<{ templates: IvueitTemplate[]; template_id: string | null; webhook: string; webhooks_set?: string[]; staging: boolean }>(ws, { action: 'setup' });
 
 export async function ivueitSettings(workspaceId: number): Promise<IvueitSettings | null> {
   if (!supabase) return null;

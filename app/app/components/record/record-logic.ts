@@ -105,12 +105,15 @@ export function recommendStage(read: StageRead): StagePick {
     return { stage: null, reason: 'Off the path.', chips: [] };
   }
 
-  const text = read.activity.map(hitText).join('\n');
-  const hasCompr = read.activity.some((a) => a.type === 'compr') || /underwrit|compr|\barv\b/i.test(text);
-  const offerTouched = read.activity.some((a) => a.type === 'offer') || /\boffer\b/i.test(text)
+  // Entry by entry, stopping at the first hit: no pattern spans two entries,
+  // and joining a record's every email body into one string first cost
+  // hundreds of milliseconds on a busy record.
+  const said = (re: RegExp) => read.activity.some((a) => re.test(hitText(a)));
+  const hasCompr = read.activity.some((a) => a.type === 'compr') || said(/underwrit|compr|\barv\b/i);
+  const offerTouched = read.activity.some((a) => a.type === 'offer') || said(/\boffer\b/i)
     || !!(read.offerAmount && !/^(—|no offer)/i.test(read.offerAmount));
-  const accepted = ACCEPT_RE.test(text) || read.stage === 'Offer Accepted';
-  const declined = DECLINE_RE.test(text);
+  const accepted = said(ACCEPT_RE) || read.stage === 'Offer Accepted';
+  const declined = said(DECLINE_RE);
 
   if (read.stage === 'Offer Accepted') {
     return { stage: 'Under Contract Seller', reason: 'Offer accepted. Next is the deal: Under Contract Seller.', chips: ['Under Contract Seller'] };

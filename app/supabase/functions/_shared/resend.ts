@@ -8,17 +8,25 @@
  * and domain; transactional mail stays on the project env. AgentMail is not
  * on this path.
  */
-import { type ResendFrom, parseFrom } from './resend-rules.ts';
+import { type ResendFrom, parseFrom, resendTags } from './resend-rules.ts';
+
+/**
+ * The function's env. Read through globalThis because the browser bundle
+ * imports this module too (lib/cold-pool, lib/deliverability), where there is
+ * no Deno global and the app's type-check has no Deno types.
+ */
+const denoEnv: { get: (k: string) => string | undefined } =
+  (globalThis as { Deno?: { env: { get: (k: string) => string | undefined } } }).Deno?.env ?? { get: () => undefined };
 
 export { type EnvLike, type ResendFrom, type ResendEventKind, classifyResendEvent, parseFrom, resendConnectPayload, suggestBlastFrom, verifyResendWebhook, workspaceResendEnv } from './resend-rules.ts';
 
 /** Blasts first, then the transactional from. Null when Resend is not wired. */
-export function blastFrom(env: { get: (k: string) => string | undefined } = Deno.env): ResendFrom | null {
+export function blastFrom(env: { get: (k: string) => string | undefined } = denoEnv): ResendFrom | null {
   if (!(env.get('RESEND_API_KEY') ?? '').trim()) return null;
   return parseFrom(env.get('MAIL_FROM_BLASTS')) || parseFrom(env.get('MAIL_FROM'));
 }
 
-export function transactionalFrom(env: { get: (k: string) => string | undefined } = Deno.env): ResendFrom | null {
+export function transactionalFrom(env: { get: (k: string) => string | undefined } = denoEnv): ResendFrom | null {
   if (!(env.get('RESEND_API_KEY') ?? '').trim()) return null;
   return parseFrom(env.get('MAIL_FROM')) || parseFrom(env.get('MAIL_FROM_BLASTS'));
 }
@@ -37,7 +45,7 @@ export type ResendSend = {
   idempotencyKey?: string;
 };
 
-export async function sendResend(msg: ResendSend, env: { get: (k: string) => string | undefined } = Deno.env): Promise<{ id: string } | null> {
+export async function sendResend(msg: ResendSend, env: { get: (k: string) => string | undefined } = denoEnv): Promise<{ id: string } | null> {
   const key = (env.get('RESEND_API_KEY') ?? '').trim();
   if (!key) return null;
   const headers: Record<string, string> = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
@@ -54,7 +62,7 @@ export async function sendResend(msg: ResendSend, env: { get: (k: string) => str
       ...(msg.cc?.length ? { cc: msg.cc } : {}),
       ...(msg.replyTo ? { reply_to: msg.replyTo } : {}),
       ...(msg.headers ? { headers: msg.headers } : {}),
-      ...(msg.tags ? { tags: Object.entries(msg.tags).map(([name, value]) => ({ name, value: String(value).slice(0, 256) })) } : {}),
+      ...(msg.tags ? { tags: resendTags(msg.tags) } : {}),
     }),
     signal: AbortSignal.timeout(20_000),
   }).catch(() => null);
@@ -76,7 +84,7 @@ export type ResendDomain = {
   records: ResendDnsRecord[];
 };
 
-export async function resendDomains(env: { get: (k: string) => string | undefined } = Deno.env): Promise<ResendDomain[] | null> {
+export async function resendDomains(env: { get: (k: string) => string | undefined } = denoEnv): Promise<ResendDomain[] | null> {
   const key = (env.get('RESEND_API_KEY') ?? '').trim();
   if (!key) return null;
   const res = await fetch('https://api.resend.com/domains', {
@@ -97,7 +105,7 @@ export async function resendKeyProblem(key: string): Promise<string | null> {
   return res.status === 401 || res.status === 403 ? 'Resend rejected that API key.' : `Resend did not accept the key (${res.status}).`;
 }
 
-export async function ensureResendDomain(name: string, env: { get: (k: string) => string | undefined } = Deno.env): Promise<ResendDomain | { error: string }> {
+export async function ensureResendDomain(name: string, env: { get: (k: string) => string | undefined } = denoEnv): Promise<ResendDomain | { error: string }> {
   const key = (env.get('RESEND_API_KEY') ?? '').trim();
   if (!key) return { error: 'RESEND_API_KEY is not set on the project.' };
   const have = await resendDomains(env);

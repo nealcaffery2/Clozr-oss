@@ -19,8 +19,8 @@
 // one implementation of the part that must not be written twice.
 //
 // Migration 82 adds three ways to cut the mail:
-//   Deals      a folder per deal, grouped by stage (under contract, in escrow,
-//              marketing, closed), holding every email filed on it whoever it
+//   Deals      a folder per deal, grouped by stage (under contract, ready to
+//              market, buyer under contract, in escrow), holding every email filed on it whoever it
 //              was with — the deal team across the top, the files underneath.
 //              "Not on a deal" collects mail with a CRM person but no deal, to
 //              be filed by hand.
@@ -30,6 +30,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { syncGoogle } from '@/lib/google';
+import { useMailOnFocus } from '@/app/clozr/useMailOnFocus';
 import { PARTY_ROLE_LABEL, saveDealParty } from '@/lib/deal-parties';
 import { threadUnread, useEmailState } from '@/lib/email-state';
 import { GoogleConnect } from '@/components/GoogleConnect';
@@ -41,6 +42,7 @@ import { FileChip, GmailThread } from './GmailThread';
 import { type DealFolder, FOLDERS, FOLDER_OF, useDealTeam, useMailExtras, useScopedThreads, useTeam } from './mail-extras';
 import { GmailCheck, GmailIcon } from './GmailIcon';
 import { GmailRow } from './GmailRow';
+import { NewContacts, useSuggestionCount } from './NewContacts';
 import { participantsOf, snippetOf } from './format';
 import '@/app/clozr/gmail-inbox.css';
 
@@ -66,7 +68,14 @@ export type QuickDraft = {
 
 export function GmailInbox({
   workspaceId, demo, userId, email, recordFor, dealFor, deals = [], seesAllMail = false, mergeFor, picker, placeCall, openKey, toast, onCompose, onPicked,
+  mailbox: mailboxProp,
 }: {
+  /**
+   * CLOZR: whose mailbox, picked in the Inbox header (the same switch as
+   * texts and calls). Given, the rail's own Mailbox picker is not drawn; the
+   * Inbox remounts this when it changes.
+   */
+  mailbox?: string | null;
   workspaceId: number | null;
   demo: boolean;
   userId: string | null;
@@ -98,15 +107,21 @@ export function GmailInbox({
   const [page, setPage] = useState(0);
   const [syncing, setSyncing] = useState(false);
 
-  // Whose mail (null: everyone's) and which deal folder is open.
-  // Everyone opens on their own mail; TC and admins can switch to a teammate's or everyone's.
-  const [mailbox, setMailbox] = useState<string | null>(userId ?? null);
+  // Whose mail and which deal folder is open. Everyone opens on their own
+  // mail; TC and admins can switch to one teammate's. Never everyone's mixed:
+  // the record's Activity feed is where the office's mail with a contact sits together.
+  const headerPicker = mailboxProp !== undefined;
+  const [mailbox, setMailbox] = useState<string | null>(headerPicker ? mailboxProp : userId ?? null);
   const [dealId, setDealId] = useState<number | null>(null);
   const [dealTab, setDealTab] = useState<'mail' | 'files'>('mail');
   const [party, setParty] = useState<string | null>(null);
-  const [folderOpen, setFolderOpen] = useState<Record<DealFolder, boolean>>({ contract: true, escrow: true, marketing: false, closed: false, other: false });
+  const [folderOpen, setFolderOpen] = useState<Record<DealFolder, boolean>>({ contract: true, marketing: true, buyer: true, escrow: true, other: false });
   const [tick, setTick] = useState(0);
+  // The "New contacts" list in place of the mail list.
+  const [showNew, setShowNew] = useState(false);
   const refresh = useCallback(() => { setTick((n) => n + 1); void email.reload(); }, [email]);
+  // Coming back to the inbox asks Google for new mail; realtime shows what lands.
+  useMailOnFocus(demo ? null : workspaceId);
 
   // Someone else's mailbox is read as them — their read state — and never written to.
   const viewingOther = !!mailbox && mailbox !== userId;
@@ -117,6 +132,9 @@ export function GmailInbox({
   const setArchived = useMemo(() => (viewingOther ? () => {} : state.setArchived), [viewingOther, state.setArchived]);
 
   const team = useTeam(workspaceId, true);
+  // TC, owners and admins see the whole team's new contacts; anyone else the ones in their own mail.
+  const newMine = seesAllMail ? null : userId;
+  const newCount = useSuggestionCount(workspaceId, newMine, tick);
   // A rep outside TC and admin is held to their own mailbox, deal folders included.
   const own = seesAllMail ? undefined : userId ?? undefined;
   const dealSeller = dealId ? (dealFor?.(dealId) ?? deals.find((d) => d.id === dealId))?.sellerId ?? null : null;
@@ -214,7 +232,7 @@ export function GmailInbox({
     const on = dealId ? source : threads.slice(page * PAGE, page * PAGE + PAGE);
     return [...on, ...(thread ? [thread] : [])].flatMap((t) => t.rows.map((r) => r.id));
   }, [dealId, source, threads, page, thread]);
-  const extras = useMailExtras(extraIds, tick);
+  const extras = useMailExtras(extraIds, tick, demo ? null : workspaceId);
 
   // Everyone on the deal, and anyone else writing about it who is not on the team yet.
   const known = useMemo(() => new Set(dealTeam.map((p) => (p.email ?? '').toLowerCase()).filter(Boolean)), [dealTeam]);
@@ -278,8 +296,8 @@ export function GmailInbox({
     setChecked(new Set<string>());
   };
 
-  const pickBucket = (b: Bucket) => { setBucket(b); setDealId(null); setParty(null); setPicked(null); setPage(0); };
-  const pickDeal = (id: number) => { setDealId(id); setDealTab('mail'); setParty(null); setPicked(null); setPage(0); };
+  const pickBucket = (b: Bucket) => { setShowNew(false); setBucket(b); setDealId(null); setParty(null); setPicked(null); setPage(0); };
+  const pickDeal = (id: number) => { setShowNew(false); setDealId(id); setDealTab('mail'); setParty(null); setPicked(null); setPage(0); };
   const pickMailbox = (v: string) => { setMailbox(v || null); setDealId(null); setPicked(null); setPage(0); setChecked(new Set<string>()); };
   const threadStarred = thread ? idsOf(thread).some((id) => starred.has(id)) : false;
 
@@ -292,12 +310,11 @@ export function GmailInbox({
             <Icon name="edit" size={14} /> Compose
           </Button>
           {/* Nothing to choose for a rep with no signed-in mailbox (the demo): no empty picker. */}
-          {seesAllMail || userId ? (
+          {!headerPicker && seesAllMail && userId ? (
             <label className="em-mailbox">
               <span className="em-rail-head">Mailbox</span>
               <select className="em-select" value={mailbox ?? ''} onChange={(e) => pickMailbox(e.target.value)} aria-label="Whose mail">
-                {seesAllMail ? <option value="">Everyone’s mail</option> : null}
-                {userId ? <option value={userId}>My mail</option> : null}
+                <option value={userId}>My mail</option>
                 {seesAllMail ? team.filter((t) => t.user_id !== userId).map((t) => (
                   <option key={t.user_id} value={t.user_id}>{t.full_name || t.email || 'Teammate'}</option>
                 )) : null}
@@ -307,7 +324,7 @@ export function GmailInbox({
           {BUCKETS.map((b) => (
             <button
               key={b.key} type="button" className="em-nav"
-              aria-current={!dealId && bucket === b.key ? 'true' : undefined}
+              aria-current={!dealId && !showNew && bucket === b.key ? 'true' : undefined}
               onClick={() => pickBucket(b.key)}
             >
               <GmailIcon name={b.icon} size={18} />
@@ -315,6 +332,14 @@ export function GmailInbox({
               {b.key === 'inbox' && unreadCount > 0 ? <span className="em-nav-count">{unreadCount}</span> : null}
             </button>
           ))}
+          {workspaceId && !demo ? (
+            <button type="button" className="em-nav" aria-current={showNew ? 'true' : undefined}
+              onClick={() => { setShowNew(true); setDealId(null); setPicked(null); }}>
+              <GmailIcon name="person_add" size={18} />
+              <span className="em-nav-label">New contacts</span>
+              {newCount ? <span className="em-nav-count">{newCount}</span> : null}
+            </button>
+          ) : null}
           {deals.length ? <div className="em-rail-head em-rail-head--deals">Deals</div> : null}
           {FOLDERS.map((f) => {
             const list = folders.get(f.key) ?? [];
@@ -378,11 +403,11 @@ export function GmailInbox({
                   </>
                 ) : null}
               </div>
-              {workspaceId ? (
+              {workspaceId || demo ? (
                 <GmailThread
                   thread={thread}
                   isNew={picked === 'new'}
-                  workspaceId={workspaceId}
+                  workspaceId={workspaceId ?? 0}
                   userId={userId}
                   email={email}
                   recordFor={recordFor}
@@ -391,7 +416,7 @@ export function GmailInbox({
                   files={extras.files}
                   receipts={extras.receipts}
                   onRefiled={refresh}
-                  readOnly={viewingOther}
+                  readOnly={viewingOther || demo}
                   composeDealId={dealId}
                   mergeFor={mergeFor}
                   picker={picker}
@@ -401,6 +426,17 @@ export function GmailInbox({
                   onReply={onCompose ? (d) => onCompose(d, refresh) : undefined}
                 />
               ) : null}
+            </>
+          ) : showNew && workspaceId ? (
+            <>
+              {/* On a phone the rail and the folder chips are both out of
+                  sight here, so this is the way back to the mail. */}
+              <div className="em-narrow-pickers">
+                <button type="button" aria-label="Back to the mail" title="Back" className="em-icon-btn" onClick={() => setShowNew(false)}>
+                  <GmailIcon name="arrow_back" />
+                </button>
+              </div>
+              <NewContacts workspaceId={workspaceId} mine={newMine} team={team} deals={deals} toast={toast} onChanged={() => setTick((n) => n + 1)} />
             </>
           ) : (
             <>
@@ -453,7 +489,7 @@ export function GmailInbox({
               ) : null}
               {viewingOther ? (
                 <div className="em-notice">
-                  Reading {team.find((t) => t.user_id === mailbox)?.full_name || 'a teammate'}’s mailbox — the CRM mail their Gmail synced. Read-only.
+                  Reading {team.find((t) => t.user_id === mailbox)?.full_name || 'a teammate'}’s mailbox, the CRM mail their Gmail synced. Read-only.
                 </div>
               ) : null}
               {dealId && dealTab === 'files' && workspaceId ? (
@@ -489,10 +525,9 @@ export function GmailInbox({
 
               {/* The rail's mailbox and deal folders, on a phone where the rail is folded away. */}
               <div className="em-narrow-pickers">
-{seesAllMail || userId ? (
+{!headerPicker && seesAllMail && userId ? (
                 <select className="em-select" value={mailbox ?? ''} onChange={(e) => pickMailbox(e.target.value)} aria-label="Whose mail">
-                  {seesAllMail ? <option value="">Everyone’s mail</option> : null}
-                  {userId ? <option value={userId}>My mail</option> : null}
+                  <option value={userId}>My mail</option>
                   {seesAllMail ? team.filter((t) => t.user_id !== userId).map((t) => (
                     <option key={t.user_id} value={t.user_id}>{t.full_name || t.email || 'Teammate'}</option>
                   )) : null}
@@ -520,6 +555,11 @@ export function GmailInbox({
                     {b.key === 'inbox' && unreadCount > 0 ? <span className="em-nav-count">{unreadCount}</span> : null}
                   </button>
                 ))}
+                {workspaceId && !demo && newCount ? (
+                  <button type="button" className="em-chip-btn" onClick={() => { setShowNew(true); setPicked(null); }}>
+                    New contacts <span className="em-nav-count">{newCount}</span>
+                  </button>
+                ) : null}
               </div>
               ) : null}
 
@@ -581,8 +621,16 @@ export function GmailInbox({
               ) : null}
 
               <div className="min-h-0 flex-1 overflow-auto">
-                {demo || !workspaceId ? (
+                {(demo || !workspaceId) && !email.threads.length ? (
                   <Empty>Connect a workspace to read mail here.</Empty>
+                ) : demo || !workspaceId ? (
+                  // Sample data (lib/inbox-demo): the demo's threads, receipts included.
+                  <>{shown.map((t) => (
+                    <GmailRow key={t.key} thread={t} senders={participantsOf(t, recordFor)} unread={false} starred={false} checked={checked.has(t.key)}
+                      record={t.counterpart ? recordFor?.(t.counterpart) ?? null : null} deal={null} hasFiles={false}
+                      opened={t.rows.some((r) => extras.receipts.has(r.id)) ? t.rows.some((r) => (extras.receipts.get(r.id)?.opens ?? 0) > 0) : undefined}
+                      onOpen={() => open(t)} onCheck={() => toggleOne(t.key)} onStar={() => undefined} onArchive={() => undefined} onToggleRead={() => undefined} />
+                  ))}</>
                 ) : email.loading || scoped?.loading ? (
                   <Empty>Loading…</Empty>
                 ) : scoped?.error || email.error ? (

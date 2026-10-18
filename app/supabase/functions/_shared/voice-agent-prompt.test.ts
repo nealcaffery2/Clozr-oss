@@ -96,7 +96,7 @@ withBuilt(['book_appointment', 'save_qualification', 'mark_do_not_contact', 'get
 });
 const lmOff = mk({ tools: { book_appointment: { enabled: false }, save_qualification: { enabled: false }, mark_do_not_contact: { enabled: false } } }, withTemplate('lead_manager'));
 ok('switched off: the lead manager falls back to noting the next step', /note the best time for \{\{rep_name\}\}/.test(P(lmOff)) && /cannot lock in a time yourself/.test(P(lmOff)) && /The call is logged for the team/.test(P(lmOff)));
-ok('an acquisitions agent with COMPR waits for ready: true before any number', /Until it answers ready: true you have no range/.test(P(withTemplate('acquisitions'))) && /keep qualifying meanwhile/.test(P(withTemplate('acquisitions'))));
+ok('an acquisitions agent with COMPR waits for ready: true before any number', /Until it answers ready: true you have no range/.test(P(withTemplate('acquisitions'))) && /keep qualifying/.test(P(withTemplate('acquisitions'))) && /rehab_level/.test(P(withTemplate('acquisitions'))));
 ok('switched off: none of the three is named', !/book_appointment|save_qualification|mark_do_not_contact/.test(P(lmOff)));
 ok('every agent answers direct questions and handles a second push on price', /answer it in your first sentence/.test(P(lmOff)) && /If they push a second time, do not repeat that line/.test(P(lmOff)));
 ok('who they will talk to: the booked name when booking is on, else the rep', /with_name/.test(P(mk({ tools: { book_appointment: { enabled: true } } }, withTemplate('lead_manager')))) && /they ask who they will be speaking with: give \{\{rep_name\}\}/.test(P(lmOff)));
@@ -116,9 +116,13 @@ const V3 = 'eleven_v3_conversational';
 const dl = (expressiveness: string, tts_model = V3, use_fillers = true) => P(mk({ personality: { expressiveness, use_fillers }, voice: { tts_model } })).split('# What we know')[0];
 ok('delivery off adds nothing', !/Tactical empathy/.test(dl('off')) && !/\[laughs\]/.test(dl('off')));
 ok('natural: hesitations, pauses and tactical empathy, no sound tags', /"um"/.test(dl('natural')) && /Tactical empathy/.test(dl('natural')) && !/\[clears throat\]/.test(dl('natural')));
-ok('expressive on v3: sound tags including the throat clear', /\[clears throat\]/.test(dl('expressive')) && /\[laughs\]/.test(dl('expressive')) && /Never use coughing, sniffling/.test(dl('expressive')));
-ok('expressive on another model teaches no tags (they would be read out)', !/\[laughs\]/.test(dl('expressive', 'eleven_v4_turbo')) && /Tactical empathy/.test(dl('expressive', 'eleven_v4_turbo')));
-ok('...and warns', promptWarnings(mk({ personality: { expressiveness: 'expressive' } }), TEMPLATES).some((w) => w.code === 'expressive_needs_v3') && !promptWarnings(mk({ personality: { expressiveness: 'expressive' }, voice: { tts_model: V3 } }), TEMPLATES).some((w) => w.code === 'expressive_needs_v3'));
+ok('expressive on v3: sound tags including the throat clear', /\[clears throat\]/.test(dl('expressive')) && /\[laughs\]/.test(dl('expressive')) && /\[pause\]/.test(dl('expressive')) && /Never sniffle, cry or whisper/.test(dl('expressive')));
+ok('expressive on v4 Turbo: the same sound tags', /\[laughs\]/.test(dl('expressive', 'eleven_v4_turbo')) && /\[sighs\]/.test(dl('expressive', 'eleven_v4_turbo')));
+ok('...including gasps, exhales and sympathetic', ['[gasps]', '[exhales]', '[sympathetic]'].every((t) => dl('expressive', 'eleven_v4_turbo').includes(t)));
+ok('every delivery but Plain reads sarcasm and uses common sense', /Sarcasm means the opposite/.test(dl('natural')) && /Use common sense/.test(dl('natural')) && !/Sarcasm/.test(dl('off')));
+ok('expressive on a model without tags teaches none (they would be read out)', !/\[laughs\]/.test(dl('expressive', 'eleven_flash_v2_5')) && /Tactical empathy/.test(dl('expressive', 'eleven_flash_v2_5')));
+ok('...and warns', promptWarnings(mk({ personality: { expressiveness: 'expressive' }, voice: { tts_model: 'eleven_flash_v2_5' } }), TEMPLATES).some((w) => w.code === 'expressive_needs_v3') && ![V3, 'eleven_v4_turbo'].some((m) => promptWarnings(mk({ personality: { expressiveness: 'expressive' }, voice: { tts_model: m } }), TEMPLATES).some((w) => w.code === 'expressive_needs_v3')));
+ok('thinking on says it slows replies', promptWarnings(mk({ voice: { thinking: 'light' } }), TEMPLATES).some((w) => w.code === 'thinking_slows_replies') && !promptWarnings(mk({ voice: { thinking: 'off' } }), TEMPLATES).some((w) => w.code === 'thinking_slows_replies'));
 ok('fillers off drops the "um" line but keeps empathy', !/"um"/.test(dl('natural', V3, false)) && /Tactical empathy/.test(dl('natural', V3, false)));
 ok('humor levels', /No jokes/.test(pers({ humor: 0 })) && /playful humor/.test(pers({ humor: 3 })));
 ok('tone lines', /direct and efficient/.test(pers({ tone: 'direct' })) && /polished and professional/.test(pers({ tone: 'professional' })) && /warm and unhurried/.test(pers({ tone: 'warm' })));
@@ -192,7 +196,7 @@ ok('...and the locked block is still last', endsWithLocked(hostile));
 for (const id of ['lead_manager', 'acquisitions']) {
   const t = TEMPLATES[id];
   ok(`template ${id}: data is complete`, !!t.name && !!t.description && t.sections.length >= 4 && t.sections.every((s) => s.id && s.title && s.body) && Array.isArray(t.open_items));
-  ok(`template ${id}: its prompt is a sensible size`, estimateTokens(P(withTemplate(id))) > 1500 && estimateTokens(P(withTemplate(id))) < (id === 'acquisitions' ? 8500 : 6000), estimateTokens(P(withTemplate(id))));
+  ok(`template ${id}: its prompt is a sensible size`, estimateTokens(P(withTemplate(id))) > 1500 && estimateTokens(P(withTemplate(id))) < (id === 'acquisitions' ? 9500 : 6000), estimateTokens(P(withTemplate(id))));
 }
 ok('lead manager never offers a price', /You do not make offers/.test(P(withTemplate('lead_manager'))) && /Never: Negotiate, never state or hint at a price except as the offer authority rules allow/.test(P(withTemplate('lead_manager'))) && !/\{\{offer_low\}\}|ballpark/.test(P(withTemplate('lead_manager'))));
 {
@@ -248,6 +252,8 @@ ok('a very long prompt is flagged', codes(mk({ script: { sections: Array.from({ 
 ok('a nameless agent is warned about', codes(D).includes('missing_name') && !codes(mk({ identity: { name: 'Riley' } })).includes('missing_name'));
 eq('a clean, named lead manager has no warning-level findings', promptWarnings(mk({ identity: { name: 'Riley' } }, withTemplate('lead_manager')), TEMPLATES).filter((w) => w.level === 'warning'), []);
 eq('estimateTokens', [estimateTokens(''), estimateTokens('abcd'), estimateTokens('abcde')], [0, 1, 2]);
+
+ok('the agent is told the history includes colleagues and never to take their name', /You are \{\{agent_name\}\} and only \{\{agent_name\}\}/.test(P(D)) && /that was a colleague/.test(P(withTemplate('lead_manager'))));
 
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
 console.log('\nall passed');

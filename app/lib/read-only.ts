@@ -38,7 +38,7 @@ export function onReadOnlyRefusal(cb: () => void): () => void {
 // ---- what counts as a write -------------------------------------------------
 
 /** Database functions that only read, so a preview can still call them. */
-const READ_RPCS = new Set(['address_key']);
+const READ_RPCS = new Set(['address_key', 'import_address_lookup']);
 
 /**
  * Edge functions a preview may still call: `true` when the whole function only
@@ -52,6 +52,7 @@ const READ_FUNCTIONS: Record<string, true | ((b: Record<string, unknown>) => boo
   'clozr-today': true,
   lane: true,
   'record-suggest': true,
+  'call-profile': true,
   'dispo-intro': true,
   'draft-template': true,
   'draft-action-plan': true,

@@ -112,9 +112,9 @@ export function ConfirmDialog({ ask, reason, onAnswer }: { ask: ReasonAsk; reaso
       style={{ position: 'fixed', inset: 0, zIndex: 140, background: 'rgba(24,24,27,.45)', display: 'grid', placeItems: 'center', padding: '16px' }}>
       <div ref={boxRef} role="alertdialog" aria-modal="true" aria-labelledby={`${id}-t`} aria-describedby={ask.body ? `${id}-b` : undefined}
         data-testid="confirm" onClick={(e) => e.stopPropagation()}
-        style={{ width: '100%', maxWidth: '400px', background: '#fff', borderRadius: '14px', padding: '16px', boxShadow: SHADOW.lg }}>
+        style={{ width: '100%', maxWidth: '400px', background: 'var(--surface, #fff)', borderRadius: '14px', padding: '16px', boxShadow: SHADOW.lg }}>
         <div id={`${id}-t`} style={{ fontSize: '15px', fontWeight: 700, color: INK, letterSpacing: '-0.015em' }}>{ask.title}</div>
-        {ask.body ? <div id={`${id}-b`} style={{ fontSize: '12.5px', color: '#52525b', marginTop: '6px', lineHeight: 1.5 }}>{ask.body}</div> : null}
+        {ask.body ? <div id={`${id}-b`} style={{ fontSize: '12.5px', color: 'var(--muted, #52525b)', marginTop: '6px', lineHeight: 1.5 }}>{ask.body}</div> : null}
         {reason ? (
           <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '12px' }}>
             <span style={{ fontSize: '11.5px', fontWeight: 500, color: MUTED }}>{ask.reasonLabel ?? 'Reason'}</span>

@@ -9,7 +9,7 @@ import { SalesManager } from '@/app/components/coaching/SalesManager';
 
 export function Coaching({ V }: { V: ClozrView }) {
   return (
-    <section data-screen-label="Coaching" style={{ flex: '1', minWidth: '0', overflow: 'auto', padding: V.isMobile ? '12px 12px 40px' : '16px 20px 40px', background: '#fafafa' }}>
+    <section data-screen-label="Coaching" style={{ flex: '1', minWidth: '0', overflow: 'auto', padding: V.isMobile ? '12px 12px 40px' : '16px 20px 40px', background: 'var(--canvas, #fafafa)' }}>
       <div style={{ maxWidth: 1180, margin: '0 auto' }}>
         <SalesManager
           workspaceId={V.liveIds?.workspaceId ?? null}

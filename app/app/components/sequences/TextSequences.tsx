@@ -30,8 +30,8 @@ export function TextSequences({ headerLeft }: { headerLeft?: React.ReactNode }) 
   );
 }
 
-const label: React.CSSProperties = { fontSize: '11.5px', color: '#71717a', fontWeight: 600 };
-const btn: React.CSSProperties = { height: '28px', padding: '0 10px', borderRadius: '7px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '12px', cursor: 'pointer', color: '#18181b', whiteSpace: 'nowrap' };
+const label: React.CSSProperties = { fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600 };
+const btn: React.CSSProperties = { height: '28px', padding: '0 10px', borderRadius: '7px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '12px', cursor: 'pointer', color: 'var(--ink, #18181b)', whiteSpace: 'nowrap' };
 
 /**
  * Pick a Talkr sequence and enroll these sellers. Talkr refuses opted-out
@@ -84,7 +84,7 @@ export function EnrollSellersPanel({ sellers, onClose, onDone, compact = false }
 
   const wrap: React.CSSProperties = compact
     ? { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }
-    : { display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 16px', background: '#fff', borderBottom: '1px solid #e4e4e7' };
+    : { display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 16px', background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)' };
 
   return (
     <div style={wrap} data-testid="enroll-text-sequence">
@@ -92,19 +92,19 @@ export function EnrollSellersPanel({ sellers, onClose, onDone, compact = false }
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={label}>Automated texts for {n} selected</span>
           <div style={{ flex: 1 }} />
-          <button type="button" onClick={onClose} style={{ ...btn, border: 0, background: 'none', color: '#71717a' }}>Close</button>
+          <button type="button" onClick={onClose} style={{ ...btn, border: 0, background: 'none', color: 'var(--meta, #71717a)' }}>Close</button>
         </div>
       ) : null}
       {!authed ? (
-        <span style={{ fontSize: '12px', color: '#71717a' }}>Talkr is not connected for this sign-in, so no sequence can send. See Account.</span>
+        <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>Talkr is not connected for this sign-in, so no sequence can send. See Account.</span>
       ) : sequences === null ? (
-        <span style={{ fontSize: '12px', color: '#71717a' }}>Loading sequences…</span>
+        <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>Loading sequences…</span>
       ) : sequences.length === 0 && !error ? (
-        <span style={{ fontSize: '12px', color: '#71717a' }}>No sequence is switched on. Build one under Action plans, Automated texts.</span>
+        <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>No sequence is switched on. Build one under Action plans, Automated texts.</span>
       ) : sequences.length ? (
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
           <select aria-label="Text sequence" value={pick} onChange={(e) => setPick(e.target.value)}
-            style={{ height: '30px', borderRadius: '8px', border: '1px solid #e4e4e7', padding: '0 8px', fontSize: '12.5px', background: '#fff', color: '#18181b', flex: compact ? '1 1 100%' : '0 1 280px', minWidth: 0 }}>
+            style={{ height: '30px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', padding: '0 8px', fontSize: '12.5px', background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)', flex: compact ? '1 1 100%' : '0 1 280px', minWidth: 0 }}>
             {sequences.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.sms_count} {s.sms_count === 1 ? 'text' : 'texts'}</option>)}
           </select>
           <button type="button" className="dc3" onClick={() => void run()} disabled={busy || !pick || !n}
@@ -114,12 +114,12 @@ export function EnrollSellersPanel({ sellers, onClose, onDone, compact = false }
           {compact ? <button type="button" onClick={onClose} style={btn}>Cancel</button> : null}
         </div>
       ) : null}
-      <span style={{ fontSize: '11.5px', color: '#71717a', lineHeight: 1.45 }}>
+      <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', lineHeight: 1.45 }}>
         Talkr sends the texts itself. Opted-out numbers are never texted, and a text due in quiet hours waits for the next window.
       </span>
-      {error ? <div role="alert" style={{ fontSize: '12px', color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '7px 10px' }}>{error}</div> : null}
+      {error ? <div role="alert" style={{ fontSize: '12px', color: 'var(--tx-red-deep, #991b1b)', background: 'var(--tint-red, #fef2f2)', border: '1px solid var(--tint-red-2, #fecaca)', borderRadius: '8px', padding: '7px 10px' }}>{error}</div> : null}
       {result ? (
-        <div role="status" style={{ fontSize: '12px', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '7px 10px' }}>
+        <div role="status" style={{ fontSize: '12px', color: 'var(--tx-amber-deep, #92400e)', background: 'var(--tint-amber, #fffbeb)', border: '1px solid var(--tint-amber-2, #fde68a)', borderRadius: '8px', padding: '7px 10px' }}>
           {result.enrolled} enrolled{result.already ? `, ${result.already} already in` : ''}, {result.skipped.length} skipped:
           <ul style={{ margin: '4px 0 0', paddingLeft: '16px' }}>
             {result.skipped.slice(0, 20).map((s, i) => <li key={i}>{s.ref}: {SKIP_REASON[s.reason] ?? s.reason}</li>)}
@@ -139,7 +139,7 @@ export function RecordTextSequence({ seller, toast }: { seller: EnrollSeller; to
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={label}>Automated texts</span>
         {!open ? (
-          <button type="button" className="dc12" onClick={() => setOpen(true)} style={{ fontSize: '11px', color: '#0A8560', background: 'none', border: 0, cursor: 'pointer', padding: 0, fontWeight: 600 }}>
+          <button type="button" className="dc12" onClick={() => setOpen(true)} style={{ fontSize: '11px', color: 'var(--tx-mint, #0a8560)', background: 'none', border: 0, cursor: 'pointer', padding: 0, fontWeight: 600 }}>
             Enroll
           </button>
         ) : null}

@@ -3,10 +3,11 @@
 // in one place so every record component reads the same.
 import type React from 'react';
 
-export const eyebrow: React.CSSProperties = { fontSize: '10.5px', letterSpacing: '.1em', textTransform: 'uppercase', color: '#71717a', fontWeight: 600 };
+/** A group's label. Sentence case, not tracked capitals (DESIGN.md §1). */
+export const eyebrow: React.CSSProperties = { fontSize: '13px', color: 'var(--ink, #18181b)', fontWeight: 650, letterSpacing: '-0.01em' };
 /** Sentence-case label over a value or group (DESIGN.md §3: 11.5px / 500 / muted). */
 export const label: React.CSSProperties = { fontSize: '11.5px', fontWeight: 500, color: '#71717a', lineHeight: 1.3 };
-export const card: React.CSSProperties = { border: '1px solid #e4e4e7', borderRadius: '10px', background: '#fff' };
+export const card: React.CSSProperties = { border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', background: 'var(--surface, #fff)' };
 export const ghostBtn: React.CSSProperties = { height: '30px', padding: '0 11px', borderRadius: '8px', border: 0, background: '#fff', fontSize: '12.5px', fontWeight: 500, cursor: 'pointer', color: '#18181b', boxShadow: 'var(--shadow-ring)' };
 export const talkrGhost: React.CSSProperties = { ...ghostBtn, color: 'var(--c-talkr)', boxShadow: '0 0 0 1px #fecdd3, 0 1px 2px -1px rgba(0,0,0,.06)', display: 'inline-flex', alignItems: 'center', gap: '6px' };
 export const primaryBtn: React.CSSProperties = { height: '30px', padding: '0 14px', borderRadius: '8px', border: 0, background: '#0A8560', color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 0 0 1px rgba(10,133,96,.35), 0 1px 2px -1px rgba(10,133,96,.35)' };

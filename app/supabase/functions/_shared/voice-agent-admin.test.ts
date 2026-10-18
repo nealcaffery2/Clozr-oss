@@ -6,7 +6,7 @@
 //   or: deno run supabase/functions/_shared/voice-agent-admin.test.ts
 import {
   ElevenError, FALLBACK_TTS_MODEL, PREVIEW_MAX_CHARS, SAMPLE_CANDIDATE, SAMPLE_MEMORY, agentBody, callOut, checksFromAgent, deleteRemoteAgent, elJson,
-  agentToolIds, builtWriteTools, generateSecret, ignoreTerms, withModelFallback, getSignedUrl, listVoices, previewSpeech, redact, runConnect, toolBody, transferTool, trimVoice, unappliedSettings, webhookCreateBody, webhookUrls,
+  THINKING_FILLERS, agentToolIds, asrKeywords, builtWriteTools, generateSecret, ignoreTerms, withModelFallback, getSignedUrl, listVoices, previewSpeech, redact, runConnect, toolBody, transferTool, trimVoice, unappliedSettings, webhookCreateBody, webhookUrls,
   type ConnectState, type Wiring,
 } from './voice-agent-admin.ts';
 import { buildInitiation, DYNAMIC_VARIABLES, resolveCaller } from './voice-agent.ts';
@@ -52,16 +52,21 @@ eq('boolean variables are booleans', [typeof b.conversation_config.agent.dynamic
 eq('agent tts: model, default tuning', b.conversation_config.tts, { voice_id: 'JBFqnCBsd6RMkjVDRZzb', model_id: 'eleven_v4_turbo', stability: 0.5, similarity_boost: 0.8, speed: 1 });
 eq('expressive and unset: livelier stability', body(mk({ personality: { expressiveness: 'expressive' } })).conversation_config.tts.stability, 0.3);
 eq('tuning reaches the agent', body(mk({ voice: { stability: 0.2, similarity: 0.6, speed: 0.9, tts_model: 'eleven_flash_v2_5' } })).conversation_config.tts, { voice_id: D.voice.voice_id, model_id: 'eleven_flash_v2_5', stability: 0.2, similarity_boost: 0.6, speed: 0.9 });
-const TURN = { turn_model: 'turn_v3', speculative_turn: true, interruption_ignore_terms: ignoreTerms(3), soft_timeout_config: { timeout_seconds: 3, message: 'Mm, okay…', use_llm_generated_message: true } };
+const TURN = { turn_model: 'turn_v3', speculative_turn: true, retranscribe_on_turn_timeout: true, interruption_ignore_terms: ignoreTerms(3), soft_timeout_config: { timeout_seconds: 1.5, message: THINKING_FILLERS[0], additional_soft_timeout_messages: THINKING_FILLERS.slice(1), randomize_fillers: true, use_llm_generated_message: false } };
 eq('call length, turn eagerness and silence timeout', [b.conversation_config.conversation.max_duration_seconds, b.conversation_config.turn], [300, { turn_eagerness: 'normal', silence_end_call_timeout: 30, ...TURN }]);
 eq('silence timeout 0 means off (-1)', body(mk({ call_handling: { silence_timeout_s: 0, turn_eagerness: 'patient' } })).conversation_config.turn, { turn_eagerness: 'patient', silence_end_call_timeout: -1, ...TURN });
 eq('balanced interruptions ignore only "uh huh" sounds', ignoreTerms(3), ['uh huh', 'uh-huh', 'mm hmm', 'mm-hmm', 'mhm', 'hmm']);
 eq('hard to interrupt also ignores "yeah" and "okay"', ['yeah', 'okay'].every((t) => ignoreTerms(2).includes(t)) && !ignoreTerms(2).includes('wait'), true);
 eq('easy to interrupt ignores nothing', [ignoreTerms(4), ignoreTerms(5)], [[], []]);
+eq('asr: high quality, primed with the company, the agent, the team and the call words', (() => { const a = body(mk({ identity: { name: 'Jordan', company: 'Acme Homes' } })).conversation_config.asr; return [a.quality, ['Acme Homes', 'Jordan', 'Compr', 'title company', 'earnest money'].every((k) => a.keywords.includes(k))]; })(), ['high', true]);
+eq('asr keywords add team first names once, case-insensitively, capped at 50', (() => { const k = asrKeywords(mk({ identity: { name: 'Riley', company: 'Acme Homes' } }), ['Casey', 'casey', 'Morgan', '']); return [k.filter((x) => x.toLowerCase() === 'casey').length, k.includes('Morgan'), k.length <= 50]; })(), [1, true, true]);
 eq('a real yes always cuts in', [1, 2, 3].some((s) => ignoreTerms(s).includes('yes') || ignoreTerms(s).includes('sure')), false);
 eq('the interruption scale reaches the agent', body(mk({ call_handling: { interruption_sensitivity: 1 } })).conversation_config.turn.interruption_ignore_terms, ignoreTerms(1));
-eq('no fillers: the soft timeout says the static line', body(mk({ personality: { use_fillers: false } })).conversation_config.turn.soft_timeout_config.use_llm_generated_message, false);
-eq('brain: the chosen LLM, light thinking, default backup', (({ llm, reasoning_effort, backup_llm_config }) => ({ llm, reasoning_effort, backup_llm_config }))(b.conversation_config.agent.prompt), { llm: 'gemini-3.8-flash', reasoning_effort: 'low', backup_llm_config: { preference: 'default' } });
+eq('the soft timeout always says a fixed line, fillers on or off', [body(mk({ personality: { use_fillers: true } })).conversation_config.turn.soft_timeout_config.use_llm_generated_message, body(mk({ personality: { use_fillers: false } })).conversation_config.turn.soft_timeout_config.use_llm_generated_message], [false, false]);
+eq('brain: the chosen LLM, thinking off by default, default backup', (({ llm, reasoning_effort, backup_llm_config }) => ({ llm, reasoning_effort, backup_llm_config }))(b.conversation_config.agent.prompt), { llm: 'qwen35-397b-a17b', reasoning_effort: undefined, backup_llm_config: { preference: 'default' } });
+eq('Gemini gets thinking off as effort none', body(mk({ voice: { llm: 'gemini-3.8-flash' } })).conversation_config.agent.prompt.reasoning_effort, 'none');
+eq('Claude never gets effort none (ElevenLabs rejects it)', 'reasoning_effort' in body(mk({ voice: { llm: 'claude-sonnet-5-5' } })).conversation_config.agent.prompt, false);
+eq('light thinking is low effort', body(mk({ voice: { llm: 'claude-haiku-5-5', thinking: 'light' } })).conversation_config.agent.prompt.reasoning_effort, 'low');
 eq('deep thinking is medium effort', body(mk({ voice: { llm: 'claude-sonnet-5-5', thinking: 'deep' } })).conversation_config.agent.prompt.reasoning_effort, 'medium');
 eq('auto thinking sends no effort', 'reasoning_effort' in body(mk({ voice: { thinking: 'auto' } })).conversation_config.agent.prompt, false);
 eq('name, language, first message', [b.name, b.conversation_config.agent.language, b.conversation_config.agent.first_message], ['Acme Riley', 'en', 'Hi, this is {{agent_name}} with {{company}}. Who am I speaking with?']);
@@ -127,6 +132,11 @@ eq('agentBody returns them too', agentBody(mk({ call_handling: { first_response_
 const tb = toolBody(urls.tool, 'T'.repeat(64)) as any; // deno-lint-ignore no-explicit-any
 eq('tool is a POST webhook named lead_context with the secret header', [tb.tool_config.type, tb.tool_config.name, tb.tool_config.api_schema.method, tb.tool_config.api_schema.request_headers], ['webhook', 'lead_context', 'POST', { 'X-Voice-Agent-Secret': 'T'.repeat(64) }]);
 eq('tool body takes the system variables, including the agent id', Object.fromEntries(['caller_id', 'called_number', 'agent_id'].map((k) => [k, tb.tool_config.api_schema.request_body_schema.properties[k].dynamic_variable])), { caller_id: 'system__caller_id', called_number: 'system__called_number', agent_id: 'system__agent_id' });
+eq('tool body binds record_kind, record_id and record_token to our dynamic variables, none required', [
+  Object.fromEntries(['record_kind', 'record_id', 'record_token'].map((k) => [k, tb.tool_config.api_schema.request_body_schema.properties[k].dynamic_variable])),
+  tb.tool_config.api_schema.request_body_schema.required,
+], [{ record_kind: 'record_kind', record_id: 'record_id', record_token: 'record_token' }, ['caller_id', 'called_number']]);
+eq('every dynamic variable the tool reads has a placeholder', Object.values(tb.tool_config.api_schema.request_body_schema.properties as Record<string, { dynamic_variable?: string }>).map((p) => p.dynamic_variable).filter((v): v is string => !!v && !v.startsWith('system__')).filter((v) => !(v in b.conversation_config.agent.dynamic_variables.dynamic_variable_placeholders)), []);
 eq('tool contact_name is LLM-filled', Object.keys(tb.tool_config.api_schema.request_body_schema.properties.contact_name).sort(), ['description', 'type']);
 eq('webhook create body', webhookCreateBody(urls.post_call), { settings: { auth_type: 'hmac', name: 'CLOZR post-call', webhook_url: urls.post_call } });
 
@@ -382,7 +392,7 @@ eq('...with the brief, rep and rep phone in it', [viaDb.dynamic_variables.lead_b
 }
 eq('no agent: no offer range', [viaDb.dynamic_variables.offer_low, viaDb.dynamic_variables.offer_high], ['', '']);
 const withGoal = await initiationFor(admin, 1, resolveCaller(cands), { ...legIn, direction: 'outbound' }, persona, null, '  Follow up on the offer\n we sent Friday. ');
-eq('a call the AI agent placed carries its goal, cleaned', withGoal.dynamic_variables.call_goal, 'Follow up on the offer we sent Friday.');
+eq('a call the AI agent placed carries its goal, cleaned, after the first-call note', withGoal.dynamic_variables.call_goal, 'FIRST CALL: they have never talked with us. Follow up on the offer we sent Friday.');
 eq('...and every other call an empty one', viaDb.dynamic_variables.call_goal, '');
 const acq = mk({ offer_authority: { mode: 'range_with_approval', floor_pct_of_mao: 85 } });
 const withOffer = await initiationFor(admin, 1, resolveCaller(cands), legIn, persona, acq);
@@ -463,6 +473,8 @@ for (const id of Object.keys(TEMPLATES)) {
   });
   eq('a refused voice model still falls back, thinking kept', [both, r2.model, r2.fellBack], [['eleven_v4_turbo/light', 'eleven_flash_v2_5/light'], FALLBACK_TTS_MODEL, true]);
 }
+
+eq('a big team never crowds out the call words', (() => { const k = asrKeywords(mk({ identity: { name: 'Riley', company: 'Acme Homes' } }), Array.from({ length: 60 }, (_, i) => `Rep${i}`)); return ['Compr', 'earnest money', 'HOA', 'realtor'].every((w) => k.includes(w)) && k.length <= 50; })(), true);
 
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
 console.log('\nall passed');

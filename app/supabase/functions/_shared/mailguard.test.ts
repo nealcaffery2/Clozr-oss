@@ -1,6 +1,6 @@
 // Unsubscribe tokens, and the verification gate on a send.
 // Run:  deno run --allow-env supabase/functions/_shared/mailguard.test.ts
-import { blockUnverified, emailSafety, guardSend, guardSendResend, readUnsubscribeToken, unsubscribeToken, type GuardOptions } from './mailguard.ts';
+import { blockUnverified, emailSafety, guardSend, guardSendMany, guardSendResend, readUnsubscribeToken, unsubscribeToken, verificationBlock, type GuardOptions } from './mailguard.ts';
 import type { SendKind } from './deliverability-rules.ts';
 
 Deno.env.set('UNSUBSCRIBE_SECRET', 'test-secret');
@@ -40,7 +40,7 @@ eq('allowUnverified sends a known-bad address', blockUnverified('unsafe', 'bulk'
 eq('transactional mail is exempt', blockUnverified('unsafe', 'transactional', { requireVerified: true }), false);
 eq('a safe address is not refused', blockUnverified('safe', 'bulk', { requireVerified: true }), false);
 
-type Row = { id?: number; email?: string; email_key?: string; email_safe_to_send?: boolean | null; buyer_id?: number };
+type Row = { id?: number; email?: string; email_key?: string; email_safe_to_send?: boolean | null; buyer_id?: number; safe?: boolean | null };
 type TableSpec = Row[] | { error: string };
 
 const MAILBOX = {
@@ -66,19 +66,25 @@ function fakeAdmin(tables: Record<string, TableSpec>, settings: Record<string, u
       then: (res, rej) => Promise.resolve(finish()).then(res, rej),
     };
     const finish = () => {
-      if (name === 'workspaces') return { data: { settings }, error: null };
-      if (name === 'mailbox_settings') return { data: MAILBOX, error: null };
-      if (name === 'email_suppressions') return { data: [], error: null };
       const spec = tables[name];
       if (spec && !Array.isArray(spec)) return { data: null, error: { message: spec.error } };
+      if (name === 'workspaces') return { data: { settings }, error: null };
+      if (name === 'mailbox_settings') return { data: MAILBOX, error: null };
       return { data: spec ?? [], error: null };
     };
     return q;
   };
-  return {
-    seen, claims: () => claims,
-    from, rpc: () => { claims++; return Promise.resolve({ data: { ok: true, ids: [9], today: 0, last_hour: 0, hour_oldest: null, last_sent_at: null }, error: null }); },
+  // email_safety_flags (migration 276) answers from tables.email_safety_flags; without it the RPC is
+  // "missing" and the guard reads the tables one by one. Only email_send_claim is a claim.
+  const rpc = (fn: string) => {
+    if (fn === 'email_safety_flags') {
+      const spec = tables.email_safety_flags;
+      return Promise.resolve(Array.isArray(spec) ? { data: spec, error: null } : { data: null, error: { message: spec?.error ?? 'function email_safety_flags does not exist' } });
+    }
+    claims++;
+    return Promise.resolve({ data: { ok: true, ids: [9], today: 0, last_hour: 0, hour_oldest: null, last_sent_at: null }, error: null });
   };
+  return { seen, claims: () => claims, from, rpc };
 }
 
 const BAD = [{ email: 'bad@example.com', email_safe_to_send: false }];
@@ -132,12 +138,51 @@ async function send(kind: SendKind, tables: Record<string, TableSpec>, opts: Gua
 }
 {
   const { guard, admin } = await send('bulk', { buyers: { error: 'column email_safe_to_send does not exist' } }, {}, {}, 'ok@example.com');
-  eq('a missing verification column does not block the send', [guard.ok, admin.claims()], [true, 1]);
+  eq('a failed verification read holds a bulk send (check_failed, nothing claimed)', [guard.ok, !guard.ok && guard.code, admin.claims()], [false, 'check_failed', 0]);
+}
+{
+  const { guard, admin } = await send('one_to_one', { sellers: { error: 'timeout' } }, {}, {}, 'ok@example.com');
+  eq('a failed verification read holds a one-to-one send', [guard.ok, !guard.ok && guard.code, admin.claims()], [false, 'check_failed', 0]);
+}
+{
+  const { guard, admin } = await send('bulk', { workspaces: { error: 'timeout' } }, {}, {}, 'ok@example.com');
+  eq('a failed require_verified_email read holds a bulk send', [guard.ok, !guard.ok && guard.code, admin.claims()], [false, 'check_failed', 0]);
+}
+{
+  const { guard, admin } = await send('bulk', { email_suppressions: { error: 'timeout' } }, {}, {}, 'ok@example.com');
+  eq('a failed suppression read holds the send', [guard.ok, !guard.ok && guard.code, admin.claims()], [false, 'check_failed', 0]);
+}
+{
+  const { guard, admin } = await send('transactional', { email_suppressions: { error: 'timeout' } }, {}, {}, 'ok@example.com');
+  eq('transactional mail still goes when the suppression read fails (as with the claim)', [guard.ok, admin.claims()], [true, 1]);
+}
+{
+  const { guard, admin } = await send('bulk', { email_safety_flags: [{ email: 'bad@example.com', safe: false }] });
+  eq('the email_safety_flags path refuses a known-bad address', [guard.ok, !guard.ok && guard.code, admin.claims(), admin.seen.includes('buyers')], [false, 'unverified_unsafe', 0, false]);
+}
+{
+  const { guard, admin } = await send('bulk', { email_safety_flags: [{ email: 'new@example.com', safe: null }] }, { requireVerified: true }, {}, 'new@example.com');
+  eq('requireVerified from the caller refuses a null and skips the workspaces read', [guard.ok, !guard.ok && guard.code, admin.seen.includes('workspaces')], [false, 'unverified_unsafe', false]);
+}
+{
+  const admin = fakeAdmin({ sellers: { error: 'timeout' } });
+  const got = await verificationBlock(admin as never, 7, ['ok@example.com'], 'bulk').then(() => 'resolved', (e: Error) => e.message);
+  eq('verificationBlock throws on a failed read, so cold-campaign-tick and plan-tick hold the row', /unread/.test(got), true);
+}
+{
+  const admin = fakeAdmin({ email_suppressions: { error: 'timeout' } });
+  const many = await guardSendMany(admin as never, account, ['a@example.com', 'b@example.com'], 'bulk');
+  eq('guardSendMany refuses the whole batch when a read fails', [many.ok, !many.ok && many.code, admin.claims()], [false, 'check_failed', 0]);
 }
 {
   const admin = fakeAdmin({ buyers: BAD, buyer_emails: [], buyer_contacts: [], sellers: [] });
   const guard = await guardSendResend(admin as never, { id: 4, workspace_id: 7 } as never, ['bad@example.com'], 'one_to_one');
   eq('resend guard refuses the same known-bad address', [guard.ok, !guard.ok && guard.code, admin.claims()], [false, 'unverified_unsafe', 0]);
+}
+{
+  const admin = fakeAdmin({ email_suppressions: { error: 'timeout' } });
+  const guard = await guardSendResend(admin as never, { id: 4, workspace_id: 7 } as never, ['ok@example.com'], 'bulk');
+  eq('resend guard holds on a failed suppression read', [guard.ok, !guard.ok && guard.code, admin.claims()], [false, 'check_failed', 0]);
 }
 
 if (failed) { console.log(`\n${failed} FAILED`); Deno.exit(1); }

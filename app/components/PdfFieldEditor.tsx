@@ -53,16 +53,16 @@ type Props = {
 type Item = FieldDef & { key: string };
 type Drag = { key: string; mode: 'move' | 'resize'; px: number; py: number; start: { x: number; y: number; w: number; h: number }; pw: number; ph: number };
 
-const INK = '#18181b';
-const MUTED = '#71717a';
-const LINE = '#e4e4e7';
+const INK = 'var(--ink, #18181b)';
+const MUTED = 'var(--meta, #71717a)';
+const LINE = 'var(--divider, #e4e4e7)';
 const GREEN = '#0A8560';
 const btn = (primary = false, disabled = false): React.CSSProperties => ({
   height: '30px', padding: '0 11px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
   border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? (disabled ? '#7fcbb2' : GREEN) : '#fff', color: primary ? '#fff' : INK, opacity: !primary && disabled ? 0.55 : 1, fontFamily: 'inherit',
 });
 const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: MUTED, fontWeight: 500, margin: '16px 0 6px' };
-const input: React.CSSProperties = { width: '100%', height: '30px', padding: '0 8px', border: `1px solid ${LINE}`, borderRadius: '7px', fontSize: '12.5px', background: '#fff', color: INK, boxSizing: 'border-box' };
+const input: React.CSSProperties = { width: '100%', height: '30px', padding: '0 8px', border: `1px solid ${LINE}`, borderRadius: '7px', fontSize: '12.5px', background: 'var(--surface, #fff)', color: INK, boxSizing: 'border-box' };
 const ICON_OF: Record<FieldType, LucideIcon> = {
   signature: PenLine, initials: CaseUpper, date_signed: CalendarCheck, text: Type, number: Hash, currency: DollarSign, date: Calendar, checkbox: SquareCheck, dropdown: ChevronDown,
   radio: CircleDot, attachment: Paperclip, stamp: Stamp, formula: Sigma, email: AtSign, phone: Phone,
@@ -133,7 +133,9 @@ export default function PdfFieldEditor({ title, sourceUrl, roles, initial, onSav
   const drag = useRef<Drag | null>(null);
   const seq = useRef(0);
   const [mapping, setMapping] = useState(false);
-  const [mapped, setMapped] = useState<{ n: number; bound: number; signers: number } | null>(null);
+  const [mapped, setMapped] = useState<{ n: number; bound: number; signers: number; signOnly: boolean } | null>(null);
+  /** "Reading page 2 of 7…" while a form drawn as outlines is read with OCR. */
+  const [reading, setReading] = useState<string | null>(null);
   const autoRan = useRef(false);
 
   /** Read the PDF's text and drawings and place every field it can find. */
@@ -142,16 +144,22 @@ export default function PdfFieldEditor({ title, sourceUrl, roles, initial, onSav
     if (!replace && items.length) return;
     setMapping(true); setErr(null);
     try {
-      const layout = await readLayout(doc);
-      const { found, side } = detectFields(layout.items, layout.pages, layout.shapes, autoMap);
+      const layout = await readLayout(doc, (p, of) => setReading(`Reading page ${Math.min(p + 1, of)} of ${of}…`));
+      const { found, side, signOnly } = detectFields(layout.items, layout.pages, layout.shapes, { ...autoMap, outlined: layout.outlined });
       const fields = assignRoles(found, roles, side);
       setItems(fields.map((f, i) => ({ ...f, key: `a${i}-${seq.current++}` })));
       setSelected(null); setDirty(true); setPage(1);
-      setMapped({ n: fields.length, bound: fields.filter((f) => f.variable_key).length, signers: fields.filter((f) => FIELD_META[f.type].signs).length });
-      if (!fields.length) setErr(layout.items.length < 5 ? 'This looks like a scan, so there is no text to read fields from. Drag them on from the left.' : 'No blanks found to map. Drag fields on from the left.');
+      setMapped({ n: fields.length, bound: fields.filter((f) => f.variable_key).length, signers: fields.filter((f) => FIELD_META[f.type].signs).length, signOnly });
+      if (layout.ocrFailed) {
+        // Nothing is placed on a page OCR could not read (lib/pdf-autodetect), so say which ones were skipped.
+        setErr(fields.length ? `The words on page${layout.outlined.length === 1 ? '' : 's'} ${layout.outlined.join(', ')} are drawn as images and could not be read here, so nothing was placed there. Drag those fields on from the left.`
+          : 'The words on this form are drawn as images and could not be read here. Drag fields on from the left.');
+      } else if (!fields.length) {
+        setErr(layout.items.length < 5 ? 'This looks like a scan, so there is no text to read fields from. Drag them on from the left.' : 'No blanks found to map. Drag fields on from the left.');
+      }
     } catch (e) {
       setErr(`Could not read the document to map it: ${(e as Error).message}`);
-    } finally { setMapping(false); }
+    } finally { setMapping(false); setReading(null); }
   }
   // A document with no fields yet is mapped as soon as it opens.
   useEffect(() => {
@@ -164,7 +172,7 @@ export default function PdfFieldEditor({ title, sourceUrl, roles, initial, onSav
 
   const colorOf = useMemo(() => {
     const m = new Map(roles.map((r, i) => [r.role, recipientColor(i)]));
-    return (role: string) => m.get(role) ?? '#a1a1aa';
+    return (role: string) => m.get(role) ?? 'var(--subtle, #a1a1aa)';
   }, [roles]);
   const roleOf = (role: string) => roles.find((r) => r.role === role);
   const pages = sizes.length;
@@ -313,7 +321,7 @@ export default function PdfFieldEditor({ title, sourceUrl, roles, initial, onSav
         {!readOnly && autoMap ? (
           <button type="button" style={btn(false, mapping || !doc)} disabled={mapping || !doc} title="Read the document and place its signature, date and data fields"
             onClick={() => { if (!items.length || window.confirm(`Replace the ${items.length} field${items.length === 1 ? '' : 's'} here with auto-mapped ones?`)) void runAutoMap(true); }}>
-            {mapping ? 'Mapping…' : 'Auto-map'}
+            {mapping ? reading ?? 'Mapping…' : 'Auto-map'}
           </button>
         ) : null}
         {prepare && !readOnly ? (
@@ -330,7 +338,7 @@ export default function PdfFieldEditor({ title, sourceUrl, roles, initial, onSav
           {err ? <div role="alert" className="cz-fe-note cz-fe-bad">{err}</div> : null}
           {mapped && mapped.n ? (
             <div role="status" className="cz-fe-note cz-fe-good">
-              <span style={{ flex: 1 }}><b>{mapped.n} field{mapped.n === 1 ? '' : 's'} mapped automatically</b>: {mapped.signers} to sign or date, {mapped.bound} filled from the record. Check each page, adjust anything that is off, then save.</span>
+              <span style={{ flex: 1 }}><b>{mapped.n} field{mapped.n === 1 ? '' : 's'} mapped automatically</b>: {mapped.signOnly ? 'this form is already filled in, so only its signatures, initials and dates were placed.' : `${mapped.signers} to sign or date, ${mapped.bound} filled from the record.`} Check each page, adjust anything that is off, then save.</span>
               <button type="button" onClick={() => setMapped(null)} style={{ border: 0, background: 'none', color: 'inherit', cursor: 'pointer', fontSize: '15px' }} aria-label="Dismiss">×</button>
             </div>
           ) : null}
@@ -356,14 +364,14 @@ export default function PdfFieldEditor({ title, sourceUrl, roles, initial, onSav
 
         {/* the pages */}
         <div ref={(el) => { scroller.current = el; paneRef(el); }} onScroll={onScroll} onPointerDown={() => setSelected(null)} className="cz-fe-canvas">
-          {pdfError ? <div className="cz-fe-empty" style={{ color: '#b91c1c' }}>Could not open the PDF: {pdfError}</div>
+          {pdfError ? <div className="cz-fe-empty" style={{ color: 'var(--tx-red, #b91c1c)' }}>Could not open the PDF: {pdfError}</div>
             : !sourceUrl ? <div className="cz-fe-empty">No PDF on this document yet.</div>
             : !doc || paneWidth <= 0 ? <div className="cz-fe-empty">{loading ? 'Opening the PDF…' : 'Opening…'}</div>
             : sizes.map((_, i) => {
               const n = i + 1;
               const ph = phOf(n);
               return (
-                <div key={n} ref={(el) => { if (el) pageEls.current.set(n, el); else pageEls.current.delete(n); }} style={{ position: 'relative', width: `${pw}px`, height: `${ph}px`, margin: '0 auto 22px', background: '#fff', boxShadow: '0 1px 3px rgba(15,23,42,.08), 0 10px 30px -12px rgba(15,23,42,.25)', borderRadius: '2px' }}>
+                <div key={n} ref={(el) => { if (el) pageEls.current.set(n, el); else pageEls.current.delete(n); }} style={{ position: 'relative', width: `${pw}px`, height: `${ph}px`, margin: '0 auto 22px', background: 'var(--surface, #fff)', boxShadow: '0 1px 3px rgba(15,23,42,.08), 0 10px 30px -12px rgba(15,23,42,.25)', borderRadius: '2px' }}>
                   <PdfPageCanvas doc={doc} page={n} width={pw} height={ph} />
                   <div onDragOver={(e) => { if (!readOnly) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }} onDrop={onDrop(n)} style={{ position: 'absolute', inset: 0 }}>
                     {items.filter((f) => f.page === n).map((f) => {
@@ -384,17 +392,17 @@ export default function PdfFieldEditor({ title, sourceUrl, roles, initial, onSav
                             : <><FieldIcon type={f.type} size={Math.max(9, Math.min(12, f.h * ph * 0.55))} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{prepare && FIELD_META[f.type].signs ? signsLabel(roleOf(f.role)?.label ?? f.role, f.type) : text}{f.required && !f.variable_key ? ' *' : ''}</span></>}
                           {on && prepare && !readOnly && fillable(f.type) ? (
                             <span onPointerDown={(e) => startDrag(e, f, 'move')} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} aria-label="Move" title="Drag to move"
-                              style={{ position: 'absolute', left: '-6px', top: '-6px', width: '11px', height: '11px', background: c, border: '2px solid #fff', borderRadius: '3px', cursor: 'move', touchAction: 'none' }} />
+                              style={{ position: 'absolute', left: '-6px', top: '-6px', width: '11px', height: '11px', background: c, border: '2px solid var(--surface, #fff)', borderRadius: '3px', cursor: 'move', touchAction: 'none' }} />
                           ) : null}
                           {on && !readOnly ? (
                             <span onPointerDown={(e) => startDrag(e, f, 'resize')} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} aria-label="Resize"
-                              style={{ position: 'absolute', right: '-6px', bottom: '-6px', width: '11px', height: '11px', background: '#fff', border: `2px solid ${c}`, borderRadius: '3px', cursor: 'nwse-resize', touchAction: 'none' }} />
+                              style={{ position: 'absolute', right: '-6px', bottom: '-6px', width: '11px', height: '11px', background: 'var(--surface, #fff)', border: `2px solid ${c}`, borderRadius: '3px', cursor: 'nwse-resize', touchAction: 'none' }} />
                           ) : null}
                         </div>
                       );
                     })}
                   </div>
-                  <span style={{ position: 'absolute', right: 0, bottom: '-18px', fontSize: '11px', color: '#a1a1aa' }}>{n} / {pages}</span>
+                  <span style={{ position: 'absolute', right: 0, bottom: '-18px', fontSize: '11px', color: 'var(--subtle, #a1a1aa)' }}>{n} / {pages}</span>
                 </div>
               );
             })}
@@ -410,8 +418,8 @@ export default function PdfFieldEditor({ title, sourceUrl, roles, initial, onSav
               return (
                 <button key={r.role} type="button" onClick={() => setActiveRole(r.role)} disabled={readOnly}
                   style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '8px 10px', borderRadius: '10px', cursor: readOnly ? 'default' : 'pointer', textAlign: 'left', fontSize: '12.5px', fontFamily: 'inherit', color: INK,
-                    border: `1.5px solid ${on ? c : LINE}`, background: on ? `${c}12` : '#fff', boxShadow: on ? `0 0 0 3px ${c}1f` : 'none' }}>
-                  <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: c, color: '#fff', display: 'grid', placeItems: 'center', fontSize: '11px', fontWeight: 700, flexShrink: 0 }}>{(r.label || r.role).trim().charAt(0).toUpperCase()}</span>
+                    border: `1.5px solid ${on ? c : LINE}`, background: on ? `${c}12` : 'var(--surface, #fff)', boxShadow: on ? `0 0 0 3px ${c}1f` : 'none' }}>
+                  <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: c, color: 'var(--on-dark, #fff)', display: 'grid', placeItems: 'center', fontSize: '11px', fontWeight: 700, flexShrink: 0 }}>{(r.label || r.role).trim().charAt(0).toUpperCase()}</span>
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'block', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</span>
                     <span style={{ display: 'block', fontSize: '11px', color: MUTED }}>{r.recipient_type === 'filler' ? 'Fills in fields' : 'Signs'} · {counts.get(r.role) ?? 0} field{(counts.get(r.role) ?? 0) === 1 ? '' : 's'}</span>
@@ -546,7 +554,7 @@ export default function PdfFieldEditor({ title, sourceUrl, roles, initial, onSav
                   {!FIELD_META[cur.type].signs && !cur.variable_key && !['checkbox', 'radio', 'attachment', 'formula'].includes(cur.type) ? (
                     <label>Default value<input value={cur.default_value ?? ''} disabled={readOnly} onChange={(e) => change(cur.key, { default_value: e.target.value || null })} style={input} /></label>
                   ) : null}
-                  {!readOnly ? <button type="button" onClick={() => remove(cur.key)} style={{ ...btn(), color: '#b91c1c', borderColor: '#fecaca', justifySelf: 'start' }}>Delete field</button> : null}
+                  {!readOnly ? <button type="button" onClick={() => remove(cur.key)} style={{ ...btn(), color: 'var(--tx-red, #b91c1c)', borderColor: 'var(--tint-red-2, #fecaca)', justifySelf: 'start' }}>Delete field</button> : null}
                 </div>
               </>
             ) : (
@@ -561,22 +569,22 @@ export default function PdfFieldEditor({ title, sourceUrl, roles, initial, onSav
 }
 
 const FE_CSS = `
-.cz-fe-top{height:58px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;background:#fff;border-bottom:1px solid ${LINE}}
-.cz-fe-icon{width:34px;height:34px;border-radius:9px;border:1px solid ${LINE};background:#fff;cursor:pointer;font-size:16px;color:${INK};flex:none}
+.cz-fe-top{height:58px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;background:var(--surface, #fff);border-bottom:1px solid ${LINE}}
+.cz-fe-icon{width:34px;height:34px;border-radius:9px;border:1px solid ${LINE};background:var(--surface, #fff);cursor:pointer;font-size:16px;color:${INK};flex:none}
 .cz-fe-note{display:flex;align-items:center;gap:10px;font-size:12.5px;border-radius:9px;padding:8px 11px;line-height:1.45}
-.cz-fe-good{color:#065f46;background:#ecfdf5;border:1px solid #a7f3d0}
-.cz-fe-warn{color:#92400e;background:#fffbeb;border:1px solid #fde68a}
-.cz-fe-bad{color:#b91c1c;background:#fee2e2;border:1px solid #fecaca}
+.cz-fe-good{color:#065f46;background:var(--tint-green, #ecfdf5);border:1px solid #a7f3d0}
+.cz-fe-warn{color:var(--tx-amber-deep, #92400e);background:var(--tint-amber, #fffbeb);border:1px solid var(--tint-amber-2, #fde68a)}
+.cz-fe-bad{color:var(--tx-red, #b91c1c);background:var(--negative-soft, #fee2e2);border:1px solid var(--tint-red-2, #fecaca)}
 .cz-fe-body{flex:1;min-height:0;display:grid;grid-template-columns:88px minmax(0,1fr) 300px}
-.cz-fe-rail{overflow:auto;padding:12px 10px;background:#fff;border-right:1px solid ${LINE};display:grid;align-content:start;gap:8px}
-.cz-fe-thumb{display:grid;gap:5px;justify-items:center;padding:10px 4px 8px;border:1px solid ${LINE};border-radius:8px;background:#fafafa;cursor:pointer;font-family:inherit}
-.cz-fe-thumb.is-on{border-color:${INK};background:#fff;box-shadow:0 0 0 2px ${INK}14}
-.cz-fe-thumb-n{width:34px;height:44px;border-radius:3px;background:#fff;border:1px solid ${LINE};display:grid;place-items:center;font-size:12px;font-weight:650;color:${MUTED}}
+.cz-fe-rail{overflow:auto;padding:12px 10px;background:var(--surface, #fff);border-right:1px solid ${LINE};display:grid;align-content:start;gap:8px}
+.cz-fe-thumb{display:grid;gap:5px;justify-items:center;padding:10px 4px 8px;border:1px solid ${LINE};border-radius:8px;background:var(--canvas, #fafafa);cursor:pointer;font-family:inherit}
+.cz-fe-thumb.is-on{border-color:${INK};background:var(--surface, #fff);box-shadow:0 0 0 2px ${INK}14}
+.cz-fe-thumb-n{width:34px;height:44px;border-radius:3px;background:var(--surface, #fff);border:1px solid ${LINE};display:grid;place-items:center;font-size:12px;font-weight:650;color:${MUTED}}
 .cz-fe-canvas{overflow:auto;padding:24px 24px 40px;min-width:0}
 .cz-fe-empty{padding:40px;text-align:center;font-size:13px;color:${MUTED}}
-.cz-fe-side{overflow:auto;padding:16px 14px;background:#fff;border-left:1px solid ${LINE}}
-.cz-fe-tile{display:flex;align-items:center;gap:8px;height:38px;padding:0 8px;border:1px solid ${LINE};border-radius:8px;background:#fff;font-size:12.5px;font-weight:550;color:${INK};user-select:none}
-.cz-fe-tile:hover{background:#fafafa}
+.cz-fe-side{overflow:auto;padding:16px 14px;background:var(--surface, #fff);border-left:1px solid ${LINE}}
+.cz-fe-tile{display:flex;align-items:center;gap:8px;height:38px;padding:0 8px;border:1px solid ${LINE};border-radius:8px;background:var(--surface, #fff);font-size:12.5px;font-weight:550;color:${INK};user-select:none}
+.cz-fe-tile:hover{background:var(--canvas, #fafafa)}
 @media (max-width: 1000px){.cz-fe-body{grid-template-columns:minmax(0,1fr) 280px}.cz-fe-rail{display:none}}
 @media (max-width: 760px){
   .cz-fe-body{display:flex;flex-direction:column}

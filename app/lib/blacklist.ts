@@ -81,3 +81,15 @@ export async function loadBlocked(
   }
   return { ok: true, blocked };
 }
+
+/** A server text's reason when the blacklist read failed: hold it and try again, it is not a "no". */
+export const BLACKLIST_UNREAD = 'could not check the blacklist';
+
+/** Why a text to this seller or buyer must not go, from loadBlocked's answer: blacklisted, could not check, or null to send. */
+export function textBlock(
+  gate: Awaited<ReturnType<typeof loadBlocked>>, to: { seller_id?: number | null; buyer_id?: number | null },
+): string | null {
+  if (!gate.ok) return BLACKLIST_UNREAD;
+  const hit = (to.seller_id != null && gate.blocked.sellers.has(to.seller_id)) || (to.buyer_id != null && gate.blocked.buyers.has(to.buyer_id));
+  return hit ? BLACKLIST_MESSAGE : null;
+}

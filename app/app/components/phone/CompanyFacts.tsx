@@ -271,11 +271,11 @@ export function CompanyFacts({ isMobile }: { isMobile: boolean }) {
               {samples.map((smp, i) => (
                 <div key={i}>
                   {area(`samples.${i}`, smp, (v) => { const next = [...samples]; next[i] = v; setC('samples', next); }, 2)}
-                  {err(`samples.${i}`) ? <div style={{ fontSize: '11.5px', color: '#b91c1c', marginTop: '2px' }}>{err(`samples.${i}`)}</div> : null}
+                  {err(`samples.${i}`) ? <div style={{ fontSize: '11.5px', color: 'var(--tx-red, #b91c1c)', marginTop: '2px' }}>{err(`samples.${i}`)}</div> : null}
                 </div>
               ))}
             </div>
-            {err('samples') ? <div style={{ fontSize: '11.5px', color: '#b91c1c', marginTop: '2px' }}>{err('samples')}</div> : null}
+            {err('samples') ? <div style={{ fontSize: '11.5px', color: 'var(--tx-red, #b91c1c)', marginTop: '2px' }}>{err('samples')}</div> : null}
           </div>
           <Field k="help_message" label="HELP reply" err={err} hint="Names the business and says how to stop.">{area('help_message', d.campaign.help_message, (v) => setC('help_message', v), 2)}</Field>
           <div style={grid}>
@@ -318,16 +318,16 @@ export function CompanyFacts({ isMobile }: { isMobile: boolean }) {
       </div>
 
       <div style={{ ...card, position: 'sticky', bottom: 0, zIndex: 1, display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-        <span style={{ flex: 1, minWidth: 0, fontSize: '12.5px', color: problems.size ? '#b91c1c' : '#15803d' }}>
+        <span style={{ flex: 1, minWidth: 0, fontSize: '12.5px', color: problems.size ? 'var(--tx-red, #b91c1c)' : '#15803d' }}>
           {ro ? 'Only an owner or admin can change these.' : problems.size ? `${problems.size} field${problems.size === 1 ? '' : 's'} to fix before CLOZR can file.` : 'Complete — ready to file.'}
-          {server?.carrier === 'talkr' ? <span style={{ color: '#92400e' }}> CLOZR has no Telnyx key (neither the TELNYX_API_KEY secret nor Vault telnyx_api_key), so Register cannot reach Telnyx yet (Workspace → Server keys).</span> : null}
+          {server?.carrier === 'talkr' ? <span style={{ color: 'var(--tx-amber-deep, #92400e)' }}> CLOZR has no Telnyx key (neither the TELNYX_API_KEY secret nor Vault telnyx_api_key), so Register cannot reach Telnyx yet (Workspace → Server keys).</span> : null}
         </span>
         {draft ? <Btn disabled={busy} onClick={() => { setDraft(null); setNote(null); }}>Discard</Btn> : null}
         <Btn primary disabled={ro || busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save company facts'}</Btn>
       </div>
       <NoteBox note={note} />
       {server?.problems.length ? (
-        <ul style={{ margin: '8px 0 12px', paddingLeft: '18px', fontSize: '12.5px', color: '#b91c1c', lineHeight: 1.5 }}>
+        <ul style={{ margin: '8px 0 12px', paddingLeft: '18px', fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)', lineHeight: 1.5 }}>
           {server.problems.map((p, i) => <li key={`${p.field}-${i}`}><b style={{ fontWeight: 600 }}>{p.field}</b> — {p.problem}</li>)}
         </ul>
       ) : null}
@@ -356,7 +356,7 @@ function Field({ k, label: text, hint, err, children }: { k: string; label: stri
     <div style={{ minWidth: 0 }}>
       <span style={label}>{text}</span>
       {children}
-      {e ? <div style={{ fontSize: '11.5px', color: '#b91c1c', marginTop: '3px', lineHeight: 1.4 }}>{e}</div>
+      {e ? <div style={{ fontSize: '11.5px', color: 'var(--tx-red, #b91c1c)', marginTop: '3px', lineHeight: 1.4 }}>{e}</div>
         : hint ? <div style={{ fontSize: '11.5px', color: MUTED, marginTop: '3px', lineHeight: 1.4 }}>{hint}</div> : null}
     </div>
   );

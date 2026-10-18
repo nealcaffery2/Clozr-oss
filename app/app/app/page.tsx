@@ -11,7 +11,6 @@
 // graph, for anyone without an account.
 'use client';
 
-import '../clozr/tokens.css';
 import '../clozr/clozr.css';
 import '../clozr/chrome.css';
 import '../clozr/surfaces.css';
@@ -28,11 +27,13 @@ import { useSession } from '@/lib/session';
 import { AppSkeleton } from '@/components/ds/Skeleton';
 import { NoWorkspace } from '@/components/ds/NoWorkspace';
 import { ClozrShell } from '../clozr/ClozrShell';
+import { preloadBootScreen } from '../clozr/screens/lazy';
 import { LiveLists } from '../clozr/LiveLists';
 import { BuyerProfileModal } from '@/components/BuyerProfileModal';
 import { useClozr } from '../clozr/useClozr';
 import { nudgeGoogle, syncGoogle } from '@/lib/google';
 import { PLACES_KEY } from '@/lib/integrations';
+import { useVitals } from '@/lib/vitals';
 
 /**
  * When each workspace's Google connection was last run, as a timestamp.
@@ -69,6 +70,10 @@ export default function Page() {
   // An owner or admin previewing a teammate: their role and their id, read-only.
   const viewAs = useViewAs();
   const previewing = !!viewAs && isAdmin(realRole) && viewAs.userId !== s.user?.id;
+  const role = previewing ? viewAs!.role : realRole;
+  // The screen this lands on starts loading now, alongside the session and
+  // workspace reads, instead of when the shell mounts after them.
+  useEffect(() => { preloadBootScreen(role); }, [role]);
   const V = useClozr({
     live: crm.live,
     me: previewing ? viewAs!.userId : s.user?.id ?? null,
@@ -77,7 +82,7 @@ export default function Page() {
     crmOk: crm.ok,
     crmPartial: crm.partial,
     workspaceName: s.workspace?.name ?? null,
-    role: previewing ? viewAs!.role : realRole,
+    role,
     placesKey: crm.settings.places_key || PLACES_KEY || null,
     talkrUrl: crm.settings.talkr_url ?? null,
     // Read the way the offers function reads it: unset means draft.
@@ -86,7 +91,12 @@ export default function Page() {
     board: { tz: crm.settings.leaderboard_tz, exclude: crm.settings.leaderboard_exclude, goals: crm.settings.leaderboard_goals },
     reload: crm.reload,
     refreshSeller: crm.refreshSeller,
+    refreshSellers: crm.refreshSellers,
     refreshDeal: crm.refreshDeal,
+    refreshDeals: crm.refreshDeals,
+    refreshBuyer: crm.refreshBuyer,
+    refreshBuyers: crm.refreshBuyers,
+    refreshTask: crm.refreshTask,
     loadGallery: crm.loadGallery,
     patchLocal: crm.patchLocal,
     // The screen in the URL is restored against the real workspace and role,
@@ -157,6 +167,7 @@ export default function Page() {
   // Not during a View-as preview, which writes nothing (the sync writes); it
   // runs the moment the preview ends instead of being marked as done.
   const ready = s.ready && !locked && !mfaPending && crm.ready && !s.demo && !previewing;
+  useVitals(sessionKey, workspaceId, ready);
   useEffect(() => {
     if (!ready || !workspaceId) return;
     const runIfStale = () => {
@@ -207,14 +218,15 @@ export default function Page() {
     if (ok && workspaceId) nudgeGoogle(workspaceId);
   }, [V, workspaceId]);
 
-  // A signed-out or mid-challenge session is on its way to login. Everything
-  // else draws the shell immediately: the workspace read fills in as skeletons
-  // instead of a blank page, and it never flashes the sample pipeline.
-  if (locked || mfaPending || !s.ready) {
+  // A signed-out session is on its way to login. Everything else draws the
+  // shell immediately: the two-factor check and the workspace read fill in as
+  // skeletons instead of a blank page, and it never flashes the sample pipeline.
+  if (locked || !s.ready) {
     return (
-      <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: '#fafafa' }} />
+      <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: 'var(--canvas, #fafafa)' }} />
     );
   }
+  if (mfaPending) return <AppSkeleton />;
   // Signed in, but no workspace to open: never invited, removed from the
   // team, or the membership read failed. Say which, instead of a skeleton
   // that never resolves.
@@ -239,6 +251,7 @@ export default function Page() {
         <BuyerProfileModal
           open={!!V.buyerProfile}
           buyerId={V.buyerProfile?.buyerId ?? null}
+          seed={V.buyerProfile?.seed ?? null}
           workspaceId={s.workspace?.id ?? null}
           userId={s.user?.id ?? null}
           onClose={V.closeBuyerProfile}

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { blockUnverified, dailyAllowance, type MailboxSettings } from '../supabase/functions/_shared/deliverability-rules';
 import {
   COLD_DAILY_CAP, COLD_GAP_MAX_SECONDS, COLD_GAP_MIN_SECONDS, COLD_RAMP_DAYS, COLD_RAMP_INCREASE_PCT, COLD_RAMP_START, COLD_RAMP_TARGET, DEFAULT_BLOCKED_SENDING_DOMAINS,
-  DEFAULT_COLD_DELIVERABILITY, GOOGLE_WORKSPACE_IMAP, GOOGLE_WORKSPACE_SMTP, applyMerge, applySpintax, blockedSendingDomains, bodyFingerprint, bodyTooCommon, businessWindowOpen, buyerInAudience,
+  DEFAULT_COLD_DELIVERABILITY, GOOGLE_WORKSPACE_IMAP, assignOnReply, GOOGLE_WORKSPACE_SMTP, applyMerge, applySpintax, blockedSendingDomains, bodyFingerprint, bodyTooCommon, businessWindowOpen, buyerInAudience,
   classifyReply, coldAudienceBlocked, coldDailyAllowance, coldMessageId, coldSendRoom, composeColdText, countsAsComplaint, createWarmupProvider, domainBlocked, healthRates, inRecipientWindow,
   isCatchAllStatus, isInstantlyWarmup, isRoleAddress, isThreadedFollowUp, lintColdCopy, mailboxGapSeconds, matchReply, oooResumeAt, parseMailboxCsv, pickPoolMailbox, pickVariant, placementPausesRamp, plainHtml, planColdSend, poolPauseReason,
   prospectReply, recipientCompanyDomain, recipientProvider, renderStep, replyOwner, replySubject, rewriteTrackedLinks, seeded, sendGapSeconds, sequenceStop, stateOf, withOpenPixel, zoneForState,
@@ -313,6 +313,14 @@ async function main() {
   assert.equal(replyOwner({ buyerOwnerId: 'owner', workspaceOwnerId: 'ws' }), 'owner');
   assert.equal(replyOwner({ workspaceOwnerId: 'ws' }), 'ws');
   assert.equal(replyOwner({}), null);
+  // Replies route back to the rep the inbox sends as (migration 268), after an assignee.
+  assert.equal(replyOwner({ mailboxUserId: 'alex', buyerOwnerId: 'owner', workspaceOwnerId: 'ws' }), 'alex');
+  assert.equal(replyOwner({ buyerAssignedTo: 'assignee', mailboxUserId: 'alex' }), 'assignee');
+  assert.equal(assignOnReply({ mailboxUserId: 'alex', classification: 'interested', complaint: false }), 'alex');
+  assert.equal(assignOnReply({ buyerAssignedTo: 'avery', mailboxUserId: 'alex', classification: 'interested', complaint: false }), null, 'never takes a contact from a rep');
+  for (const c of ['bounce', 'unsubscribe', 'out_of_office']) assert.equal(assignOnReply({ mailboxUserId: 'alex', classification: c, complaint: false }), null, `${c} is not a lead`);
+  assert.equal(assignOnReply({ mailboxUserId: 'alex', classification: 'reply', complaint: true }), null, 'a complaint is not a lead');
+  assert.equal(assignOnReply({ classification: 'reply', complaint: false }), null);
 
   // ---- merge, spintax, A/B stay stable for one seed
   assert.equal(applyMerge('Hi {{first_name}}', { first_name: 'Pat' }), 'Hi Pat');
@@ -454,6 +462,9 @@ async function main() {
   assert.equal(buyerInAudience({ ...buyer, ownerName: 'Ada' }, { kind: 'saved_view', config: { filters: { buyerOwner: 'Ada' } } }), true);
   assert.equal(buyerInAudience({ ...buyer, ownerName: '' }, { kind: 'saved_view', config: { filters: { buyerOwner: 'Unassigned' } } }), true);
   assert.equal(buyerInAudience({ ...buyer, ownerName: 'Ada' }, { kind: 'saved_view', config: { filters: { buyerOwner: 'Unassigned' } } }), false);
+  assert.equal(buyerInAudience(buyer, { kind: 'saved_view', config: { filters: { buyerTag: 'Compr' } } }), true);
+  assert.equal(buyerInAudience(buyer, { kind: 'saved_view', config: { filters: { buyerTag: 'hp-dispogenius\u001fcompr' } } }), true);
+  assert.equal(buyerInAudience(buyer, { kind: 'saved_view', config: { filters: { buyerTag: 'hp-dispogenius' } } }), false);
 
   // ---- Primary inbox: links, spam, plain text, tracking, roles, providers, OOO, variants
   const address = '100 Congress Ave, Austin, TX 78701';

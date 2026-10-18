@@ -57,7 +57,7 @@ export function ComboPopover({ label, options, onClose, style, className, touch,
             value={q}
             onChange={(e) => { setQ(e.target.value); setCursor(0); }}
             placeholder={`Type a ${label.toLowerCase()}…`}
-            style={{ width: '100%', height: 30, borderRadius: 8, border: '1px solid #e4e4e7', padding: '0 9px', fontSize: touch ? 16 : 13, background: '#fafafa', color: '#18181b', outlineOffset: 1 }}
+            style={{ width: '100%', height: 30, borderRadius: 8, border: '1px solid var(--divider, #e4e4e7)', padding: '0 9px', fontSize: touch ? 16 : 13, background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)', outlineOffset: 1 }}
           />
         </div>
         <div id={id} role="listbox" aria-label={label} style={{ overflow: 'auto', flex: 1, minHeight: 0, padding: '0 4px 4px' }}>
@@ -72,14 +72,14 @@ export function ComboPopover({ label, options, onClose, style, className, touch,
               className={'dc2 cz-menu-item' + (o.on ? ' is-on' : '')}
               onMouseEnter={() => setCursor(i)}
               onClick={o.go}
-              style={i === at ? { background: '#f4f4f5' } : undefined}
+              style={i === at ? { background: 'var(--surface-2, #f4f4f5)' } : undefined}
             >
               <PickLabel multi={multi} on={o.on} label={o.label} />
               {o.on && (!multi || o.label === 'Any') ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg> : null}
             </button>
           ))}
-          {!shown.length ? <div role="status" style={{ padding: '8px 10px', fontSize: 12.5, color: '#71717a' }}>No {label.toLowerCase()} matches “{q.trim()}”</div> : null}
-          {matches.length > SHOW ? <div style={{ padding: '6px 10px', fontSize: 11.5, color: '#71717a' }}>{(matches.length - SHOW).toLocaleString('en-US')} more. Keep typing to narrow.</div> : null}
+          {!shown.length ? <div role="status" style={{ padding: '8px 10px', fontSize: 12.5, color: 'var(--meta, #71717a)' }}>No {label.toLowerCase()} matches “{q.trim()}”</div> : null}
+          {matches.length > SHOW ? <div style={{ padding: '6px 10px', fontSize: 11.5, color: 'var(--meta, #71717a)' }}>{(matches.length - SHOW).toLocaleString('en-US')} more. Keep typing to narrow.</div> : null}
         </div>
       </div>
     </>

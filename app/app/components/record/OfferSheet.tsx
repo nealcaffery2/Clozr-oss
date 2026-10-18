@@ -19,6 +19,16 @@ export function OfferSheet({ V }: { V: ClozrView }) {
   const [amount, setAmount] = useState(V.offerCard.mao != null ? V.offerCard.mao.toLocaleString('en-US') : '');
   const [basis, setBasis] = useState(V.offerCard.mao != null ? V.offerCard.basis.replace('Max offer (MAO), ', 'MAO, ') : '');
   const [busy, setBusy] = useState(false);
+  // A COMPR pull that lands after the sheet opened moves the prefill too,
+  // unless the rep has already typed their own number.
+  const mao = V.offerCard.mao;
+  const shownMao = useRef(mao);
+  useEffect(() => {
+    if (mao == null || mao === shownMao.current) return;
+    const was = shownMao.current;
+    shownMao.current = mao;
+    setAmount((cur) => (!cur || (was != null && parseMoney(cur) === was) ? mao.toLocaleString('en-US') : cur));
+  }, [mao]);
   const panel = useRef<HTMLDivElement>(null);
   const { closing, close } = useExit(V.closeOfferSheet, 150);
   useFocusTrap(panel, close, 'input[name=amount]');

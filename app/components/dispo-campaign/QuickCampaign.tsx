@@ -36,10 +36,10 @@ const tagToMethod = new Map(Object.entries(METHOD_TAG).map(([m, t]) => [t, m as 
 const methodsOf = (b: CampaignBuyer): Method[] => Array.from(new Set(b.tags.map((t) => tagToMethod.get(t.toLowerCase())).filter((m): m is Method => !!m)));
 
 const chip = (on: boolean, disabled = false): React.CSSProperties => ({
-  border: `1px solid ${on ? C.ink : C.line}`, background: on ? C.ink : '#fff', color: on ? '#fff' : C.ink, borderRadius: '999px', padding: '5px 11px',
+  border: `1px solid ${on ? C.ink : C.line}`, background: on ? C.ink : 'var(--surface, #fff)', color: on ? 'var(--surface, #fff)' : C.ink, borderRadius: '999px', padding: '5px 11px',
   fontSize: '12px', fontWeight: 600, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.45 : 1, whiteSpace: 'nowrap', lineHeight: '16px',
 });
-const area: React.CSSProperties = { width: '100%', border: `1px solid ${C.line}`, borderRadius: '9px', padding: '8px 10px', fontSize: '12.5px', lineHeight: 1.5, fontFamily: 'inherit', color: C.ink, background: '#fff', resize: 'vertical', minHeight: '64px', boxSizing: 'border-box' };
+const area: React.CSSProperties = { width: '100%', border: `1px solid ${C.line}`, borderRadius: '9px', padding: '8px 10px', fontSize: '12.5px', lineHeight: 1.5, fontFamily: 'inherit', color: C.ink, background: 'var(--surface, #fff)', resize: 'vertical', minHeight: '64px', boxSizing: 'border-box' };
 
 export function QuickCampaign({ workspaceId, dealId, canWrite, isMobile, dealFields, textCtx, prefill, onToast, onLaunched, onAdvanced, onClose }: Props) {
   const session = useSession();
@@ -232,7 +232,7 @@ export function QuickCampaign({ workspaceId, dealId, canWrite, isMobile, dealFie
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(190px, 1fr))', gap: '8px', marginTop: '10px' }}>
           {presets.map((p) => (
-            <button key={p.key} type="button" onClick={() => setPresetKey(p.key)} style={{ textAlign: 'left', border: `1px solid ${presetKey === p.key ? C.ink : C.line}`, background: presetKey === p.key ? '#fafafa' : '#fff', borderRadius: '10px', padding: '10px 12px', cursor: 'pointer', boxShadow: presetKey === p.key ? `inset 0 0 0 1px ${C.ink}` : 'none' }}>
+            <button key={p.key} type="button" onClick={() => setPresetKey(p.key)} style={{ textAlign: 'left', border: `1px solid ${presetKey === p.key ? C.ink : C.line}`, background: presetKey === p.key ? 'var(--canvas, #fafafa)' : 'var(--surface, #fff)', borderRadius: '10px', padding: '10px 12px', cursor: 'pointer', boxShadow: presetKey === p.key ? `inset 0 0 0 1px ${C.ink}` : 'none' }}>
               <div style={{ fontSize: '13px', fontWeight: 650, color: C.ink }}>{p.name}</div>
               <div style={{ fontSize: '11.5px', color: C.muted2, marginTop: '3px', lineHeight: 1.45 }}>{p.blurb}</div>
               <div style={{ fontSize: '11px', color: C.muted, marginTop: '4px' }}>{recipeWords(p.steps.filter((s) => channels[s.channel]))}</div>

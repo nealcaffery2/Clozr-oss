@@ -6,9 +6,9 @@
 import React, { useEffect, useState } from 'react';
 import { investorbaseConnected, saveInvestorbaseKey } from '@/lib/investorbase';
 
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
-const muted: React.CSSProperties = { margin: '0 0 12px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.5 };
-const field: React.CSSProperties = { height: '34px', padding: '0 10px', border: '1px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', background: '#fff', color: '#18181b', outline: 0, flex: 1, minWidth: '180px', fontFamily: 'ui-monospace, monospace' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
+const muted: React.CSSProperties = { margin: '0 0 12px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 };
+const field: React.CSSProperties = { height: '34px', padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', fontSize: '13px', background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)', outline: 0, flex: 1, minWidth: '180px', fontFamily: 'ui-monospace, monospace' };
 const btn: React.CSSProperties = { height: '34px', padding: '0 12px', borderRadius: '8px', border: '1px solid #0A8560', background: '#0A8560', color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer' };
 
 export function InvestorBaseCard({ workspaceId, admin, demo }: { workspaceId: number | null; admin: boolean; demo: boolean }) {
@@ -57,12 +57,12 @@ export function InvestorBaseCard({ workspaceId, admin, demo }: { workspaceId: nu
           {busy ? 'Saving…' : 'Save key'}
         </button>
         {connected ? (
-          <button type="button" disabled={!admin || demo || busy} onClick={() => void save('')} style={{ ...btn, background: '#fff', color: '#18181b', borderColor: '#e4e4e7' }}>
+          <button type="button" disabled={!admin || demo || busy} onClick={() => void save('')} style={{ ...btn, background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)', borderColor: 'var(--divider, #e4e4e7)' }}>
             Disconnect
           </button>
         ) : null}
       </div>
-      {note ? <p style={{ ...muted, margin: '10px 0 0', color: '#3f3f46' }}>{note}</p> : null}
+      {note ? <p style={{ ...muted, margin: '10px 0 0', color: 'var(--ink-3, #3f3f46)' }}>{note}</p> : null}
       {!admin ? <p style={{ ...muted, margin: '10px 0 0' }}>An owner or admin saves the key.</p> : null}
     </section>
   );

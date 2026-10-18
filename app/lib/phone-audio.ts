@@ -52,6 +52,8 @@ export const TONES = {
   triad: { label: 'Triad', notes: [523.25, 659.25, 783.99, 1046.5].map((freq, i) => ({ freq, at: i * 0.075, dur: i === 3 ? 0.16 : 0.09, peak: 0.07, type: 'triangle' as const })) },
   pop: { label: 'Pop', notes: [{ freq: 660, at: 0, dur: 0.05, peak: 0.08 }, { freq: 990, at: 0.05, dur: 0.07, peak: 0.07 }] },
   knock: { label: 'Knock', notes: [{ freq: 220, at: 0, dur: 0.09, peak: 0.12, type: 'triangle' }, { freq: 220, at: 0.16, dur: 0.09, peak: 0.12, type: 'triangle' }] },
+  // Two rising triads a beat apart: long enough to hear across the room, unlike any other alert.
+  request: { label: 'Request', notes: [0, 0.62].flatMap((t) => [659.25, 880, 1174.66].map((freq, i) => ({ freq, at: t + i * 0.11, dur: i === 2 ? 0.34 : 0.12, peak: 0.08, type: 'triangle' as const }))) },
 } satisfies Record<string, { label: string; notes: Note[] }>;
 export type ToneId = keyof typeof TONES;
 
@@ -65,6 +67,7 @@ export const NOTIFY_EVENTS = {
   ended: { label: 'Call ended', hint: 'The call hangs up', tone: 'fall' },
   appointment: { label: 'Appointment set', hint: 'A wrap-up books an appointment', tone: 'triad' },
   lead: { label: 'New lead', hint: 'A new seller lands in CLOZR (call within 60 seconds)', tone: 'triad' },
+  contract: { label: 'Contract request', hint: 'Acquisitions asks the TC for a contract from a call', tone: 'request' },
 } satisfies Record<string, { label: string; hint: string; tone: ToneId }>;
 export type NotifyEvent = keyof typeof NOTIFY_EVENTS;
 
@@ -580,10 +583,31 @@ export function armNotificationAsk(): () => void {
   return () => window.removeEventListener('pointerdown', ask, true);
 }
 
-export function playEvent(event: NotifyEvent, detail?: string): void {
+type BellMuteChecker = (cat: string) => boolean;
+let bellMuteChecker: BellMuteChecker = () => false;
+const recentSounds = new Map<string, number>();
+const SOUND_DEDUPE_MS = 8_000;
+
+/** Bell panel mutes (useClozr) — blocks sound for that category while active. */
+export function setBellMuteChecker(fn: BellMuteChecker): void {
+  bellMuteChecker = fn;
+}
+
+/** True when a bell category is temporarily muted from the panel. */
+export function isBellCategoryMuted(cat: string): boolean {
+  return bellMuteChecker(cat);
+}
+
+export function playEvent(event: NotifyEvent, detail?: string, dedupeKey?: string): void {
   const p = getAudioPrefs();
   const e = p.events[event];
   if (!e?.on) return;
+  if (dedupeKey) {
+    const now = Date.now();
+    const last = recentSounds.get(dedupeKey);
+    if (last != null && now - last < SOUND_DEDUPE_MS) return;
+    recentSounds.set(dedupeKey, now);
+  }
   if (e.customUrl) playAlertUrl(e.customUrl, p.notifyVolume, p.outputDeviceId, e.tone);
   else previewTone(e.tone, p.notifyVolume, p.outputDeviceId);
   if (p.desktopNotifications) {

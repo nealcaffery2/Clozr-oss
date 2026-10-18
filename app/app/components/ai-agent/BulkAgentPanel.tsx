@@ -29,7 +29,7 @@ const WORDS: Record<RecordKind, { one: string; many: string; template: string; a
 };
 
 const GREEN = '#0A8560';
-const label: React.CSSProperties = { fontSize: '11.5px', color: '#71717a', fontWeight: 600 };
+const label: React.CSSProperties = { fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600 };
 const ICON: Record<Channel, React.ReactNode> = { call: <Phone size={12} aria-hidden />, rvm: <Voicemail size={12} aria-hidden />, sms: <MessageSquare size={12} aria-hidden />, email: <Mail size={12} aria-hidden /> };
 
 export function BulkAgentPanel({ kind = 'buyer', workspaceId, canWrite, selectedIds, records, toast, onClose, onDone, api: given }: {
@@ -101,7 +101,7 @@ export function BulkAgentPanel({ kind = 'buyer', workspaceId, canWrite, selected
       style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(15,23,42,.48)', backdropFilter: 'blur(5px)', WebkitBackdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <AiaStyles />
       <div role="dialog" aria-modal="true" aria-labelledby="aia-bulk-title" className="aia-modal"
-        style={{ width: 'min(100%, 640px)', maxHeight: 'min(100%, 760px)', overflow: 'auto', background: '#fff', borderRadius: 20, boxShadow: '0 30px 80px -20px rgba(15,23,42,.45), 0 0 0 1px rgba(15,23,42,.06)', display: 'flex', flexDirection: 'column' }}>
+        style={{ width: 'min(100%, 640px)', maxHeight: 'min(100%, 760px)', overflow: 'auto', background: 'var(--surface, #fff)', borderRadius: 20, boxShadow: '0 30px 80px -20px rgba(15,23,42,.45), 0 0 0 1px rgba(15,23,42,.06)', display: 'flex', flexDirection: 'column' }}>
       <div style={{ position: 'relative', padding: '16px 18px', background: 'linear-gradient(120deg, #1f2937 0%, #334155 55%, #08694C 140%)', color: '#fff', display: 'flex', alignItems: 'center', gap: 14 }}>
         <div aria-hidden className="aia-glow" />
         <AgentAvatar name={face} src={agent?.avatar_url} size={54} ring="rgba(255,255,255,.85)" />
@@ -116,10 +116,10 @@ export function BulkAgentPanel({ kind = 'buyer', workspaceId, canWrite, selected
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '14px 16px 16px' }}>
 
-      {agents === null ? <span style={{ fontSize: 12.5, color: '#71717a' }}>Loading agents…</span> : !agents.length && error ? (
-        <div role="alert" style={{ fontSize: 12.5, color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '9px 12px' }}>{error}</div>
+      {agents === null ? <span style={{ fontSize: 12.5, color: 'var(--meta, #71717a)' }}>Loading agents…</span> : !agents.length && error ? (
+        <div role="alert" style={{ fontSize: 12.5, color: 'var(--tx-red-deep, #991b1b)', background: 'var(--tint-red, #fef2f2)', border: '1px solid var(--tint-red-2, #fecaca)', borderRadius: 10, padding: '9px 12px' }}>{error}</div>
       ) : !agents.length ? (
-        <div style={{ fontSize: 12.5, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '9px 12px' }}>
+        <div style={{ fontSize: 12.5, color: 'var(--tx-amber-deep, #92400e)', background: 'var(--tint-amber, #fffbeb)', border: '1px solid var(--tint-amber-2, #fde68a)', borderRadius: 10, padding: '9px 12px' }}>
           No agent works {w.many} yet. An owner or admin can add <b>{w.template}</b> in Settings, AI Agent.
         </div>
       ) : (
@@ -130,11 +130,11 @@ export function BulkAgentPanel({ kind = 'buyer', workspaceId, canWrite, selected
               return (
                 <button key={a.agent_key} type="button" role="radio" aria-checked={sel} onClick={() => setAgentKey(a.agent_key)}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 40, padding: '0 12px 0 5px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
-                    border: `1px solid ${sel ? 'rgba(10,133,96,.5)' : '#e4e4e7'}`, background: sel ? '#E7F8F1' : '#fff', boxShadow: sel ? '0 0 0 3px rgba(10,133,96,.12)' : 'none' }}>
+                    border: `1px solid ${sel ? 'rgba(10,133,96,.5)' : 'var(--divider, #e4e4e7)'}`, background: sel ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', boxShadow: sel ? '0 0 0 3px rgba(10,133,96,.12)' : 'none' }}>
                   <AgentAvatar name={a.name} src={a.avatar_url} size={30} live={a.active > 0} />
                   <span style={{ textAlign: 'left' }}>
-                    <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#18181b' }}>{a.name}</span>
-                    <span style={{ display: 'block', fontSize: 11, color: '#71717a' }}>{a.active} working now{a.handoff_to ? ` · then ${agents.find((x) => x.agent_key === a.handoff_to)?.name ?? 'the next agent'}` : ''}</span>
+                    <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink, #18181b)' }}>{a.name}</span>
+                    <span style={{ display: 'block', fontSize: 11, color: 'var(--meta, #71717a)' }}>{a.active} working now{a.handoff_to ? ` · then ${agents.find((x) => x.agent_key === a.handoff_to)?.name ?? 'the next agent'}` : ''}</span>
                   </span>
                 </button>
               );
@@ -149,31 +149,31 @@ export function BulkAgentPanel({ kind = 'buyer', workspaceId, canWrite, selected
                 <button key={c} type="button" aria-pressed={sel} disabled={callOff && !sel} onClick={() => toggle(c)}
                   title={callOff ? 'Calls need the agent published with an ElevenLabs phone number id' : c === 'rvm' ? RVM_HELP : undefined}
                   style={{ height: 28, padding: '0 10px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, cursor: callOff ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
-                    border: `1px solid ${sel ? 'rgba(10,133,96,.35)' : '#e4e4e7'}`, background: sel ? '#E7F8F1' : '#fff', color: sel ? GREEN : callOff ? '#a1a1aa' : '#52525b' }}>
+                    border: `1px solid ${sel ? 'rgba(10,133,96,.35)' : 'var(--divider, #e4e4e7)'}`, background: sel ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: sel ? GREEN : callOff ? 'var(--subtle, #a1a1aa)' : 'var(--muted, #52525b)' }}>
                   {ICON[c]}{CHANNEL_LABEL[c]}
                 </button>
               );
             })}
-            {channels.includes('rvm') ? <span style={{ flexBasis: '100%', fontSize: 11.5, fontWeight: 500, color: '#71717a', lineHeight: 1.4 }}>{RVM_HELP}</span> : null}
+            {channels.includes('rvm') ? <span style={{ flexBasis: '100%', fontSize: 11.5, fontWeight: 500, color: 'var(--meta, #71717a)', lineHeight: 1.4 }}>{RVM_HELP}</span> : null}
           </div>
-          <div className="aia-composer" style={{ border: '1px solid #e4e4e7', borderRadius: 14, background: '#fff', padding: '8px 10px' }}>
+          <div className="aia-composer" style={{ border: '1px solid var(--divider, #e4e4e7)', borderRadius: 14, background: 'var(--surface, #fff)', padding: '8px 10px' }}>
             <label htmlFor="aia-bulk" className="aia-sr">What should the agent do</label>
             <textarea id="aia-bulk" rows={2} value={message} onChange={(e) => setMessage(e.target.value.slice(0, 2000))}
               placeholder={`Tell the agent what you want, e.g. "${w.ask}". Leave empty to let the AI decide from each ${w.one}'s history.`}
               style={{ width: '100%', border: 0, outline: 0, resize: 'vertical', fontSize: 13, lineHeight: 1.5, fontFamily: 'inherit', background: 'transparent', minHeight: 44 }} />
-            <div style={{ fontSize: 11.5, color: message.trim() ? '#52525b' : '#0A8560', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ fontSize: 11.5, color: message.trim() ? 'var(--muted, #52525b)' : '#0A8560', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
               <Sparkles size={12} aria-hidden /> {message.trim() ? `Each ${w.one} gets a plan for these instructions, written from their own history.` : `Let AI decide: each ${w.one} gets a plan written from their own calls, texts and emails.`}
             </div>
           </div>
           {(prot.length || black.length) ? (
-            <div style={{ fontSize: 12, color: '#52525b' }}>
+            <div style={{ fontSize: 12, color: 'var(--muted, #52525b)' }}>
               {prot.length ? <><b>{prot.length}</b> VIP or fund buyer{prot.length === 1 ? '' : 's'} will be skipped: they stay with the team. </> : null}
               {black.length ? <><b>{black.length}</b> {w.skip} will be skipped.</> : null}
             </div>
           ) : null}
-          {error ? <div role="alert" style={{ fontSize: 12.5, color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '8px 11px' }}>{error}</div> : null}
+          {error ? <div role="alert" style={{ fontSize: 12.5, color: 'var(--tx-red-deep, #991b1b)', background: 'var(--tint-red, #fef2f2)', border: '1px solid var(--tint-red-2, #fecaca)', borderRadius: 10, padding: '8px 11px' }}>{error}</div> : null}
           {skipped ? (
-            <details open style={{ fontSize: 12, color: '#52525b' }}>
+            <details open style={{ fontSize: 12, color: 'var(--muted, #52525b)' }}>
               <summary style={{ cursor: 'pointer', fontWeight: 600 }}>{skipped.length} skipped</summary>
               <ul style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 140, overflow: 'auto' }}>
                 {skipped.map((s) => <li key={s.id}>{s.name || `${kind === 'buyer' ? 'Buyer' : 'Seller'} ${s.id}`}: {s.reason}</li>)}
@@ -182,14 +182,14 @@ export function BulkAgentPanel({ kind = 'buyer', workspaceId, canWrite, selected
           ) : null}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <button type="button" disabled={!!busy || !eligible.length || !agent} onClick={() => void start()}
-              style={{ height: 34, padding: '0 14px', borderRadius: 10, border: 0, background: GREEN, color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, opacity: !eligible.length || !agent ? 0.5 : 1, fontFamily: 'inherit' }}>
+              style={{ height: 34, padding: '0 14px', borderRadius: 10, border: 0, background: GREEN, color: 'var(--on-dark, #fff)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, opacity: !eligible.length || !agent ? 0.5 : 1, fontFamily: 'inherit' }}>
               <Power size={14} aria-hidden /> {busy === 'on' ? 'Turning on…' : `Turn on for ${n(eligible.length)}`}
             </button>
             <button type="button" disabled={!!busy || !picked.length} onClick={() => void stop()}
-              style={{ height: 34, padding: '0 12px', borderRadius: 10, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontWeight: 600, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>
+              style={{ height: 34, padding: '0 12px', borderRadius: 10, border: '1px solid var(--tint-red-2, #fecaca)', background: 'var(--surface, #fff)', color: 'var(--tx-hot, #dc2626)', fontWeight: 600, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>
               {busy === 'off' ? 'Turning off…' : 'Turn off for selected'}
             </button>
-            <span style={{ fontSize: 11.5, color: '#a1a1aa' }}>Touches go out 9am to 8pm, at most one a day per {w.one}, and stop the moment someone replies STOP.</span>
+            <span style={{ fontSize: 11.5, color: 'var(--subtle, #a1a1aa)' }}>Touches go out 9am to 8pm, at most one a day per {w.one}, and stop the moment someone replies STOP.</span>
           </div>
         </>
       )}

@@ -13,6 +13,8 @@ import { MoreMenu, type MoreItem } from './MoreMenu';
 import { AiAgentToggle } from '@/app/components/ai-agent/AiAgentToggle';
 import { dbId } from '@/lib/crm';
 import { DEAL_SHEET_BTN } from './deal-sheet-style';
+import { CalendarIcon } from '@/app/components/meeting/MeetingInvite';
+import { Mail, MessageSquare } from 'lucide-react';
 
 const PhoneIcon = ({ size = 13 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -20,7 +22,7 @@ const PhoneIcon = ({ size = 13 }: { size?: number }) => (
   </svg>
 );
 
-export function RecordHeader({ V, onText, onEmail, moreItems, showBack = false }: { V: ClozrView; onText: () => void; onEmail: () => void; moreItems: MoreItem[]; showBack?: boolean }) {
+export function RecordHeader({ V, onText, onEmail, onMeet, moreItems, showBack = false }: { V: ClozrView; onText: () => void; onEmail: () => void; onMeet?: () => void; moreItems: MoreItem[]; showBack?: boolean }) {
   const first = V.P.name.split(' ')[0];
   // The AI agent switch (migration 123): live records only; the sample graph has no database ids.
   const aiAgent = (mobile: boolean) => (
@@ -31,19 +33,26 @@ export function RecordHeader({ V, onText, onEmail, moreItems, showBack = false }
   const toolbar = (mobile: boolean) => (
     <div role="toolbar" aria-label={'Contact ' + first} style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: mobile ? '1' : 'none' }}>
       {mobile ? null : (
-        <button type="button" className="rec-press rec-talkr-ghost" onClick={V.callPerson} title="Call (C)" style={talkrGhost}>
-          <PhoneIcon /> Call
+        <button type="button" className="rec-press rec-talkr-ghost rec-tool" onClick={V.callPerson} title="Call (C)" aria-label="Call" style={talkrGhost}>
+          <PhoneIcon /><span className="rec-tool-label">Call</span>
         </button>
       )}
-      <button type="button" className="rec-press rec-talkr-ghost" onClick={onText} title="Text (T)"
+      <button type="button" className="rec-press rec-talkr-ghost rec-tool" onClick={onText} title="Text (T)" aria-label="Text"
         style={{ ...talkrGhost, ...(mobile ? { flex: 1, height: '36px', justifyContent: 'center' } : {}) }}>
-        Text
+        {mobile ? null : <MessageSquare size={13} aria-hidden />}<span className="rec-tool-label">Text</span>
       </button>
-      <button type="button" className="rec-press rec-ghost" onClick={onEmail}
+      <button type="button" className="rec-press rec-ghost rec-tool" onClick={onEmail} aria-label="Email"
         title={noEmail ? 'No email address on this record yet: add one under What we know' : 'Email (E)'}
-        style={{ ...ghostBtn, ...(mobile ? { flex: 1, height: '36px' } : {}) }}>
-        Email
+        style={{ ...ghostBtn, display: 'inline-flex', alignItems: 'center', gap: '6px', ...(mobile ? { flex: 1, height: '36px', justifyContent: 'center' } : {}) }}>
+        {mobile ? null : <Mail size={13} aria-hidden />}<span className="rec-tool-label">Email</span>
       </button>
+      {onMeet ? (
+        <button type="button" data-testid="record-meet" className="rec-press rec-ghost" onClick={onMeet}
+          title="Send a meeting invite with a Google Meet link" aria-label={mobile ? 'Send meeting invite' : undefined}
+          style={{ ...ghostBtn, display: 'inline-flex', alignItems: 'center', gap: '6px', ...(mobile ? { flex: 'none', width: '40px', height: '36px', justifyContent: 'center', padding: 0 } : {}) }}>
+          <CalendarIcon size={13} />{mobile ? null : <span className="rec-tool-label">Meeting</span>}
+        </button>
+      ) : null}
       {mobile && V.can.tc ? (
         <button type="button" data-testid="record-tc" className="rec-press rec-ghost" onClick={() => V.openClosingFile()} title="Open transaction coordination"
           style={{ ...ghostBtn, fontWeight: 700, color: '#1f7a4d', flex: 1, height: '36px' }}>

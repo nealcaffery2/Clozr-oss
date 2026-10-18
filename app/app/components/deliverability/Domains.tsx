@@ -17,7 +17,7 @@
 // one report; this list joins the two by name and shows the newer read.
 
 import React, { useState } from 'react';
-import { type Check, type DomainRow, deliverability, textValue } from '@/lib/deliverability';
+import { type Check, type DnsFix, type DomainRow, deliverability, textValue } from '@/lib/deliverability';
 import { type ColdDomain, type ColdOverview, coldPool } from '@/lib/cold-pool';
 import { Badge, Copy, Fold, Mark, Note, Section, type Tone, danger, fieldLabel, fullDate, ghost, input, mono, pct, primary, relDays, row, toneOf } from './ui';
 
@@ -140,7 +140,7 @@ export function Domains({ workspaceId, domains, admin, onChange, cold }: {
       actions={admin ? <button type="button" style={ghost} aria-expanded={adding} onClick={() => setAdding((v) => !v)}>{adding ? 'Cancel' : 'Add domain'}</button> : null}
     >
       {adding && (
-        <form onSubmit={(e) => void add(e)} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px', padding: '10px 0', borderTop: '1px solid #f0f0f1', alignItems: 'end' }}>
+        <form onSubmit={(e) => void add(e)} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px', padding: '10px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)', alignItems: 'end' }}>
           <label><span style={fieldLabel}>Domain</span><input required style={{ ...input, width: '100%' }} name="domain" autoComplete="off" spellCheck={false} value={draft.domain} onChange={(e) => setDraft({ ...draft, domain: e.target.value })} placeholder="outreach.example.com" /></label>
           {cold ? (
             <label><span style={fieldLabel}>Used for</span>
@@ -154,14 +154,14 @@ export function Domains({ workspaceId, domains, admin, onChange, cold }: {
           {!draft.cold || !cold ? (
             <>
               <label><span style={fieldLabel}>Link or tracking domain</span><input style={{ ...input, width: '100%' }} name="tracking_domain" autoComplete="off" spellCheck={false} value={draft.tracking_domain} onChange={(e) => setDraft({ ...draft, tracking_domain: e.target.value })} placeholder="links.yourcompany.com" /></label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', minHeight: '32px', cursor: 'pointer' }}><input type="checkbox" name="uses_resend" checked={draft.uses_resend} onChange={(e) => setDraft({ ...draft, uses_resend: e.target.checked })} style={{ accentColor: '#0A8560' }} /> Also sends through Resend</label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', minHeight: '32px', cursor: 'pointer' }}><input type="checkbox" name="uses_resend" checked={draft.uses_resend} onChange={(e) => setDraft({ ...draft, uses_resend: e.target.checked })} style={{ accentColor: 'var(--tx-mint, #0a8560)' }} /> Also sends through Resend</label>
             </>
           ) : null}
           <button type="submit" disabled={busy === 'add'} style={{ ...primary, justifySelf: 'start' }}>{busy === 'add' ? 'Checking…' : 'Add and check'}</button>
         </form>
       )}
 
-      {items.length === 0 && <p style={{ ...row, margin: 0, fontSize: '12.5px', color: '#71717a' }}>No sending domain yet. Connect Google with a work address, bring in outreach inboxes, or add the domain you send from.</p>}
+      {items.length === 0 && <p style={{ ...row, margin: 0, fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>No sending domain yet. Connect Google with a work address, bring in outreach inboxes, or add the domain you send from.</p>}
       {items.map(({ it, r }) => {
         const checks = r.report?.checks ?? [];
         const isBad = bad({ it, r });
@@ -171,47 +171,36 @@ export function Domains({ workspaceId, domains, admin, onChange, cold }: {
         const week = it.cold ? coldWeek(cold?.data ?? null, it.name) : null;
         const uses = [it.cold ? `Cold email, up to ${it.cold.daily_cap} a day` : null, it.email?.uses_resend ? 'Buyer blasts' : null, it.email && !it.cold ? 'Company mail' : null].filter(Boolean).join(', ');
         return (
-          <Fold key={it.name} id={domainAnchor(it.name)} open={isBad} style={{ borderTop: '1px solid #f0f0f1', padding: '4px 0' }} summary={
+          <Fold key={it.name} id={domainAnchor(it.name)} open={isBad} style={{ borderTop: '1px solid var(--divider-2, #f0f0f1)', padding: '4px 0' }} summary={
             <>
               <Mark tone={tone} />
               <span style={{ fontSize: '13px', fontWeight: 600, overflowWrap: 'anywhere', minWidth: 0 }}>{it.name}</span>
               {it.cold?.paused ? <Badge tone="bad">Paused</Badge> : null}
               {r.score != null ? <Badge tone={r.score >= 85 ? 'good' : r.score >= 70 ? 'warn' : 'bad'}>{r.score}/100</Badge> : <Badge tone="bad">Not checked</Badge>}
               {r.blocking.length > 0 ? <Badge tone="bad" title={r.blocking.join('\n')}>Stops sending</Badge> : null}
-              <span style={{ fontSize: '11.5px', color: '#71717a', marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }} title={fullDate(r.checked_at)}>Checked {relDays(r.checked_at)}</span>
+              <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }} title={fullDate(r.checked_at)}>Checked {relDays(r.checked_at)}</span>
             </>
           }>
-            <p style={{ margin: '0 0 8px', fontSize: '11.5px', color: '#71717a', lineHeight: 1.5 }}>
+            <p style={{ margin: '0 0 8px', fontSize: '11.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
               {[uses, provider ? (provider === 'google' ? 'Google Workspace' : provider) : null, week].filter(Boolean).join(' · ')}
               {r.checked_at && !isBad ? <><br />{SUMMARY.map(([k, l]) => `${l} ${summaryStatus(checks, k) === 'pass' ? 'pass' : summaryStatus(checks, k)}`).join(', ')}</> : null}
             </p>
-            {it.cold?.paused ? <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#b91c1c' }}>Paused{textValue(it.cold.paused_reason) ? `: ${textValue(it.cold.paused_reason).replace(/\.$/, '')}` : ''}. Its inboxes send nothing until you resume it.</p> : null}
+            {it.cold?.paused ? <p style={{ margin: '0 0 8px', fontSize: '12px', color: 'var(--tx-red, #b91c1c)' }}>Paused{textValue(it.cold.paused_reason) ? `: ${textValue(it.cold.paused_reason).replace(/\.$/, '')}` : ''}. Its inboxes send nothing until you resume it.</p> : null}
             {r.blocking.length > 0 && (
-              <ul style={{ margin: '0 0 10px', paddingLeft: '18px', fontSize: '12.5px', color: '#b91c1c', lineHeight: 1.5, maxWidth: '64ch' }}>
+              <ul style={{ margin: '0 0 10px', paddingLeft: '18px', fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)', lineHeight: 1.5, maxWidth: '64ch' }}>
                 {r.blocking.map((b) => <li key={b}>{b}</li>)}
               </ul>
             )}
 
             {fixes.length > 0 && (
-              <div style={{ border: '1px solid #fde68a', background: '#fffbeb', borderRadius: '10px', padding: '10px 12px', marginBottom: '10px' }}>
-                <div style={{ fontSize: '12.5px', fontWeight: 600, marginBottom: '6px' }}>Records to add at your DNS host</div>
-                {fixes.map((c) => (
-                  <div key={c.key} style={{ padding: '6px 0', borderTop: '1px solid #fef3c7' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: '4px 8px', alignItems: 'start' }}>
-                      <span style={{ ...mono, fontWeight: 700 }}>{textValue(c.fix!.type)}</span>
-                      <span style={{ minWidth: 0 }}>
-                        <span style={{ ...mono, display: 'block' }}>{textValue(c.fix!.host)}</span>
-                        <span style={{ ...mono, display: 'block', color: '#52525b' }}>{textValue(c.fix!.value)}</span>
-                      </span>
-                      <Copy text={textValue(c.fix!.value)} />
-                    </div>
-                    <div style={{ fontSize: '11.5px', color: '#78350f', marginTop: '3px' }}>{textValue(c.label)}: {textValue(c.fix!.note ?? c.detail)}</div>
-                  </div>
-                ))}
+              <div style={{ border: '1px solid var(--tint-amber-2, #fde68a)', background: 'var(--tint-amber, #fffbeb)', borderRadius: '10px', padding: '10px 12px', marginBottom: '10px' }}>
+                <div style={{ fontSize: '12.5px', fontWeight: 600, marginBottom: '2px' }}>Records to add at your DNS host</div>
+                <div style={{ fontSize: '11.5px', color: '#78350f', marginBottom: '6px' }}>Type each Name exactly as shown. Use <span style={mono}>@</span> only where it says <span style={mono}>@</span>.</div>
+                {fixes.map((c) => <FixRow key={c.key} check={c} />)}
               </div>
             )}
 
-            {!checks.length && r.checked_at ? <p style={{ fontSize: '11.5px', color: '#71717a', margin: '0 0 8px' }}>The detailed report is not here yet. Press Check now to see each record.</p> : null}
+            {!checks.length && r.checked_at ? <p style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', margin: '0 0 8px' }}>The detailed report is not here yet. Press Check now to see each record.</p> : null}
             {GROUPS.map((g) => {
               const list = checks.filter((c) => g.has(textValue(c.key))).sort((a, b) => (RANK[textValue(a.status)] ?? 2) - (RANK[textValue(b.status)] ?? 2));
               if (!list.length) return null;
@@ -221,10 +210,10 @@ export function Domains({ workspaceId, domains, admin, onChange, cold }: {
                   <>
                     <Mark tone={worst === 'pass' || worst === 'info' ? 'good' : toneOf(worst)} size={13} />
                     <span style={{ fontSize: '12.5px', fontWeight: 600 }}>{g.title}</span>
-                    <span style={{ fontSize: '11.5px', color: '#71717a', fontVariantNumeric: 'tabular-nums' }}>{list.filter((c) => c.status === 'pass').length} of {list.length} pass</span>
+                    <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', fontVariantNumeric: 'tabular-nums' }}>{list.filter((c) => c.status === 'pass').length} of {list.length} pass</span>
                   </>
                 }>
-                  <p style={{ fontSize: '11.5px', color: '#71717a', margin: '0 0 4px', maxWidth: '64ch', lineHeight: 1.5 }}>{g.what}</p>
+                  <p style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', margin: '0 0 4px', maxWidth: '64ch', lineHeight: 1.5 }}>{g.what}</p>
                   {list.map((c) => <CheckRow key={c.key} c={c} />)}
                 </Fold>
               );
@@ -250,18 +239,52 @@ function CheckRow({ c }: { c: Check }) {
   const tone: Tone = status === 'info' ? 'muted' : toneOf(status);
   const word = status === 'unknown' ? "Couldn't check" : status === 'pass' ? 'Pass' : status === 'fail' ? (c.blocking ? 'Fail, stops sending' : 'Fail') : status === 'warn' ? 'Warning' : status === 'info' ? 'Not set' : status || 'Unknown';
   return (
-    <div style={{ display: 'flex', gap: '8px', padding: '5px 0', fontSize: '12px', borderTop: '1px solid #f4f4f5', alignItems: 'start' }}>
+    <div style={{ display: 'flex', gap: '8px', padding: '5px 0', fontSize: '12px', borderTop: '1px solid var(--surface-2, #f4f4f5)', alignItems: 'start' }}>
       <span style={{ paddingTop: '1px' }}><Mark tone={tone} size={13} /></span>
       <span style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px', flex: 1, minWidth: 0 }}>
         <span style={{ fontWeight: 600, flex: '0 0 150px' }}>
           {textValue(c.label)}
-          <span style={{ display: 'block', fontWeight: 500, color: tone === 'bad' ? '#b91c1c' : tone === 'warn' ? '#b45309' : '#71717a' }}>{word}</span>
+          <span style={{ display: 'block', fontWeight: 500, color: tone === 'bad' ? '#b91c1c' : tone === 'warn' ? '#b45309' : 'var(--meta, #71717a)' }}>{word}</span>
         </span>
-        <span style={{ color: '#52525b', overflowWrap: 'anywhere', flex: '1 1 240px', minWidth: 0 }}>
+        <span style={{ color: 'var(--muted, #52525b)', overflowWrap: 'anywhere', flex: '1 1 240px', minWidth: 0 }}>
           {textValue(c.detail)}
-          {status !== 'fail' && status !== 'warn' && c.fix ? <span style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '3px', flexWrap: 'wrap' }}><span style={{ ...mono, color: '#71717a' }}>{textValue(c.fix.host)} {textValue(c.fix.type)} {textValue(c.fix.value)}</span><Copy text={textValue(c.fix.value)} /></span> : null}
+          {status !== 'fail' && status !== 'warn' && c.fix ? <span style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '3px', flexWrap: 'wrap' }}><span style={{ ...mono, color: 'var(--meta, #71717a)' }}>{textValue(c.fix.host)} {textValue(c.fix.type)} {textValue(c.fix.value)}</span>{pasteable(c.fix) ? <Copy text={textValue(c.fix.value)} label="Copy value" /> : null}</span> : null}
         </span>
       </span>
+    </div>
+  );
+}
+
+/** Values like "p=<the key Resend shows>" from reports saved before `paste` existed are instructions too. */
+const pasteable = (fix: DnsFix) => fix.paste !== false && !/<[^>]+>/.test(textValue(fix.value));
+
+/** One record to add: Name as the DNS host's form wants it (relative to the zone), the full name under it, and the value. */
+export function FixRow({ check: c }: { check: Check }) {
+  const fix = c.fix!;
+  const host = textValue(fix.host);
+  const fqdn = textValue(fix.fqdn);
+  const value = textValue(fix.value);
+  const paste = pasteable(fix);
+  const label: React.CSSProperties = { fontSize: '11px', fontWeight: 500, color: '#78350f' };
+  return (
+    <div style={{ padding: '6px 0', borderTop: '1px solid var(--caution-soft, #fef3c7)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: '4px 8px', alignItems: 'baseline' }}>
+        <span style={label}>Type</span>
+        <span style={{ ...mono, fontWeight: 700 }}>{textValue(fix.type)}</span>
+        <span />
+        <span style={label}>Name</span>
+        <span style={{ minWidth: 0 }}>
+          <span style={{ ...mono, fontWeight: 600 }}>{host}</span>
+          {fqdn && fqdn !== host ? <span style={{ ...mono, display: 'block', fontSize: '11px', color: 'var(--meta, #71717a)' }}>{fqdn}</span> : null}
+        </span>
+        <Copy text={host} label="Copy name" />
+        <span style={label}>Value</span>
+        {paste
+          ? <span style={{ ...mono, color: 'var(--ink-3, #3f3f46)' }}>{value}</span>
+          : <span style={{ fontSize: '12px', color: 'var(--ink-3, #3f3f46)' }}>{value}</span>}
+        {paste ? <Copy text={value} label="Copy value" /> : <span />}
+      </div>
+      <div style={{ fontSize: '11.5px', color: '#78350f', marginTop: '3px' }}>{textValue(c.label)}: {textValue(fix.note ?? c.detail)}</div>
     </div>
   );
 }

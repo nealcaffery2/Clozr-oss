@@ -823,10 +823,21 @@ export function recipientCompanyDomain(email: string): string | null {
   return domain;
 }
 
-/** Buyer assignee, else the buyer record's owner, else the workspace owner. */
-export function replyOwner(input: { buyerAssignedTo?: string | null; buyerOwnerId?: string | null; workspaceOwnerId?: string | null }): string | null {
-  const id = input.buyerAssignedTo || input.buyerOwnerId || input.workspaceOwnerId || '';
+/** Buyer assignee, else the rep the inbox sends as, else the buyer record's owner, else the workspace owner. */
+export function replyOwner(input: { buyerAssignedTo?: string | null; mailboxUserId?: string | null; buyerOwnerId?: string | null; workspaceOwnerId?: string | null }): string | null {
+  const id = input.buyerAssignedTo || input.mailboxUserId || input.buyerOwnerId || input.workspaceOwnerId || '';
   return id.trim() ? id.trim() : null;
+}
+
+/**
+ * The rep a replying contact gets assigned to: the inbox's rep, when nobody
+ * had the contact and a person answered (not a bounce, unsubscribe,
+ * out-of-office or complaint).
+ */
+export function assignOnReply(input: { buyerAssignedTo?: string | null; mailboxUserId?: string | null; classification: string; complaint: boolean }): string | null {
+  const rep = input.mailboxUserId?.trim() ?? '';
+  if (input.buyerAssignedTo || !rep || input.complaint) return null;
+  return ['bounce', 'unsubscribe', 'out_of_office'].includes(input.classification) ? null : rep;
 }
 
 const DNS_FRESH_MS = 7 * 86_400_000;
@@ -1477,6 +1488,11 @@ export function buyerInAudience(b: AudienceBuyer, audience: AudienceSpec): boole
     const want = f.buyerOwner.trim();
     const owner = (b.ownerName ?? '').trim();
     if (want === 'Unassigned' ? !!owner : owner !== want) return false;
+  }
+  if (!any(f.buyerTag)) {
+    // A multi-pick filter joins its picks with U+001F (lib/multi-filter); any one tag passes.
+    const want = f.buyerTag.split('\u001f').map((t) => t.trim().toLowerCase()).filter((t) => t && t !== 'any');
+    if (want.length && !b.tags.some((t) => want.includes(t.trim().toLowerCase()))) return false;
   }
   if (audience.config.geniusOnly && !b.tags.some((t) => t.trim().toLowerCase() === 'genius')) return false;
   return true;

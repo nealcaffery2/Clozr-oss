@@ -7,21 +7,23 @@ import type { ClozrView } from '@/app/clozr/view';
 import { ContractsCard } from '@/components/ContractsCard';
 import { MentionText } from '@/app/components/record/MentionField';
 import { EmailThread } from '@/app/components/record/EmailThread';
+import { AgentBadge, UserFilter } from '@/app/components/record/ActivityStream';
 import { attachBuyerToDeal, createBuyerNote, createBuyerOffer, listBuyerCampaigns, type BuyerCampaignRow } from '@/lib/buyer-desk';
 import { parseDollars } from '@/lib/money';
 import { uploadPof } from '@/lib/dispo-sop';
 import { emptyPof, hasPof, PofField, type PofDraft } from '@/app/components/dispo/PofField';
 import { CallInsight } from '@/app/components/record/CallInsight';
 import { Mark } from '@/components/ds/mark';
+import { UserAvatar } from '@/components/UserAvatar';
 import { SearchSelect } from '@/components/SearchSelect';
 
 const field: React.CSSProperties = {
-  width: '100%', height: 34, padding: '0 10px', border: '1px solid #e4e4e7',
-  borderRadius: 9, fontSize: 13, outline: 0, background: '#fafafa', color: '#18181b',
+  width: '100%', height: 34, padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)',
+  borderRadius: 9, fontSize: 13, outline: 0, background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)',
 };
 const btn = (primary = false): React.CSSProperties => ({
   height: 32, padding: '0 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-  border: `1px solid ${primary ? '#0A8560' : '#e4e4e7'}`, background: primary ? '#0A8560' : '#fff', color: primary ? '#fff' : '#18181b',
+  border: `1px solid ${primary ? '#0A8560' : 'var(--divider, #e4e4e7)'}`, background: primary ? '#0A8560' : '#fff', color: primary ? '#fff' : '#18181b',
 });
 const money = (n: number) => '$' + Math.round(n).toLocaleString('en-US');
 
@@ -46,7 +48,7 @@ export function BuyerDesk({ V }: { V: ClozrView }) {
           onClose={() => setAdding(null)}
         />
       ) : adding && !live ? (
-        <p style={{ padding: '12px 16px', fontSize: 12.5, color: '#71717a' }}>Adding runs on a signed-in workspace.</p>
+        <p style={{ padding: '12px 16px', fontSize: 12.5, color: 'var(--meta, #71717a)' }}>Adding runs on a signed-in workspace.</p>
       ) : null}
 
       {tab === 'Activity' ? <Activity V={V} /> : null}
@@ -70,7 +72,7 @@ export function BuyerDesk({ V }: { V: ClozrView }) {
               onChanged={V.reloadCrm}
             />
           </div>
-        ) : <p style={{ padding: '16px', fontSize: 12.5, color: '#71717a' }}>Contracts are filled from this buyer on a signed-in workspace.</p>
+        ) : <p style={{ padding: '16px', fontSize: 12.5, color: 'var(--meta, #71717a)' }}>Contracts are filled from this buyer on a signed-in workspace.</p>
       ) : null}
     </>
   );
@@ -92,32 +94,46 @@ function Activity({ V }: { V: ClozrView }) {
   const rows = V.buyerTimeline.filter((t) => feedMatch(t.chan, chip));
   return (
     <>
-      <div role="group" aria-label="Filter activity" style={{ display: 'flex', gap: 2, padding: '8px 16px 0', flexWrap: 'wrap' }}>
-        {FEED_CHIPS.map((c) => (
-          <button key={c} type="button" aria-pressed={chip === c} onClick={() => setChip(c)}
-            style={{ height: 32, padding: '0 10px', border: 0, borderBottom: `2px solid ${chip === c ? '#18181b' : 'transparent'}`, background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, color: chip === c ? '#18181b' : '#71717a' }}>
-            {c}
-          </button>
-        ))}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px 0', flexWrap: 'wrap' }}>
+        <div role="group" aria-label="Filter activity" style={{ display: 'flex', gap: 2, flexWrap: 'wrap', flex: 1 }}>
+          {FEED_CHIPS.map((c) => (
+            <button key={c} type="button" aria-pressed={chip === c} onClick={() => setChip(c)}
+              style={{ height: 32, padding: '0 10px', border: 0, borderBottom: `2px solid ${chip === c ? 'var(--ink, #18181b)' : 'transparent'}`, background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, color: chip === c ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)' }}>
+              {c}
+            </button>
+          ))}
+        </div>
+        {V.buyerTimelineUserMenu ? <UserFilter V={{ ...V, timelineUserMenu: V.buyerTimelineUserMenu }} /> : null}
       </div>
       {!V.buyerTimeline.length ? <Empty label="activity" /> : !rows.length ? <Empty label={chip.toLowerCase()} /> : rows.map((t) => (
         <div key={t.id} className="clozr-tl" style={{ display: 'grid', gridTemplateColumns: '30px minmax(0,1fr)', gap: 12, padding: '14px 16px 0' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <span title={t.who} style={{ width: 30, height: 30, borderRadius: 8, background: '#fff', border: '1px solid #e4e4e7', display: 'grid', placeItems: 'center', color: t.color }}>
-              <Mark label={t.chan} size={15} />
-            </span>
-            <span style={{ flex: 1, width: 1, background: '#e4e4e7', marginTop: 6 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 0 }}>
+            {/* A teammate's row shows their face, as the seller feed does; the buyer's own and system rows keep the channel mark. */}
+            {t.rep ? (
+              <UserAvatar name={t.rep.name} src={t.rep.avatar} size={30} radius="8px" border="1px solid var(--divider, #e4e4e7)" />
+            ) : (
+              <span title={t.who} style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', display: 'grid', placeItems: 'center', color: t.color }}>
+                <Mark label={t.chan} size={15} />
+              </span>
+            )}
+            {t.rep ? (
+              <span title={t.rep.name} style={{ maxWidth: 52, marginTop: 3, fontSize: 9.5, lineHeight: 1.2, color: 'var(--meta, #71717a)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {t.rep.name.split(' ')[0]}
+              </span>
+            ) : null}
+            <span style={{ flex: 1, width: 1, background: 'var(--divider, #e4e4e7)', marginTop: 6 }} />
           </div>
-          <div style={{ background: '#fff', border: '1px solid #e4e4e7', borderRadius: 10, padding: '12px 14px', minWidth: 0, marginBottom: 4 }}>
+          <div style={{ background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: 10, padding: '12px 14px', minWidth: 0, marginBottom: 4 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: t.color }}>
                 <Mark label={t.chan} />
                 {t.chan}
               </span>
               <span style={{ fontWeight: 600, fontSize: 13 }}>{t.title}</span>
-              {t.email ? null : <span style={{ fontSize: 12, color: '#71717a' }}>· {t.who}</span>}
+              {t.email ? null : <span style={{ fontSize: 12, color: 'var(--meta, #71717a)' }}>· {t.who}{t.line ? ` · ${t.line}` : ''}</span>}
+              {t.agentTag ? <AgentBadge /> : null}
               <span style={{ flex: 1 }} />
-              <span style={{ fontSize: 11.5, color: '#a1a1aa', whiteSpace: 'nowrap' }}>{t.time}</span>
+              <span style={{ fontSize: 11.5, color: 'var(--subtle, #a1a1aa)', whiteSpace: 'nowrap' }}>{t.time}</span>
             </div>
             {t.email ? (
               <EmailThread
@@ -128,7 +144,7 @@ function Activity({ V }: { V: ClozrView }) {
                 reply={!V.liveIds ? { name: V.B.name } : V.liveIds.canWrite && V.liveIds.buyerId ? { name: V.B.name, buyerId: V.liveIds.buyerId, onSent: V.reloadCrm } : null}
               />
             ) : t.body ? (
-              <div style={{ fontSize: 13, color: '#27272a', marginTop: 8, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 13, color: 'var(--ink-2, #27272a)', marginTop: 8, lineHeight: 1.5 }}>
                 <MentionText text={t.body} />
               </div>
             ) : null}
@@ -137,18 +153,18 @@ function Activity({ V }: { V: ClozrView }) {
             ) : null}
             {t.isCall && t.ai && V.showAi ? (
               <div style={{ marginTop: 10, padding: 12, borderRadius: 8, background: 'rgba(10, 133, 96,.05)', border: '1px solid rgba(10, 133, 96,.18)' }}>
-                <div style={{ fontSize: 11.5, color: '#0A8560', fontWeight: 600 }}>AI summary</div>
-                <div style={{ fontSize: 13, color: '#27272a', marginTop: 6, lineHeight: 1.5 }}>{t.ai.summary}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--tx-mint, #0a8560)', fontWeight: 600 }}>AI summary</div>
+                <div style={{ fontSize: 13, color: 'var(--ink-2, #27272a)', marginTop: 6, lineHeight: 1.5 }}>{t.ai.summary}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: V.isMobile ? '1fr' : '1fr 1fr', gap: 12, marginTop: 10 }}>
                   <div>
-                    <div style={{ fontSize: 11.5, color: '#71717a', fontWeight: 600 }}>Objections</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--meta, #71717a)', fontWeight: 600 }}>Objections</div>
                     {t.ai.objections.map((o) => (
-                      <div key={o} style={{ fontSize: 12.5, color: '#27272a', marginTop: 4 }}>• {o}</div>
+                      <div key={o} style={{ fontSize: 12.5, color: 'var(--ink-2, #27272a)', marginTop: 4 }}>• {o}</div>
                     ))}
                   </div>
                   <div>
-                    <div style={{ fontSize: 11.5, color: '#71717a', fontWeight: 600 }}>Next best action</div>
-                    <div style={{ fontSize: 12.5, color: '#18181b', fontWeight: 600, marginTop: 4 }}>{t.ai.next}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--meta, #71717a)', fontWeight: 600 }}>Next best action</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--ink, #18181b)', fontWeight: 600, marginTop: 4 }}>{t.ai.next}</div>
                   </div>
                 </div>
               </div>
@@ -165,11 +181,11 @@ function Offers({ V }: { V: ClozrView }) {
   return (
     <>
       {V.buyerOfferRows.map((o) => (
-        <button key={o.id} type="button" onClick={o.open ?? undefined} style={{ display: 'flex', width: '100%', textAlign: 'left', gap: 12, padding: '12px 16px', border: 0, borderBottom: '1px solid #f0f0f1', background: '#fff', cursor: o.open ? 'pointer' : 'default' }}>
+        <button key={o.id} type="button" onClick={o.open ?? undefined} style={{ display: 'flex', width: '100%', textAlign: 'left', gap: 12, padding: '12px 16px', border: 0, borderBottom: '1px solid var(--divider-2, #f0f0f1)', background: 'var(--surface, #fff)', cursor: o.open ? 'pointer' : 'default' }}>
           <span style={{ fontWeight: 700, minWidth: 88 }}>{o.amount}</span>
-          <span style={{ flex: 1, minWidth: 0, color: '#27272a' }}>{o.addr}</span>
+          <span style={{ flex: 1, minWidth: 0, color: 'var(--ink-2, #27272a)' }}>{o.addr}</span>
           <span style={{ fontSize: 12, fontWeight: 600, color: o.color }}>{o.status}</span>
-          <span style={{ fontSize: 11.5, color: '#a1a1aa' }}>{o.when}</span>
+          <span style={{ fontSize: 11.5, color: 'var(--subtle, #a1a1aa)' }}>{o.when}</span>
         </button>
       ))}
     </>
@@ -181,11 +197,11 @@ function Purchases({ V }: { V: ClozrView }) {
   return (
     <>
       {V.buyerPurchaseRows.map((p) => (
-        <button key={p.id} type="button" onClick={p.open} style={{ display: 'flex', width: '100%', textAlign: 'left', gap: 12, padding: '12px 16px', border: 0, borderBottom: '1px solid #f0f0f1', background: '#fff', cursor: 'pointer' }}>
+        <button key={p.id} type="button" onClick={p.open} style={{ display: 'flex', width: '100%', textAlign: 'left', gap: 12, padding: '12px 16px', border: 0, borderBottom: '1px solid var(--divider-2, #f0f0f1)', background: 'var(--surface, #fff)', cursor: 'pointer' }}>
           <span style={{ fontWeight: 700, flex: 1, minWidth: 0 }}>{p.addr}</span>
-          <span style={{ color: '#27272a' }}>{p.price}</span>
+          <span style={{ color: 'var(--ink-2, #27272a)' }}>{p.price}</span>
           <span style={{ fontSize: 12, fontWeight: 600, color: p.color }}>{p.stage}</span>
-          <span style={{ fontSize: 11.5, color: '#a1a1aa' }}>{p.when}</span>
+          <span style={{ fontSize: 11.5, color: 'var(--subtle, #a1a1aa)' }}>{p.when}</span>
         </button>
       ))}
     </>
@@ -197,9 +213,9 @@ function Notes({ V }: { V: ClozrView }) {
   return (
     <>
       {V.buyerNoteRows.map((n) => (
-        <div key={n.id} style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f1' }}>
-          <div style={{ fontSize: 12.5, color: '#27272a', whiteSpace: 'pre-wrap' }}>{n.text}</div>
-          <div style={{ fontSize: 11.5, color: '#a1a1aa', marginTop: 4 }}>{n.when}</div>
+        <div key={n.id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--divider-2, #f0f0f1)' }}>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-2, #27272a)', whiteSpace: 'pre-wrap' }}>{n.text}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--subtle, #a1a1aa)', marginTop: 4 }}>{n.when}</div>
         </div>
       ))}
     </>
@@ -215,15 +231,15 @@ function Campaigns({ V, buyerId, workspaceId }: { V: ClozrView; buyerId: number 
     return () => { on = false; };
   }, [workspaceId, buyerId, V.B.dbId]);
   if (!workspaceId || !buyerId) return <Empty label="campaigns" hint="Add this buyer to a deal's dispo blast from here or from Matches." />;
-  if (rows === null) return <p style={{ padding: 16, fontSize: 12.5, color: '#a1a1aa' }}>Loading campaigns…</p>;
+  if (rows === null) return <p style={{ padding: 16, fontSize: 12.5, color: 'var(--subtle, #a1a1aa)' }}>Loading campaigns…</p>;
   if (!rows.length) return <Empty label="campaigns" hint="Add this buyer to a deal's dispo blast from here or from Matches." />;
   return (
     <>
       {rows.map((c) => (
-        <button key={c.id} type="button" onClick={() => V.openBuyerCampaign(c.deal_id)} style={{ display: 'flex', width: '100%', textAlign: 'left', gap: 12, padding: '12px 16px', border: 0, borderBottom: '1px solid #f0f0f1', background: '#fff', cursor: 'pointer' }}>
+        <button key={c.id} type="button" onClick={() => V.openBuyerCampaign(c.deal_id)} style={{ display: 'flex', width: '100%', textAlign: 'left', gap: 12, padding: '12px 16px', border: 0, borderBottom: '1px solid var(--divider-2, #f0f0f1)', background: 'var(--surface, #fff)', cursor: 'pointer' }}>
           <span style={{ fontWeight: 700, flex: 1 }}>{c.name}</span>
-          <span style={{ fontSize: 12, color: '#52525b' }}>{c.status}</span>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#0A8560' }}>{c.recipient_status}</span>
+          <span style={{ fontSize: 12, color: 'var(--muted, #52525b)' }}>{c.status}</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx-mint, #0a8560)' }}>{c.recipient_status}</span>
         </button>
       ))}
     </>
@@ -232,7 +248,7 @@ function Campaigns({ V, buyerId, workspaceId }: { V: ClozrView; buyerId: number 
 
 function Empty({ label, hint }: { label: string; hint?: string }) {
   return (
-    <div style={{ padding: '26px 16px', textAlign: 'center', fontSize: 12.5, color: '#a1a1aa' }}>
+    <div style={{ padding: '26px 16px', textAlign: 'center', fontSize: 12.5, color: 'var(--subtle, #a1a1aa)' }}>
       No {label} recorded for this buyer yet.
       {hint ? <div style={{ marginTop: 6 }}>{hint}</div> : null}
     </div>
@@ -287,19 +303,19 @@ function AddForm({ kind, V, workspaceId, buyerId, onClose }: {
   }
 
   return (
-    <div style={{ margin: '10px 16px 0', padding: 12, border: '1px solid #e4e4e7', borderRadius: 10, background: '#fafafa' }}>
+    <div style={{ margin: '10px 16px 0', padding: 12, border: '1px solid var(--divider, #e4e4e7)', borderRadius: 10, background: 'var(--canvas, #fafafa)' }}>
       {kind === 'note' ? (
         <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} placeholder={`Note about ${V.B.name}…`} style={{ ...field, height: 'auto', padding: '8px 10px', resize: 'vertical' }} />
       ) : (
         <>
-          <label style={{ display: 'block', fontSize: 11.5, color: '#71717a', fontWeight: 600, marginBottom: 5 }}>Deal</label>
+          <label style={{ display: 'block', fontSize: 11.5, color: 'var(--meta, #71717a)', fontWeight: 600, marginBottom: 5 }}>Deal</label>
           {V.buyerDealChoices.length ? (
             <SearchSelect value={dealId} ariaLabel="Deal" placeholder={`Search ${V.buyerDealChoices.length} pipeline deals: address, seller, stage`}
               options={V.buyerDealChoices.map((d) => ({ v: d.id, label: d.label, at: d.at }))} onChange={setDealId} />
-          ) : <div style={{ fontSize: 12.5, color: '#71717a' }}>No deal has been in the pipeline on this workspace yet.</div>}
+          ) : <div style={{ fontSize: 12.5, color: 'var(--meta, #71717a)' }}>No deal has been in the pipeline on this workspace yet.</div>}
           {kind === 'offer' ? (
             <div style={{ marginTop: 8 }}>
-              <label style={{ display: 'block', fontSize: 11.5, color: '#71717a', fontWeight: 600, marginBottom: 5 }}>Amount</label>
+              <label style={{ display: 'block', fontSize: 11.5, color: 'var(--meta, #71717a)', fontWeight: 600, marginBottom: 5 }}>Amount</label>
               <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="$238,500" inputMode="decimal" aria-label="Offer amount" style={field} />
               <div style={{ marginTop: 8 }}><PofField value={pof} onChange={(p) => { setPof(p); setPofError(null); }} error={pofError} inputStyle={field} /></div>
               <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={2} placeholder="Terms, EMD, close date…" style={{ ...field, height: 'auto', padding: '8px 10px', resize: 'vertical', marginTop: 8 }} />

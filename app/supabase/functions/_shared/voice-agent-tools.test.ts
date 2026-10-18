@@ -82,7 +82,7 @@ eq('kind is an enum the LLM picks from', tb.tool_config.api_schema.request_body_
 const cb = writeToolBody('get_compr_offer', 'https://p.supabase.co/functions/v1/voice-agent', 'X', 's') as any; // deno-lint-ignore no-explicit-any
 eq('get_compr_offer posts to its route and says to wait for ready: true', [cb.tool_config.name, cb.tool_config.api_schema.url, /ready: true/.test(cb.tool_config.description)], ['get_compr_offer', 'https://p.supabase.co/functions/v1/voice-agent/tool/get-compr-offer', true]);
 const qb = writeToolBody('save_qualification', 'https://p.supabase.co/functions/v1/voice-agent', 'X', 's') as any;
-eq('save_qualification takes every field and the outcome enum', [Object.keys(qb.tool_config.api_schema.request_body_schema.properties).length, qb.tool_config.api_schema.request_body_schema.properties.outcome.enum.includes('do_not_contact')], [25, true]);
+eq('save_qualification takes every field and the outcome enum', [Object.keys(qb.tool_config.api_schema.request_body_schema.properties).length, qb.tool_config.api_schema.request_body_schema.properties.outcome.enum.includes('do_not_contact')], [26, true]);
 eq('book_appointment and save_qualification take a new caller\'s property address', [!!tb.tool_config.api_schema.request_body_schema.properties.property_address, !!qb.tool_config.api_schema.request_body_schema.properties.property_address], [true, true]);
 ok('the timeout is inside the allowed 5 to 300 seconds', tb.tool_config.response_timeout_secs >= 5 && tb.tool_config.response_timeout_secs <= 300);
 

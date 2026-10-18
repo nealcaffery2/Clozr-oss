@@ -23,7 +23,7 @@ type Row = Record<string, unknown>;
 
 const rowStyle = (mobile: boolean): React.CSSProperties => ({
   display: 'grid', gridTemplateColumns: mobile ? 'minmax(0,86px) minmax(0,1fr)' : '88px minmax(0,1fr)', gap: '10px',
-  padding: '6px 0', borderBottom: '1px solid #f0f0f1', fontSize: '12.5px', alignItems: 'baseline',
+  padding: '6px 0', borderBottom: '1px solid var(--divider-2, #f0f0f1)', fontSize: '12.5px', alignItems: 'baseline',
 });
 
 /** The name and company at the top of the record. */
@@ -36,7 +36,7 @@ export function BuyerHeadFields({ V }: { V: ClozrView }) {
       <span style={{ fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em' }}>
         <InlineField recordId={`buyer${id}`} field="name" label="Buyer name" type="text" value={name} readOnly={readOnly} onSave={save('name')} />
       </span>
-      <span style={{ fontSize: '12.5px', color: '#52525b' }}>
+      <span style={{ fontSize: '12.5px', color: 'var(--muted, #52525b)' }}>
         <InlineField recordId={`buyer${id}`} field="company" label="Company" type="text" value={company} placeholder="Add company" readOnly={readOnly} onSave={save('company')} />
       </span>
     </div>
@@ -48,18 +48,18 @@ export function BuyerProfileFields({ V }: { V: ClozrView }) {
   const { row, save, readOnly, id, state, retry } = useBuyerRow(V);
   const m = V.isMobile;
   const banner = state === 'error' ? (
-    <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0', fontSize: '12.5px', color: '#b91c1c', borderBottom: '1px solid #f0f0f1' }}>
+    <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0', fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)', borderBottom: '1px solid var(--divider-2, #f0f0f1)' }}>
       <span style={{ flex: 1 }}>Could not read this buyer, so the fields below can&apos;t be edited.</span>
-      <button type="button" onClick={retry} style={{ height: '28px', padding: '0 10px', borderRadius: '8px', border: 0, boxShadow: '0 0 0 1px rgba(0,0,0,.08)', background: '#fff', fontSize: '12px', fontWeight: 500, cursor: 'pointer', color: '#18181b' }}>Retry</button>
+      <button type="button" onClick={retry} style={{ height: '28px', padding: '0 10px', borderRadius: '8px', border: 0, boxShadow: '0 0 0 1px rgba(0,0,0,.08)', background: 'var(--surface, #fff)', fontSize: '12px', fontWeight: 500, cursor: 'pointer', color: 'var(--ink, #18181b)' }}>Retry</button>
     </div>
   ) : state === 'missing' ? (
-    <div role="status" style={{ padding: '8px 0', fontSize: '12.5px', color: '#71717a', borderBottom: '1px solid #f0f0f1' }}>This buyer was not found. It may have been archived or merged.</div>
+    <div role="status" style={{ padding: '8px 0', fontSize: '12.5px', color: 'var(--meta, #71717a)', borderBottom: '1px solid var(--divider-2, #f0f0f1)' }}>This buyer was not found. It may have been archived or merged.</div>
   ) : null;
   const box = normalizeBuyBox(row?.criteria ?? {});
   const markets = row ? (Array.isArray(row.markets) ? (row.markets as string[]).join('; ') : '') : (V.buyerMarkets || []).map((x) => x.m).join('; ');
   const yes = (v: unknown) => (v ? 'yes' : 'no');
   const f = (label: string, el: React.ReactNode) => (
-    <div style={rowStyle(m)}><span style={{ color: '#71717a' }}>{label}</span><span style={{ minWidth: 0 }}>{el}</span></div>
+    <div style={rowStyle(m)}><span style={{ color: 'var(--meta, #71717a)' }}>{label}</span><span style={{ minWidth: 0 }}>{el}</span></div>
   );
   const rid = `buyer${id}`;
   return (

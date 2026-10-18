@@ -11,13 +11,16 @@
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { decideRvm, localMidnightIso, nextWindowOpen, reputationE164, zoneForRvm, DEFAULT_RVM_WINDOW, type RvmFacts } from '../../../lib/rvm.ts';
+import { decideRvm, localMidnightIso, nextWindowOpen, zoneForRvm, DEFAULT_RVM_WINDOW, type RvmDecision, type RvmFacts } from '../../../lib/rvm.ts';
 import { audioKind, dropCowboyPayload, receiptOutcome, slybroadcastFields, type CarrierAudio } from '../../../lib/rvm-carriers.ts';
-import { lineUsable, marketState, pickPoolLine, rampCap, rampDay, worseRisk, type PoolLine, type PoolTier, type RvmPoolSettings } from '../../../lib/rvm-pool.ts';
+import { lineUsable, marketState, rampCap, rampDay, worseRisk, type PoolLine, type RvmPoolSettings } from '../../../lib/rvm-pool.ts';
 import { outreachItem, type OutreachItem } from '../../../lib/talkr-outreach.ts';
 import { telnyxSetting } from '../_shared/telnyx-settings.ts';
-import { loadRvmPerson, type RvmPersonRow } from '../_shared/rvm-gate.ts';
 import { postOutreach } from '../_shared/talkr-outreach.ts';
+import {
+  claimQueued, historyFacts, must, notesByText, once, readGates, ReadFailed, signedUrlUsable, SIGNED_URL_SECONDS, takeLine,
+  type CallerPool, type Gate, type GateDb, type GateRow, type TakenLine,
+} from './batch.ts';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -90,11 +93,14 @@ async function readBody(req: Request): Promise<unknown> {
   return await req.json().catch(() => ({}));
 }
 
-async function secret(admin: SupabaseClient, name: string): Promise<string | null> {
+/** A carrier setting, read once per tick. A failed read holds the drop rather than reading as "not set up". */
+async function secret(admin: SupabaseClient, cache: Map<string, Promise<unknown>>, name: string): Promise<string | null> {
   const env = Deno.env.get(name.toUpperCase())?.trim();
   if (env) return env;
-  const { data } = await admin.rpc('rvm_provider_secret', { p_name: name });
-  return typeof data === 'string' && data.trim() ? data.trim() : null;
+  return await once(cache, `secret:${name}`, async () => {
+    const data = must(await admin.rpc('rvm_provider_secret', { p_name: name }), `the ${name} setting`);
+    return typeof data === 'string' && data.trim() ? data.trim() : null;
+  });
 }
 
 async function tick(admin: SupabaseClient): Promise<Response> {
@@ -123,6 +129,8 @@ async function tickRun(admin: SupabaseClient): Promise<Response> {
     .eq('status', 'sending').is('sent_at', null).lt('scheduled_at', stale).select('id, workspace_id');
   await logFailedMany(admin, [...(timedOut ?? []), ...(neverSent ?? [])] as { id: number; workspace_id: number }[], NO_RECEIPT);
   const pools = new Map<number, Promise<CallerPool>>();
+  // Recordings, signed links and carrier settings, this tick only.
+  const cache = new Map<string, Promise<unknown>>();
   const sendingTo = new Set<string>();
   const outreach: { workspaceId: number; dropId: number; item: OutreachItem | null }[] = [];
   const tally = { sent: 0, ready: 0, waited: 0, skipped: 0, failed: 0 };
@@ -138,12 +146,20 @@ async function tickRun(admin: SupabaseClient): Promise<Response> {
     const rows = (due as Drop[]).filter((d) => !seenIds.has(d.id));
     if (!rows.length) break;
     for (const d of rows) seenIds.add(d.id);
+    // The people, their earlier drops and last calls, one read per table. A
+    // failed or cut-short read is not the end: each drop then reads its own.
+    const gates = await readGates(admin as unknown as GateDb, rows, noConsentGate)
+      .catch((err) => {
+        if (!(err instanceof ReadFailed)) throw err;
+        console.error('rvm-tick batch read', err.message);
+        return null;
+      });
     let cursor = 0;
     const worker = async () => {
       while (cursor < rows.length) {
         const drop = rows[cursor++];
         if (!drop) break;
-        const result = await consider(admin, drop, pools, sendingTo, outreach);
+        const result = await consider(admin, drop, gates, cache, pools, sendingTo, outreach);
         tally[result]++;
       }
     };
@@ -185,41 +201,34 @@ async function tellTalkr(admin: SupabaseClient, rows: { workspaceId: number; dro
     } catch (err) {
       results = list.flatMap((r) => r.item ? [{ ref: r.item.ref, ok: false, note: `Talkr not told: ${String((err as Error)?.message ?? err).slice(0, 120)}` }] : []);
     }
-    for (const r of results) {
-      if (r.ok || !r.note) continue;
-      const id = Number(r.ref.replace(/^rvm:/, ''));
-      if (Number.isFinite(id)) await admin.from('rvm_drops').update({ notes: r.note.slice(0, 300) }).eq('id', id).then(() => undefined, () => undefined);
+    for (const [note, ids] of notesByText(results)) {
+      await admin.from('rvm_drops').update({ notes: note }).in('id', ids).then(() => undefined, () => undefined);
     }
   }
 }
 
 type PoolRow = { phone_e164: string; pool?: string | null; market_state?: string | null; daily_cap?: number | null; ramp_started_at?: string | null; spam_risk?: string | null; retired_at?: string | null };
-type CallerPool = {
-  /** Every caller line, for the pre-pool rotation (7-day least used, area code first). */
-  lines: string[]; counts: Record<string, number>; seq: number;
-  /** caller_lines.pool = 'rvm' lines with today's cap. Empty means no pool is set up. */
-  rvm: PoolLine[]; usedToday: Record<string, number>;
-};
-
 /** Number guard's verdict per line (migration 68), keyed on E.164. */
 async function healthByPhone(admin: SupabaseClient, workspaceId: number): Promise<Map<string, { paused: boolean; grade: string | null; spam_risk: string | null }>> {
-  const { data } = await admin.from('number_health').select('phone_e164, paused, grade, spam_risk').eq('workspace_id', workspaceId);
+  const data = must(await admin.from('number_health').select('phone_e164, paused, grade, spam_risk').eq('workspace_id', workspaceId), 'the number guard');
   return new Map(((data ?? []) as { phone_e164: string; paused: boolean; grade: string | null; spam_risk: string | null }[]).map((h) => [h.phone_e164, h]));
 }
 
 async function loadPool(admin: SupabaseClient, workspaceId: number): Promise<CallerPool> {
   // Before migration 197 there is no retired_at, before 135 no pool columns: fall back a step at a time.
+  // Only a missing column falls back; any other failure holds the drop (a retired line must not look live).
+  const missing = (e: { message: string } | null) => !!e && /does not exist/.test(e.message);
   let res = await admin.from('caller_lines').select('phone_e164, pool, market_state, daily_cap, ramp_started_at, spam_risk, retired_at').eq('workspace_id', workspaceId);
-  if (res.error) res = await admin.from('caller_lines').select('phone_e164, pool, market_state, daily_cap, ramp_started_at, spam_risk').eq('workspace_id', workspaceId) as typeof res;
-  const rows: unknown[] | null = res.error
-    ? (await admin.from('caller_lines').select('phone_e164, spam_risk').eq('workspace_id', workspaceId)).data
-    : res.data;
+  if (missing(res.error)) res = await admin.from('caller_lines').select('phone_e164, pool, market_state, daily_cap, ramp_started_at, spam_risk').eq('workspace_id', workspaceId) as typeof res;
+  const rows: unknown[] | null = missing(res.error)
+    ? must(await admin.from('caller_lines').select('phone_e164, spam_risk').eq('workspace_id', workspaceId), 'the caller lines')
+    : must(res, 'the caller lines');
   const all = ((rows ?? []) as PoolRow[]).filter((l) => !!l.phone_e164);
   // The plain rotation is the main lines; a pool line, retired or not, is never one of them.
   const ids = all.filter((l) => l.pool !== 'rvm').map((l) => l.phone_e164);
   const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  const { data: used } = await admin.from('rvm_drops').select('from_e164')
-    .eq('workspace_id', workspaceId).gte('created_at', since).not('from_e164', 'is', null).limit(5000);
+  const used = must(await admin.from('rvm_drops').select('from_e164')
+    .eq('workspace_id', workspaceId).gte('created_at', since).not('from_e164', 'is', null).limit(5000), "this week's caller ID use");
   const counts: Record<string, number> = {};
   for (const id of ids) counts[id] = 0;
   for (const row of (used ?? []) as { from_e164?: string | null }[]) {
@@ -229,14 +238,14 @@ async function loadPool(admin: SupabaseClient, workspaceId: number): Promise<Cal
   const rvm: PoolLine[] = [];
   const usedToday: Record<string, number> = {};
   if (poolRows.length) {
-    const { data: ws } = await admin.from('workspaces').select('settings').eq('id', workspaceId).maybeSingle();
+    const ws = must(await admin.from('workspaces').select('settings').eq('id', workspaceId).maybeSingle(), 'the RVM pool settings');
     const settings = ((ws?.settings as { rvm_pool?: RvmPoolSettings } | null)?.rvm_pool ?? null);
     const health = await healthByPhone(admin, workspaceId);
     const now = new Date();
     // "Today" is the workspace's Central day (Acme Homes' zone), like the leaderboard's.
     const midnight = localMidnightIso(now, 'America/Chicago');
-    const { data: today } = await admin.from('rvm_drops').select('from_e164')
-      .eq('workspace_id', workspaceId).gte('sent_at', midnight).in('from_e164', poolRows.map((l) => l.phone_e164)).limit(20_000);
+    const today = must(await admin.from('rvm_drops').select('from_e164')
+      .eq('workspace_id', workspaceId).gte('sent_at', midnight).in('from_e164', poolRows.map((l) => l.phone_e164)).limit(20_000), "today's pool line use");
     for (const row of (today ?? []) as { from_e164?: string | null }[]) {
       if (row.from_e164) usedToday[row.from_e164] = (usedToday[row.from_e164] ?? 0) + 1;
     }
@@ -260,7 +269,8 @@ async function loadPool(admin: SupabaseClient, workspaceId: number): Promise<Cal
  * the lead's area code, then any pool line, never one at today's warm-up cap.
  * `full` means every pool line is at its cap and the drop waits for tomorrow.
  * Without a pool: every caller line, area code first, then the least used
- * this week. Counted forward so a batch spreads out.
+ * this week. Counted forward so a batch spreads out (takeLine, which also
+ * hands back `release` for a drop that is not claimed after all).
  */
 async function takeCallerId(
   admin: SupabaseClient,
@@ -268,30 +278,13 @@ async function takeCallerId(
   pools: Map<number, Promise<CallerPool>>,
   dest: string | null,
   state: string | null,
-): Promise<{ from: string | null; full: boolean; noLine?: boolean; tier?: PoolTier | null }> {
+): Promise<TakenLine> {
   let pending = pools.get(workspaceId);
   if (!pending) {
     pending = loadPool(admin, workspaceId);
     pools.set(workspaceId, pending);
   }
-  const pool = await pending;
-  const seq = pool.seq++;
-  if (pool.rvm.length) {
-    const pick = pickPoolLine(pool.rvm, { state, phone: dest }, pool.usedToday, seq);
-    if (pick.ok) {
-      pool.usedToday[pick.e164] = (pool.usedToday[pick.e164] ?? 0) + 1;
-      return { from: pick.e164, full: false, tier: pick.tier };
-    }
-    if (pick.reason === 'pool_full') return { from: null, full: true };
-    // Every pool line paused, flagged or retired. This used to fall back to
-    // the main caller lines, which put ringless drops (and their spam
-    // reports) on the lines reps call from. The drop waits for the pool:
-    // rvm-pool rotates a replacement in, or an admin fixes a line.
-    return { from: null, full: false, noLine: true };
-  }
-  const pick = reputationE164(pool.lines, pool.counts, dest, seq);
-  if (pick) pool.counts[pick] = (pool.counts[pick] ?? 0) + 1;
-  return { from: pick, full: false };
+  return takeLine(await pending, dest, state);
 }
 
 /** The drop's line on the seller's or buyer's activity log: one row per drop, its status moving in place. */
@@ -318,21 +311,57 @@ async function logDrop(
     ({ error } = await admin.from('communications').upsert(row, { onConflict: 'workspace_id,source,source_id' }));
   }
   if (error) console.error('rvm activity row', drop.id, error.message);
+  else await carryAgent(admin, drop);
 }
 
-/** A failure on drops whose activity row already exists (the stale-receipt sweep). */
+/**
+ * A drop an AI agent queued (rvm_drops.ai_agent_key, migration 269) names that
+ * agent on its voicemail row, so the activity log shows the agent, not the rep
+ * it went out as. Read apart from the drop's columns so the tick keeps working
+ * before the migration.
+ */
+async function carryAgent(admin: SupabaseClient, drop: Pick<Drop, 'id' | 'workspace_id'>): Promise<void> {
+  const { data, error } = await admin.from('rvm_drops').select('ai_agent_key').eq('id', drop.id).maybeSingle();
+  const key = error ? null : (data as { ai_agent_key?: string | null } | null)?.ai_agent_key ?? null;
+  if (!key) return;
+  const { error: upErr } = await admin.from('communications').update({ ai_agent_key: key })
+    .eq('workspace_id', drop.workspace_id).eq('source', 'rvm').eq('source_id', `rvm:${drop.id}`);
+  if (upErr) console.error('rvm agent', drop.id, upErr.message);
+}
+
+/**
+ * A failure on drops whose activity row already exists (the stale-receipt
+ * sweep). It also carries the agent again: carryAgent read the drop when it
+ * was sent, which can be before ai-agent stamped it, and a drop that times
+ * out gets no receipt to read it a second time.
+ */
 async function logFailedMany(admin: SupabaseClient, drops: { id: number; workspace_id: number }[], why: string): Promise<void> {
+  if (!drops.length) return;
   const byWs = new Map<number, string[]>();
   for (const d of drops) { const l = byWs.get(d.workspace_id) ?? []; l.push(`rvm:${d.id}`); byWs.set(d.workspace_id, l); }
   for (const [ws, ids] of byWs) {
     await admin.from('communications').update({ status: 'failed', summary: `Ringless voicemail failed: ${why}` })
       .eq('workspace_id', ws).eq('source', 'rvm').in('source_id', ids).neq('status', 'delivered');
   }
+  const { data, error } = await admin.from('rvm_drops').select('id, workspace_id, ai_agent_key').in('id', drops.map((d) => d.id)).not('ai_agent_key', 'is', null);
+  if (error) return; // Before migration 269 there is no agent to carry.
+  const byAgent = new Map<string, { ws: number; key: string; ids: string[] }>();
+  for (const d of (data ?? []) as { id: number; workspace_id: number; ai_agent_key: string }[]) {
+    const k = `${d.workspace_id}:${d.ai_agent_key}`;
+    const g = byAgent.get(k) ?? { ws: d.workspace_id, key: d.ai_agent_key, ids: [] };
+    g.ids.push(`rvm:${d.id}`);
+    byAgent.set(k, g);
+  }
+  for (const g of byAgent.values()) {
+    const { error: upErr } = await admin.from('communications').update({ ai_agent_key: g.key })
+      .eq('workspace_id', g.ws).eq('source', 'rvm').in('source_id', g.ids).is('ai_agent_key', null);
+    if (upErr) console.error('rvm agent sweep', g.ws, upErr.message);
+  }
 }
 
 const PROVIDER_NAME: Record<string, string> = { dropcowboy: 'Drop Cowboy', slybroadcast: 'Slybroadcast', telnyx: 'Telnyx' };
 
-type PersonRow = RvmPersonRow;
+type PersonRow = GateRow;
 
 function propertyOf(row: PersonRow | null): { state: string | null; zip: string | null } {
   const prop = Array.isArray(row?.properties) ? row.properties[0] : row?.properties;
@@ -344,54 +373,59 @@ function carrierError(data: Record<string, unknown>, fallback: string): string {
   return String(raw).slice(0, 240);
 }
 
-async function consider(
-  admin: SupabaseClient,
-  drop: Drop,
-  pools: Map<number, Promise<CallerPool>>,
-  sendingTo: Set<string>,
-  outreach: { workspaceId: number; dropId: number; item: OutreachItem | null }[],
-): Promise<'sent' | 'ready' | 'waited' | 'skipped' | 'failed'> {
-  const person = await loadRvmPerson(admin as never, drop);
-  if (!person.ok) {
-    // Could not tell whether they are blacklisted: hold the drop, do not send it.
-    await admin.from('rvm_drops').update({ scheduled_at: new Date(Date.now() + 5 * 60_000).toISOString(), skip_reason: 'blacklist_check_failed', last_error: person.message }).eq('id', drop.id).eq('status', 'queued');
-    return 'waited';
-  }
-  const row = person.row;
-  const phone = drop.phone_e164 || row?.phone || null;
-  const place = drop.seller_id ? propertyOf(row) : { state: null, zip: null };
-  const { data: prior } = await admin.from('rvm_drops')
-    .select('library_id, status, sent_at').eq('workspace_id', drop.workspace_id)
-    .or(drop.seller_id ? `seller_id.eq.${drop.seller_id}` : `buyer_id.eq.${drop.buyer_id}`)
-    .in('status', ['dropped', 'answered']);
-  const history = (prior ?? []) as { library_id: number | null; status: string; sent_at: string | null }[];
-  const heardAt: Record<string, string> = {};
-  for (const p of history) {
-    if (p.status !== 'dropped' || !p.library_id || !p.sent_at) continue;
-    const id = String(p.library_id);
-    if (!heardAt[id] || p.sent_at > heardAt[id]) heardAt[id] = p.sent_at;
-  }
-  const heard = history.filter((p) => p.status === 'dropped' && p.library_id).map((p) => String(p.library_id));
-  const lastDrop = history.filter((p) => p.status === 'dropped').map((p) => p.sent_at).filter(Boolean).sort().at(-1) ?? null;
-  const lastAnswered = history.filter((p) => p.status === 'answered').map((p) => p.sent_at).filter(Boolean).sort().at(-1) ?? null;
-  const who = drop.seller_id ? { seller_id: drop.seller_id } : { buyer_id: drop.buyer_id };
-  const { data: talks } = await admin.from('communications')
-    .select('occurred_at').match(who).eq('channel', 'call').gte('duration_s', 20)
-    .order('occurred_at', { ascending: false }).limit(1);
-  const lastTalk = (talks?.[0] as { occurred_at?: string } | undefined)?.occurred_at ?? lastAnswered;
-  const { data: grouped } = await admin.from('vm_library')
+/** No workspace in this build gates drops on consent (batch.ts readGates asks per workspace). */
+const noConsentGate = async (_ws: number): Promise<boolean> => false;
+
+type Clip = { id: number; name?: string; script: string | null; audio_path: string | null };
+
+/** The variant group's active recordings, plus the pinned one. Read once per workspace and group (and pin) per tick. */
+async function loadClips(admin: SupabaseClient, drop: Drop, cache: Map<string, Promise<unknown>>): Promise<Clip[]> {
+  const grouped = await once(cache, `clips:${drop.workspace_id}:${drop.variant_group}`, async () => (must(await admin.from('vm_library')
     .select('id, name, script, audio_path').eq('workspace_id', drop.workspace_id).eq('active', true)
-    .eq('variant_group', drop.variant_group);
-  const clips = [...(grouped ?? [])];
+    .eq('variant_group', drop.variant_group), 'the voicemail recordings') ?? []) as Clip[]);
+  const clips = [...grouped];
   // A drop pinned to one recording (a bulk send, a dispo push or a plan step that
   // picked it) carries a group of its own, so the clip is not in the group's
   // rows: load it, or the send would have its id but no audio and the carrier
   // would read the script aloud instead.
   if (drop.library_id && !clips.some((c) => String(c.id) === String(drop.library_id))) {
-    const { data: pinned } = await admin.from('vm_library')
-      .select('id, name, script, audio_path').eq('workspace_id', drop.workspace_id).eq('id', drop.library_id).maybeSingle();
+    const pinned = await once(cache, `clip:${drop.workspace_id}:${drop.library_id}`, async () => must(await admin.from('vm_library')
+      .select('id, name, script, audio_path').eq('workspace_id', drop.workspace_id).eq('id', drop.library_id!).maybeSingle(), 'the voicemail recording') as Clip | null);
     if (pinned) clips.unshift(pinned);
   }
+  return clips;
+}
+
+/** A signed link to the recording, made once per tick and reused only while it still has most of its hour. */
+async function signedAudio(admin: SupabaseClient, cache: Map<string, Promise<unknown>>, path: string): Promise<string> {
+  const key = `signed:${path}`;
+  const load = async () => {
+    const at = Date.now();
+    const signed = await admin.storage.from('vm-library').createSignedUrl(path, SIGNED_URL_SECONDS);
+    if (!signed.data?.signedUrl) throw new ReadFailed('check_failed', `could not open the recording from storage: ${signed.error?.message ?? 'no link came back'}`);
+    return { url: signed.data.signedUrl, expiresAt: at + SIGNED_URL_SECONDS * 1000 };
+  };
+  let link = await once(cache, key, load);
+  if (!signedUrlUsable(link)) {
+    cache.delete(key);
+    link = await once(cache, key, load);
+  }
+  return link.url;
+}
+
+type Judged =
+  | { done: 'waited' | 'skipped' }
+  | { decision: Extract<RvmDecision, { action: 'send' }>; phone: string | null; place: { state: string | null; zip: string | null }; row: PersonRow | null; clips: Clip[]; now: Date };
+
+/** The rules on one set of reads: a drop that waits or is skipped is updated here; a send comes back to go out. */
+async function judge(admin: SupabaseClient, drop: Drop, gate: Gate, cache: Map<string, Promise<unknown>>): Promise<Judged> {
+  const person = gate.person;
+  const row = person.row as PersonRow | null;
+  const phone = drop.phone_e164 || row?.phone || null;
+  const place = drop.seller_id ? propertyOf(row) : { state: null, zip: null };
+  const { heard, heardAt, lastDrop, lastAnswered } = historyFacts(gate.prior);
+  const lastTalk = gate.lastTalk ?? lastAnswered;
+  const clips = await loadClips(admin, drop, cache);
   const recordings = clips.map((c) => ({ id: String(c.id), name: c.name as string }));
   if (drop.library_id && !recordings.some((r) => r.id === String(drop.library_id))) {
     recordings.unshift({ id: String(drop.library_id), name: 'Step' });
@@ -409,12 +443,70 @@ async function consider(
   const decision = decideRvm(facts);
   if (decision.action === 'wait') {
     await admin.from('rvm_drops').update({ scheduled_at: decision.until, skip_reason: decision.reason }).eq('id', drop.id).eq('status', 'queued');
-    return 'waited';
+    return { done: 'waited' };
   }
   if (decision.action === 'skip') {
     await admin.from('rvm_drops').update({ status: 'skipped', skip_reason: decision.reason }).eq('id', drop.id).eq('status', 'queued');
-    return 'skipped';
+    return { done: 'skipped' };
   }
+  return { decision, phone, place, row, clips, now };
+}
+
+type Outcome = 'sent' | 'ready' | 'waited' | 'skipped' | 'failed';
+
+async function consider(
+  admin: SupabaseClient,
+  drop: Drop,
+  gates: Map<number, Gate> | null,
+  cache: Map<string, Promise<unknown>>,
+  pools: Map<number, Promise<CallerPool>>,
+  sendingTo: Set<string>,
+  outreach: { workspaceId: number; dropId: number; item: OutreachItem | null }[],
+): Promise<Outcome> {
+  const held: Held = { destKey: '', release: null };
+  try {
+    return await considerSend(admin, drop, gates, cache, pools, sendingTo, outreach, held);
+  } catch (err) {
+    if (!(err instanceof ReadFailed)) throw err;
+    if (held.destKey) sendingTo.delete(held.destKey);
+    // Could not tell whether it may go (the blacklist, consent, its last drop or
+    // call, its line or recording): hold the drop, do not send it. Every read
+    // that can throw comes before the claim, so a claimed drop is never re-queued.
+    await admin.from('rvm_drops').update({ scheduled_at: new Date(Date.now() + 5 * 60_000).toISOString(), skip_reason: err.reason, last_error: err.message }).eq('id', drop.id).eq('status', 'queued');
+    return 'waited';
+  } finally {
+    // A caller line taken for a drop that was never claimed (held, lost to
+    // another run, left ready or failed before the claim) goes back, so it
+    // does not fill that line's warm-up cap for the rest of the tick.
+    held.release?.();
+  }
+}
+
+/** What considerSend took for this drop, for consider to give back if the drop is not claimed. */
+type Held = { destKey: string; release: (() => void) | null };
+
+async function considerSend(
+  admin: SupabaseClient,
+  drop: Drop,
+  gates: Map<number, Gate> | null,
+  cache: Map<string, Promise<unknown>>,
+  pools: Map<number, Promise<CallerPool>>,
+  sendingTo: Set<string>,
+  outreach: { workspaceId: number; dropId: number; item: OutreachItem | null }[],
+  held: Held,
+): Promise<Outcome> {
+  // The batch's reads settle a drop that waits or is skipped. One they would
+  // send is judged again on reads made for it alone, just now, with no cache
+  // (person, consent flag, earlier drops, last call), so a do-not-call, an
+  // opt-out or a drop that landed since the batch read still stops it. Only
+  // that second judgment can send.
+  const batch = gates?.get(drop.id);
+  const first = batch ? await judge(admin, drop, batch, cache) : null;
+  if (first && 'done' in first) return first.done;
+  const fresh = (await readGates(admin as unknown as GateDb, [drop], noConsentGate)).get(drop.id)!;
+  const judged = await judge(admin, drop, fresh, cache);
+  if ('done' in judged) return judged.done;
+  const { decision, phone, place, row, clips, now } = judged;
   // Two drops for one number can both pass the rules before either is marked
   // sent. The second one waits out the same window a fresh drop would.
   const destKey = (phone ?? '').replace(/\D/g, '').slice(-10);
@@ -424,10 +516,12 @@ async function consider(
       return 'skipped';
     }
     sendingTo.add(destKey);
+    held.destKey = destKey;
   }
   // The line's market: the property's state for a seller, the first state in a buyer's markets.
   const leadState = drop.seller_id ? place.state : marketState(row?.markets ?? null);
   const taken = await takeCallerId(admin, drop.workspace_id, pools, phone, leadState);
+  held.release = taken.release ?? null;
   if (taken.noLine) {
     if (destKey.length >= 10) sendingTo.delete(destKey);
     await admin.from('rvm_drops').update({
@@ -446,14 +540,11 @@ async function consider(
     return 'waited';
   }
   const from = taken.from;
-  const clip = clips.find((c) => String(c.id) === decision.recordingId) as { id: number; name?: string; script: string | null; audio_path: string | null } | undefined;
+  const clip = clips.find((c) => String(c.id) === decision.recordingId);
   const script = (clip?.script || drop.script || '').trim();
   const kind = audioKind(clip?.audio_path);
   let audioUrl: string | null = null;
-  if (clip?.audio_path && kind) {
-    const signed = await admin.storage.from('vm-library').createSignedUrl(clip.audio_path, 3600);
-    audioUrl = signed.data?.signedUrl ?? null;
-  }
+  if (clip?.audio_path && kind) audioUrl = await signedAudio(admin, cache, clip.audio_path);
   const webhookToken = crypto.randomUUID();
   const libraryId = clip?.id ?? drop.library_id;
   const claim = async (provider: string) => {
@@ -462,13 +553,9 @@ async function consider(
       library_id: libraryId, script: script || drop.script, sent_at: new Date().toISOString(), last_error: null,
       pool_tier: taken.tier ?? null,
     };
-    let claimed = await admin.from('rvm_drops').update(patch).eq('id', drop.id).eq('status', 'queued').select('id');
-    // Before migration 198 there is no pool_tier: claim without it rather than lose the drop.
-    if (claimed.error && /pool_tier/.test(claimed.error.message)) {
-      delete patch.pool_tier;
-      claimed = await admin.from('rvm_drops').update(patch).eq('id', drop.id).eq('status', 'queued').select('id');
-    }
-    if (!claimed.data?.length) return false;
+    if (!await claimQueued(admin as unknown as GateDb, drop.id, patch)) return false;
+    // Claimed: the line is spent (rvm_drops now has from_e164 and sent_at, which the next tick counts too).
+    held.release = null;
     // On the record's activity log from the moment a network has it.
     await logDrop(admin, { ...drop, phone_e164: phone, from_e164: from, script: script || drop.script }, 'sending', { provider });
     return true;
@@ -489,7 +576,7 @@ async function consider(
   const webmOnly = !!clip?.audio_path && !kind;
 
   if (phone) {
-    const cowboy = await prepareDropCowboy(admin, drop, phone, webhookToken, script, audioUrl, kind, from, place.zip);
+    const cowboy = await prepareDropCowboy(admin, cache, drop, phone, webhookToken, script, audioUrl, kind, from, place.zip);
     if (cowboy) {
       if (!await claim('dropcowboy')) return 'failed';
       const posted = await postCarrier(cowboy.url, cowboy.init, cowboy.callIdFrom);
@@ -498,7 +585,7 @@ async function consider(
       accepted();
       return 'sent';
     }
-    const sly = await prepareSlybroadcast(admin, drop, phone, webhookToken, from, audioUrl, kind);
+    const sly = await prepareSlybroadcast(admin, cache, drop, phone, webhookToken, from, audioUrl, kind);
     if (sly) {
       if (!await claim('slybroadcast')) return 'failed';
       const posted = await postCarrier(sly.url, sly.init, sly.callIdFrom);
@@ -524,8 +611,10 @@ async function consider(
     }).eq('id', drop.id).eq('status', 'queued');
     return 'failed';
   }
-  const key = await telnyxSetting(admin, 'TELNYX_API_KEY');
-  const connection = await telnyxSetting(admin, 'TELNYX_CONNECTION_ID');
+  // A failed Vault read holds the drop (consider's ReadFailed path); only "not set" marks it ready below.
+  const unread = (e: Error): never => { throw new ReadFailed('check_failed', `could not check the Telnyx settings: ${e.message}`); };
+  const key = await telnyxSetting(admin, 'TELNYX_API_KEY').catch(unread);
+  const connection = await telnyxSetting(admin, 'TELNYX_CONNECTION_ID').catch(unread);
   if (!key || !connection || !from) {
     const why = !from
       ? 'No caller ID line on file (Settings, Calling), so this one is dropped from the RVM tab.'
@@ -561,14 +650,14 @@ type Prepared = { url: string; init: RequestInit; callIdFrom: (data: Record<stri
 
 /** Drop Cowboy deposits the file. Building the body does not send it. */
 async function prepareDropCowboy(
-  admin: SupabaseClient, drop: Drop, phone: string, token: string, script: string,
+  admin: SupabaseClient, cache: Map<string, Promise<unknown>>, drop: Drop, phone: string, token: string, script: string,
   audioUrl: string | null, audioType: CarrierAudio | null, from: string | null, postalCode: string | null,
 ): Promise<Prepared | null> {
-  const teamId = await secret(admin, 'dropcowboy_team_id');
-  const cowboySecret = await secret(admin, 'dropcowboy_secret');
-  const brandId = await secret(admin, 'dropcowboy_brand_id');
+  const teamId = await secret(admin, cache, 'dropcowboy_team_id');
+  const cowboySecret = await secret(admin, cache, 'dropcowboy_secret');
+  const brandId = await secret(admin, cache, 'dropcowboy_brand_id');
   if (!teamId || !cowboySecret || !brandId) return null;
-  const voiceId = await secret(admin, 'dropcowboy_voice_id');
+  const voiceId = await secret(admin, cache, 'dropcowboy_voice_id');
   const base = Deno.env.get('SUPABASE_URL')!;
   const payload = dropCowboyPayload({
     teamId, secret: cowboySecret, brandId, phone, dropId: drop.id,
@@ -592,11 +681,11 @@ async function prepareDropCowboy(
 
 /** Slybroadcast is the second ringless network, used when Drop Cowboy cannot take this clip. */
 async function prepareSlybroadcast(
-  admin: SupabaseClient, drop: Drop, phone: string, token: string, from: string | null,
+  admin: SupabaseClient, cache: Map<string, Promise<unknown>>, drop: Drop, phone: string, token: string, from: string | null,
   audioUrl: string | null, audioType: CarrierAudio | null,
 ): Promise<Prepared | null> {
-  const uid = await secret(admin, 'slybroadcast_uid');
-  const password = await secret(admin, 'slybroadcast_password');
+  const uid = await secret(admin, cache, 'slybroadcast_uid');
+  const password = await secret(admin, cache, 'slybroadcast_password');
   if (!uid || !password || !from || !audioUrl || !audioType) return null;
   const base = Deno.env.get('SUPABASE_URL')!;
   const fields = slybroadcastFields({

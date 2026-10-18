@@ -1,32 +1,80 @@
-'use client';
-
 /**
  * A note textarea that knows teammates: "@" opens a picker (type to filter,
- * arrows + Enter or a click), which writes an `@[Name](id)` token
- * (lib/mentions.ts). `inputRef` hands the textarea out, for an emoji button
- * that inserts at its caret.
+ * arrows + Enter or a click). The box shows "@Ann Lee"; the value it hands
+ * out is stored form, `@[Ann Lee](id)` (lib/mentions.ts), which is what the
+ * mention trigger reads. `inputRef` hands the textarea out, for an emoji
+ * button that inserts at its caret.
+ *
+ * Typing stays in this component and reaches `onChange` a beat later: the
+ * record composer's text lives in the whole app's state, and pushing every
+ * keystroke through it made typing a note lag. `flushRef` hands out a flush
+ * that returns the stored text now, for a send that cannot wait; a blur
+ * flushes too, so a click on a submit button sees what was typed.
  * Plus `MentionText`, which renders a stored body with the tokens as chips.
  */
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { insertMention, mentionQuery, mentionSegments } from '@/lib/mentions';
+import { mentionPlain, mentionQuery, mentionSegments, mentionTokens } from '@/lib/mentions';
 
 export type Mentionable = { id: string; name: string };
 
 type Open = { start: number; caret: number; query: string; x: number; y: number; above: boolean };
 
-export function MentionField({ value, onChange, team, inputRef, above = true, ...rest }: {
+const SYNC_MS = 150;
+
+const tokensIn = (stored: string): Mentionable[] =>
+  mentionSegments(stored).flatMap((s) => ('id' in s ? [{ id: s.id, name: s.name }] : []));
+
+export function MentionField({ value, onChange, team, inputRef, flushRef, above = true, ...rest }: {
   value: string;
   onChange: (next: string) => void;
   team: Mentionable[];
   inputRef?: React.RefObject<HTMLTextAreaElement | null>;
+  /** Set to a function that pushes what is typed now and returns it in stored form. */
+  flushRef?: React.MutableRefObject<(() => string) | null>;
   /** Open the picker above the field (a composer at the bottom) or below it. */
   above?: boolean;
 } & Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 'value' | 'onChange'>) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [open, setOpen] = useState<Open | null>(null);
   const [hi, setHi] = useState(0);
+  // What the box shows, and the stored value last handed to onChange.
+  const [shown, setShown] = useState(() => mentionPlain(value));
+  const sent = useRef(value);
+  // Mentions already made (the stored draft's tokens, picks from the list), so
+  // a draft keeps their ids through a rename or two teammates with one name.
+  const known = useRef<Mentionable[]>(tokensIn(value));
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latest = useRef({ shown, team, onChange });
+  useLayoutEffect(() => { latest.current = { shown, team, onChange }; });
+
+  // A change from outside (cleared after a send, a template, a restored draft) replaces what is shown.
+  useEffect(() => {
+    if (value === sent.current) return;
+    sent.current = value;
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    known.current = tokensIn(value);
+    setShown(mentionPlain(value));
+  }, [value]);
+
+  const flush = () => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    const { shown: now, team: t, onChange: push } = latest.current;
+    const stored = mentionTokens(now, t, known.current);
+    if (stored !== sent.current) { sent.current = stored; push(stored); }
+    return stored;
+  };
+  useLayoutEffect(() => { if (flushRef) flushRef.current = flush; });
+  // Leaving with typing not yet handed over (a tab switch) hands it over.
+  useEffect(() => () => { if (timer.current) { clearTimeout(timer.current); flush(); } }, []);
+
+  const edit = (next: string) => {
+    setShown(next);
+    latest.current.shown = next;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(flush, SYNC_MS);
+  };
 
   const hits = open
     ? team.filter((t) => t.name.toLowerCase().includes(open.query.toLowerCase())).slice(0, 8)
@@ -42,21 +90,25 @@ export function MentionField({ value, onChange, team, inputRef, above = true, ..
 
   const pick = (m: Mentionable) => {
     if (!open) return;
-    const next = insertMention(value, open.start, open.caret, m.name, m.id);
-    onChange(next.text);
+    const clean = m.name.replace(/[[\]\n]/g, '');
+    known.current = [{ id: m.id, name: clean }, ...known.current.filter((k) => k.name !== clean)];
+    const name = '@' + clean + ' ';
+    const next = shown.slice(0, open.start) + name + shown.slice(open.caret);
+    const caret = open.start + name.length;
+    edit(next);
     setOpen(null);
     const el = ref.current;
-    if (el) requestAnimationFrame(() => { el.focus(); el.setSelectionRange(next.caret, next.caret); });
+    if (el) requestAnimationFrame(() => { el.focus(); el.setSelectionRange(caret, caret); });
   };
 
   const field = (
     <textarea
       {...rest}
       ref={(el) => { ref.current = el; if (inputRef) inputRef.current = el; }}
-      value={value}
-      onChange={(e) => { onChange(e.target.value); track(e.target); }}
+      value={shown}
+      onChange={(e) => { edit(e.target.value); track(e.target); }}
       onClick={(e) => track(e.currentTarget)}
-      onBlur={(e) => { setTimeout(() => setOpen(null), 120); rest.onBlur?.(e); }}
+      onBlur={(e) => { flush(); setTimeout(() => setOpen(null), 120); rest.onBlur?.(e); }}
       onKeyDown={(e) => {
         if (open && hits.length) {
           if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {

@@ -48,3 +48,28 @@ export function insertMention(text: string, start: number, caret: number, name: 
   const token = `@[${name.replace(/[[\]\n]/g, '')}](${id}) `;
   return { text: text.slice(0, start) + token + text.slice(caret), caret: start + token.length };
 }
+
+/**
+ * Plain `@Ann Lee` back to `@[Ann Lee](u1)` for every teammate named after an
+ * `@`, longest name first so "Ann Lee" wins over "Ann". The note box shows
+ * the plain form and stores this one. `known` are mentions already made (the
+ * draft's tokens, picks from the list): their id wins over the roster's for
+ * that name, so a renamed teammate keeps the mention and a picked "Ann Lee"
+ * stays the one picked when two teammates share the name.
+ */
+export function mentionTokens(
+  plain: string, team: readonly { id: string; name: string }[], known: readonly { id: string; name: string }[] = [],
+): string {
+  const byName = new Map<string, string>();
+  for (const t of [...known, ...team]) {
+    const name = t.name.replace(/[[\]\n]/g, '');
+    if (name.trim() && !byName.has(name)) byName.set(name, t.id);
+  }
+  let out = plain;
+  for (const [name, id] of [...byName].sort((a, b) => b[0].length - a[0].length)) {
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // A letter or digit in any script after the name means a longer name ("@Anné" is not "@Ann").
+    out = out.replace(new RegExp(`(^|\\s)@${esc}(?![\\p{L}\\p{N}_\\]])`, 'gu'), (_m, pre: string) => `${pre}@[${name}](${id})`);
+  }
+  return out;
+}

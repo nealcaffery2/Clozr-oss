@@ -8,7 +8,6 @@ import React, { useState } from 'react';
 import { ClozrMark } from '@/components/ds/ClozrMark';
 import { publicFn } from '@/lib/public-fn';
 import { SIGNING_CSS } from '../sign/signing.css';
-import '../clozr/tokens.css';
 
 type Result = {
   found: boolean;
@@ -56,7 +55,7 @@ export default function Verify() {
           {res?.found ? (
             // Same card, set off by a divider: the verdict is the heading, coloured because it is a status.
             <section role="status" style={{ marginTop: 20, paddingTop: 18, borderTop: '1px solid var(--cz-line, #e4e4e7)' }}>
-              <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700, color: ok ? '#0A8560' : '#b91c1c' }}>{ok ? 'Authentic and unchanged' : 'Integrity check failed'}</h2>
+              <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700, color: ok ? 'var(--tx-mint, #0a8560)' : '#b91c1c' }}>{ok ? 'Authentic and unchanged' : 'Integrity check failed'}</h2>
               <p className="cz-lede">
                 {res.contract?.name}{res.contract?.ref ? ` · ${res.contract.ref}` : ''}{res.contract?.completed_at ? ` · completed ${new Date(res.contract.completed_at).toLocaleString()}` : ''}
               </p>

@@ -12,7 +12,8 @@
  * rows are flat (lastSaleAmount, priorOwnerMonthsOwned, mlsSoldPrice, ...);
  * PropertyDetail nests saleHistory / mlsHistory / linkedProperties. Skip
  * trace is split: LLCs and other entities on BatchData (mapSkipBatch, the call
- * is in batchdata.ts), individuals on RealEstateAPI (mapSkipReapi).
+ * is in batchdata.ts). Individuals on RealEstateAPI; LLCs try RealEstateAPI
+ * at the mail/property address (no name), then BatchData, merged (mapSkipReapi).
  *
  * Three rules the v1 function got wrong, and why this file exists:
  *  - A sale with no recorded price is still a sale. Texas and the other
@@ -815,7 +816,9 @@ const fullName = (n: Any): string | null => str(n?.full) || [n?.first, n?.middle
 
 /** One RealEstateAPI SkipTrace answer as SkipHits (individual owners are traced here, at $0.05 a hit). */
 export function mapSkipReapi(j: Any): SkipHit[] {
-  const persons: Any[] = j?.output?.identity ? [j.output.identity] : j?.persons ?? j?.data?.persons ?? [];
+  const persons: Any[] = Array.isArray(j?.persons) ? j.persons
+    : j?.output?.identity ? [j.output.identity]
+    : Array.isArray(j?.data?.persons) ? j.data.persons : [];
   return persons.map((p): SkipHit => {
     const a = p?.address ?? {};
     return {
@@ -859,6 +862,107 @@ export function mapSkipBatch(d: Any): SkipHit[] {
   }).filter((h: SkipHit) => h.phones.length || h.emails.length);
 }
 
+const phoneDigits = (n: string) => n.replace(/\D/g, '').slice(-10);
+
+/** Combine RealEstateAPI and BatchData hits; dedupe phones and emails. */
+export function mergeSkipHits(...lists: SkipHit[][]): SkipHit[] {
+  const out: SkipHit[] = [];
+  const seenPhone = new Set<string>();
+  const seenEmail = new Set<string>();
+  for (const h of lists.flat()) {
+    const phones = h.phones.filter((p) => {
+      const k = phoneDigits(p.number);
+      if (k.length < 10 || seenPhone.has(k)) return false;
+      seenPhone.add(k);
+      return true;
+    });
+    const emails = h.emails.filter((e) => {
+      const k = e.trim().toLowerCase();
+      if (!k || seenEmail.has(k)) return false;
+      seenEmail.add(k);
+      return true;
+    });
+    if (phones.length || emails.length) out.push({ name: h.name, phones, emails, mailing: h.mailing });
+  }
+  return out;
+}
+
+/** RealEstateAPI SkipTrace body: individuals by name + address; LLCs by mail address only (no names). */
+export function reapiSkipBody(
+  c: Pick<Candidate, 'corporate'>,
+  where: MailParts,
+  name: { first: string; last: string } | null,
+): Record<string, string> {
+  const street = where.address;
+  const city = where.city;
+  const state = where.state;
+  const zip = where.zip;
+  if (c.corporate) {
+    return {
+      mail_address: street,
+      ...(city ? { mail_city: city } : {}),
+      ...(state ? { mail_state: state } : {}),
+      ...(zip ? { mail_zip: zip } : {}),
+      address: street,
+      ...(city ? { city } : {}),
+      ...(state ? { state } : {}),
+      ...(zip ? { zip } : {}),
+    };
+  }
+  return {
+    address: street,
+    ...(city ? { city } : {}),
+    ...(state ? { state } : {}),
+    ...(zip ? { zip } : {}),
+    ...(name ? { first_name: name.first, last_name: name.last } : {}),
+  };
+}
+
+/** Parse "123 Main, Austin, TX 78701" (state case-insensitive). */
+export function parseMailingLine(mailing: string): MailParts | null {
+  const line = str(mailing);
+  if (!line) return null;
+  let m = line.match(/^(.+?),\s*([^,]+),\s*([A-Za-z]{2})\.?,?\s*(\d{5})/);
+  if (m) return { address: m[1].trim(), city: m[2].trim(), state: m[3].toUpperCase(), zip: m[4] };
+  m = line.match(/^(.+?),\s*([^,]+),\s*([A-Za-z]{2})\s*(\d{5})/);
+  if (m) return { address: m[1].trim(), city: m[2].trim(), state: m[3].toUpperCase(), zip: m[4] };
+  return null;
+}
+
+function mailPartsOk(parts: MailParts | null | undefined): MailParts | null {
+  if (!parts?.address) return null;
+  const street = str(parts.address);
+  const city = str(parts.city);
+  const state = str(parts.state).toUpperCase();
+  const zip = str(parts.zip).slice(0, 5);
+  if (!street || !(zip || (city && state))) return null;
+  return { address: street, city, state, zip };
+}
+
+/** Where to trace: mailing, then any purchase (including a flip subject property for an LLC). */
+export function traceMailParts(c: Pick<Candidate, 'mail_parts' | 'mailing' | 'purchases'>): MailParts | null {
+  const fromParts = mailPartsOk(c.mail_parts);
+  if (fromParts) return fromParts;
+  if (c.mailing) {
+    const parsed = parseMailingLine(c.mailing);
+    const ok = mailPartsOk(parsed);
+    if (ok) return ok;
+  }
+  const hold = c.purchases.find((p) => p.role !== 'flip') ?? c.purchases[0];
+  if (hold) return mailPartsOk({ address: hold.address, city: hold.city, state: hold.state, zip: hold.zip });
+  return null;
+}
+
+/** Minimal purchase row so CRM bulk skip trace can fall back to a property address. */
+export function tracePurchaseStub(parts: MailParts): Purchase {
+  return {
+    reapi_id: '', role: 'hold', address: parts.address, city: parts.city, state: parts.state, zip: parts.zip,
+    lat: null, lng: null, distance_mi: null, property_type: null, beds: null, baths: null, sqft: null, year_built: null,
+    price: null, price_source: null, non_disclosure: false, date: null, resale_price: null, resale_date: null, days_held: null,
+    financed: null, est_value: null, pct_of_arv: null, price_per_sqft: null, agent: null, zillow: '',
+  };
+}
+
 /**
  * Who to trace for a buyer and where. An entity is traced at its mailing
  * address (that is where the person behind the LLC lives or works); a person by
@@ -866,43 +970,32 @@ export function mapSkipBatch(d: Any): SkipHit[] {
  * address is the retail buyer's home now, so it is only the last resort.
  */
 /**
- * Who traces an owner: an LLC or other entity goes to BatchData, which finds the
- * person behind it far more often; an individual goes to RealEstateAPI ($0.05).
+ * Who traces an owner: individuals on RealEstateAPI ($0.05). LLCs try RealEstateAPI
+ * (address-only) then BatchData; hits are merged when both return contacts.
  */
 export type SkipProvider = 'batchdata' | 'reapi';
 
-export function skipTarget(c: Pick<Candidate, 'owner_name' | 'corporate' | 'people' | 'mail_parts' | 'mailing' | 'purchases' | 'key'>): { owner_key: string; provider: SkipProvider; body: SkipRequest; reapi: Record<string, string> } | null {
+export function skipTarget(c: Pick<Candidate, 'owner_name' | 'corporate' | 'people' | 'mail_parts' | 'mailing' | 'purchases' | 'key'>): {
+  owner_key: string; provider: SkipProvider; useBatch: boolean; body: SkipRequest; reapi: Record<string, string>;
+} | null {
   const person = !c.corporate ? (c.people[0] ?? c.owner_name) : null;
   const names = person ? person.split(/\s+/) : [];
   const name = person && names.length > 1 ? { first: names[0], last: names.slice(1).join(' ') } : null;
   const nameBits = name ? { name } : {};
-  let where: MailParts | null = c.mail_parts;
-  if (!where && c.mailing) {
-    const m = c.mailing.match(/^(.+?),\s*([^,]+),\s*([A-Z]{2}),?\s*(\d{5})/);
-    if (m) where = { address: m[1], city: m[2], state: m[3], zip: m[4] };
-  }
-  if (!where) {
-    const hold = c.purchases.find((p) => p.role !== 'flip') ?? (person ? c.purchases[0] : undefined);
-    if (hold) where = { address: hold.address, city: hold.city, state: hold.state, zip: hold.zip };
-  }
-  // BatchData takes street + zip, street + city + state, or all four. Anything
-  // less is not a traceable address, so it never costs a call.
-  const street = str(where?.address);
-  const city = str(where?.city); const state = str(where?.state); const zip = str(where?.zip).slice(0, 5);
-  if (!street || !(zip || (city && state))) return null;
+  const where = traceMailParts(c);
+  if (!where) return null;
+  const street = where.address;
+  const city = where.city; const state = where.state; const zip = where.zip;
   return {
-    // Keyed on the address as it was before BatchData, so traces already paid for stay cached.
-    owner_key: `${c.key}|${addressKey(`${street} ${str(where?.zip)}`)}`,
+    owner_key: `${c.key}|${addressKey(`${street} ${zip}`)}`,
     provider: c.corporate ? 'batchdata' : 'reapi',
+    /** LLCs always get BatchData after RealEstateAPI; individuals only when RealEstateAPI finds nothing. */
+    useBatch: c.corporate,
     body: {
       propertyAddress: { street, ...(city ? { city } : {}), ...(state ? { state } : {}), ...(zip ? { zip } : {}) },
       ...nameBits,
     },
-    // RealEstateAPI's SkipTrace body, as it was before BatchData.
-    reapi: {
-      address: street, ...(city ? { city } : {}), ...(state ? { state } : {}), ...(zip ? { zip } : {}),
-      ...(name ? { first_name: name.first, last_name: name.last } : {}),
-    },
+    reapi: reapiSkipBody(c, where, name),
   };
 }
 

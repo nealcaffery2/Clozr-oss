@@ -50,11 +50,29 @@ export type Block =
   | { kind: 'funnel'; title: string; sub?: string; steps: { k: string; n: number; rate: string; pct: number }[]; empty: string; half?: boolean }
   | { kind: 'table'; title: string; sub?: string; cols: string[]; rows: string[][]; empty: string; half?: boolean }
   | { kind: 'note'; title: string; text: string; half?: boolean }
-  | { kind: 'bank' };
+  | { kind: 'bank' }
+  /** An SVG diagram (components/reporting/diagrams) over the same numbers the tab's tables show. */
+  | { kind: 'diagram'; title: string; sub: string; empty: string; half?: boolean; diagram: Diagram };
 
-export const REPORT_TABS = ['Overview', 'Acquisitions', 'Lead Sources', 'Calls', 'Team', 'Offers', 'Contracts', 'Dispo', 'Buyers', 'Closings', 'Marketing', 'Profitability', 'AI Agents', 'AI Sales Manager', 'Custom reports'];
+export type Diagram =
+  | { type: 'funnel'; steps: { k: string; n: number; rate: string; pct: number }[] }
+  /** Leads created in range: source → assigned rep → where they are now. One flow per (source, rep, stage) with its lead count. */
+  | { type: 'leadflow'; sources: string[]; reps: string[]; stages: string[]; flows: { source: number; rep: number; stage: number; n: number }[] }
+  /** In-range counts per system, keyed by the diagram's node ids; a missing key means CLOZR holds no count for it. */
+  | { type: 'dataflow'; counts: Record<string, string> }
+  | { type: 'org'; people: { id: string; name: string; role: string; calls: number; offers: number; contracts: number; closings: number }[] }
+  | { type: 'pipeline'; stages: { k: string; n: number; days: number | null; fees: number }[] }
+  | { type: 'timeline'; start: number; end: number; total: number; events: { t: number; label: string; fee: number }[] };
+
+export const REPORT_TABS = ['Overview', 'Acquisitions', 'Lead Sources', 'Calls', 'Team', 'Offers', 'Contracts', 'Dispo', 'Buyers', 'Closings', 'Marketing', 'Profitability', 'Team stoplight', 'AI Agents', 'AI Sales Manager', 'Flows', 'Custom reports'];
+/** Every diagram on one tab (components/reporting/diagrams). */
+export const FLOWS_TAB = 'Flows';
 /** The tab the report builder lives on; it draws itself (components/reporting/custom) rather than through buildReport. */
 export const CUSTOM_TAB = 'Custom reports';
+/** Each teammate against their targets (migration 260, lib/stoplight). Owner/admin only; draws itself (components/reporting/TeamStoplight). */
+export const TEAM_STOPLIGHT_TAB = 'Team stoplight';
+/** Tabs only owners and admins see: commissions and the bank feed, and the team's grades. */
+export const ADMIN_REPORT_TABS: readonly string[] = ['Profitability', TEAM_STOPLIGHT_TAB];
 /** The AI agents' own report (migration 123); it draws itself (components/reporting/AiAgentsReport) from the ai-agent function. */
 export const AI_AGENTS_TAB = 'AI Agents';
 /** The AI Sales Manager (migration 149): call reviews, flagged calls, rep scorecards, roleplay. Draws itself (components/coaching/SalesManager). */
@@ -329,6 +347,8 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
   const offered = (s: ReportRaw['sellers'][number]) => offeredSellers.has(s.id) || ['offer', 'contract', 'closed'].includes(stageGroup(s.stage));
   const contractedS = (s: ReportRaw['sellers'][number]) => (dealsBySeller.get(s.id) ?? []).some((d) => d.contract_date) || ['contract', 'closed'].includes(stageGroup(s.stage));
   const closedS = (s: ReportRaw['sellers'][number]) => (dealsBySeller.get(s.id) ?? []).some((d) => closedAt(d)) || stageGroup(s.stage) === 'closed';
+  const apptSellers = new Set((raw.appointments ?? []).filter((a) => !a.deleted_at && a.seller_id != null).map((a) => a.seller_id));
+  const appointed = (s: ReportRaw['sellers'][number]) => apptSellers.has(s.id) || /appointment/i.test(s.stage) || offered(s);
   const commsNote = raw.commsCapped ? ' Only the most recent communications are loaded, so long ranges undercount.' : '';
   const callNote = 'A call is credited to whoever made or took it: the rep on the call, else the owner of the team line it used (Settings → Numbers), else the seller\'s rep. One with none of those shows under its line\'s name.' + commsNote;
 
@@ -338,8 +358,8 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
 
   const funnel = (cohort: ReportRaw['sellers'], title: string): Block => {
     const steps = [
-      ['Leads', cohort.length], ['Contacted', cohort.filter(contacted).length], ['Offer made', cohort.filter(offered).length],
-      ['Under contract', cohort.filter(contractedS).length], ['Closed', cohort.filter(closedS).length],
+      ['Leads', cohort.length], ['Contacted', cohort.filter((s) => contacted(s) || appointed(s)).length], ['Appointment', cohort.filter(appointed).length],
+      ['Offer made', cohort.filter(offered).length], ['Under contract', cohort.filter(contractedS).length], ['Closed', cohort.filter(closedS).length],
     ] as [string, number][];
     return {
       kind: 'funnel', title, sub: 'leads created in range, how far each got', empty: 'No leads were created in this range.', half: true,
@@ -347,7 +367,87 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
     };
   };
 
+  // ---- diagrams (components/reporting/diagrams), each over the figures its home tab's table shows ----
+  const dia = {
+    funnel: (): Block => {
+      const f = funnel(newLeads, 'Lead funnel') as Extract<Block, { kind: 'funnel' }>;
+      return { kind: 'diagram', half: true, title: f.title, sub: 'leads created in range and how far each got, cold to hot', empty: f.empty, diagram: { type: 'funnel', steps: f.steps } };
+    },
+    leadflow: (): Block => {
+      const STAGES: [string, string][] = [['lead', 'New'], ['working', 'Working'], ['offer', 'Offer'], ['contract', 'Contract'], ['closed', 'Closed'], ['dead', 'Dead']];
+      const idx = (xs: string[], k: string) => { const i = xs.indexOf(k); return i < 0 ? xs.push(k) - 1 : i; };
+      const tally = (key: (s: ReportRaw['sellers'][number]) => string) => {
+        const m = new Map<string, number>();
+        for (const s of newLeads) m.set(key(s), (m.get(key(s)) ?? 0) + 1);
+        return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 7).map(([k]) => k);
+      };
+      // The top sources and reps by volume keep their names; the rest fold into Other so the ribbons stay readable.
+      const top = tally((s) => s.source || 'Unknown');
+      const topReps = tally((s) => repName(s.assigned_to));
+      const sources: string[] = [], reps: string[] = [], stages: string[] = [];
+      const flows = new Map<string, { source: number; rep: number; stage: number; n: number }>();
+      for (const s of newLeads) {
+        const src = idx(sources, top.includes(s.source || 'Unknown') ? s.source || 'Unknown' : 'Other');
+        const rep = idx(reps, topReps.includes(repName(s.assigned_to)) ? repName(s.assigned_to) : 'Other');
+        const g = stageGroup(s.stage);
+        const stage = idx(stages, STAGES.find(([k]) => k === g)?.[1] ?? 'Other');
+        const key = `${src}/${rep}/${stage}`;
+        const f = flows.get(key) ?? { source: src, rep, stage, n: 0 };
+        f.n++;
+        flows.set(key, f);
+      }
+      const order = (xs: string[], want: string[]) => { const ord = [...xs].sort((a, b) => (want.indexOf(a) + 1 || 99) - (want.indexOf(b) + 1 || 99)); return { xs: ord, map: xs.map((k) => ord.indexOf(k)) }; };
+      const st = order(stages, STAGES.map(([, l]) => l));
+      const so = order(sources, top);
+      return { kind: 'diagram', title: 'Lead flow', sub: 'leads created in range: where they came from, who got them, where they are now', empty: 'No leads were created in this range.',
+        diagram: { type: 'leadflow', sources: so.xs, reps, stages: st.xs, flows: [...flows.values()].map((f) => ({ ...f, source: so.map[f.source], stage: st.map[f.stage] })) } };
+    },
+    dataflow: (): Block => {
+      const comms = raw.comms.filter((c) => cur(c.occurred_at));
+      const n = (x: number, unit: string) => `${num(x)} ${unit}${x === 1 ? '' : 's'}`;
+      const leadsFrom = (re: RegExp) => newLeads.filter((s) => re.test(s.source ?? '')).length;
+      const underwritten = raw.deals.filter((d) => d.arv != null && cur(d.created_at)).length;
+      const counts: Record<string, string> = {
+        talkr: `${n(comms.filter(isCall).length, 'call')} · ${n(comms.filter((c) => c.channel === 'sms').length, 'text')}`,
+        gmail: n(comms.filter((c) => c.channel === 'email').length, 'email'),
+        dealmachine: n(leadsFrom(/deal\s*machine/i), 'lead'),
+        podio: n(leadsFrom(/podio/i), 'lead'),
+        compr: raw.partial === 'loading' ? 'loading…' : raw.partial === 'failed' ? 'not loaded' : n(underwritten, 'deal') + ' underwritten',
+        clozr: `${n(newLeads.length, 'lead')} · ${n(raw.deals.filter((d) => cur(d.created_at)).length, 'deal')}`,
+        buyr: n(raw.matches.filter((m) => cur(m.sent_at)).length, 'deal send'),
+        esign: n(raw.contracts.filter((c) => cur(c.sent_at)).length, 'contract') + ' sent',
+        ads: 'no spend on file',
+        reports: `${REPORT_TABS.length} tabs`,
+        sequences: 'sends not loaded here',
+      };
+      return { kind: 'diagram', title: 'Data flow', sub: 'where CLOZR\'s data comes from and where it goes, with this range\'s counts', empty: '', diagram: { type: 'dataflow', counts } };
+    },
+    org: (): Block => ({
+      kind: 'diagram', title: 'Team', sub: 'who reports to whom, with each rep\'s calls, offers and contracts in range', empty: 'No teammates in this workspace yet.',
+      diagram: { type: 'org', people: [...new Map(raw.members.map((m) => [m.id, m])).values()].map((m) => { const x = repMetrics(raw, r, m.id); return { id: m.id, name: m.name, role: m.role, calls: x.calls, offers: x.offers, contracts: x.contracts, closings: x.closings }; }) },
+    }),
+    pipeline: (half = true): Block => {
+      const today = (opts.now ?? new Date()).getTime();
+      const active = raw.deals.filter((d) => (ACTIVE_DEAL_STAGES as string[]).includes(d.stage));
+      const stages = (ACTIVE_DEAL_STAGES as string[]).map((k) => {
+        const ds = active.filter((d) => d.stage === k);
+        const days = median(ds.map((d) => ts(d.stage_entered_at)).filter((t): t is number => t !== null).map((t) => Math.max(0, (today - t) / DAY)));
+        return { k, n: ds.length, days: days === null ? null : Math.round(days), fees: sum(ds.map(fee)) };
+      });
+      stages.push({ k: 'Closed', n: closedDeals.length, days: null, fees: sum(closedDeals.map(fee)) });
+      return { kind: 'diagram', half, title: 'Dispo pipeline', sub: 'active inventory by stage with median days in stage; Closed is this range', empty: 'No active inventory and nothing closed in this range.', diagram: { type: 'pipeline', stages } };
+    },
+    timeline: (): Block => {
+      const events = closedDeals.map((d) => ({ t: ts(closedAt(d))!, label: addr(d), fee: fee(d) })).sort((a, b) => a.t - b.t);
+      const start = Number.isFinite(r.start) ? r.start : events.length ? events[0].t - DAY : r.end - 30 * DAY;
+      return { kind: 'diagram', title: 'Closings timeline', sub: 'each closing on its close date, marker size by assignment fee', empty: 'Nothing closed in this range.', diagram: { type: 'timeline', start, end: r.end, total: sum(events.map((e) => e.fee)), events } };
+    },
+  };
+
   switch (tab) {
+    case FLOWS_TAB:
+      return [dia.funnel(), dia.pipeline(), dia.leadflow(), dia.org(), dia.timeline(), dia.dataflow()];
+
     case 'Acquisitions': {
       const reps = raw.members.filter((m) => ['owner', 'admin', 'acquisitions', 'partnerships', 'member'].includes(m.role) || newLeads.some((s) => s.assigned_to === m.id));
       const rows = [...reps.map((m) => m.id), null].map((id) => {
@@ -393,6 +493,7 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
       const bars: Block = { kind: 'bars', rows: true, title: 'Leads by source', half: true, empty: 'No leads in this range.', items: rows.slice(0, 12).map((x) => ({ label: x.k, value: x.leads, tip: `${x.k} · ${x.leads} leads` })) };
       if (tab === 'Lead Sources') {
         return [
+          dia.leadflow(),
           { kind: 'kpis', items: [
             { k: 'Sources', v: num(rows.length) }, { k: 'New leads', v: num(newLeads.length) },
             { k: 'Best converting', v: rows.filter((x) => x.leads >= 3).sort((a, b) => b.contracts / b.leads - a.contracts / a.leads)[0]?.k ?? '—' },
@@ -451,6 +552,7 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
     case 'Team': {
       const rows = teamRows(raw, r);
       return [
+        dia.org(),
         { kind: 'table', title: 'Leaderboard', sub: callNote + ' Revenue credits both the acquisitions owner and the dispo rep on a closed deal.',
           cols: ['#', 'Rep', 'Role', 'Calls', 'Talk time', 'Texts', 'Offers', 'Contracts', 'Closings', 'Revenue'],
           rows: rows.map((x, i) => [String(i + 1), repName(x.id), raw.members.find((m) => m.id === x.id)?.role ?? '—', num(x.calls), dur(x.talk), num(x.texts), num(x.offers), num(x.contracts), num(x.closings), usd(x.revenue)]),
@@ -522,6 +624,7 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
       const matches = raw.matches.filter((m) => cur(m.sent_at));
       const fees = closedDeals.map(fee).filter((n) => n > 0);
       return [
+        dia.pipeline(false),
         { kind: 'kpis', items: [
           { k: 'Active inventory', v: num(active.length), d: 'right now', dColor: MUTED },
           { k: 'Median days on market', v: (() => { const m = median(active.map(dom).filter((x): x is number => x !== null)); return m === null ? '—' : Math.round(m) + 'd'; })() },
@@ -576,6 +679,7 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
         .sort((a, b) => a.when - b.when);
       const rev = sum(closedDeals.map(fee));
       return [
+        dia.timeline(),
         { kind: 'kpis', items: [
           { k: 'Closed', v: num(closedDeals.length), ...delta(closedDeals.length, r.prevStart === null ? null : prevClosed.length) },
           { k: 'Revenue', v: usd(rev), ...delta(rev, r.prevStart === null ? null : sum(prevClosed.map(fee)), true) },
@@ -646,7 +750,8 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
       return [
         { kind: 'kpis', items },
         { kind: 'bars', title: 'Assignment revenue', sub: 'by close date', empty: 'Nothing closed in this range.', items: series(r, closedDeals.map((d) => ({ t: ts(closedAt(d)), v: fee(d) })), usd) },
-        funnel(newLeads, 'Conversion funnel'),
+        // The funnel diagram draws the same steps the Acquisitions tab's bar funnel shows.
+        dia.funnel(),
         ...(raw.commsCapped && !raw.partial ? [{ kind: 'note' as const, half: true, title: 'Long ranges', text: 'Only the most recent communications are loaded, so leads contacted reads low over long ranges.' }] : []),
         { kind: 'bars', half: true, title: 'New leads', empty: 'No leads were created in this range.', items: series(r, newLeads.map((s) => ({ t: ts(s.created_at), v: 1 })), (v) => num(v) + ' leads') },
       ];
@@ -662,6 +767,14 @@ export function reportCsv(blocks: Block[]): string[][] {
     if (b.kind === 'table' && b.rows.length) { out.push([], [b.title], b.cols, ...b.rows); }
     if (b.kind === 'bars' && b.items.length) { out.push([], [b.title], ...b.items.map((i) => [i.label, String(i.value)])); }
     if (b.kind === 'funnel') { out.push([], [b.title], ...b.steps.map((s) => [s.k, String(s.n), s.rate])); }
+    if (b.kind === 'diagram') {
+      const d = b.diagram;
+      if (d.type === 'funnel') out.push([], [b.title], ...d.steps.map((s) => [s.k, String(s.n), s.rate]));
+      if (d.type === 'pipeline') out.push([], [b.title], ['Stage', 'Deals', 'Median days in stage'], ...d.stages.map((s) => [s.k, String(s.n), s.days === null ? '' : String(s.days)]));
+      if (d.type === 'leadflow') out.push([], [b.title], ['Source', 'Rep', 'Stage', 'Leads'], ...d.flows.map((f) => [d.sources[f.source], d.reps[f.rep], d.stages[f.stage], String(f.n)]));
+      if (d.type === 'org') out.push([], [b.title], ['Rep', 'Role', 'Calls', 'Offers', 'Contracts', 'Closings'], ...d.people.map((p) => [p.name, p.role, String(p.calls), String(p.offers), String(p.contracts), String(p.closings)]));
+      if (d.type === 'timeline') out.push([], [b.title], ['Property', 'Closed', 'Fee'], ...d.events.map((e) => [e.label, shortDay(e.t), String(e.fee)]));
+    }
   }
   return out;
 }

@@ -47,7 +47,7 @@ export function DialerLauncher({ V }: { V: ClozrView }) {
       title={live ? 'Talkr dialer · call in progress' : 'Talkr dialer'}
       aria-label={live ? 'Talkr dialer, call in progress' : 'Talkr dialer'}
       style={{
-        position: 'relative', width: 44, height: 44, borderRadius: 12, border: '1px solid #e4e4e7', background: '#fff',
+        position: 'relative', width: 44, height: 44, borderRadius: 12, border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)',
         cursor: 'pointer', display: 'grid', placeItems: 'center',
         boxShadow: '0 1px 2px rgba(18,20,28,0.05),0 10px 28px -10px rgba(18,22,40,0.13)',
       }}

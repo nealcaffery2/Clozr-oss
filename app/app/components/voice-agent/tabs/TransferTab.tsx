@@ -107,10 +107,10 @@ export function TransferTab({ form, canEdit, goTo }: TabCtx) {
                 const on = lt.triggers[t.key];
                 return (
                   <label key={t.key} id={fieldId(`live_transfer.triggers.${t.key}`)} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 10, cursor: off ? 'not-allowed' : 'pointer',
-                    border: `1px solid ${on ? '#0A8560' : LINE}`, background: on ? '#E7F8F1' : '#fff' }}>
-                    <input type="checkbox" checked={on} disabled={off} onChange={(e) => set(['live_transfer', 'triggers', t.key], e.target.checked)} style={{ width: 16, height: 16, marginTop: 2, accentColor: '#0A8560', flex: 'none' }} />
+                    border: `1px solid ${on ? '#0A8560' : LINE}`, background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)' }}>
+                    <input type="checkbox" checked={on} disabled={off} onChange={(e) => set(['live_transfer', 'triggers', t.key], e.target.checked)} style={{ width: 16, height: 16, marginTop: 2, accentColor: 'var(--tx-mint, #0a8560)', flex: 'none' }} />
                     <span style={{ minWidth: 0 }}>
-                      <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: on ? '#0A8560' : INK }}>{t.label}</span>
+                      <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: on ? 'var(--tx-mint, #0a8560)' : INK }}>{t.label}</span>
                       <span style={{ display: 'block', fontSize: 12, color: MUTED, lineHeight: 1.4 }}>{t.hint}</span>
                     </span>
                   </label>
@@ -132,7 +132,7 @@ export function TransferTab({ form, canEdit, goTo }: TabCtx) {
                       <div key={c.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <TextField id={fieldId(`${p}.text`)} value={c.text} disabled={off} placeholder="the caller mentions a tenant who will not leave" error={err} onChange={(v) => set(['live_transfer', 'triggers', 'custom', i, 'text'], v)} />
-                          {err ? <p id={`${fieldId(`${p}.text`)}-err`} role="alert" style={{ margin: '4px 0 0', fontSize: 12, color: '#b91c1c' }}>{err}</p> : null}
+                          {err ? <p id={`${fieldId(`${p}.text`)}-err`} role="alert" style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--tx-red, #b91c1c)' }}>{err}</p> : null}
                         </div>
                         {canEdit ? <ItemControls i={i} count={lt.triggers.custom.length} what={`trigger ${i + 1}`} onMove={(dir) => set(['live_transfer', 'triggers', 'custom'], moveItem(lt.triggers.custom, i, dir))} onRemove={() => set(['live_transfer', 'triggers', 'custom'], removeAt(lt.triggers.custom, i))} /> : null}
                       </div>

@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { armDrop } from '@/lib/busy-drop';
 import { readPrefs, savePrefs, DIAL_PREFS_CHANGED } from '@/lib/dial-session';
+import { onPhoneBusy, phoneBusy } from '@/lib/phone-busy';
 import { clipClock, MAX_RVM_SECONDS } from '@/lib/rvm-pick';
 import { useVmLibrary, VM_LIBRARY_CHANGED, type VmClip } from './useVmLibrary';
 import { Button } from './ui';
@@ -67,17 +68,35 @@ export function useArmBusyDrop(workspaceId: number | null, userId: string | null
       return;
     }
     let live = true;
+    let timer = 0;
+    /** A refresh came due while nobody could need the URL, so it may have expired. */
+    let stale = false;
+    // Fresh while the rep can see the tab, and in a hidden tab while a call or
+    // dial session is up there (lib/phone-busy): a second answer only reaches a
+    // tab on a call. The URL lasts 120 seconds; a refresh every 90 keeps it live.
+    const due = () => !document.hidden || phoneBusy();
     const sign = () => {
+      stale = false;
       void signedUrl(pick.audio_path!).then((url) => {
         if (!live) return;
         armDrop({ clipId: pick.id, name: pick.name, script: pick.script ?? '', url, urlUntil: Date.now() + 120_000 });
       }).catch(() => { if (live) armDrop(null); });
+      timer = window.setTimeout(refresh, 90_000);
     };
-    sign();
-    const timer = window.setInterval(sign, 90_000);
+    const refresh = () => {
+      if (due()) sign();
+      else stale = true;
+    };
+    // Shown again, or a call starting in a hidden tab, after a skipped refresh: sign at once.
+    const wake = () => { if (stale && due()) sign(); };
+    refresh();
+    document.addEventListener('visibilitychange', wake);
+    const offBusy = onPhoneBusy(wake);
     return () => {
       live = false;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', wake);
+      offBusy();
     };
   }, [clips, signedUrl, workspaceId, userId, prefsRev]);
 }
@@ -276,7 +295,7 @@ export function VoicemailDropPanel({ workspaceId, userId }: { workspaceId: numbe
         <div className="flex flex-wrap items-center gap-2">
           <Button tone="green" onClick={() => void start()}>Record voicemail</Button>
           {chosen ? (
-            <span style={{ font: '600 12px/1.3 var(--sans)', color: 'var(--green, #0A8560)' }}>
+            <span style={{ font: '600 12px/1.3 var(--sans)', color: 'var(--green, #0a8560)' }}>
               Drop VM plays “{chosen.name}”{chosen.seconds ? ` · ${clipClock(chosen.seconds)}` : ''}
             </span>
           ) : (
@@ -309,7 +328,7 @@ export function VoicemailDropPanel({ workspaceId, userId }: { workspaceId: numbe
         </ul>
       )}
       {playUrl && phase === 'idle' ? <audio controls autoPlay src={playUrl} style={{ width: '100%', height: 36 }} aria-label="Play the saved voicemail" /> : null}
-      {(err || lib.error) && <span role="alert" style={{ ...HELP, color: '#b91c1c' }}>{err || lib.error}</span>}
+      {(err || lib.error) && <span role="alert" style={{ ...HELP, color: 'var(--tx-red, #b91c1c)' }}>{err || lib.error}</span>}
     </div>
   );
 }

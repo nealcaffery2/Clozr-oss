@@ -9,17 +9,17 @@ import {
   addGroups, loadDealMachine, removeGroup, saveSettings, sendCommand, since, updateGroup,
 } from '@/lib/deal-machine';
 
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '14px', padding: '14px 16px' };
-const h2: React.CSSProperties = { margin: '0 0 4px', fontSize: '14px', fontWeight: 650, color: '#18181b' };
-const sub: React.CSSProperties = { margin: '0 0 12px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.45 };
-const input: React.CSSProperties = { height: '34px', padding: '0 10px', borderRadius: '9px', border: '1px solid #d4d4d8', background: '#fff', fontSize: '13px', color: '#18181b', width: '100%', outline: 'none' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '14px', padding: '14px 16px' };
+const h2: React.CSSProperties = { margin: '0 0 4px', fontSize: '14px', fontWeight: 650, color: 'var(--ink, #18181b)' };
+const sub: React.CSSProperties = { margin: '0 0 12px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.45 };
+const input: React.CSSProperties = { height: '34px', padding: '0 10px', borderRadius: '9px', border: '1px solid var(--line, #d4d4d8)', background: 'var(--surface, #fff)', fontSize: '13px', color: 'var(--ink, #18181b)', width: '100%', outline: 'none' };
 const textarea: React.CSSProperties = { ...input, height: 'auto', minHeight: '72px', padding: '8px 10px', fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.4 };
-const th: React.CSSProperties = { textAlign: 'left', fontSize: '11px', color: '#71717a', fontWeight: 600, padding: '8px 10px', borderBottom: '1px solid #f0f0f1', whiteSpace: 'nowrap' };
-const td: React.CSSProperties = { padding: '9px 10px', fontSize: '12.5px', borderBottom: '1px solid #f0f0f1', color: '#18181b', verticalAlign: 'middle' };
+const th: React.CSSProperties = { textAlign: 'left', fontSize: '11px', color: 'var(--meta, #71717a)', fontWeight: 600, padding: '8px 10px', borderBottom: '1px solid var(--divider-2, #f0f0f1)', whiteSpace: 'nowrap' };
+const td: React.CSSProperties = { padding: '9px 10px', fontSize: '12.5px', borderBottom: '1px solid var(--divider-2, #f0f0f1)', color: 'var(--ink, #18181b)', verticalAlign: 'middle' };
 
 function Btn({ onClick, disabled, children, solid }: { onClick?: () => void; disabled?: boolean; children: React.ReactNode; solid?: boolean }) {
   return (
-    <button type="button" disabled={disabled} onClick={onClick} style={{ height: '30px', padding: '0 10px', borderRadius: '8px', border: `1px solid ${solid ? BUYR : '#e4e4e7'}`, background: solid ? BUYR : '#fff', color: solid ? '#fff' : '#18181b', fontSize: '12px', fontWeight: 650, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1 }}>
+    <button type="button" disabled={disabled} onClick={onClick} style={{ height: '30px', padding: '0 10px', borderRadius: '8px', border: `1px solid ${solid ? BUYR : 'var(--divider, #e4e4e7)'}`, background: solid ? BUYR : 'var(--surface, #fff)', color: solid ? 'var(--surface, #fff)' : 'var(--ink, #18181b)', fontSize: '12px', fontWeight: 650, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1 }}>
       {children}
     </button>
   );
@@ -95,7 +95,7 @@ export function FbGroupsPanel({ workspaceId, canOperate, onToast }: {
           <input type="checkbox" checked={!!fb?.autoJoin} disabled={!canOperate || busy || !state} onChange={(e) => void setFacebook({ autoJoin: e.target.checked })} />
           <span><strong>Auto-join discovered groups</strong> — the discovery step sends join requests instead of only listing what it found.</span>
         </label>
-        {note ? <p style={{ ...sub, margin: '10px 0 0', color: '#3f3f46' }}>{note}</p> : null}
+        {note ? <p style={{ ...sub, margin: '10px 0 0', color: 'var(--ink-3, #3f3f46)' }}>{note}</p> : null}
       </div>
 
       <div style={card}>
@@ -149,7 +149,7 @@ function GroupRow({ g, slug, canOperate, onChange }: { g: DmGroup; slug: string;
         <input type="checkbox" checked={g.active} disabled={!canOperate} onChange={() => void updateGroup(g.id, { active: !g.active }).then(onChange)} />
       </td>
       <td style={td}>
-        <a href={g.url} target="_blank" rel="noreferrer" style={{ color: '#18181b', fontWeight: 600, textDecoration: 'none' }}>{g.name ?? slug}</a>
+        <a href={g.url} target="_blank" rel="noreferrer" style={{ color: 'var(--ink, #18181b)', fontWeight: 600, textDecoration: 'none' }}>{g.name ?? slug}</a>
       </td>
       <td style={td}>{g.tags.join(', ') || '—'}</td>
       <td style={td}>{g.members !== null ? g.members.toLocaleString() : '—'}</td>

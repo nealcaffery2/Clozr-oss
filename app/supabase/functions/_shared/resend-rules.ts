@@ -53,6 +53,14 @@ export function suggestBlastFrom(company: string | null | undefined, domain: str
   return name ? `${name} <deals@deals.${root}>` : `deals@deals.${root}`;
 }
 
+/** Resend refuses the whole send (422) when a tag name or value has anything but ASCII letters, digits, _ or -. */
+export function resendTags(tags: Record<string, string>): Array<{ name: string; value: string }> {
+  const clean = (s: string) => String(s).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 256);
+  return Object.entries(tags)
+    .map(([name, value]) => ({ name: clean(name), value: clean(value) || 'none' }))
+    .filter((t) => t.name);
+}
+
 export type ResendEventKind = 'hard_bounce' | 'complaint' | 'delivered' | 'ignored';
 
 export function classifyResendEvent(type: string, bounceType?: string | null): ResendEventKind {

@@ -3,7 +3,7 @@
 // Run with:  npx tsx tools/deliverability.test.ts
 import assert from 'node:assert/strict';
 import {
-  type MailboxSettings, WARMUP_START, autoPauseReason, cycleOrder, dailyAllowance, dayStartUtc, dkimKeyBits, evaluateDkim, evaluateDmarc, evaluateSpf,
+  type MailboxSettings, WARMUP_START, autoPauseReason, cycleOrder, dailyAllowance, dayStartUtc, dkimKeyBits, evaluateDkim, evaluateDmarc, evaluateSpf, placeDnsFixes, postmasterDaysV2, zoneOf, POSTMASTER_V2_METRICS,
   healthScore, joinTxt, limitsFor, nextWindowStart, parseBounce, parseDmarc, preflight, rampDay, refusal, repBlastAddress, repBlastAddresses, repSenderPool, spamRisk, spfLookups, withInclude,
 } from '../supabase/functions/_shared/deliverability-rules';
 import { type Book, linkFor, repFor } from '../supabase/functions/_shared/gmail-match';
@@ -36,6 +36,45 @@ async function main() {
   assert.equal(evaluateSpf('d.com', [], { count: 0, errors: [] }, ['_spf.google.com'])[0].fix!.value, 'v=spf1 include:_spf.google.com ~all');
   assert.equal(withInclude('v=spf1 mx -all', '_spf.google.com'), 'v=spf1 mx include:_spf.google.com -all');
   assert.equal(joinTxt('"v=spf1 include:a" " -all"'), 'v=spf1 include:a -all', 'split TXT strings join');
+  // ---- Postmaster v2 domainStats:query rows fold into one day each (v1 trafficStats is retired)
+  const pmDays = postmasterDaysV2([
+    { metric: 'spam', value: { doubleValue: 0.0012 }, date: { year: 2026, month: 10, day: 12 } },
+    { metric: 'spf', value: { doubleValue: 1 }, date: { year: 2026, month: 10, day: 12 } },
+    { metric: 'dkim', value: { floatValue: 0.99 }, date: { year: 2026, month: 10, day: 12 } },
+    { metric: 'dmarc', value: { doubleValue: 98.5 }, date: { year: 2026, month: 10, day: 12 } },
+    { metric: 'errors', value: { doubleValue: 0.02 }, date: { year: 2026, month: 10, day: 12 } },
+    { metric: 'spam', value: { doubleValue: 0 }, date: { year: 2026, month: 10, day: 3 } },
+    { metric: 'spam', value: {}, date: { year: 2026, month: 10, day: 4 } },
+    { metric: 'spam', value: { doubleValue: 0.5 } },
+  ]);
+  assert.deepEqual(pmDays.map((d) => d.date), ['2026-10-03', '2026-10-04', '2026-10-12'], 'one row per date, oldest first; rows without a date are dropped');
+  assert.deepEqual(pmDays[2], { date: '2026-10-12', reputation: null, spam: 0.0012, spf: 1, dkim: 0.99, dmarc: 0.985, errors: 0.02, error_types: [] }, 'a rate over 1 is read as a percent');
+  assert.equal(pmDays[0].spam, 0, 'a zero spam rate is kept');
+  assert.equal(pmDays[1].spam, null, 'an empty value is no data');
+  assert.equal(postmasterDaysV2([]).length, 0);
+  assert.deepEqual(POSTMASTER_V2_METRICS.map((m) => m.name), ['spam', 'spf', 'dkim', 'dmarc', 'errors']);
+
+  // ---- Fix cards say exactly what to type (the Compr blast domain went to the root via "@")
+  assert.equal(evaluateSpf('f.com', [], { count: 0, errors: [] }, [])[0].fix, undefined, 'no v=spf1 ~all that authorises nobody');
+  assert.match(evaluateSpf('g.com', ['v=spf1 a ~all'], { count: 1, errors: [] }, ['amazonses.com'])[0].fix!.note!, /Do not add a second/);
+  assert.equal(zoneOf('deals.thecompr.ai'), 'thecompr.ai');
+  assert.equal(zoneOf('mail.acme.co.uk'), 'acme.co.uk');
+  const placed = placeDnsFixes([
+    ...evaluateSpf('deals.thecompr.ai', [], { count: 0, errors: [] }, ['amazonses.com']),
+    { ...evaluateSpf('send.deals.thecompr.ai', [], { count: 0, errors: [] }, ['amazonses.com'])[0], key: 'spf_resend', fix: { type: 'TXT', host: 'send', value: 'v=spf1 include:amazonses.com ~all' } },
+    ...evaluateDkim('deals.thecompr.ai', [{ selector: 'resend', txts: [] }], { google: false, resend: true }),
+    ...evaluateDmarc('deals.thecompr.ai', []),
+  ], 'deals.thecompr.ai');
+  const at = (k: string) => placed.find((c) => c.key === k)!.fix!;
+  assert.deepEqual([at('spf').host, at('spf').fqdn], ['deals', 'deals.thecompr.ai'], 'subdomain SPF is "deals", not "@"');
+  assert.equal(at('spf_resend').host, 'send.deals');
+  assert.equal(at('dkim_resend').host, 'resend._domainkey.deals');
+  assert.equal(at('dkim_resend').paste, false, 'the Resend DKIM card is an instruction, not a value to paste');
+  assert.doesNotMatch(at('dkim_resend').value, /[<>]/);
+  assert.match(at('dkim_resend').note!, /not your Resend API key/);
+  assert.equal(at('dmarc').host, '_dmarc.deals');
+  assert.equal(placeDnsFixes(evaluateSpf('acme.com', [], { count: 0, errors: [] }, ['_spf.google.com']), 'acme.com')[0].fix!.host, '@', 'the zone itself stays "@"');
+
   const tooMany = evaluateSpf('e.com', ['v=spf1 include:_spf.google.com ~all'], { count: 12, errors: [] }, ['_spf.google.com']);
   assert.ok(tooMany.find((c) => c.key === 'spf_lookups')!.blocking, 'over 10 lookups blocks');
 

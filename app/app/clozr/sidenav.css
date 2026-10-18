@@ -13,7 +13,7 @@
   flex-direction: column;
   gap: 10px;
   padding: 12px 12px 8px;
-  background: #fcfcfc;
+  background: var(--nav-bg, #fcfcfc);
   border-right: 1px solid #e4e4e7;
   position: relative;
   z-index: 41;
@@ -39,7 +39,7 @@
   border-radius: 8px;
   background: none;
   cursor: pointer;
-  color: #18181b;
+  color: var(--ink, #18181b);
 }
 .is-folded .cz-side-logo { margin: 0; padding: 0; }
 
@@ -62,22 +62,22 @@
   flex: 1;
   min-width: 0;
   padding: 0 10px;
-  background: #fff;
-  color: #71717a;
+  background: var(--surface, #fff);
+  color: var(--meta, #71717a);
   box-shadow: 0 0 0 1px rgba(24, 24, 27, .08), 0 1px 2px -1px rgba(24, 24, 27, .08);
 }
 .cz-side-search kbd {
   font: 600 11px/1 var(--font-sans);
-  color: #71717a;
-  border: 1px solid #e4e4e7;
+  color: var(--meta, #71717a);
+  border: 1px solid var(--divider, #e4e4e7);
   border-radius: 5px;
   padding: 2px 5px;
-  background: #fff;
+  background: var(--surface, #fff);
 }
 .cz-side-add {
   padding: 0 11px;
-  background: #18181b;
-  color: #fff;
+  background: var(--ink, #18181b);
+  color: var(--surface, #fff);
   font-weight: 600;
 }
 .is-folded .cz-side-search,
@@ -97,7 +97,7 @@
   padding: 0 10px 4px;
   font-size: 11.5px;
   font-weight: 500;
-  color: #71717a;
+  color: var(--meta, #71717a);
 }
 
 .cz-side-link {
@@ -110,7 +110,7 @@
   border: 0;
   border-radius: 8px;
   background: none;
-  color: #3f3f46;
+  color: var(--ink-3, #3f3f46);
   font-size: 13.5px;
   font-weight: 500;
   text-align: left;
@@ -120,14 +120,14 @@
 }
 .cz-side-link.is-tool { height: 28px; font-size: 13px; }
 .cz-side-link[aria-current='page'] {
-  background: #fff;
-  color: #18181b;
+  background: var(--surface, #fff);
+  color: var(--ink, #18181b);
   font-weight: 600;
   box-shadow: 0 0 0 1px rgba(24, 24, 27, .07), 0 1px 2px rgba(24, 24, 27, .05);
 }
-.cz-side-link[aria-current='page'] > svg { color: var(--c-accent, #0A8560); }
+.cz-side-link[aria-current='page'] > svg { color: var(--c-accent, #0a8560); }
 .is-folded .cz-side-link { width: 40px; height: 36px; padding: 0; justify-content: center; }
-.is-folded .cz-side-link[aria-current='page'] { background: var(--c-accent-soft, #E7F8F1); box-shadow: none; }
+.is-folded .cz-side-link[aria-current='page'] { background: var(--c-accent-soft, #e7f8f1); box-shadow: none; }
 
 /* The selected pill is one element that glides between sections (SideNav.tsx,
    motion.ts placePill). The link keeps its own fill until the pill is placed,
@@ -140,20 +140,20 @@
   height: 0;
   opacity: 0;
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface, #fff);
   box-shadow: 0 0 0 1px rgba(24, 24, 27, .07), 0 1px 2px rgba(24, 24, 27, .05);
   pointer-events: none;
   /* Under every label and link it passes on the way (the nav is its own stacking context). */
   z-index: -1;
 }
-.is-folded .cz-side-pill { background: var(--c-accent-soft, #E7F8F1); box-shadow: none; }
+.is-folded .cz-side-pill { background: var(--c-accent-soft, #e7f8f1); box-shadow: none; }
 .cz-side[data-pill='on'] .cz-side-link[aria-current='page'] { background: transparent; box-shadow: none; }
 
 .cz-side-tool {
   width: 18px;
   height: 18px;
   border-radius: 5px;
-  background: #f4f4f5;
+  background: var(--surface-2, #f4f4f5);
   display: grid;
   place-items: center;
   flex: none;
@@ -168,7 +168,7 @@
   border: 0;
   border-radius: 8px;
   background: none;
-  color: #52525b;
+  color: var(--muted, #52525b);
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -184,7 +184,7 @@
   box-sizing: border-box;
   border-radius: 8px;
   border: 2px solid #fcfcfc;
-  background: var(--c-accent, #0A8560);
+  background: var(--c-accent, #0a8560);
   color: #fff;
   font-size: 11px;
   font-weight: 600;
@@ -198,7 +198,7 @@
   padding: 0 5px;
   box-sizing: border-box;
   border-radius: 9px;
-  background: var(--c-accent, #0A8560);
+  background: var(--c-accent, #0a8560);
   color: #fff;
   font-size: 11px;
   font-weight: 600;
@@ -228,14 +228,14 @@
   border-top: 1px solid #ececee;
   border-radius: 0;
   background: none;
-  color: #71717a;
+  color: var(--meta, #71717a);
   text-align: left;
   cursor: pointer;
 }
 .is-folded .cz-side-me { width: auto; padding: 8px 0 4px; justify-content: center; }
 .cz-side-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.cz-side-name { font-size: 13px; font-weight: 600; color: #18181b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cz-side-role { font-size: 11.5px; color: #71717a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cz-side-name { font-size: 13px; font-weight: 600; color: var(--ink, #18181b); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cz-side-role { font-size: 11.5px; color: var(--meta, #71717a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cz-side-fold {
   display: flex;
   align-items: center;
@@ -246,24 +246,24 @@
   border: 0;
   border-radius: 8px;
   background: none;
-  color: #71717a;
+  color: var(--meta, #71717a);
   font-size: 12px;
   cursor: pointer;
 }
 .is-folded .cz-side-fold { width: 40px; padding: 0; justify-content: center; }
 
 .cz-side :is(button):focus-visible {
-  outline: 2px solid var(--c-accent, #0A8560);
+  outline: 2px solid var(--c-accent, #0a8560);
   outline-offset: 2px;
 }
 .cz-side :is(.cz-side-link, .cz-side-search, .cz-side-add, .cz-side-icon, .cz-side-me, .cz-side-fold, .cz-side-logo) {
   transition: background-color 120ms ease, transform 140ms cubic-bezier(.23, 1, .32, 1);
 }
 @media (hover: hover) and (pointer: fine) {
-  .cz-side :is(.cz-side-link:not([aria-current='page']), .cz-side-icon, .cz-side-fold, .cz-side-logo):hover { background: #f1f1f2; }
-  .cz-side .cz-side-me:hover { background: #f4f4f5; }
-  .cz-side .cz-side-search:hover { background: #fafafa; }
-  .cz-side .cz-side-add:hover { background: #27272a; }
+  .cz-side :is(.cz-side-link:not([aria-current='page']), .cz-side-icon, .cz-side-fold, .cz-side-logo):hover { background: var(--nav-hover, #f1f1f2); }
+  .cz-side .cz-side-me:hover { background: var(--surface-2, #f4f4f5); }
+  .cz-side .cz-side-search:hover { background: var(--canvas, #fafafa); }
+  .cz-side .cz-side-add:hover { background: var(--ink-2, #27272a); }
 }
 .cz-side :is(button):active { transform: scale(.97); }
 @media (prefers-reduced-motion: reduce) {

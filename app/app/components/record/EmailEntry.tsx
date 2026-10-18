@@ -6,11 +6,12 @@
 // signature and the quoted thread under a reply fold behind "···", as Gmail
 // does, so a five-message thread does not print five times.
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { TimelineEntry } from '@/lib/clozr-types';
 import { cleanEmail, stripQuotedHtml } from '@/lib/email-text';
 import { EmailHtml } from '@/app/components/email/EmailHtml';
 import { useEmailDocument } from '@/app/components/email/useEmailDocument';
+import { EmailReceipt } from '@/app/components/inbox/ReceiptLine';
 
 type Email = NonNullable<TimelineEntry['email']>;
 
@@ -53,9 +54,10 @@ export function EmailEntry({ email, workspaceId, communicationId, onOpenInbox, o
   const [showRest, setShowRest] = useState(false);
   const [allTo, setAllTo] = useState(false);
   const doc = useEmailDocument(email.body, { workspaceId, communicationId });
-  const { text, rest } = cleanEmail(doc.html ? '' : email.body);
+  // Worked out once per body, not on every redraw of the feed around it.
+  const { text, rest } = useMemo(() => cleanEmail(doc.html ? '' : email.body), [doc.html, email.body]);
   // An HTML reply shows this message only; the thread under it is behind ···.
-  const htmlOnly = doc.html ? stripQuotedHtml(doc.html) : null;
+  const htmlOnly = useMemo(() => (doc.html ? stripQuotedHtml(doc.html) : null), [doc.html]);
   const html = doc.html ? (showRest || !htmlOnly ? doc.html : htmlOnly) : null;
   const long = !!doc.html || text.split('\n').length > PREVIEW_LINES || text.length > 360;
   const to = allTo ? email.to : email.to.slice(0, 2);
@@ -88,6 +90,10 @@ export function EmailEntry({ email, workspaceId, communicationId, onOpenInbox, o
       <div style={{ fontSize: '14px', fontWeight: 700, color: '#18181b', marginTop: '10px', lineHeight: 1.35, wordBreak: 'break-word' }}>
         {email.subject}
       </div>
+      {!email.inbound ? (
+        <EmailReceipt communicationId={communicationId ?? null} workspaceId={workspaceId ?? null}
+          demo={email.receipt ? { communication_id: communicationId ?? 0, last_opened_at: null, last_clicked_at: null, ...email.receipt } : null} />
+      ) : null}
 
       {html ? (
         <div style={{ marginTop: '8px' }}>

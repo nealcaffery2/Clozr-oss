@@ -114,3 +114,13 @@ verify_jwt = true
 [functions.dispogenius-sync]
 verify_jwt = true
 
+# Action-plan sends (migration 284). plan_kick posts the service-role JWT
+# every minute. The function checks isServiceCaller. The gateway keeps the
+# default, same as cold-campaign-tick.
+[functions.plan-tick]
+verify_jwt = true
+
+# Google Calendar push notifications: Google posts with no Supabase JWT; the
+# channel token stored by google-sync's watch.ts is the credential.
+[functions.google-calendar-push]
+verify_jwt = false

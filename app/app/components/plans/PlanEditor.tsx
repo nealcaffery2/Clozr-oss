@@ -7,11 +7,14 @@ import { SELLER_STAGE_LABELS } from '@/lib/stages';
 import { type OnComplete, type PlanDraft, type PlanSummary, type StepType, STEP_TYPES, TRIGGERS, delayLabel, routeSummary, stepMinutes, minutesToDelay } from '@/lib/plans';
 import type { PlansApi } from './usePlans';
 import { StepCard } from './StepCard';
+import { PlanResults } from './PlanResults';
 import { Btn, FAINT, INK, LINE, MINT, MUTED, PlayPause, Section, Toggle, ago, input, label, select, smallSelect, textarea } from './ui';
 
 const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
-export function PlanEditor({ api, draft, isMobile, onOpenPerson }: { api: PlansApi; draft: PlanDraft; isMobile: boolean; onOpenPerson?: (sellerId: number) => void }) {
+export function PlanEditor({ api, draft, isMobile, onOpenPerson, onOpenBuyer }: {
+  api: PlansApi; draft: PlanDraft; isMobile: boolean; onOpenPerson?: (sellerId: number) => void; onOpenBuyer?: (buyerId: number) => void;
+}) {
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(true);
   const others: PlanSummary[] = api.plans.filter((p) => p.id !== draft.id);
@@ -22,6 +25,11 @@ export function PlanEditor({ api, draft, isMobile, onOpenPerson }: { api: PlansA
   const enrolledDone = api.enrolled.filter((e) => e.status !== 'active' && e.status !== 'paused');
   const onIt = new Set([...enrolledActive, ...enrolledPaused].map((e) => e.seller_id));
   const candidates = api.sellers.filter((s) => !onIt.has(s.id));
+  const forBuyers = draft.settings.audience === 'buyer' || (api.enrolled.length > 0 && api.enrolled.every((e) => e.buyer_id != null));
+  const openRow = (e: (typeof api.enrolled)[number]) => {
+    if (e.buyer_id != null) onOpenBuyer?.(e.buyer_id);
+    else if (e.seller_id != null) onOpenPerson?.(e.seller_id);
+  };
   const route = draft.on_complete;
   const setRoute = (p: Partial<OnComplete>) => {
     const next = { ...route, ...p };
@@ -36,6 +44,22 @@ export function PlanEditor({ api, draft, isMobile, onOpenPerson }: { api: PlansA
 
   return (
     <>
+      {draft.id ? (
+        <PlanResults
+          progress={api.progressByPlan.get(draft.id) ?? null}
+          state={api.progressState}
+          error={api.progressError}
+          kind={api.resultsKind}
+          onKind={(kind) => api.openResults(draft.id!, kind)}
+          onRetry={() => void api.refreshProgress()}
+          onOpenBuyer={onOpenBuyer}
+          onOpenPerson={onOpenPerson}
+        />
+      ) : (
+        <Section title="Sends" style={{ marginBottom: '12px' }}>
+          <div style={{ fontSize: '12.5px', color: MUTED, lineHeight: 1.5 }}>Save the plan and enrol people to see what went out, what failed, and who replied.</div>
+        </Section>
+      )}
       <Section title="Plan">
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : '1fr 1fr', gap: '12px' }}>
           <label>
@@ -119,7 +143,7 @@ export function PlanEditor({ api, draft, isMobile, onOpenPerson }: { api: PlansA
                 </select>
               ) : null}
               {route.mode === 'smart' ? (
-                <div style={{ marginTop: '6px', border: `1px solid ${LINE}`, borderRadius: '8px', padding: '6px 10px', maxHeight: '168px', overflow: 'auto', background: '#fafafa' }}>
+                <div style={{ marginTop: '6px', border: `1px solid ${LINE}`, borderRadius: '8px', padding: '6px 10px', maxHeight: '168px', overflow: 'auto', background: 'var(--canvas, #fafafa)' }}>
                   {!others.length ? <span style={{ fontSize: '12px', color: MUTED }}>No other plans yet.</span> : null}
                   {others.map((p) => {
                     const on = route.candidate_ids.includes(p.id);
@@ -153,7 +177,7 @@ export function PlanEditor({ api, draft, isMobile, onOpenPerson }: { api: PlansA
                       const on = draft.settings.business_hours.days.includes(i);
                       return (
                         <button key={d} type="button" onClick={() => api.patchSettings({ business_hours: { ...draft.settings.business_hours, days: on ? draft.settings.business_hours.days.filter((x) => x !== i) : [...draft.settings.business_hours.days, i].sort() } })}
-                          style={{ width: '28px', height: '26px', borderRadius: '6px', border: `1px solid ${on ? MINT : LINE}`, background: on ? MINT : '#fff', color: on ? '#fff' : MUTED, fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                          style={{ width: '28px', height: '26px', borderRadius: '6px', border: `1px solid ${on ? MINT : LINE}`, background: on ? MINT : 'var(--surface, #fff)', color: on ? 'var(--surface, #fff)' : MUTED, fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                           {d}
                         </button>
                       );
@@ -183,7 +207,7 @@ export function PlanEditor({ api, draft, isMobile, onOpenPerson }: { api: PlansA
         </span>
       </div>
       {!draft.steps.length ? (
-        <div style={{ border: `1px dashed #d4d4d8`, borderRadius: '10px', padding: '18px', textAlign: 'center', fontSize: '12.5px', color: MUTED }}>
+        <div style={{ border: `1px dashed var(--line, #d4d4d8)`, borderRadius: '10px', padding: '18px', textAlign: 'center', fontSize: '12.5px', color: MUTED }}>
           No steps yet — add one above, or describe the plan in the AI box.
         </div>
       ) : null}
@@ -200,34 +224,40 @@ export function PlanEditor({ api, draft, isMobile, onOpenPerson }: { api: PlansA
       ))}
       <div style={{ display: 'grid', gridTemplateColumns: '26px minmax(0,1fr)', gap: '12px' }}>
         <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <span style={{ width: '26px', height: '26px', borderRadius: '999px', border: `1px solid ${LINE}`, background: '#fff', display: 'grid', placeItems: 'center', fontSize: '11px', color: FAINT }}>■</span>
+          <span style={{ width: '26px', height: '26px', borderRadius: '999px', border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', display: 'grid', placeItems: 'center', fontSize: '11px', color: FAINT }}>■</span>
         </div>
         <div style={{ fontSize: '12px', color: MUTED, padding: '5px 0' }}>
           Plan ends{routeLine ? `, ${routeLine}` : ', and the lead leaves it'}.
         </div>
       </div>
 
-      <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'hidden', marginTop: '18px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 16px', borderBottom: '1px solid #f0f0f1', flexWrap: 'wrap' }}>
-          <span style={{ fontWeight: 600, fontSize: '14px' }}>Enrolled sellers</span>
+      <div style={{ background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'hidden', marginTop: '18px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 16px', borderBottom: '1px solid var(--divider-2, #f0f0f1)', flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600, fontSize: '14px' }}>{forBuyers ? 'Enrolled buyers' : 'Enrolled sellers'}</span>
           <span style={{ fontSize: '11.5px', color: FAINT, fontVariantNumeric: 'tabular-nums' }}>{enrolledActive.length} playing{enrolledPaused.length ? ` · ${enrolledPaused.length} paused` : ''}{enrolledDone.length ? ` · ${enrolledDone.length} finished` : ''}</span>
           <div style={{ flex: 1 }} />
-          {draft.id ? (
+          {forBuyers ? (
+            <span style={{ fontSize: '12px', color: MUTED }}>Enrol buyers from the Buyers screen</span>
+          ) : draft.id ? (
             <select value="" onChange={(e) => { if (e.target.value) void api.enroll(Number(e.target.value)); }} style={{ ...smallSelect, width: 'auto', height: '30px', maxWidth: '260px' }}>
               <option value="">+ Enrol a seller…</option>
               {candidates.map((c) => <option key={c.id} value={c.id}>{c.name}{c.addr ? ` — ${c.addr}` : ''}</option>)}
             </select>
           ) : <span style={{ fontSize: '12px', color: MUTED }}>Save the plan to enrol sellers</span>}
         </div>
-        {!api.enrolled.length ? <div style={{ padding: '14px 16px', fontSize: '12.5px', color: MUTED }}>Nobody yet. Enrol from here, from a seller’s record, or with “Start action plan” on the People list.</div> : null}
+        {!api.enrolled.length ? (
+          <div style={{ padding: '14px 16px', fontSize: '12.5px', color: MUTED }}>
+            {forBuyers ? 'Nobody yet. Enrol from a buyer’s record, the Buyers bulk bar, or a Suggested campaign.' : 'Nobody yet. Enrol from here, from a seller’s record, or with “Start action plan” on the People list.'}
+          </div>
+        ) : null}
         {[...enrolledActive, ...enrolledPaused, ...enrolledDone].map((e) => {
           const pct = e.total ? Math.round((Math.min(e.step, e.total) / e.total) * 100) : 0;
           const paused = e.status === 'paused';
           const done = e.status !== 'active' && !paused;
           const note = paused ? 'paused' : done ? (e.stopped_reason && e.stopped_reason !== 'plan_paused' ? `stopped on ${e.stopped_reason}` : 'finished') : `enrolled ${ago(e.enrolled_at)}`;
           return (
-            <div key={e.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr) auto' : 'minmax(0,1fr) 160px auto', gap: '12px', alignItems: 'center', padding: '10px 16px', borderBottom: '1px solid #f0f0f1', opacity: done ? 0.65 : 1 }}>
-              <button type="button" className="dc12" onClick={() => onOpenPerson?.(e.seller_id)} style={{ textAlign: 'left', background: 'none', border: 0, padding: 0, cursor: onOpenPerson ? 'pointer' : 'default', minWidth: 0, fontFamily: 'inherit' }}>
+            <div key={e.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr) auto' : 'minmax(0,1fr) 160px auto', gap: '12px', alignItems: 'center', padding: '10px 16px', borderBottom: '1px solid var(--divider-2, #f0f0f1)', opacity: done ? 0.65 : 1 }}>
+              <button type="button" className="dc12" onClick={() => openRow(e)} style={{ textAlign: 'left', background: 'none', border: 0, padding: 0, cursor: (e.buyer_id != null ? onOpenBuyer : onOpenPerson) ? 'pointer' : 'default', minWidth: 0, fontFamily: 'inherit' }}>
                 <span style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, color: INK }}>{e.name}</span>
                 <span style={{ display: 'block', fontSize: '11px', color: FAINT }}>{e.addr || '—'} · {note}</span>
                 {(e.agent ?? []).map((a, i) => (
@@ -243,8 +273,8 @@ export function PlanEditor({ api, draft, isMobile, onOpenPerson }: { api: PlansA
                 ) : null}
               </button>
               <span style={{ display: isMobile ? 'none' : 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ flex: 1, height: '4px', borderRadius: '2px', background: '#f0f0f1', overflow: 'hidden' }}>
-                  <span style={{ display: 'block', height: '100%', width: `${pct}%`, background: done || paused ? '#a1a1aa' : MINT }} />
+                <span style={{ flex: 1, height: '4px', borderRadius: '2px', background: 'var(--divider-2, #f0f0f1)', overflow: 'hidden' }}>
+                  <span style={{ display: 'block', height: '100%', width: `${pct}%`, background: done || paused ? 'var(--subtle, #a1a1aa)' : MINT }} />
                 </span>
                 <span style={{ fontSize: '11px', color: MUTED, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{Math.min(e.step, e.total)}/{e.total}</span>
               </span>

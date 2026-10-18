@@ -19,7 +19,7 @@ export function AiaStyles() {
       .aia-modal { animation: aia-pop .22s cubic-bezier(.2,.8,.2,1); }
       .aia-rise { animation: aia-rise .22s ease-out; }
       .aia-live { animation: aia-pulse 1.8s ease-out infinite; }
-      .aia-dot { width: 7px; height: 7px; border-radius: 50%; background: #a1a1aa; display: inline-block; animation: aia-bounce 1s infinite ease-in-out; }
+      .aia-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--subtle, #a1a1aa); display: inline-block; animation: aia-bounce 1s infinite ease-in-out; }
       .aia-magic { background: linear-gradient(90deg, #08694C, #0A8560, #0f9b70, #08694C); background-size: 200% 100%; animation: aia-shimmer 4s linear infinite; box-shadow: 0 10px 24px -12px rgba(10,133,96,.7); }
       .aia-magic:hover:not(:disabled) { filter: brightness(1.06); }
       .aia-chip { transition: border-color .15s, box-shadow .15s, transform .15s; }
@@ -28,6 +28,8 @@ export function AiaStyles() {
       .aia-glow { position: absolute; inset: 0; background: radial-gradient(600px 120px at 10% -20%, rgba(255,255,255,.22), transparent 60%), radial-gradient(400px 140px at 100% 120%, rgba(255,255,255,.12), transparent 60%); pointer-events: none; }
       .aia-orbit { position: absolute; inset: -6px; border-radius: 50%; border: 2px dashed rgba(10,133,96,.35); animation: aia-spin 14s linear infinite; }
       .aia-icon-btn:hover:not(:disabled) { background: rgba(255,255,255,.2) !important; }
+      .aia-seg { transition: background .15s, color .15s, box-shadow .15s; }
+      .aia-seg:hover:not(:disabled):not([aria-pressed="true"]) { color: #18181b !important; background: rgba(255,255,255,.6) !important; }
       .aia-pill { transition: box-shadow .15s, transform .15s, background .2s, border-color .2s; }
       .aia-pill:hover:not(:disabled) { transform: translateY(-1px); }
       .aia-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
@@ -37,7 +39,7 @@ export function AiaStyles() {
         .aia-back { padding: 0 !important; align-items: stretch !important; }
         .aia-modal { width: 100% !important; height: 100% !important; border-radius: 0 !important; }
         .aia-body { grid-template-columns: minmax(0,1fr) !important; grid-template-rows: minmax(0,1fr) auto; overflow-y: auto; }
-        .aia-side { border-top: 1px solid #e4e4e7; max-height: 38vh; }
+        .aia-side { border-top: 1px solid var(--divider, #e4e4e7); max-height: 38vh; }
         .aia-hint { display: none; }
       }
       @media (prefers-reduced-motion: reduce) {

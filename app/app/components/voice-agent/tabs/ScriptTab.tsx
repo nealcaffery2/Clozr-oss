@@ -71,7 +71,7 @@ export function ScriptTab({ form, canEdit }: TabCtx) {
               const unknown = unknownVariables(`${x.title}\n${x.body}`);
               const err = errors[base] ?? errors[`${base}.title`];
               return (
-                <div key={x.id} id={fieldId(base)} style={{ border: `1px solid ${err ? '#f87171' : LINE}`, borderRadius: 10, padding: '10px 12px', background: x.enabled ? '#fff' : '#fafafa' }}>
+                <div key={x.id} id={fieldId(base)} style={{ border: `1px solid ${err ? '#f87171' : LINE}`, borderRadius: 10, padding: '10px 12px', background: x.enabled ? 'var(--surface, #fff)' : 'var(--canvas, #fafafa)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                     <Switch label={`${x.title || x.id} is on`} on={x.enabled} disabled={off} onChange={(v) => set(['script', 'sections', i, 'enabled'], v)} />
                     <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: x.enabled ? INK : MUTED }}>{x.enabled ? 'On' : 'Off, left out of the prompt'}</span>
@@ -86,7 +86,7 @@ export function ScriptTab({ form, canEdit }: TabCtx) {
                         onChange={(v) => set(['script', 'sections', i, 'body'], v)} {...bodyProps(['script', 'sections', i, 'body'])} />
                     </Field>
                   </div>
-                  {unknown.length ? <p style={{ margin: '6px 0 0', fontSize: 12, color: '#92400e' }}>{unknown.map((u) => `{{${u}}}`).join(', ')} {unknown.length === 1 ? 'is' : 'are'} not {unknown.length === 1 ? 'a variable' : 'variables'} the agent has, so the braces will be removed.</p> : null}
+                  {unknown.length ? <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--tx-amber-deep, #92400e)' }}>{unknown.map((u) => `{{${u}}}`).join(', ')} {unknown.length === 1 ? 'is' : 'are'} not {unknown.length === 1 ? 'a variable' : 'variables'} the agent has, so the braces will be removed.</p> : null}
                 </div>
               );
             })}
@@ -101,7 +101,7 @@ export function ScriptTab({ form, canEdit }: TabCtx) {
         </Field>
       </Section>
 
-      <section style={{ background: '#fff', border: `1px solid ${overrideOn ? '#fecaca' : LINE}`, borderRadius: 12, padding: '14px 18px', marginBottom: 12 }} aria-labelledby="va-advanced">
+      <section style={{ background: 'var(--surface, #fff)', border: `1px solid ${overrideOn ? 'var(--tint-red-2, #fecaca)' : LINE}`, borderRadius: 12, padding: '14px 18px', marginBottom: 12 }} aria-labelledby="va-advanced">
         <button type="button" className="va-btn" aria-expanded={showAdv} aria-controls="va-advanced-body" onClick={() => setAdvOpen(!showAdv)}
           style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, padding: 0, border: 0, background: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
           <span style={{ flex: 1, minWidth: 0 }}>
@@ -112,7 +112,7 @@ export function ScriptTab({ form, canEdit }: TabCtx) {
         </button>
         {showAdv ? (
           <div id="va-advanced-body" className="va-in" style={{ marginTop: 14 }}>
-            <div role="alert" style={{ display: 'flex', gap: 10, padding: '10px 12px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca', color: RED, fontSize: 12.5, lineHeight: 1.5 }}>
+            <div role="alert" style={{ display: 'flex', gap: 10, padding: '10px 12px', borderRadius: 10, background: 'var(--tint-red, #fef2f2)', border: '1px solid var(--tint-red-2, #fecaca)', color: RED, fontSize: 12.5, lineHeight: 1.5 }}>
               <AlertTriangle size={16} aria-hidden="true" style={{ flex: 'none', marginTop: 2 }} />
               <span>An override <strong>replaces the personality and every script section</strong>. Rules, offer authority, tools and the locked safety block still apply, and a prompt that tells the agent to deny being an AI is refused. Nothing here is checked for you: preview the prompt before you publish.</span>
             </div>

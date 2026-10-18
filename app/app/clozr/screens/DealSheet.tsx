@@ -6,7 +6,7 @@
 // computed, not a client-side estimate that could drift.
 'use client';
 
-import React, { useEffect, useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { BackLink } from '@/components/ds/BackLink';
 import type { ClozrView } from '@/app/clozr/view';
 import { dbId } from '@/lib/crm';
@@ -34,10 +34,10 @@ import { underContractBlanks } from '@/lib/section-gaps';
 const onDemoRoute = () => typeof window !== 'undefined' && window.location.pathname.startsWith('/demo');
 const useDemoRoute = () => useSyncExternalStore(() => () => {}, onDemoRoute, () => false);
 
-const label: React.CSSProperties = { display: 'block', fontSize: '12px', color: '#52525b', fontWeight: 500, marginBottom: '5px' };
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
+const label: React.CSSProperties = { display: 'block', fontSize: '12px', color: 'var(--muted, #52525b)', fontWeight: 500, marginBottom: '5px' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
 const h2: React.CSSProperties = { margin: '0 0 2px', fontSize: '14px', fontWeight: 700, letterSpacing: '-0.01em' };
-const sub: React.CSSProperties = { margin: '0 0 12px', fontSize: '12px', color: '#71717a', maxWidth: '62ch', lineHeight: 1.5 };
+const sub: React.CSSProperties = { margin: '0 0 12px', fontSize: '12px', color: 'var(--meta, #71717a)', maxWidth: '62ch', lineHeight: 1.5 };
 
 /**
  * Whose part of the deal a section is, so the sheet reads at a glance: each
@@ -47,12 +47,12 @@ const sub: React.CSSProperties = { margin: '0 0 12px', fontSize: '12px', color: 
  */
 type Team = 'deal' | 'acq' | 'dispo' | 'tc' | 'money' | 'dead';
 const TEAM: Record<Team, { name: string; ink: string; tint: string; line: string }> = {
-  deal: { name: 'Deal', ink: '#3f3f46', tint: '#f4f4f5', line: '#e4e4e7' },
+  deal: { name: 'Deal', ink: 'var(--ink-3, #3f3f46)', tint: 'var(--surface-2, #f4f4f5)', line: 'var(--divider, #e4e4e7)' },
   acq: { name: 'Acquisitions', ink: '#1d4ed8', tint: '#eff4ff', line: '#b4c8f5' },
   dispo: { name: 'Dispositions', ink: '#6d28d9', tint: '#f5f3ff', line: '#d4c6f7' },
-  tc: { name: 'Transaction coordination', ink: '#0A8560', tint: '#E7F8F1', line: '#9fdcc4' },
+  tc: { name: 'Transaction coordination', ink: '#0A8560', tint: 'var(--mint-dim, #e7f8f1)', line: '#9fdcc4' },
   money: { name: 'Money', ink: '#334155', tint: '#f1f5f9', line: '#cbd5e1' },
-  dead: { name: 'If it fell through', ink: '#b91c1c', tint: '#fef2f2', line: '#f5c2c2' },
+  dead: { name: 'If it fell through', ink: '#b91c1c', tint: 'var(--tint-red, #fef2f2)', line: '#f5c2c2' },
 };
 const SECTIONS: Array<{ id: string; title: string; team: Team }> = [
   { id: 'ds-type', title: 'Deal type', team: 'deal' },
@@ -71,7 +71,7 @@ function SectionHead({ title, team, who }: { title: string; team: Team; who?: st
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '-16px -18px 12px', padding: '10px 18px', background: t.tint, borderBottom: `1px solid ${t.line}`, borderRadius: '11px 11px 0 0' }}>
       <h2 style={{ ...h2, margin: 0, color: t.ink }}>{title}</h2>
-      <span style={{ fontSize: '12px', fontWeight: 500, color: '#52525b' }}>{t.name}{who ? ` · ${who}` : ''}</span>
+      <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--muted, #52525b)' }}>{t.name}{who ? ` · ${who}` : ''}</span>
     </div>
   );
 }
@@ -92,7 +92,7 @@ function JumpBar() {
         const t = TEAM[x.team];
         return (
           <a key={x.id} href={`#${x.id}`} onClick={(e) => { e.preventDefault(); jump(x.id); }}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', height: '28px', padding: '0 10px', borderRadius: '8px', border: `1px solid ${t.line}`, background: '#fff', color: '#18181b', fontSize: '12.5px', fontWeight: 600, textDecoration: 'none' }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', height: '28px', padding: '0 10px', borderRadius: '8px', border: `1px solid ${t.line}`, background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)', fontSize: '12.5px', fontWeight: 600, textDecoration: 'none' }}>
             <span aria-hidden style={{ width: '8px', height: '8px', borderRadius: '50%', background: t.ink }} />{x.title}
           </a>
         );
@@ -113,10 +113,10 @@ function UnderContractPrompt({ deal, onDone }: { deal: Sheet; onDone: (missing: 
   const t = TEAM.acq;
   return (
     <div data-testid="dealsheet-under-contract" role="status"
-      style={{ ...card, display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', border: `1px solid ${done ? '#86efac' : t.line}`, background: done ? '#f0fdf4' : t.tint }}>
+      style={{ ...card, display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', border: `1px solid ${done ? '#86efac' : t.line}`, background: done ? 'var(--tint-green-2, #f0fdf4)' : t.tint }}>
       <div style={{ flex: 1, minWidth: '220px' }}>
         <h2 style={{ ...h2, color: done ? '#166534' : t.ink }}>{done ? 'Deal sheet filled in' : 'Under contract · the deal is on the Deals board'}</h2>
-        <p style={{ ...sub, margin: '4px 0 0', color: '#52525b', lineHeight: 1.45 }}>
+        <p style={{ ...sub, margin: '4px 0 0', color: 'var(--muted, #52525b)', lineHeight: 1.45 }}>
           {done ? 'Deal type and Acquisition are complete.' : `Fill in the deal type at the top and the Acquisition section. Still blank: ${missing.join(', ')}.`}
         </p>
       </div>
@@ -126,7 +126,7 @@ function UnderContractPrompt({ deal, onDone }: { deal: Sheet; onDone: (missing: 
         </button>
       )}
       <button type="button" data-testid="dealsheet-under-contract-done" onClick={() => onDone(missing.length)}
-        style={{ ...linkBtn, background: t.ink, borderColor: t.ink, color: '#fff' }}>
+        style={{ ...linkBtn, background: t.ink, borderColor: t.ink, color: 'var(--on-dark, #fff)' }}>
         Finished
       </button>
     </div>
@@ -151,9 +151,12 @@ export function DealSheet({ V }: { V: ClozrView }) {
   const [state, setState] = useState<{ key: string; deal: Sheet | null; pickers: Pickers; err: string | null } | null>(null);
   const dealId = V.dealSheetFor.dealId ?? null;
   const key = `${workspaceId}:${sellerId}:${dealId ?? ''}`;
+  /** When this deal was last read, so coming back to the window re-reads it at most every 30 s. */
+  const lastRead = useRef(0);
   useEffect(() => {
     if (!workspaceId || (dealId == null && !Number.isFinite(sellerId))) return;
     let live = true;
+    lastRead.current = Date.now();
     // A specific deal when one was picked (a partner's submission, even with no seller), else the contact's live deal.
     const load = dealId != null ? loadDeal(dealId).then((deal) => ({ deal, message: deal ? undefined : 'That deal is not available.' })) : loadDealForSeller(workspaceId, sellerId, s.user?.id ?? null);
     void Promise.all([load, loadDealPickers(workspaceId)])
@@ -166,6 +169,30 @@ export function DealSheet({ V }: { V: ClozrView }) {
   const [orderReq, setOrderReq] = useState(0);
   const [teamRev, setTeamRev] = useState(0);
   const dealDbId = deal?.id ?? null;
+  // COMPR writes ARV and the offer onto the deal from its own tab. Coming back
+  // to this window reads the deal again, at most once every 30 s, so the new
+  // numbers show without a reload. A field being typed in keeps its draft.
+  useEffect(() => {
+    if (dealDbId == null || !workspaceId) return;
+    let live = true;
+    const again = () => {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastRead.current < 30_000) return;
+      lastRead.current = now;
+      void loadDeal(dealDbId).then((fresh) => {
+        if (live && fresh) setState((st) => (st && st.key === key && st.deal?.id === fresh.id ? { ...st, deal: fresh } : st));
+      });
+    };
+    window.addEventListener('focus', again);
+    document.addEventListener('visibilitychange', again);
+    return () => {
+      live = false;
+      window.removeEventListener('focus', again);
+      document.removeEventListener('visibilitychange', again);
+    };
+  }, [dealDbId, workspaceId, key]);
+
   // Whether the contract price was amended (the drop is then already in it): read once per deal.
   const [amended, setAmended] = useState<{ id: number; yes: boolean } | null>(null);
   const dealUpdated = deal?.updated_at ?? null;
@@ -252,20 +279,20 @@ export function DealSheet({ V }: { V: ClozrView }) {
   }
 
   return (
-    <section data-screen-label="Deal sheet" style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: V.isMobile ? '14px' : '18px 22px', background: '#fafafa' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: '#71717a', marginBottom: '12px', flexWrap: 'wrap' }}>
+    <section data-screen-label="Deal sheet" style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: V.isMobile ? '14px' : '18px 22px', background: 'var(--canvas, #fafafa)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: 'var(--meta, #71717a)', marginBottom: '12px', flexWrap: 'wrap' }}>
         <BackLink to={V.backFor('deals')} />
         <span aria-hidden>/</span>
         {V.dealSheetFor.personId
-          ? <button className="dc12" onClick={V.openThisPerson} style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: '#71717a', fontSize: '12.5px' }}>{V.dealSheetFor.name}</button>
-          : <span style={{ color: '#71717a' }}>{V.dealSheetFor.name}</span>}
+          ? <button className="dc12" onClick={V.openThisPerson} style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'var(--meta, #71717a)', fontSize: '12.5px' }}>{V.dealSheetFor.name}</button>
+          : <span style={{ color: 'var(--meta, #71717a)' }}>{V.dealSheetFor.name}</span>}
         <span>/</span>
-        <span style={{ color: '#18181b', fontWeight: 600 }}>Deal sheet · {V.dealSheetFor.addr}</span>
+        <span style={{ color: 'var(--ink, #18181b)', fontWeight: 600 }}>Deal sheet · {V.dealSheetFor.addr}</span>
         {deal && V.dealStageOfDb(deal.id) != null ? (
           // The deal's stage, movable here: the same save as dragging its card on the board.
           <select aria-label="Deal stage" data-testid="dealsheet-stage" title="Move this deal to another stage"
             value={V.dealStageOfDb(deal.id) ?? ''} onChange={(e) => V.setDealStageDb(deal.id, e.target.value)}
-            style={{ height: '28px', borderRadius: '8px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12px', fontWeight: 600, color: '#18181b', padding: '0 8px', cursor: 'pointer' }}>
+            style={{ height: '28px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px', fontWeight: 600, color: 'var(--ink, #18181b)', padding: '0 8px', cursor: 'pointer' }}>
             {(V.dealStageChoices.includes(V.dealStageOfDb(deal.id) ?? '') ? V.dealStageChoices : [V.dealStageOfDb(deal.id) ?? '', ...V.dealStageChoices]).map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
         ) : null}
@@ -273,7 +300,7 @@ export function DealSheet({ V }: { V: ClozrView }) {
           // A role without People (TC, Notary) sees the name without a link to it.
           <button key={v.id} type="button" className="dc12" title={V.can.people ? 'Open this vendor' : undefined} disabled={!V.can.people}
             onClick={() => V.openVendorContact({ id: dbId(v.id), name: v.name, role: 'seller' })}
-            style={{ height: '24px', padding: '0 8px', borderRadius: '999px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', fontSize: '11.5px', fontWeight: 600, cursor: V.can.people ? 'pointer' : 'default' }}>
+            style={{ height: '24px', padding: '0 8px', borderRadius: '999px', border: '1px solid #bfdbfe', background: 'var(--tint-blue, #eff6ff)', color: 'var(--tx-blue, #1d4ed8)', fontSize: '11.5px', fontWeight: 600, cursor: V.can.people ? 'pointer' : 'default' }}>
             Seller · {v.company && v.company !== v.name ? `${v.name} · ${v.company}` : v.name}
           </button>
         ))}
@@ -282,14 +309,14 @@ export function DealSheet({ V }: { V: ClozrView }) {
         {deal && workspaceId ? (
           <button type="button" data-testid="header-order-photos" onClick={() => setOrderReq((n) => n + 1)}
             title="Order iVueit photos of this house. A local Vuer shoots it and the photos land under Files & photos."
-            style={{ height: '28px', padding: '0 10px', borderRadius: '8px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12px', fontWeight: 600, color: '#18181b', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            style={{ height: '28px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px', fontWeight: 600, color: 'var(--ink, #18181b)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             Order photos
           </button>
         ) : null}
         {deal ? (
           <button type="button" data-testid="dealsheet-archive" onClick={() => V.archiveDealDb(deal.id, !V.dealArchivedDb(deal.id))}
             title={V.dealArchivedDb(deal.id) ? 'Put this deal back on the board and Dispo' : 'Archive: off the Deals board, the deal list and Dispo'}
-            style={{ height: '28px', padding: '0 10px', borderRadius: '8px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12px', fontWeight: 600, color: '#52525b', cursor: 'pointer' }}>
+            style={{ height: '28px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px', fontWeight: 600, color: 'var(--muted, #52525b)', cursor: 'pointer' }}>
             {V.dealArchivedDb(deal.id) ? 'Restore' : 'Archive'}
           </button>
         ) : null}
@@ -300,7 +327,7 @@ export function DealSheet({ V }: { V: ClozrView }) {
       {!cur ? <div style={card}><p style={sub}>Loading the deal…</p></div> : null}
       {cur && !deal ? (
         <div style={card}>
-          <p style={{ ...sub, color: cur.err ? '#b91c1c' : '#71717a' }}>{cur.err ?? 'No deal on this seller yet.'}</p>
+          <p style={{ ...sub, color: cur.err ? 'var(--tx-red, #b91c1c)' : 'var(--meta, #71717a)' }}>{cur.err ?? 'No deal on this seller yet.'}</p>
           {!cur.err && Number.isFinite(sellerId) && V.liveIds?.canWrite ? (
             <button type="button" data-testid="dealsheet-start" onClick={() => void startDeal()} style={{ ...linkBtn, background: '#0A8560', borderColor: '#0A8560', color: '#fff' }}>Start a deal</button>
           ) : null}
@@ -391,7 +418,7 @@ function Info({ l, v, hint, testId }: { l: string; v: React.ReactNode; hint?: st
   return (
     <div style={{ minWidth: 0 }} title={hint}>
       <span style={{ ...label, fontSize: '11.5px', marginBottom: '4px' }}>{l}</span>
-      <div data-testid={testId} style={{ minHeight: '28px', display: 'flex', alignItems: 'center', fontSize: '13px', fontWeight: 600, color: '#18181b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v || <span style={{ color: '#71717a', fontWeight: 500 }}>Not set</span>}</div>
+      <div data-testid={testId} style={{ minHeight: '28px', display: 'flex', alignItems: 'center', fontSize: '13px', fontWeight: 600, color: 'var(--ink, #18181b)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v || <span style={{ color: 'var(--meta, #71717a)', fontWeight: 500 }}>Not set</span>}</div>
     </div>
   );
 }
@@ -400,7 +427,7 @@ function Info({ l, v, hint, testId }: { l: string; v: React.ReactNode; hint?: st
 function FridayNote({ iso }: { iso: string | null | undefined }) {
   const w = fridayCloseWarning(iso);
   if (!w) return null;
-  return <span role="alert" data-testid="dealsheet-friday" style={{ fontSize: '11.5px', color: '#b91c1c', fontWeight: 600, marginTop: '4px', lineHeight: 1.4 }}>{w}</span>;
+  return <span role="alert" data-testid="dealsheet-friday" style={{ fontSize: '11.5px', color: 'var(--tx-red, #b91c1c)', fontWeight: 600, marginTop: '4px', lineHeight: 1.4 }}>{w}</span>;
 }
 function DealTypeBanner({ value, onPick, disabled }: { value: string | null; onPick: (label: string) => void; disabled?: boolean }) {
   const current = parseDealType(value);
@@ -410,7 +437,7 @@ function DealTypeBanner({ value, onPick, disabled }: { value: string | null; onP
         const on = current?.key === t.key;
         return (
           <button key={t.key} type="button" onClick={() => onPick(t.label)} aria-pressed={on} disabled={disabled}
-            style={{ height: '36px', padding: '0 14px', borderRadius: '999px', border: on ? `1px solid ${t.fg}` : '1px solid #e4e4e7', background: on ? t.bg : '#fff', color: on ? t.fg : '#27272a', fontWeight: 750, fontSize: '13px', cursor: disabled ? 'default' : 'pointer' }}>
+            style={{ height: '36px', padding: '0 14px', borderRadius: '999px', border: on ? `1px solid ${t.fg}` : '1px solid var(--divider, #e4e4e7)', background: on ? t.bg : 'var(--surface, #fff)', color: on ? t.fg : 'var(--ink-2, #27272a)', fontWeight: 750, fontSize: '13px', cursor: disabled ? 'default' : 'pointer' }}>
             {t.label}
           </button>
         );
@@ -421,14 +448,14 @@ function DealTypeBanner({ value, onPick, disabled }: { value: string | null; onP
 
 function Total({ l, v, strong }: { l: string; v: number; strong?: boolean }) {
   return (
-    <div style={{ padding: '10px 12px', borderRadius: '10px', background: strong ? '#dcfce7' : '#fafafa', border: `1px solid ${strong ? '#bbf7d0' : '#f0f0f1'}` }}>
+    <div style={{ padding: '10px 12px', borderRadius: '10px', background: strong ? 'var(--positive-soft, #dcfce7)' : 'var(--canvas, #fafafa)', border: `1px solid ${strong ? 'var(--tint-green-3, #bbf7d0)' : 'var(--divider-2, #f0f0f1)'}` }}>
       <div style={label}>{l}</div>
-      <div style={{ fontSize: strong ? '20px' : '16px', fontWeight: 700, letterSpacing: '-0.02em', color: v < 0 ? '#b91c1c' : strong ? '#15803d' : '#18181b' }}>{money(v)}</div>
+      <div style={{ fontSize: strong ? '20px' : '16px', fontWeight: 700, letterSpacing: '-0.02em', color: v < 0 ? 'var(--tx-red, #b91c1c)' : strong ? '#15803d' : 'var(--ink, #18181b)' }}>{money(v)}</div>
     </div>
   );
 }
 
-const linkBtn: React.CSSProperties = { height: '28px', padding: '0 10px', borderRadius: '8px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12px', fontWeight: 600, color: '#18181b', cursor: 'pointer' };
+const linkBtn: React.CSSProperties = { height: '28px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px', fontWeight: 600, color: 'var(--ink, #18181b)', cursor: 'pointer' };
 
 function DispoHint({ type }: { type: string | null }) {
   const how = dispoAssignment(type);
@@ -436,7 +463,7 @@ function DispoHint({ type }: { type: string | null }) {
   const text = how === 'round_robin'
     ? 'Novation assigns this from the dispositions round robin when the seat is empty. It stays editable.'
     : 'Whoever is selling this deal.';
-  return <div style={{ fontSize: '11px', color: '#71717a', marginTop: '4px', lineHeight: 1.4 }}>{text}</div>;
+  return <div style={{ fontSize: '11px', color: 'var(--meta, #71717a)', marginTop: '4px', lineHeight: 1.4 }}>{text}</div>;
 }
 
 /** What dispo needs from the file, without asking for people the contract already names. */
@@ -445,11 +472,11 @@ function DispoFacts({ deal, pickers, onOpenSeller }: { deal: Sheet; pickers: Pic
   const report = deal.buyer_report_url || deal.compr_cma_url || '';
   return (
     <div data-testid="dealsheet-dispo-facts" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', marginBottom: '12px' }}>
-      <span data-testid="dealsheet-acq-rep" style={{ fontSize: '12.5px', color: '#27272a' }}>
+      <span data-testid="dealsheet-acq-rep" style={{ fontSize: '12.5px', color: 'var(--ink-2, #27272a)' }}>
         <span style={{ ...label, display: 'inline', marginRight: '6px' }}>Acquisition rep</span>
         <b>{acq}</b>
       </span>
-      <span data-testid="dealsheet-asking" style={{ fontSize: '12.5px', color: '#27272a' }}>
+      <span data-testid="dealsheet-asking" style={{ fontSize: '12.5px', color: 'var(--ink-2, #27272a)' }}>
         <span style={{ ...label, display: 'inline', marginRight: '6px' }}>Asking price</span>
         <b>{money(deal.asking_price)}</b>
       </span>
@@ -548,7 +575,7 @@ function Sections({ deal, pickers, grid, save, readOnly, seeBuyers, onOpenSeller
           <Total l="Wholesale fee" v={deal.wholesale_fee} strong />
           <div title={fee.fee == null ? 'Needs an under contract price and a sold or marketed price' : undefined}>
             <Total l={fee.projected ? 'Assignment fee (projected)' : 'Assignment fee'} v={fee.fee ?? 0} strong={!fee.projected} />
-            <div style={{ fontSize: '11px', color: '#71717a', marginTop: '4px', lineHeight: 1.4 }}>
+            <div style={{ fontSize: '11px', color: 'var(--meta, #71717a)', marginTop: '4px', lineHeight: 1.4 }}>
               {fee.fee == null ? 'Add the under contract price and a sold or marketed price.' : `${fee.projected ? 'Marketed' : 'Sold'} ${money(fee.buyer)} − contract ${money(fee.contract)}${fee.drop ? ` (after ${money(fee.drop)} price drop)` : ''}`}
             </div>
           </div>
@@ -592,7 +619,7 @@ function Sections({ deal, pickers, grid, save, readOnly, seeBuyers, onOpenSeller
           <F f={f} k="cogs_flat_fee" l="Flat fee cost" type="money" zero />
           <F f={f} k="cogs_concessions" l="Concessions" type="money" zero />
         </div>
-        <div style={{ ...g, marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #f0f0f1' }}>
+        <div style={{ ...g, marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
           <Total l="Total COGS" v={deal.total_cogs} />
           <Total l="Deal net profit" v={deal.deal_net_profit} />
           <F f={f} k="team_commissions_paid" l="Team commissions paid" type="money" zero />

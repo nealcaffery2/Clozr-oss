@@ -81,7 +81,7 @@ export function ProspectTime({
   const city = tzCity(zone);
   const w = callWindow(zone, now, city);
   const dark = tone === 'dark';
-  const timeColor = w.safe ? (dark ? '#e4e4e7' : 'var(--text)') : 'var(--amber)';
+  const timeColor = w.safe ? (dark ? 'var(--divider, #e4e4e7)' : 'var(--text)') : 'var(--amber)';
   const labelColor = dark ? 'var(--muted-2)' : 'var(--muted)';
 
   return (

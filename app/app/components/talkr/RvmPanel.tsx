@@ -31,12 +31,12 @@ type DropRow = {
 };
 
 const STATUS_LABEL: Record<string, { label: string; color: string; bg: string }> = {
-  queued: { label: 'Queued', color: '#3f3f46', bg: '#f4f4f5' },
-  ready: { label: 'Ready for the tab', color: '#3f3f46', bg: '#f4f4f5' },
-  sending: { label: 'With the carrier', color: '#b45309', bg: '#fef3c7' },
-  dialing: { label: 'Dropping', color: '#b45309', bg: '#fef3c7' },
-  dropped: { label: 'Dropped', color: '#0A8560', bg: '#dcfce7' },
-  failed: { label: 'Failed', color: '#b91c1c', bg: '#fee2e2' },
+  queued: { label: 'Queued', color: 'var(--ink-3, #3f3f46)', bg: 'var(--surface-2, #f4f4f5)' },
+  ready: { label: 'Ready for the tab', color: 'var(--ink-3, #3f3f46)', bg: 'var(--surface-2, #f4f4f5)' },
+  sending: { label: 'With the carrier', color: 'var(--tx-amber, #b45309)', bg: 'var(--caution-soft, #fef3c7)' },
+  dialing: { label: 'Dropping', color: 'var(--tx-amber, #b45309)', bg: 'var(--caution-soft, #fef3c7)' },
+  dropped: { label: 'Dropped', color: 'var(--tx-mint, #0a8560)', bg: 'var(--positive-soft, #dcfce7)' },
+  failed: { label: 'Failed', color: 'var(--tx-red, #b91c1c)', bg: 'var(--negative-soft, #fee2e2)' },
 };
 const PROVIDER: Record<string, string> = { dropcowboy: 'Drop Cowboy', slybroadcast: 'Slybroadcast', telnyx: 'Telnyx' };
 
@@ -137,7 +137,7 @@ export function RvmPanel({ V }: { V: ClozrView }) {
       )}
       <ul className="flex flex-col gap-1" style={{ margin: 0, padding: 0, listStyle: 'none' }} data-testid="rvm-drops">
         {drops.map((d) => {
-          const st = STATUS_LABEL[d.status] ?? { label: d.status, color: '#3f3f46', bg: '#f4f4f5' };
+          const st = STATUS_LABEL[d.status] ?? { label: d.status, color: 'var(--ink-3, #3f3f46)', bg: 'var(--surface-2, #f4f4f5)' };
           const why = d.status === 'failed' || d.status === 'ready' ? d.last_error : null;
           return (
             <li key={d.id} style={{ font: '400 12px/1.35 var(--sans)', color: 'var(--muted)', display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 0', borderTop: '1px solid var(--line)' }}>
@@ -183,7 +183,7 @@ function BlastResults({ blasts, open, onToggle, onRefresh, me }: {
               {b.kind === 'blast' && b.created_by && b.created_by === me ? ' · yours' : ''}
             </span>
             <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-              {b.total} queued · {b.delivered} delivered ({pctOf(b.delivered, b.total)}) · {b.failed ? <span style={{ color: '#b91c1c' }}>{b.failed} failed</span> : '0 failed'}
+              {b.total} queued · {b.delivered} delivered ({pctOf(b.delivered, b.total)}) · {b.failed ? <span style={{ color: 'var(--tx-red, #b91c1c)' }}>{b.failed} failed</span> : '0 failed'}
               {b.pending ? ` · ${b.pending} waiting` : ''}{b.skipped ? ` · ${b.skipped} skipped` : ''}
               {' · '}<b style={{ color: 'var(--text)' }}>{b.callbacks} callback{b.callbacks === 1 ? '' : 's'}</b> ({pctOf(b.callbacks, b.delivered)})
               {b.cost != null ? ` · ${money(b.cost)}` : ''}

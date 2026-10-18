@@ -17,8 +17,9 @@
  *
  * Needs the https://www.googleapis.com/auth/siteverification scope on the
  * Google connection, and the Site Verification API enabled on the Google
- * Cloud project. Postmaster has no API to add a domain, so after this the
- * domain is added once at postmaster.google.com (it shows as verified).
+ * Cloud project. After this, postmaster.ts adds the domain to Postmaster
+ * (v2 domains.create); where Google refuses that, it is added once at
+ * postmaster.google.com (it shows as verified).
  *
  * Pure: no Deno, no database. Tests: npx tsx tools/site-verification.test.ts
  */

@@ -5,6 +5,8 @@
 // bell-sms-*). They have no notifications row, so dismissing them is local.
 // A real note is `n` plus the numeric id.
 
+import { isImportant, isReplyCat, type ReplyTone } from './reply-tone';
+
 const NOTIF_KEY = 'clozr.notifDismissed';
 
 export function notificationDbIds(ids: string[]): number[] {
@@ -29,13 +31,24 @@ export function dismissDelay(index: number): number {
   return Math.min(Math.max(index, 0), 14) * 46;
 }
 
-export function visibleNotifs<T extends { id: string; cat: string; unread: boolean }>(
+/**
+ * What the bell lists under a filter: Important (good replies and what names
+ * you, lib/reply-tone), All, Good or Bad replies, or one category. A text
+ * row is 'inbound_sms' from the database and 'SMS' from a message; SMS is both.
+ */
+export function visibleNotifs<T extends { id: string; cat: string; unread: boolean; tone?: ReplyTone }>(
   items: T[],
   read: Record<string, boolean>,
   cat: string,
   muted: Record<string, boolean>,
 ): T[] {
-  return items.filter((n) => n.unread && !read[n.id] && !muted[n.cat] && (cat === 'All' || n.cat === cat));
+  const fits = (n: T) => cat === 'All' ? true
+    : cat === 'Important' ? isImportant(n)
+      : cat === 'Good' ? isReplyCat(n.cat) && n.tone === 'good'
+        : cat === 'Bad' ? isReplyCat(n.cat) && (n.tone === 'bad' || n.tone === 'auto')
+          : cat === 'SMS' ? n.cat === 'SMS' || n.cat === 'inbound_sms'
+            : n.cat === cat;
+  return items.filter((n) => n.unread && !read[n.id] && !muted[n.cat] && fits(n));
 }
 
 export function loadDismissedNotifs(): string[] {

@@ -10,7 +10,7 @@ import { Control, FAINT, GREEN, HAIR, INK, LINE, MUTED, Modal, PURPLE, Pill, btn
 
 function Card({ title, color, children }: { title: string; color: string; children: React.ReactNode }) {
   return (
-    <div style={{ border: `1px solid ${LINE}`, borderRadius: '12px', padding: '13px 14px', background: '#fff' }}>
+    <div style={{ border: `1px solid ${LINE}`, borderRadius: '12px', padding: '13px 14px', background: 'var(--surface, #fff)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '10px' }}>
         <span style={{ width: '9px', height: '9px', borderRadius: '50%', background: color }} />
         <span style={{ fontSize: '13px', fontWeight: 700, color: INK }}>{title}</span>
@@ -60,7 +60,7 @@ export function Analytics({ cands, subject, isMobile }: { cands: Candidate[]; su
           ['Avg flip hold', a.avg_days_held ? `${Math.round(a.avg_days_held)} days` : '—'],
           ['Est. rent', a.rent ? `${money(a.rent)}/mo` : '—'],
         ].map(([k, v]) => (
-          <div key={k} style={{ background: '#fafafa', border: `1px solid ${HAIR}`, borderRadius: '10px', padding: '9px 11px' }}>
+          <div key={k} style={{ background: 'var(--canvas, #fafafa)', border: `1px solid ${HAIR}`, borderRadius: '10px', padding: '9px 11px' }}>
             <div style={{ fontSize: '11.5px', fontWeight: 500, color: MUTED }}>{k}</div>
             <div style={{ fontSize: '15px', fontWeight: 700, color: INK, marginTop: '2px', fontVariantNumeric: 'tabular-nums' }}>{v}</div>
           </div>
@@ -121,7 +121,7 @@ function CompsModal({ cands, subject, isMobile, onClose }: { cands: Candidate[];
           </div>
         ) : null}
       </div>
-      <div style={{ padding: '12px 16px', display: 'flex', gap: '14px 20px', flexWrap: 'wrap', borderBottom: `1px solid ${HAIR}`, background: '#fcfcfd' }}>
+      <div style={{ padding: '12px 16px', display: 'flex', gap: '14px 20px', flexWrap: 'wrap', borderBottom: `1px solid ${HAIR}`, background: 'var(--surface-1, #fcfcfd)' }}>
         <Control label="Radius">{[0.5, 1, 2, 3, 5].map((r) => <Pill key={r} on={o.radius_mi === r} onClick={() => set({ radius_mi: r })}>{r} mi</Pill>)}</Control>
         <Control label="Purchased">{[6, 12, 24, 36].map((m) => <Pill key={m} on={o.months === m} onClick={() => set({ months: m })}>{m < 12 ? `${m} mo` : `${m / 12} yr`}</Pill>)}</Control>
         <Control label="Beds">{[null, 2, 3, 4, 5].map((b) => <Pill key={String(b)} on={o.beds === b} onClick={() => set({ beds: b })}>{b ?? 'Any'}</Pill>)}</Control>

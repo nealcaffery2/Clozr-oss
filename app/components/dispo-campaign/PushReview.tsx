@@ -8,6 +8,7 @@
 import React from 'react';
 import { Btn, C, Icon, Svg } from './ui';
 import { plural } from './logic';
+import { Scaled } from './Preview';
 
 export type ReviewSegment = { key: string; label: string; detail: string; count: number };
 export type ReviewVariant = {
@@ -27,10 +28,6 @@ export type ReviewVariant = {
 };
 
 const ICON = { sms: Icon.text, email: Icon.mail, rvm: Icon.voicemail, ai_call: Icon.phone } as const;
-const excerpt = (text: string) => {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length > 180 ? `${flat.slice(0, 177)}…` : flat;
-};
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
 export function PushReview({ title, sample, segments, variants, empty, onEdit, testId = 'push-review' }: {
@@ -79,21 +76,23 @@ export function PushReview({ title, sample, segments, variants, empty, onEdit, t
         {variants.length ? null : <div style={{ fontSize: '12.5px', color: C.muted }}>Nothing is switched on to send.</div>}
         {variants.map((v) => (
           <article key={v.key} style={{ border: `1px solid ${C.line}`, borderRadius: '10px', overflow: 'hidden' }} data-testid={`review-${v.key}`}>
-            <header style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: '#fafafa', borderBottom: `1px solid ${C.line2}`, flexWrap: 'wrap' }}>
+            <header style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'var(--canvas, #fafafa)', borderBottom: `1px solid ${C.line2}`, flexWrap: 'wrap' }}>
               <Svg d={ICON[v.channel]} size={13} color={v.channel === 'sms' ? 'var(--c-talkr)' : C.muted} />
               <b style={{ fontSize: '12.5px', fontWeight: 600 }}>{v.title}</b>
               <span className="mk-num" style={{ fontSize: '11.5px', color: C.muted }}>to {v.reach.toLocaleString('en-US')}</span>
               <div style={{ flex: 1 }} />
-              {v.edit && onEdit ? <Btn size="sm" kind="quiet" onClick={() => onEdit(v.edit!)} aria-label={`Edit ${v.title.toLowerCase()}`}>Edit</Btn> : null}
+              {v.edit && onEdit ? <Btn size="sm" onClick={() => onEdit(v.edit!)} aria-label={`Edit ${v.title.toLowerCase()}`}><Svg d={Icon.edit} size={12} /> Edit</Btn> : null}
             </header>
             <div style={{ padding: '10px', display: 'grid', gap: '6px' }}>
               {v.note ? <span style={{ fontSize: '11.5px', color: C.muted }}>{v.note}</span> : null}
               {v.channel === 'sms' ? (
-                <div style={{ fontSize: '12.5px', lineHeight: 1.5, color: C.ink2, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{excerpt(v.body) || <i style={{ color: C.muted }}>Empty</i>}</div>
+                <div className="mk-msg-sms" style={{ borderRadius: '10px' }}>
+                  {v.body.trim() ? <div className="mk-bubble">{v.body}</div> : <i style={{ color: C.muted, fontSize: '12.5px' }}>Empty</i>}
+                </div>
               ) : v.channel === 'email' ? (
                 <div style={{ display: 'grid', gap: '4px' }}>
                   <div style={{ fontSize: '12.5px' }}><span style={{ color: C.muted }}>Subject </span><b>{v.subject || '(no subject)'}</b></div>
-                  <div style={{ fontSize: '12.5px', lineHeight: 1.5, color: C.muted, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{excerpt(v.body)}</div>
+                  {v.html ? <Scaled html={v.html} /> : <div style={{ fontSize: '13px', lineHeight: 1.6, color: C.ink2, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', padding: '10px 12px', border: `1px solid ${C.line2}`, borderRadius: '8px' }}>{v.body}</div>}
                 </div>
               ) : (
                 <div style={{ display: 'grid', gap: '6px' }}>

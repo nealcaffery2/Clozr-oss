@@ -80,7 +80,7 @@ export function ApprovalCard({ call, token, gate, company, onAnswered }: {
   }
 
   return (
-    <div className="cz-card" style={{ borderColor: '#A7DCC5' }}>
+    <div className="cz-card" style={{ borderColor: 'var(--c-action-line, #a7dcc5)' }}>
       <h2 className="cz-h1" style={{ fontSize: 18 }}>Your approval is needed</h2>
       <p className="cz-lede">{company} will not send this for signature until you approve it. Read it below, then approve, or reject it with what needs to change.</p>
       {rejecting ? (
@@ -89,7 +89,7 @@ export function ApprovalCard({ call, token, gate, company, onAnswered }: {
           {err ? <div className="cz-err">{err}</div> : null}
           <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
             <button type="button" onClick={() => setRejecting(false)} className="cz-btn cz-btn-ghost cz-btn-sm">Back</button>
-            <button type="button" disabled={busy || !reason.trim()} onClick={() => answer(false)} className="cz-btn cz-btn-sm" style={{ background: '#fff', color: '#b91c1c', borderColor: '#fecaca' }}>{busy ? 'Rejecting…' : 'Reject and send back'}</button>
+            <button type="button" disabled={busy || !reason.trim()} onClick={() => answer(false)} className="cz-btn cz-btn-sm" style={{ background: 'var(--surface, #fff)', color: 'var(--tx-red, #b91c1c)', borderColor: 'var(--tint-red-2, #fecaca)' }}>{busy ? 'Rejecting…' : 'Reject and send back'}</button>
           </div>
         </>
       ) : (

@@ -38,6 +38,7 @@ import { useTemplates } from '@/app/components/templates/useTemplates';
 import { Mark } from '@/components/ds/mark';
 import { FloorShowSettings } from './FloorShowSettings';
 import { readPrefs, serverPrefs, subscribePrefs, writePrefs, type Prefs } from '../prefs';
+import { getTheme, serverTheme, setTheme, subscribeTheme, type Theme } from '@/lib/theme';
 import { CompanyFacts } from '@/app/components/phone/CompanyFacts';
 import { VoiceAgentSettings } from '@/app/components/voice-agent/VoiceAgentSettings';
 import { AutopilotPanel } from '@/app/components/ai-agent/AutopilotPanel';
@@ -47,17 +48,19 @@ const DISPLAY: [keyof Prefs, string, string][] = [
   ['compactRows', 'Compact table rows', 'Shorter rows and smaller type on People, Deals and Tasks — more records per screen'],
 ];
 
+const THEMES: [Theme, string][] = [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']];
+
 const label: React.CSSProperties = {
   display: 'block',
   fontSize: '11.5px',
-  color: '#71717a',
+  color: 'var(--meta, #71717a)',
   fontWeight: 500,
   marginBottom: '6px',
 };
 
 const card: React.CSSProperties = {
-  background: '#fff',
-  border: '1px solid #e4e4e7',
+  background: 'var(--surface, #fff)',
+  border: '1px solid var(--divider, #e4e4e7)',
   borderRadius: '12px',
   padding: '16px 18px',
   marginBottom: '12px',
@@ -120,8 +123,11 @@ function useShownRole(): Role | null {
   return viewAs && isAdmin(realRole) && viewAs.userId !== s.user?.id ? viewAs.role : realRole;
 }
 
-export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs, onToast, talkrAuthed }: {
+export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs, onToast, talkrAuthed, newDesign = false, onNewDesign }: {
   isMobile: boolean;
+  /** Try new design, from the view model (prefs.ts), so a flip applies everywhere at once. */
+  newDesign?: boolean;
+  onNewDesign?: (on: boolean) => void;
   openPerson?: (id: string) => void;
   openBuyer?: (id: string) => void;
   onImported?: () => void;
@@ -133,6 +139,7 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
   const canWrite = useCanWrite();
   const role = useShownRole();
   const prefs = useSyncExternalStore(subscribePrefs, readPrefs, serverPrefs);
+  const theme = useSyncExternalStore(subscribeTheme, getTheme, serverTheme);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -178,7 +185,7 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
     setTarget({ main: g.main, tab: t && g.items.some((i) => i.tab === t) ? t : g.items[0].tab } as SettingsTarget);
   };
   const openTalkr = (t: TalkrSettingsTab) => open('talkr', t);
-  const link: React.CSSProperties = { padding: 0, border: 0, background: 'none', color: '#0A8560', fontWeight: 600, fontSize: 'inherit', cursor: 'pointer' };
+  const link: React.CSSProperties = { padding: 0, border: 0, background: 'none', color: 'var(--tx-mint, #0a8560)', fontWeight: 600, fontSize: 'inherit', cursor: 'pointer' };
 
   let pane: React.ReactNode;
   if (target.main === 'talkr') {
@@ -256,7 +263,7 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
     pane = (
       <>
         {note ? (
-          <div role="status" style={{ ...card, padding: '11px 13px', background: note.ok ? '#dcfce7' : '#fee2e2', borderColor: note.ok ? '#bbf7d0' : '#fecaca', color: note.ok ? '#15803d' : '#b91c1c', fontSize: '12.5px' }}>
+          <div role="status" style={{ ...card, padding: '11px 13px', background: note.ok ? 'var(--positive-soft, #dcfce7)' : 'var(--negative-soft, #fee2e2)', borderColor: note.ok ? 'var(--tint-green-3, #bbf7d0)' : 'var(--tint-red-2, #fecaca)', color: note.ok ? 'var(--tx-green, #15803d)' : '#b91c1c', fontSize: '12.5px' }}>
             {note.text}
           </div>
         ) : null}
@@ -265,12 +272,12 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: '0 12px', alignItems: 'stretch' }}>
           <form onSubmit={saveWorkspace} style={{ ...card, display: 'flex', flexDirection: 'column' }}>
             <h2 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 600 }}>Workspace</h2>
-            <p style={{ margin: '0 0 14px', fontSize: '12.5px', color: '#71717a' }}>
+            <p style={{ margin: '0 0 14px', fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>
               {owner ? 'You own this workspace.' : 'Only an owner can rename the workspace.'}
             </p>
             <label>
               <span style={label}>Workspace name</span>
-              <input value={ws} onChange={(e) => setWs(e.target.value)} disabled={!owner || s.demo} placeholder="Acme Homes" style={{ width: '100%', height: '36px', padding: '0 10px', border: '1px solid #e4e4e7', borderRadius: '9px', fontSize: '13px', outline: 0, background: '#fafafa', color: owner && !s.demo ? '#18181b' : '#a1a1aa' }} />
+              <input value={ws} onChange={(e) => setWs(e.target.value)} disabled={!owner || s.demo} placeholder="Acme Homes" style={{ width: '100%', height: '36px', padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', fontSize: '13px', outline: 0, background: 'var(--canvas, #fafafa)', color: owner && !s.demo ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)' }} />
             </label>
             <div style={{ marginTop: 'auto', paddingTop: '14px' }}>
               <button type="submit" disabled={busy || !owner || s.demo || !canWrite} title={canWrite ? undefined : READ_ONLY_TITLE} className="dc3" style={{ height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid #0A8560', background: busy || !owner || s.demo || !canWrite ? '#7fcbb2' : '#0A8560', color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: busy || !owner || s.demo || !canWrite ? 'not-allowed' : 'pointer' }}>
@@ -281,28 +288,44 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
 
           <div style={card}>
             <h2 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 600 }}>Display</h2>
-            <p style={{ margin: '0 0 6px', fontSize: '12.5px', color: '#71717a' }}>
+            <p style={{ margin: '0 0 6px', fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>
               Remembered in this browser.
             </p>
             {DISPLAY.map(([k, title, sub]) => (
-              <label key={k} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '11px 0 2px', borderTop: '1px solid #f0f0f1', cursor: 'pointer' }}>
-                <input type="checkbox" checked={prefs[k]} onChange={() => toggle(k)} style={{ marginTop: '2px', width: '15px', height: '15px', accentColor: '#0A8560', flex: 'none', cursor: 'pointer' }} />
+              <label key={k} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '11px 0 2px', borderTop: '1px solid var(--divider-2, #f0f0f1)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={prefs[k]} onChange={() => toggle(k)} style={{ marginTop: '2px', width: '15px', height: '15px', accentColor: 'var(--tx-mint, #0a8560)', flex: 'none', cursor: 'pointer' }} />
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#18181b' }}>{title}</span>
-                  <span style={{ display: 'block', fontSize: '12px', color: '#71717a', marginTop: '1px' }}>{sub}</span>
+                  <span style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--ink, #18181b)' }}>{title}</span>
+                  <span style={{ display: 'block', fontSize: '12px', color: 'var(--meta, #71717a)', marginTop: '1px' }}>{sub}</span>
                 </span>
               </label>
             ))}
+            <div role="group" aria-labelledby="settings-theme" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 0 2px', marginTop: '9px', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
+              <span style={{ minWidth: 0, flex: 1 }}>
+                <span id="settings-theme" style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--ink, #18181b)' }}>Theme</span>
+                <span style={{ display: 'block', fontSize: '12px', color: 'var(--meta, #71717a)', marginTop: '1px' }}>Dark keeps every colour that means something. System follows this device.</span>
+              </span>
+              <span data-seg style={{ display: 'inline-flex', flex: 'none', padding: '2px', borderRadius: '8px', background: 'var(--surface-2, #f4f4f5)', border: '1px solid var(--divider, #e4e4e7)' }}>
+                {THEMES.map(([v, text]) => {
+                  const on = theme === v;
+                  return (
+                    <button key={v} type="button" aria-pressed={on} onClick={() => setTheme(v)} style={{ height: '26px', minWidth: '60px', padding: '0 10px', borderRadius: '6px', border: 0, fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', background: on ? 'var(--surface, #fff)' : 'transparent', color: on ? 'var(--ink, #18181b)' : 'var(--muted, #52525b)', boxShadow: on ? '0 1px 2px rgba(0,0,0,.08), 0 0 0 1px var(--divider, #e4e4e7)' : 'none' }}>
+                      {text}
+                    </button>
+                  );
+                })}
+              </span>
+            </div>
           </div>
         </div>
 
         <div style={card}>
           <h2 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 600 }}>Connections</h2>
-          <p style={{ margin: '0 0 6px', fontSize: '12.5px', color: '#71717a' }}>
+          <p style={{ margin: '0 0 6px', fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>
             What this deployment is wired to right now.
           </p>
           <Connection
-            dot={s.demo ? '#a1a1aa' : '#16a34a'}
+            dot={s.demo ? 'var(--subtle, #a1a1aa)' : '#16a34a'}
             name="Supabase"
             detail={s.demo ? 'Not configured — the CRM is running on sample data' : 'Connected · auth and the live database'}
           />
@@ -320,13 +343,13 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
 
   return (
     <section data-screen-label="Settings" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-      <div data-head style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', background: '#fff', borderBottom: '1px solid #e4e4e7', flex: 'none', flexWrap: 'wrap' }}>
+      <div data-head style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)', flex: 'none', flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em' }}>Settings</h1>
-        <span style={{ fontSize: '12.5px', color: '#71717a' }}>{group.label} · {section.label}</span>
+        <span style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>{group.label} · {section.label}</span>
       </div>
 
       {isMobile ? (
-        <div style={{ background: '#fff', borderBottom: '1px solid #e4e4e7', padding: '8px 12px 10px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 'none' }}>
+        <div style={{ background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)', padding: '8px 12px 10px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 'none' }}>
           <div role="tablist" aria-label="Settings" style={{ ...segWrap, width: '100%', display: 'flex' }}>
             {NAV.map((g) => (
               <button key={g.main} type="button" role="tab" aria-selected={group.main === g.main} onClick={() => open(g.main)} style={{ ...seg(group.main === g.main), flex: 1, justifyContent: 'center', height: 30 }}>
@@ -349,14 +372,14 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         {!isMobile ? (
-          <nav aria-label="Settings" style={{ width: '220px', flex: 'none', borderRight: '1px solid #e4e4e7', background: '#fff', overflow: 'auto', padding: '12px 10px' }}>
+          <nav aria-label="Settings" style={{ width: '220px', flex: 'none', borderRight: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', overflow: 'auto', padding: '12px 10px' }}>
             {NAV.map((g) => (
               <div key={g.main} style={{ marginBottom: '14px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', fontWeight: 500, color: '#71717a', padding: '4px 8px 6px' }}>{g.main === 'talkr' ? <TalkrMark size={12} /> : null}{g.label}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', fontWeight: 500, color: 'var(--meta, #71717a)', padding: '4px 8px 6px' }}>{g.main === 'talkr' ? <TalkrMark size={12} /> : null}{g.label}</div>
                 {g.items.map((it) => {
                   const on = g.main === group.main && it.tab === tab;
                   return (
-                    <button key={it.tab} type="button" aria-current={on ? 'page' : undefined} onClick={() => open(g.main, it.tab)} className={on ? undefined : 'dc2'} style={{ display: 'flex', alignItems: 'center', width: '100%', height: '32px', padding: '0 10px', borderRadius: '8px', border: 0, background: on ? '#E7F8F1' : 'transparent', color: on ? '#0A8560' : '#27272a', fontSize: '13px', fontWeight: on ? 600 : 500, cursor: 'pointer', textAlign: 'left' }}>
+                    <button key={it.tab} type="button" aria-current={on ? 'page' : undefined} onClick={() => open(g.main, it.tab)} className={on ? undefined : 'dc2'} style={{ display: 'flex', alignItems: 'center', width: '100%', height: '32px', padding: '0 10px', borderRadius: '8px', border: 0, background: on ? 'var(--mint-dim, #e7f8f1)' : 'transparent', color: on ? 'var(--tx-mint, #0a8560)' : 'var(--ink-2, #27272a)', fontSize: '13px', fontWeight: on ? 600 : 500, cursor: 'pointer', textAlign: 'left' }}>
                       {it.label}
                     </button>
                   );
@@ -366,8 +389,9 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
           </nav>
         ) : null}
 
-        <div style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: isMobile ? '12px 14px 28px' : '18px 24px 40px', background: '#fafafa' }}>
+        <div style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: isMobile ? '12px 14px 28px' : '18px 24px 40px', background: 'var(--canvas, #fafafa)' }}>
           <div style={{ width: '100%' }}>
+            {onNewDesign ? <NewDesignSwitch on={newDesign} onChange={onNewDesign} /> : null}
             <div style={{ marginBottom: '12px' }}>
               <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 700, letterSpacing: '-0.01em' }}>{section.label}</h2>
               <p className="cz-info" style={{ margin: '8px 0 0', maxWidth: '720px' }}>{section.hint}</p>
@@ -378,6 +402,36 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * Try new design: the top of every Settings section, so it is found without
+ * hunting. Off by default; on swaps the People record and the desk Dialer for
+ * their new layouts, at once and for this user only (prefs.ts).
+ */
+function NewDesignSwitch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <div data-testid="new-design" style={{ ...card, display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 16px', marginBottom: '16px' }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <label htmlFor="new-design-switch" id="new-design-label" style={{ display: 'block', fontSize: '13.5px', fontWeight: 650, color: 'var(--ink, #18181b)', cursor: 'pointer' }}>Try new design</label>
+        <p id="new-design-help" style={{ margin: '2px 0 0', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.4 }}>
+          New layouts for People records and the Dialer. Turn off to go back.
+        </p>
+      </div>
+      <button
+        id="new-design-switch"
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-labelledby="new-design-label"
+        aria-describedby="new-design-help"
+        className="cz-switch"
+        onClick={() => onChange(!on)}
+      >
+        <span aria-hidden className="cz-switch-thumb" />
+      </button>
+    </div>
   );
 }
 
@@ -504,24 +558,24 @@ function Team({ workspaceId, myId, myRole, demo, demoName, demoEmail, isMobile, 
     if (r.ok) setNonce((n) => n + 1);
   }
 
-  const field: React.CSSProperties = { height: '34px', padding: '0 11px', border: 0, borderRadius: '10px', fontSize: '13px', outline: 0, background: '#fff', color: '#18181b', minWidth: 0, boxShadow: 'var(--shadow-ring)' };
-  const roleTag: React.CSSProperties = { fontSize: '11px', fontWeight: 600, color: '#0A8560', whiteSpace: 'nowrap' };
+  const field: React.CSSProperties = { height: '34px', padding: '0 11px', border: 0, borderRadius: '10px', fontSize: '13px', outline: 0, background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)', minWidth: 0, boxShadow: 'var(--shadow-ring)' };
+  const roleTag: React.CSSProperties = { fontSize: '11px', fontWeight: 600, color: 'var(--tx-mint, #0a8560)', whiteSpace: 'nowrap' };
 
   return (
     <div style={card}>
       <h2 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 600 }}>Team</h2>
-      <p style={{ margin: '0 0 12px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.5 }}>
+      <p style={{ margin: '0 0 12px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
         Acquisitions works leads through contract and never sees buyers or dispo — only a buyer&rsquo;s offer when one comes in.
         Dispositions starts at Under Contract. TC has the closing file. The database enforces this, not just the menu.
-        {admin && !demo ? <> Lines, caller ID and greetings for each teammate are in <button type="button" onClick={onPhones} style={{ padding: 0, border: 0, background: 'none', color: '#0A8560', fontWeight: 600, fontSize: 'inherit', cursor: 'pointer' }}>Talkr, Numbers</button>.</> : null}
+        {admin && !demo ? <> Lines, caller ID and greetings for each teammate are in <button type="button" onClick={onPhones} style={{ padding: 0, border: 0, background: 'none', color: 'var(--tx-mint, #0a8560)', fontWeight: 600, fontSize: 'inherit', cursor: 'pointer' }}>Talkr, Numbers</button>.</> : null}
       </p>
 
       {demo ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0', borderTop: '1px solid #f0f0f1' }}>
-          <span style={{ width: '30px', height: '30px', borderRadius: '9px', background: '#E7F8F1', color: '#0A8560', display: 'grid', placeItems: 'center', fontSize: '11px', fontWeight: 700, flex: 'none' }}>{demoName.slice(0, 2).toUpperCase()}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
+          <span style={{ width: '30px', height: '30px', borderRadius: '9px', background: 'var(--mint-dim, #e7f8f1)', color: 'var(--tx-mint, #0a8560)', display: 'grid', placeItems: 'center', fontSize: '11px', fontWeight: 700, flex: 'none' }}>{demoName.slice(0, 2).toUpperCase()}</span>
           <span style={{ minWidth: 0, flex: 1 }}>
             <span style={{ display: 'block', fontSize: '13px', fontWeight: 500 }}>{demoName}</span>
-            <span style={{ display: 'block', fontSize: '12px', color: '#71717a' }}>{demoEmail}</span>
+            <span style={{ display: 'block', fontSize: '12px', color: 'var(--meta, #71717a)' }}>{demoEmail}</span>
           </span>
           <span style={roleTag}>demo</span>
         </div>
@@ -530,11 +584,11 @@ function Team({ workspaceId, myId, myRole, demo, demoName, demoEmail, isMobile, 
         const self = m.user_id === myId;
         return (
           <React.Fragment key={m.user_id}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0', borderTop: '1px solid #f0f0f1', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
             <UserAvatar name={who} src={m.avatar_url} size={30} radius="9px" />
             <span style={{ minWidth: 0, flex: 1 }}>
               <span style={{ display: 'block', fontSize: '13px', fontWeight: 500 }}>{who}{self ? ' (you)' : ''}</span>
-              <span style={{ display: 'block', fontSize: '12px', color: '#71717a' }}>{m.email ?? '—'}</span>
+              <span style={{ display: 'block', fontSize: '12px', color: 'var(--meta, #71717a)' }}>{m.email ?? '—'}</span>
             </span>
             {admin && !self && !demo ? <ViewAsButton userId={m.user_id} role={m.role} name={who} onStart={onViewAs} /> : null}
             {admin && m.role !== 'owner' && !self ? (
@@ -543,11 +597,11 @@ function Team({ workspaceId, myId, myRole, demo, demoName, demoEmail, isMobile, 
                   {ASSIGNABLE_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                 </select>
                 {m.email ? (
-                  <button type="button" disabled={!canWrite || resending === m.user_id} title={roTitle ?? 'Email a fresh temporary password'} onClick={() => void resend(m)} style={{ height: '30px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '12px', color: '#0A8560', cursor: !canWrite || resending === m.user_id ? 'not-allowed' : 'pointer' }}>
+                  <button type="button" disabled={!canWrite || resending === m.user_id} title={roTitle ?? 'Email a fresh temporary password'} onClick={() => void resend(m)} style={{ height: '30px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '12px', color: 'var(--tx-mint, #0a8560)', cursor: !canWrite || resending === m.user_id ? 'not-allowed' : 'pointer' }}>
                     {resending === m.user_id ? 'Sending…' : 'Resend invite'}
                   </button>
                 ) : null}
-                <button type="button" disabled={!canWrite} title={roTitle} onClick={() => void remove(m.user_id, who)} style={{ height: '30px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '12px', color: '#b91c1c', cursor: 'pointer' }}>Remove</button>
+                <button type="button" disabled={!canWrite} title={roTitle} onClick={() => void remove(m.user_id, who)} style={{ height: '30px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '12px', color: 'var(--tx-red, #b91c1c)', cursor: 'pointer' }}>Remove</button>
               </>
             ) : <span style={roleTag}>{ROLE_LABEL[m.role] ?? m.role}</span>}
           </div>
@@ -561,8 +615,8 @@ function Team({ workspaceId, myId, myRole, demo, demoName, demoEmail, isMobile, 
       })}
 
       {!demo && admin ? (
-        <form onSubmit={add} style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #f0f0f1' }}>
-          <div style={{ fontSize: '11.5px', color: '#71717a', fontWeight: 500, marginBottom: '8px' }}>Add a teammate</div>
+        <form onSubmit={add} style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
+          <div style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 500, marginBottom: '8px' }}>Add a teammate</div>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.3fr 1fr auto', gap: '8px' }}>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" autoComplete="off" style={field} />
             <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="taylor@yourcompany.com" type="email" required autoComplete="off" style={field} />
@@ -578,16 +632,16 @@ function Team({ workspaceId, myId, myRole, demo, demoName, demoEmail, isMobile, 
               onState={setNState} onExpires={setNExp} onNumber={setNNum} onCounty={setNCounty} />
           ) : null}
           {note ? (
-            <div role="status" style={{ marginTop: '10px', padding: '9px 11px', borderRadius: '9px', fontSize: '12.5px', lineHeight: 1.5, background: note.ok ? '#dcfce7' : '#fee2e2', border: `1px solid ${note.ok ? '#bbf7d0' : '#fecaca'}`, color: note.ok ? '#15803d' : '#b91c1c' }}>{note.text}</div>
+            <div role="status" style={{ marginTop: '10px', padding: '9px 11px', borderRadius: '9px', fontSize: '12.5px', lineHeight: 1.5, background: note.ok ? 'var(--positive-soft, #dcfce7)' : 'var(--negative-soft, #fee2e2)', border: `1px solid ${note.ok ? 'var(--tint-green-3, #bbf7d0)' : 'var(--tint-red-2, #fecaca)'}`, color: note.ok ? 'var(--tx-green, #15803d)' : '#b91c1c' }}>{note.text}</div>
           ) : null}
           {minted ? (
-            <div style={{ marginTop: '10px', padding: '12px', borderRadius: '10px', background: '#fef3c7', border: '1px solid #fde68a' }}>
-              <div style={{ fontSize: '12.5px', color: '#92400e', fontWeight: 600 }}>Temporary password for {minted.email} — also in their invite email; shown here once as a backup.</div>
+            <div style={{ marginTop: '10px', padding: '12px', borderRadius: '10px', background: 'var(--caution-soft, #fef3c7)', border: '1px solid var(--tint-amber-2, #fde68a)' }}>
+              <div style={{ fontSize: '12.5px', color: 'var(--tx-amber-deep, #92400e)', fontWeight: 600 }}>Temporary password for {minted.email} — also in their invite email; shown here once as a backup.</div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px', flexWrap: 'wrap' }}>
-                <code style={{ fontSize: '14px', fontWeight: 700, letterSpacing: '.04em', background: '#fff', padding: '6px 10px', borderRadius: '8px', border: '1px solid #fde68a' }}>{minted.password}</code>
+                <code style={{ fontSize: '14px', fontWeight: 700, letterSpacing: '.04em', background: 'var(--surface, #fff)', padding: '6px 10px', borderRadius: '8px', border: '1px solid var(--tint-amber-2, #fde68a)' }}>{minted.password}</code>
                 <button type="button" onClick={() => { void navigator.clipboard?.writeText(minted.password).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }); }} style={{ height: '30px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '12px', cursor: 'pointer' }}>{copied ? 'Copied' : 'Copy'}</button>
               </div>
-              <div style={{ fontSize: '12px', color: '#92400e', marginTop: '6px' }}>They sign in at /login and change it under Account.</div>
+              <div style={{ fontSize: '12px', color: 'var(--tx-amber-deep, #92400e)', marginTop: '6px' }}>They sign in at /login and change it under Account.</div>
             </div>
           ) : null}
         </form>
@@ -611,34 +665,34 @@ function ServerSecrets({ isMobile }: { isMobile: boolean }) {
     display: 'grid',
     gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 190px) 1fr',
     gap: isMobile ? '3px' : '10px', padding: '8px 0',
-    borderTop: '1px solid #f0f0f1', fontSize: '12.5px',
+    borderTop: '1px solid var(--divider-2, #f0f0f1)', fontSize: '12.5px',
   };
-  const code: React.CSSProperties = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '12px', color: '#18181b', wordBreak: 'break-all' };
+  const code: React.CSSProperties = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '12px', color: 'var(--ink, #18181b)', wordBreak: 'break-all' };
   return (
     <div style={card}>
       <h2 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 600 }}>Server keys (optional)</h2>
-      <p style={{ margin: '0 0 10px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.5 }}>
+      <p style={{ margin: '0 0 10px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
         Project secrets on the Supabase project (Edge Functions → Secrets), read only by the server. Offers and contracts use Acme Homes PandaDoc templates through the webhook — the API key is optional and unused if you only have webhooks.
         The webhook URL below is what PandaDoc posts to so status and signing links land on the record. Resend, Gmail and the blast domain live under Settings → Outbound OS.
       </p>
-      <div style={row}><span style={code}>PANDADOC_API_KEY</span><span style={{ color: '#52525b' }}>Optional. Only if PandaDoc later gives you a REST key. Not needed for Casey to send from the PandaDoc UI.</span></div>
-      <div style={row}><span style={code}>PANDADOC_WEBHOOK_KEY</span><span style={{ color: '#52525b' }}>The shared key on the PandaDoc webhook. Required. Verifies each delivery before a signed document moves a stage.</span></div>
-      <div style={row}><span style={code}>COMPANY_NAME</span><span style={{ color: '#52525b' }}>Optional. Fills the [Company.Name] token on templates (defaults to Acme Homes).</span></div>
-      <div style={row}><span style={code}>REAL_ESTATE_API_API_KEY</span><span style={{ color: '#52525b' }}>RealEstateAPI · nearby sales and owners for Genius Mode, and skip tracing individual owners ($0.05 a hit, only on click).</span></div>
-      <div style={row}><span style={code}>BATCHDATA_API_KEY</span><span style={{ color: '#52525b' }}>BatchData · skip tracing LLCs and other entity owners in Genius Mode, People and Buyers, and individuals too whenever RealEstateAPI is out of credits (billed per match, only on click).</span></div>
-      <div style={row}><span style={code}>ATTOM_API_KEY</span><span style={{ color: '#52525b' }}>ATTOM Property API · optional. Genius Mode&apos;s &ldquo;Compare with ATTOM&rdquo; searches ATTOM&apos;s sales and owners beside RealEstateAPI&apos;s and merges them without duplicates (billed by ATTOM per property returned, only when Compare is on).</span></div>
-      <div style={row}><span style={code}>TELNYX_API_KEY</span><span style={{ color: '#52525b' }}>Telnyx API v2 key. Required for Register under Company &amp; 10DLC: CLOZR files the 10DLC brand and campaign, attaches your lines, and runs Number Reputation and branded calling with it. Optional as a secret: the functions fall back to Vault telnyx_api_key, a copy of the key Talkr runs on.</span></div>
-      <div style={row}><span style={code}>TELNYX_PUBLIC_KEY</span><span style={{ color: '#52525b' }}>The public key from Telnyx → Account → Keys &amp; credentials. Verifies the 10DLC webhooks, so brand and campaign decisions land within minutes instead of on the next morning check.</span></div>
-      <div style={row}><span style={code}>AGENTMAIL_API_KEY</span><span style={{ color: '#52525b' }}>Reads the Free Caller Registry verification email from the AgentMail inbox set under Company &amp; 10DLC.</span></div>
-      <div style={row}><span style={code}>FIRECRAWL_API_KEY</span><span style={{ color: '#52525b' }}>Optional. Submits new numbers on the Free Caller Registry form (falls back to the Vault secret firecrawl_api_key).</span></div>
-      <div style={row}><span style={code}>DISPOGENIUS_API_KEY</span><span style={{ color: '#52525b' }}>Dispo Genius · importing deals and the buyers working them. Location-scoped, so one key per location.</span></div>
+      <div style={row}><span style={code}>PANDADOC_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>Optional. Only if PandaDoc later gives you a REST key. Not needed for Casey to send from the PandaDoc UI.</span></div>
+      <div style={row}><span style={code}>PANDADOC_WEBHOOK_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>The shared key on the PandaDoc webhook. Required. Verifies each delivery before a signed document moves a stage.</span></div>
+      <div style={row}><span style={code}>COMPANY_NAME</span><span style={{ color: 'var(--muted, #52525b)' }}>Optional. Fills the [Company.Name] token on templates (defaults to Acme Homes).</span></div>
+      <div style={row}><span style={code}>REAL_ESTATE_API_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>RealEstateAPI · nearby sales and owners for Genius Mode, and skip tracing individual owners ($0.05 a hit, only on click).</span></div>
+      <div style={row}><span style={code}>BATCHDATA_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>BatchData · skip tracing LLCs and other entity owners in Genius Mode, People and Buyers, and individuals too whenever RealEstateAPI is out of credits (billed per match, only on click).</span></div>
+      <div style={row}><span style={code}>ATTOM_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>ATTOM Property API · optional. Genius Mode&apos;s &ldquo;Compare with ATTOM&rdquo; searches ATTOM&apos;s sales and owners beside RealEstateAPI&apos;s and merges them without duplicates (billed by ATTOM per property returned, only when Compare is on).</span></div>
+      <div style={row}><span style={code}>TELNYX_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>Telnyx API v2 key. Required for Register under Company &amp; 10DLC: CLOZR files the 10DLC brand and campaign, attaches your lines, and runs Number Reputation and branded calling with it. Optional as a secret: the functions fall back to Vault telnyx_api_key, a copy of the key Talkr runs on.</span></div>
+      <div style={row}><span style={code}>TELNYX_PUBLIC_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>The public key from Telnyx → Account → Keys &amp; credentials. Verifies the 10DLC webhooks, so brand and campaign decisions land within minutes instead of on the next morning check.</span></div>
+      <div style={row}><span style={code}>AGENTMAIL_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>Reads the Free Caller Registry verification email from the AgentMail inbox set under Company &amp; 10DLC.</span></div>
+      <div style={row}><span style={code}>FIRECRAWL_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>Optional. Submits new numbers on the Free Caller Registry form (falls back to the Vault secret firecrawl_api_key).</span></div>
+      <div style={row}><span style={code}>DISPOGENIUS_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>Dispo Genius · importing deals and the buyers working them. Location-scoped, so one key per location.</span></div>
       <div style={{ marginTop: '12px' }}>
-        <div style={{ fontSize: '11.5px', color: '#71717a', fontWeight: 500, marginBottom: '5px' }}>PandaDoc webhook URL</div>
+        <div style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 500, marginBottom: '5px' }}>PandaDoc webhook URL</div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ ...code, flex: 1, minWidth: '200px', padding: '8px 10px', border: '1px solid #e4e4e7', borderRadius: '9px', background: '#fafafa' }}>{hook || 'Supabase is not configured'}</span>
+          <span style={{ ...code, flex: 1, minWidth: '200px', padding: '8px 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', background: 'var(--canvas, #fafafa)' }}>{hook || 'Supabase is not configured'}</span>
           <button type="button" disabled={!hook} onClick={() => { void navigator.clipboard?.writeText(hook).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }); }} style={{ height: '34px', padding: '0 12px', borderRadius: '9px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer' }}>{copied ? 'Copied' : 'Copy'}</button>
         </div>
-        <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#71717a', lineHeight: 1.5 }}>
+        <p style={{ margin: '8px 0 0', fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
           Subscribe it to Document state changed, Recipient completed, Document updated and Document deleted. On the subscription, tick Tokens and Fields — that is what we can store without an API: document id, name, status, template name, grand total, recipients (email, role, signed?, signing link), and the filled tokens. We cannot list templates, create or send from Clozr, or download the PDF. Signed purchase agreements move the seller to Under Contract - Seller; signed assignments move the deal to Buyer Under Contract; terminations terminate it.
         </p>
       </div>
@@ -648,10 +702,10 @@ function ServerSecrets({ isMobile }: { isMobile: boolean }) {
 
 function Connection({ dot, mark, name, detail, last }: { dot: string; /** The product's logo, drawn instead of its dot. */ mark?: React.ReactNode; name: string; detail: React.ReactNode; last?: boolean }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 0', borderTop: '1px solid #f0f0f1', borderBottom: last ? 0 : undefined }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)', borderBottom: last ? 0 : undefined }}>
       {mark ?? <span style={{ width: '14px', display: 'grid', placeItems: 'center', flex: 'none' }}><span style={{ color: dot, display: 'inline-flex' }}><Mark label={name} /></span></span>}
       <span style={{ fontSize: '13px', fontWeight: 600, width: '86px', flex: 'none' }}>{name}</span>
-      <span style={{ fontSize: '12.5px', color: '#71717a', minWidth: 0 }}>{detail}</span>
+      <span style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)', minWidth: 0 }}>{detail}</span>
     </div>
   );
 }
@@ -732,14 +786,14 @@ function IngestKeys({
   return (
     <div style={card}>
       <h2 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 600 }}>Ingest keys</h2>
-      <p style={{ margin: '0 0 14px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.55 }}>
+      <p style={{ margin: '0 0 14px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.55 }}>
         One key per system. Each one posts to{' '}
-        {url ? <code style={{ fontSize: '11.5px', background: '#f4f4f5', padding: '1px 5px', borderRadius: '4px' }}>{url}</code> : 'the ingest endpoint'}{' '}
+        {url ? <code style={{ fontSize: '11.5px', background: 'var(--surface-2, #f4f4f5)', padding: '1px 5px', borderRadius: '4px' }}>{url}</code> : 'the ingest endpoint'}{' '}
         and can only write into this workspace.
       </p>
 
       {demo ? (
-        <div style={{ padding: '11px 12px', borderRadius: '9px', background: '#fef3c7', border: '1px solid #fde68a', color: '#92400e', fontSize: '12.5px' }}>
+        <div style={{ padding: '11px 12px', borderRadius: '9px', background: 'var(--caution-soft, #fef3c7)', border: '1px solid var(--tint-amber-2, #fde68a)', color: 'var(--tx-amber-deep, #92400e)', fontSize: '12.5px' }}>
           Supabase isn&rsquo;t configured for this deployment, so there are no keys to issue.
         </div>
       ) : (
@@ -749,7 +803,7 @@ function IngestKeys({
               id="ingest-source"
               value={source}
               onChange={(e) => setSource(e.target.value)}
-              style={{ height: '34px', padding: '0 9px', border: '1px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', background: '#fafafa', color: '#18181b', outline: 0, fontFamily: 'inherit', flex: isMobile ? '1 1 100%' : '0 1 auto' }}
+              style={{ height: '34px', padding: '0 9px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', fontSize: '13px', background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)', outline: 0, fontFamily: 'inherit', flex: isMobile ? '1 1 100%' : '0 1 auto' }}
             >
               {INGEST_SOURCES.map((x) => (
                 <option key={x.name} value={x.name}>{x.label}</option>
@@ -764,24 +818,24 @@ function IngestKeys({
             >
               Issue key
             </button>
-            <span style={{ fontSize: '12px', color: '#a1a1aa' }}>
+            <span style={{ fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>
               {INGEST_SOURCES.find((x) => x.name === source)?.hint}
             </span>
           </div>
 
           {err ? (
-            <div role="status" style={{ marginTop: '12px', padding: '10px 12px', borderRadius: '9px', background: '#fee2e2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: '12.5px' }}>
+            <div role="status" style={{ marginTop: '12px', padding: '10px 12px', borderRadius: '9px', background: 'var(--negative-soft, #fee2e2)', border: '1px solid var(--tint-red-2, #fecaca)', color: 'var(--tx-red, #b91c1c)', fontSize: '12.5px' }}>
               {err}
             </div>
           ) : null}
 
           {minted ? (
-            <div style={{ marginTop: '12px', padding: '13px 14px', borderRadius: '10px', background: '#E7F8F1', border: '1px solid #A8ECD2' }}>
-              <div style={{ fontSize: '11px', color: '#0A8560', fontWeight: 600 }}>
+            <div style={{ marginTop: '12px', padding: '13px 14px', borderRadius: '10px', background: 'var(--mint-dim, #e7f8f1)', border: '1px solid #A8ECD2' }}>
+              <div style={{ fontSize: '11px', color: 'var(--tx-mint, #0a8560)', fontWeight: 600 }}>
                 Copy this now — it isn&rsquo;t shown again
               </div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '9px', flexWrap: 'wrap' }}>
-                <code style={{ flex: '1 1 240px', minWidth: 0, fontSize: '12px', background: '#fff', border: '1px solid #A8ECD2', borderRadius: '7px', padding: '8px 10px', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+                <code style={{ flex: '1 1 240px', minWidth: 0, fontSize: '12px', background: 'var(--surface, #fff)', border: '1px solid #A8ECD2', borderRadius: '7px', padding: '8px 10px', overflowX: 'auto', whiteSpace: 'nowrap' }}>
                   {minted.key}
                 </code>
                 <button
@@ -790,7 +844,7 @@ function IngestKeys({
                   onClick={() => {
                     void navigator.clipboard?.writeText(minted.key).then(() => setCopied(true));
                   }}
-                  style={{ height: '32px', padding: '0 12px', borderRadius: '8px', border: '1px solid #A8ECD2', background: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', color: '#0A8560', flex: 'none' }}
+                  style={{ height: '32px', padding: '0 12px', borderRadius: '8px', border: '1px solid #A8ECD2', background: 'var(--surface, #fff)', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', color: 'var(--tx-mint, #0a8560)', flex: 'none' }}
                 >
                   {copied ? 'Copied' : 'Copy'}
                 </button>
@@ -798,7 +852,7 @@ function IngestKeys({
                   type="button"
                   className="dc2"
                   onClick={() => setMinted(null)}
-                  style={{ height: '32px', padding: '0 12px', borderRadius: '8px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12.5px', cursor: 'pointer', color: '#52525b', flex: 'none' }}
+                  style={{ height: '32px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12.5px', cursor: 'pointer', color: 'var(--muted, #52525b)', flex: 'none' }}
                 >
                   Done
                 </button>
@@ -809,16 +863,16 @@ function IngestKeys({
           {keys.length ? (
             <div style={{ marginTop: '14px' }}>
               {keys.map((k, i) => (
-                <div key={k.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 0', borderTop: i === 0 ? '1px solid #f0f0f1' : '1px solid #f0f0f1' }}>
+                <div key={k.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 0', borderTop: i === 0 ? '1px solid var(--divider-2, #f0f0f1)' : '1px solid var(--divider-2, #f0f0f1)' }}>
                   <span style={{ minWidth: 0, flex: 1 }}>
-                    <span style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: k.active ? '#18181b' : '#a1a1aa' }}>
+                    <span style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: k.active ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)' }}>
                       {k.label || k.name}
                     </span>
-                    <span style={{ display: 'block', fontSize: '11.5px', color: '#a1a1aa', fontFamily: 'ui-monospace, monospace' }}>
+                    <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--subtle, #a1a1aa)', fontFamily: 'ui-monospace, monospace' }}>
                       {k.key_prefix}… · {k.last_used_at ? `used ${new Date(k.last_used_at).toLocaleDateString()}` : 'never used'}
                     </span>
                   </span>
-                  <span style={{ fontSize: '11px', fontWeight: 600, color: k.active ? '#0A8560' : '#a1a1aa', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: k.active ? 'var(--tx-mint, #0a8560)' : 'var(--subtle, #a1a1aa)', whiteSpace: 'nowrap' }}>
                     {k.active ? 'Active' : 'Disabled'}
                   </span>
                   <button
@@ -826,7 +880,7 @@ function IngestKeys({
                     className="dc2"
                     onClick={() => void toggle(k)}
                     disabled={busy}
-                    style={{ height: '28px', padding: '0 10px', borderRadius: '7px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '11.5px', cursor: busy ? 'not-allowed' : 'pointer', color: '#52525b', flex: 'none' }}
+                    style={{ height: '28px', padding: '0 10px', borderRadius: '7px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '11.5px', cursor: busy ? 'not-allowed' : 'pointer', color: 'var(--muted, #52525b)', flex: 'none' }}
                   >
                     {k.active ? 'Disable' : 'Enable'}
                   </button>
@@ -838,14 +892,14 @@ function IngestKeys({
                   onSaved={refresh}
                 />
               ) : (
-                <p style={{ marginTop: '12px', padding: '11px 13px', borderRadius: '10px', background: '#fafafa', border: '1px solid #e4e4e7', fontSize: '12px', color: '#71717a', lineHeight: 1.55 }}>
-                  Texting is not connected. Issue a <strong style={{ color: '#18181b', fontWeight: 600 }}>Talkr</strong> key above:
+                <p style={{ marginTop: '12px', padding: '11px 13px', borderRadius: '10px', background: 'var(--canvas, #fafafa)', border: '1px solid var(--divider, #e4e4e7)', fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.55 }}>
+                  Texting is not connected. Issue a <strong style={{ color: 'var(--ink, #18181b)', fontWeight: 600 }}>Talkr</strong> key above:
                   CLOZR keeps the sending connection with it, and sends texts through Talkr&rsquo;s numbers.
                 </p>
               )}
             </div>
           ) : (
-            <p style={{ marginTop: '14px', fontSize: '12.5px', color: '#a1a1aa' }}>
+            <p style={{ marginTop: '14px', fontSize: '12.5px', color: 'var(--subtle, #a1a1aa)' }}>
               No keys yet. Issue one to connect a system.
             </p>
           )}
@@ -880,13 +934,13 @@ function TalkrSecret({ row, onSaved }: { row: IngestKey; onSaved: () => void }) 
   }
 
   return (
-    <div style={{ marginTop: '12px', padding: '13px 14px', borderRadius: '10px', background: '#fafafa', border: '1px solid #e4e4e7' }}>
+    <div style={{ marginTop: '12px', padding: '13px 14px', borderRadius: '10px', background: 'var(--canvas, #fafafa)', border: '1px solid var(--divider, #e4e4e7)' }}>
       <div style={{ fontSize: '12.5px', fontWeight: 600, marginBottom: '4px' }}>
         Talkr webhook
       </div>
-      <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#71717a', lineHeight: 1.55 }}>
+      <p style={{ margin: '0 0 10px', fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.55 }}>
         In Talkr, create a webhook subscription pointing at{' '}
-        {url ? <code style={{ fontSize: '11px', background: '#fff', border: '1px solid #e4e4e7', padding: '1px 5px', borderRadius: '4px' }}>{url}</code> : 'the CLOZR webhook URL'}{' '}
+        {url ? <code style={{ fontSize: '11px', background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', padding: '1px 5px', borderRadius: '4px' }}>{url}</code> : 'the CLOZR webhook URL'}{' '}
         and paste the signing secret it gives you here. Talkr needs no other changes.
       </p>
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -896,7 +950,7 @@ function TalkrSecret({ row, onSaved }: { row: IngestKey; onSaved: () => void }) 
           value={secret}
           onChange={(e) => setSecret(e.target.value)}
           placeholder={row.has_signing_secret ? 'A secret is stored — paste a new one to replace it' : 'whsec_…'}
-          style={{ flex: '1 1 220px', minWidth: 0, height: '32px', padding: '0 10px', border: '1px solid #e4e4e7', borderRadius: '8px', fontSize: '12.5px', background: '#fff', color: '#18181b', outline: 0 }}
+          style={{ flex: '1 1 220px', minWidth: 0, height: '32px', padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', fontSize: '12.5px', background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)', outline: 0 }}
         />
         <button
           type="button"
@@ -904,15 +958,15 @@ function TalkrSecret({ row, onSaved }: { row: IngestKey; onSaved: () => void }) 
           onClick={() => void save()}
           disabled={busy || secret.trim().length < 8 || !canWrite}
           title={canWrite ? undefined : READ_ONLY_TITLE}
-          style={{ height: '32px', padding: '0 12px', borderRadius: '8px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: busy || secret.trim().length < 8 || !canWrite ? 'not-allowed' : 'pointer', color: secret.trim().length < 8 ? '#a1a1aa' : '#18181b', flex: 'none' }}
+          style={{ height: '32px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12.5px', fontWeight: 600, cursor: busy || secret.trim().length < 8 || !canWrite ? 'not-allowed' : 'pointer', color: secret.trim().length < 8 ? 'var(--subtle, #a1a1aa)' : 'var(--ink, #18181b)', flex: 'none' }}
         >
           Save secret
         </button>
-        <span style={{ fontSize: '11px', fontWeight: 600, color: row.has_signing_secret ? '#0A8560' : '#a1a1aa', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: '11px', fontWeight: 600, color: row.has_signing_secret ? 'var(--tx-mint, #0a8560)' : 'var(--subtle, #a1a1aa)', whiteSpace: 'nowrap' }}>
           {row.has_signing_secret ? 'Verified' : 'Not set'}
         </span>
       </div>
-      {note ? <p style={{ margin: '9px 0 0', fontSize: '12px', color: '#52525b' }}>{note}</p> : null}
+      {note ? <p style={{ margin: '9px 0 0', fontSize: '12px', color: 'var(--muted, #52525b)' }}>{note}</p> : null}
     </div>
   );
 }
@@ -928,7 +982,7 @@ function SettingsTemplates({ isMobile, onToast, talkrAuthed }: { isMobile: boole
     return (
       <div style={{ ...card, textAlign: 'center', padding: '28px 18px' }}>
         <div style={{ fontSize: '14px', fontWeight: 600 }}>Sign in to manage templates</div>
-        <p style={{ margin: '6px 0 0', fontSize: '12.5px', color: '#71717a' }}>SMS and email templates run on a workspace.</p>
+        <p style={{ margin: '6px 0 0', fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>SMS and email templates run on a workspace.</p>
       </div>
     );
   }

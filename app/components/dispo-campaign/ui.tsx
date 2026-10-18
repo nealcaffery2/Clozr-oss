@@ -15,11 +15,11 @@ import { createPortal } from 'react-dom';
 import { Mark } from '@/components/ds/mark';
 
 export const C = {
-  ink: '#18181b', ink2: '#27272a', muted: '#52525b', muted2: '#71717a', subtle: '#a1a1aa',
-  line: '#e4e4e7', line2: '#f0f0f1', surface2: '#f4f4f5',
-  mint: 'var(--c-primary)', mint2: '#08694C', mintSoft: '#E7F8F1', mintLine: '#A8ECD2',
+  ink: 'var(--ink, #18181b)', ink2: 'var(--ink-2, #27272a)', muted: 'var(--muted, #52525b)', muted2: 'var(--meta, #71717a)', subtle: 'var(--subtle, #a1a1aa)',
+  line: 'var(--divider, #e4e4e7)', line2: 'var(--divider-2, #f0f0f1)', surface2: 'var(--surface-2, #f4f4f5)',
+  mint: 'var(--c-primary)', mint2: '#08694C', mintSoft: 'var(--mint-dim, #e7f8f1)', mintLine: '#A8ECD2',
   talkr: 'var(--c-talkr)', talkrSoft: 'var(--c-talkr-soft)',
-  amber: '#b45309', amberSoft: '#fef3c7', red: '#dc2626', redSoft: '#fee2e2', green: '#16a34a',
+  amber: '#b45309', amberSoft: 'var(--caution-soft, #fef3c7)', red: '#dc2626', redSoft: 'var(--negative-soft, #fee2e2)', green: '#16a34a',
   contact: 'var(--c-contact)',
 };
 
@@ -28,7 +28,7 @@ export const CSS = `
 .mk button, .mk input, .mk select, .mk textarea { font-family: inherit; }
 .mk :is(button, a, summary, [tabindex]):focus-visible { outline: 2px solid var(--c-primary); outline-offset: 2px; }
 .mk :is(input[type=checkbox], input[type=radio]):focus-visible { outline: 2px solid var(--c-primary); outline-offset: 2px; }
-.mk-card { background: #fff; border: 1px solid ${C.line}; border-radius: 12px; }
+.mk-card { background: var(--surface, #fff); border: 1px solid ${C.line}; border-radius: 12px; }
 .mk-eyebrow { font-size: 11.5px; color: ${C.muted2}; font-weight: 500; }
 .mk-num { font-variant-numeric: tabular-nums; }
 
@@ -39,7 +39,7 @@ export const CSS = `
 .mk-btn--lg { height: 38px; padding: 0 16px; font-size: 13px; border-radius: 9px; }
 .mk-btn--wrap { white-space: normal; height: auto; min-height: 38px; padding-top: 8px; padding-bottom: 8px; text-align: center; line-height: 1.3; }
 .mk-btn--primary { background: var(--c-primary); border-color: var(--c-primary); color: #fff; }
-.mk-btn--talkr { color: var(--c-talkr); border-color: #fecdd3; background: var(--c-btn-bg); }
+.mk-btn--talkr { color: var(--c-talkr); border-color: var(--tint-rose, #fecdd3); background: var(--c-btn-bg); }
 .mk-btn--danger { color: ${C.red}; }
 .mk-btn--quiet { border-color: transparent; background: none; color: ${C.mint2}; padding: 0 6px; }
 .mk-btn:disabled, .mk-btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
@@ -50,17 +50,17 @@ export const CSS = `
   .mk-btn--talkr:not(:disabled):hover { background: var(--c-talkr-soft); border-color: var(--c-talkr); }
   .mk-btn--quiet:not(:disabled):hover { background: ${C.mintSoft}; }
   .mk-chip:not(:disabled):hover { border-color: var(--c-primary); color: var(--c-primary); }
-  .mk-row:hover { background: #fafafa; }
+  .mk-row:hover { background: var(--canvas, #fafafa); }
   .mk-tab:not([aria-selected="true"]):hover { color: ${C.ink}; }
 }
 
 .mk-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid ${C.line};
-  background: #fff; font-size: 12px; color: #52525b; cursor: pointer; white-space: nowrap;
+  background: var(--surface, #fff); font-size: 12px; color: var(--muted, #52525b); cursor: pointer; white-space: nowrap;
   transition: transform 160ms ease-out, background-color 120ms linear, border-color 120ms linear, color 120ms linear; }
 .mk-chip[aria-pressed="true"], .mk-chip[aria-checked="true"] { border-color: var(--c-primary); background: ${C.mintSoft}; color: var(--c-primary); font-weight: 600; }
 
-.mk-field { max-width: 100%; height: 32px; border-radius: 8px; border: 1px solid ${C.line}; padding: 0 10px; font-size: 12.5px; background: #fff; color: ${C.ink}; min-width: 0; box-sizing: border-box; }
-.mk-area { border-radius: 8px; border: 1px solid ${C.line}; padding: 8px 10px; font-size: 13px; line-height: 1.5; background: #fff; color: ${C.ink}; width: 100%; box-sizing: border-box; resize: vertical; }
+.mk-field { max-width: 100%; height: 32px; border-radius: 8px; border: 1px solid ${C.line}; padding: 0 10px; font-size: 12.5px; background: var(--surface, #fff); color: ${C.ink}; min-width: 0; box-sizing: border-box; }
+.mk-area { border-radius: 8px; border: 1px solid ${C.line}; padding: 8px 10px; font-size: 13px; line-height: 1.5; background: var(--surface, #fff); color: ${C.ink}; width: 100%; box-sizing: border-box; resize: vertical; }
 .mk-field:focus, .mk-area:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px rgba(10,133,96,.1); outline: 0; }
 
 .mk-status { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
@@ -68,8 +68,8 @@ export const CSS = `
 .mk-tab { height: 38px; padding: 0 2px; margin-right: 18px; border: 0; border-bottom: 2px solid transparent; background: none; cursor: pointer; font-size: 13px; font-weight: 500; color: ${C.muted2};
   display: inline-flex; align-items: center; gap: 8px; transition: color 120ms linear; }
 .mk-tab[aria-selected="true"] { color: ${C.ink}; border-bottom-color: ${C.ink}; font-weight: 600; }
-.mk-tab .mk-step { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; font-size: 11px; font-weight: 700; border: 1px solid ${C.line}; color: ${C.muted2}; background: #fff; }
-.mk-tab[aria-selected="true"] .mk-step { background: ${C.ink}; border-color: ${C.ink}; color: #fff; }
+.mk-tab .mk-step { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; font-size: 11px; font-weight: 700; border: 1px solid ${C.line}; color: ${C.muted2}; background: var(--surface, #fff); }
+.mk-tab[aria-selected="true"] .mk-step { background: ${C.ink}; border-color: ${C.ink}; color: var(--surface, #fff); }
 .mk-tab[data-done="true"] .mk-step { background: ${C.mintSoft}; border-color: ${C.mintLine}; color: var(--c-primary); }
 
 .mk-disclosure > button[aria-expanded] svg { transition: transform 160ms ease-out; }
@@ -79,7 +79,7 @@ export const CSS = `
 
 .mk-scrim { position: fixed; inset: 0; background: rgba(12,13,16,.42); display: grid; place-items: center; padding: 16px; z-index: 60; opacity: 1; transition: opacity 200ms ease-out; }
 @starting-style { .mk-scrim { opacity: 0; } }
-.mk-dialog { background: #fff; border-radius: 14px; border: 1px solid ${C.line}; box-shadow: var(--shadow-lg); width: min(460px, 100%); max-height: calc(100dvh - 32px); overflow: auto;
+.mk-dialog { background: var(--surface, #fff); border-radius: 14px; border: 1px solid ${C.line}; box-shadow: var(--shadow-lg); width: min(460px, 100%); max-height: calc(100dvh - 32px); overflow: auto;
   transform: none; opacity: 1; transform-origin: center; transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1), opacity 200ms cubic-bezier(0.23, 1, 0.32, 1); }
 @starting-style { .mk-dialog { transform: scale(0.95); opacity: 0; } }
 
@@ -87,11 +87,63 @@ export const CSS = `
 .mk-swap { opacity: 1; filter: blur(0); transition: opacity 180ms ease-out, filter 180ms ease-out; }
 @starting-style { .mk-swap { opacity: 0; filter: blur(2px); } }
 
-.mk-bubble { max-width: 86%; justify-self: end; background: ${C.talkrSoft}; border: 1px solid rgba(230,20,46,.18); color: ${C.ink}; border-radius: 18px 18px 6px 18px;
+/* An outbound text, as every SMS thread in CLOZR draws ours (tokens.css --sms-out). */
+.mk-bubble { max-width: 86%; justify-self: end; background: var(--sms-out, #0b6fe6); color: var(--sms-out-text, #fff); border-radius: 18px 18px 6px 18px;
   padding: 9px 12px; font-size: 13px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mk-list { max-height: 420px; overflow: auto; overscroll-behavior: contain; }
 .mk-bar { height: 6px; border-radius: 3px; background: ${C.line2}; overflow: hidden; }
 .mk-bar > span { display: block; height: 100%; background: var(--c-primary); border-radius: 3px; transform-origin: left; transition: transform 300ms cubic-bezier(0.23, 1, 0.32, 1); }
+
+/* The message editor: big and centred, the editor beside what the buyer gets. */
+.mk-lb { width: min(1120px, 100%); height: min(880px, calc(100dvh - 32px)); max-height: none; display: grid; grid-template-rows: auto minmax(0,1fr) auto; overflow: hidden; }
+.mk-lb-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 14px 20px; border-bottom: 1px solid ${C.line2}; }
+.mk-lb-x { width: 36px; padding: 0; }
+.mk-lb-switch { display: none; gap: 4px; }
+.mk-lb-body { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); min-height: 0; }
+/* An email is 600px wide: its preview gets the room to show it at that width. */
+.mk-lb-body[data-channel="email"] { grid-template-columns: minmax(0, 1fr) minmax(0, 660px); }
+.mk-lb[data-channel="email"] { width: min(1240px, 100%); }
+.mk-lb-edit { overflow: auto; overscroll-behavior: contain; padding: 20px; }
+.mk-lb-preview { overflow: auto; overscroll-behavior: contain; padding: 20px; background: ${C.surface2}; border-left: 1px solid ${C.line2}; }
+.mk-lb-foot { display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-top: 1px solid ${C.line2}; background: var(--canvas, #fafafa); flex-wrap: wrap; }
+.mk-lb-label { font-size: 12px; font-weight: 600; color: ${C.ink2}; }
+.mk-lb-words { font-size: 14px; line-height: 1.6; padding: 12px 14px; }
+.mk-lb-code { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; overflow: auto; }
+.mk-lb-ask { display: grid; gap: 12px; padding: 16px; border-radius: 12px; background: ${C.mintSoft}; border: 1px solid ${C.mintLine}; }
+.mk-lb-ask .mk-area { background: var(--surface, #fff); }
+.mk-lb-proposal { display: grid; gap: 8px; padding: 14px; border-radius: 10px; background: var(--surface, #fff); border: 1px solid ${C.mintLine}; }
+.mk-lb-skeleton { display: grid; gap: 8px; padding: 14px; border-radius: 10px; background: var(--surface, #fff); }
+.mk-lb-skeleton > span { display: block; height: 10px; border-radius: 5px; background: linear-gradient(90deg, ${C.line2}, ${C.line}, ${C.line2}); background-size: 200% 100%; animation: mk-shimmer 1.2s linear infinite; }
+@keyframes mk-shimmer { to { background-position: -200% 0; } }
+.mk-lb-check { display: grid; gap: 8px; padding: 14px 16px; border-radius: 12px; border: 1px solid ${C.line}; background: var(--surface, #fff); }
+.mk-lb-check[data-state="warn"] { border-color: #fcd34d; background: var(--tint-amber, #fffbeb); }
+.mk-lb-check[data-state="block"] { border-color: #fca5a5; background: var(--tint-red, #fef2f2); }
+.mk-lb-hero { position: relative; aspect-ratio: 3 / 2; border-radius: 10px; overflow: hidden; background: ${C.surface2}; border: 1px solid ${C.line}; display: grid; place-items: center; }
+.mk-lb-hero img { width: 100%; height: 100%; object-fit: cover; object-position: center; display: block; }
+.mk-lb-hero[data-busy="true"] img { opacity: .45; }
+.mk-lb-hero-busy { position: absolute; inset: auto 10px 10px; padding: 6px 10px; border-radius: 7px; background: rgba(24,24,27,.82); color: #fff; font-size: 12px; text-align: center; }
+.mk-lb-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.mk-lb-thumb { aspect-ratio: 3 / 2; padding: 0; border-radius: 8px; overflow: hidden; border: 2px solid transparent; outline: 1px solid ${C.line}; background: ${C.surface2}; cursor: pointer; transition: transform 160ms ease-out, border-color 120ms linear; }
+.mk-lb-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mk-lb-thumb[aria-checked="true"] { border-color: var(--c-primary); outline-color: var(--c-primary); }
+.mk-lb-thumb--ghost { animation: mk-shimmer 1.2s linear infinite; background: linear-gradient(90deg, ${C.line2}, ${C.line}, ${C.line2}); background-size: 200% 100%; }
+.mk-lb-phone { display: grid; gap: 6px; padding: 18px 14px; border-radius: 22px; background: var(--surface, #fff); border: 1px solid ${C.line}; max-width: 380px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+@media (max-width: 760px) {
+  .mk-scrim:has(.mk-lb) { padding: 0; }
+  .mk-lb { height: 100dvh; border-radius: 0; border: 0; }
+  .mk-lb-switch { display: flex; }
+  .mk-lb-body, .mk-lb-body[data-channel="email"] { grid-template-columns: minmax(0, 1fr); }
+  .mk-lb-body[data-view="edit"] .mk-lb-preview, .mk-lb-body[data-view="preview"] .mk-lb-edit { display: none; }
+  .mk-lb-preview { border-left: 0; }
+  .mk-lb-edit, .mk-lb-preview { padding: 16px; }
+}
+/* A message card in the builder: the whole message, pressable to open its editor. */
+.mk-msg { display: grid; gap: 10px; }
+.mk-msg-open { display: block; width: 100%; text-align: left; padding: 0; border: 1px solid ${C.line}; border-radius: 12px; background: var(--surface, #fff); cursor: pointer; overflow: hidden; transition: border-color 120ms linear, box-shadow 120ms linear; }
+.mk-msg-open:focus-visible { outline: 2px solid var(--c-primary); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) { .mk-msg-open:hover { border-color: var(--c-primary); box-shadow: 0 0 0 3px rgba(10,133,96,.08); } }
+.mk-msg-sms { padding: 16px; display: grid; background: ${C.surface2}; }
+.mk-msg-sms .mk-bubble { max-width: 100%; font-size: 14px; }
 
 @media (prefers-reduced-motion: reduce) {
   .mk-press:active:not(:disabled) { transform: none; }
@@ -101,6 +153,7 @@ export const CSS = `
   .mk-dialog { transition: opacity 150ms linear; }
   @starting-style { .mk-dialog { transform: none; } }
   .mk-swap { transition: opacity 150ms linear; filter: none; }
+  .mk-lb-skeleton > span, .mk-lb-thumb--ghost { animation: none; }
   @starting-style { .mk-swap { filter: none; } }
 }
 `;
@@ -193,7 +246,7 @@ export function Dialog({ title, children, onClose, actions, labelledBy }: { titl
           <h2 id={labelledBy ?? id} style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.01em' }}>{title}</h2>
         </div>
         <div style={{ padding: '6px 20px 16px' }}>{children}</div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', padding: '12px 20px', borderTop: `1px solid ${C.line2}`, background: '#fafafa', borderRadius: '0 0 14px 14px', flexWrap: 'wrap' }}>{actions}</div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', padding: '12px 20px', borderTop: `1px solid ${C.line2}`, background: 'var(--canvas, #fafafa)', borderRadius: '0 0 14px 14px', flexWrap: 'wrap' }}>{actions}</div>
       </div>
     </div>,
     document.body,
@@ -207,7 +260,7 @@ export function Avatar({ name, size = 32 }: { name: string; size?: number }) {
 
 /** A plain-words note: a problem that blocks launch (red), one worth a look (amber), or information. */
 export function Note({ level, children, action }: { level: 'block' | 'warn' | 'info'; children: React.ReactNode; action?: React.ReactNode }) {
-  const s = level === 'block' ? { bg: C.redSoft, fg: '#991b1b', dot: C.red } : level === 'warn' ? { bg: C.amberSoft, fg: '#92400e', dot: '#d97706' } : { bg: '#f4f4f5', fg: C.muted, dot: C.muted2 };
+  const s = level === 'block' ? { bg: C.redSoft, fg: '#991b1b', dot: C.red } : level === 'warn' ? { bg: C.amberSoft, fg: '#92400e', dot: '#d97706' } : { bg: 'var(--surface-2, #f4f4f5)', fg: C.muted, dot: C.muted2 };
   return (
     <div role={level === 'block' ? 'alert' : undefined} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', background: s.bg, color: s.fg, borderRadius: '8px', padding: '8px 10px', fontSize: '12.5px', lineHeight: 1.45 }}>
       <span style={{ color: s.dot, display: 'inline-flex', marginTop: '6px' }}><Mark label={level === 'block' ? 'error' : level === 'warn' ? 'warning' : 'info'} /></span>
@@ -231,6 +284,12 @@ export const Icon = {
   play: 'M5 3.5v9l7-4.5z',
   users: 'M6 7.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM1.8 13.5a4.2 4.2 0 0 1 8.4 0M10.5 2.7a2.5 2.5 0 0 1 0 4.6M12 9.6a4.2 4.2 0 0 1 2.2 3.9',
   voicemail: 'M4.5 10.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM11.5 10.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM4.5 10.5h7',
+  close: 'M4 4l8 8M12 4l-8 8',
+  image: 'M2.5 3.5h11v9h-11zM2.5 10.5l3-3 2.5 2.5 2-2 3.5 3.5M10.5 6.2a.8.8 0 1 0 0-1.6.8.8 0 0 0 0 1.6z',
+  upload: 'M8 10.5V2.8M5 5.5l3-3 3 3M2.8 10.5v2.7h10.4v-2.7',
+  wand: 'M2.5 13.5l7.5-7.5M9 2.5l.6 1.4 1.4.6-1.4.6L9 6.5l-.6-1.4L7 4.5l1.4-.6zM12.5 7l.4 1 1 .4-1 .4-.4 1-.4-1-1-.4 1-.4z',
+  edit: 'M10.5 3l2.5 2.5L6 12.5H3.5V10zM9 4.5l2.5 2.5',
+  shield: 'M8 1.8l5 1.9v3.8c0 3-2.1 5.4-5 6.7-2.9-1.3-5-3.7-5-6.7V3.7z',
 };
 export const Svg = ({ d, size = 14, color = 'currentColor' }: { d: string; size?: number; color?: string }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flex: 'none' }}><path d={d} /></svg>

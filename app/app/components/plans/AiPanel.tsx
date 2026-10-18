@@ -9,10 +9,22 @@ import { Btn, INK, LINE, MINT, MINT_BG, MUTED, label, smallInput, smallSelect, t
 
 const TONES = ['Warm and plain', 'Direct, no fluff', 'Friendly neighbour', 'Professional', 'Casual, texting a friend', 'Urgent but respectful'];
 
+const GOAL_EXAMPLE = {
+  seller: '“A 7-touch sequence for a cold direct-mail lead who never answered. Two texts, a call, an email, another text, a task to check the record, and a last text with an easy out. Warm, not salesy.”',
+  compr: '“A 5-touch campaign for Compr signups who ran one address and never picked a plan. An email, a text, a call to book a demo on one of their live deals, a follow-up email, and a last text with an easy out. Operator to operator, no hype.”',
+};
+const EDIT_EXAMPLE = {
+  seller: '“make the texts shorter”, “add a call on day 5”, “drop the email and add a stage change to Nurture at the end”',
+  compr: '“make the texts shorter”, “add a demo call on day 3”, “mention batch underwriting on Growth in the second email”',
+};
+
 export function AiPanel({
-  hasPlan, busy, review, tone, onGenerate, onEdit, onUndo, onDismiss,
+  hasPlan, compr = false, busy, review, tone, onGenerate, onEdit, onUndo, onDismiss,
 }: {
-  hasPlan: boolean; busy: boolean; review: AiReview | null; tone: string;
+  hasPlan: boolean;
+  /** A Compr workspace: the examples are Compr campaigns, not seller follow-up. */
+  compr?: boolean;
+  busy: boolean; review: AiReview | null; tone: string;
   onGenerate: (goal: string, tone: string, steps: number | null) => void;
   onEdit: (instruction: string, tone: string) => void;
   onUndo: () => void; onDismiss: () => void;
@@ -32,7 +44,7 @@ export function AiPanel({
   };
 
   return (
-    <div style={{ background: '#141419', color: '#fff', borderRadius: '12px', padding: '14px 16px', position: 'relative', overflow: 'hidden' }}>
+    <div style={{ background: 'var(--ink-hero, #141419)', color: 'var(--on-dark, #fff)', borderRadius: '12px', padding: '14px 16px', position: 'relative', overflow: 'hidden' }}>
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'radial-gradient(120% 90% at 90% -10%, rgba(10, 133, 96,0.34), transparent 58%)' }} />
       <div style={{ position: 'relative' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -40,7 +52,7 @@ export function AiPanel({
           {hasPlan ? (
             <span style={{ display: 'inline-flex', background: 'rgba(255,255,255,.08)', borderRadius: '7px', padding: '2px' }}>
               {(['edit', 'goal'] as const).map((m) => (
-                <button key={m} type="button" onClick={() => setMode(m)} style={{ height: '22px', padding: '0 9px', borderRadius: '5px', border: 0, background: mode === m ? '#fff' : 'transparent', color: mode === m ? INK : 'rgba(255,255,255,.75)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                <button key={m} type="button" onClick={() => setMode(m)} style={{ height: '22px', padding: '0 9px', borderRadius: '5px', border: 0, background: mode === m ? 'var(--surface, #fff)' : 'transparent', color: mode === m ? INK : 'rgba(255,255,255,.75)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                   {m === 'edit' ? 'Edit this plan' : 'Start over'}
                 </button>
               ))}
@@ -50,14 +62,14 @@ export function AiPanel({
         {effective === 'goal' ? (
           <textarea
             value={goal} onChange={(e) => setGoal(e.target.value)} rows={3}
-            placeholder="Describe the plan and the tone… e.g. “A 7-touch sequence for a cold direct-mail lead who never answered. Two texts, a call, an email, another text, a task to check the record, and a last text with an easy out. Warm, not salesy.”"
+            placeholder={`Describe the plan and the tone… e.g. ${GOAL_EXAMPLE[compr ? 'compr' : 'seller']}`}
             onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') run(); }}
             style={{ ...textarea, marginTop: '10px', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.14)', color: '#fff' }}
           />
         ) : (
           <textarea
             value={instruction} onChange={(e) => setInstruction(e.target.value)} rows={2}
-            placeholder="What should change? e.g. “make the texts shorter”, “add a call on day 5”, “drop the email and add a stage change to Nurture at the end”"
+            placeholder={`What should change? e.g. ${EDIT_EXAMPLE[compr ? 'compr' : 'seller']}`}
             onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') run(); }}
             style={{ ...textarea, marginTop: '10px', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.14)', color: '#fff' }}
           />
@@ -86,7 +98,7 @@ export function AiPanel({
         </div>
       </div>
       {review ? (
-        <div style={{ position: 'relative', marginTop: '12px', background: '#fff', color: INK, borderRadius: '10px', padding: '10px 12px', border: `1px solid ${LINE}` }}>
+        <div style={{ position: 'relative', marginTop: '12px', background: 'var(--surface, #fff)', color: INK, borderRadius: '10px', padding: '10px 12px', border: `1px solid ${LINE}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '11.5px', color: MINT, fontWeight: 700 }}>
               {review.kind === 'edit' ? 'What the AI changed' : review.before ? 'Replaced the plan' : 'Drafted'}
@@ -96,7 +108,7 @@ export function AiPanel({
             <Btn small onClick={onDismiss}>Looks good</Btn>
           </div>
           {review.changes.length ? (
-            <ul style={{ margin: '8px 0 0', padding: '0 0 0 16px', fontSize: '12.5px', color: '#27272a', lineHeight: 1.55 }}>
+            <ul style={{ margin: '8px 0 0', padding: '0 0 0 16px', fontSize: '12.5px', color: 'var(--ink-2, #27272a)', lineHeight: 1.55 }}>
               {review.changes.slice(0, 20).map((c, i) => <li key={i}>{c}</li>)}
             </ul>
           ) : (

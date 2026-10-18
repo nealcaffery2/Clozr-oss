@@ -7,31 +7,38 @@
 'use client';
 
 import { isProtectedBuyer } from '@/lib/ai-agent-client';
+import { callSeconds, endedCallClock, type CallTimer } from '@/lib/call-clock';
 import type { BulkRecord } from '@/app/components/ai-agent/BulkAgentPanel';
 import { emailGist, looksHtml } from '@/lib/email-text';
 import { requestInboxSms, requestInboxThread, threadKeyFor } from '@/app/clozr/screens/inboxHandoff';
 import { requestSettingsTab } from '@/app/clozr/screens/settingsTab';
 import { closeBadge, closeSortKey } from '@/lib/close-date';
 import type React from 'react';
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { newDesignOn, subscribeNewDesign, writeNewDesign } from './prefs';
 import { D as MOCK, type ActionPlan, type Buyer, type Communication, type Deal, type Enrollment, type InboxItem, type Notification, type Person, type PlanStep, type Stage, type Property, type Rep, type Task, type TimelineEntry, type Vendor } from '@/lib/clozr-types';
 import { LANE_PROMPTS, LANE_START, askLane, deleteLaneChat, laneContext, laneDrive, listLaneChats, loadLaneMessages, type LaneAction, type LaneCard, type LaneChat, type LaneDraft, type LaneRefTarget, type LaneTurn } from '@/lib/lane';
 import { TOOL_LABEL, askClozr, type AskCard, type AskCardKind, type AskFocusItem, type AskTurn } from '@/lib/ask-clozr';
 import {
   applyCallFacts, applyComprReport, saveOfferBand as saveOfferBandWrite, archiveBuyers, archiveDeals, archiveSellers, archiveVendors, setVendorLocation, setVendorMainPoc, assignSellers, assignBuyers, setSellerUnderwriter, createCommunication, createTask, deletePlan as deletePlanWrite,
   claimSeller, createAppointment, parseDue,
-  enrollInPlan, enrollBuyerInPlan, logActivity, markNotificationsRead, pauseEnrollment, pinTimelineEntry, resumeEnrollment, saveAdd, savePlan as savePlanWrite,
-  setStage as setStageWrite, setDealStage as setDealStageWrite, setSubmissionStage, assignDeals, setDealUnderwriter, matchDeal as matchDealWrite, setTaskDone, setTaskDue, setTcGate, setTcTick, tagSellers, untagSellers, tagBuyers, untagBuyers, saveWhatWeKnow, updateSellerDetails, updateTcFile,
-  setStageMany, eachLimited, openDealOnProperty, type FieldValue, type WriteResult,
+  enrollInPlan, enrollBuyerInPlan, logActivity, markNotificationsRead, markAllNotificationsRead, pauseEnrollment, pinTimelineEntry, resumeEnrollment, saveAdd, savePlan as savePlanWrite,
+  setStage as setStageWrite, setDealStage as setDealStageWrite, setSubmissionStage, assignDeals, setDealUnderwriter, matchDeal as matchDealWrite, setTaskDone, setTasksDone, setTaskDue, setTcGate, setTcTick, tagSellers, untagSellers, tagBuyers, untagBuyers, saveWhatWeKnow, updateSellerDetails, updateTcFile,
+  setStageMany, enrollSellersInPlan, enrollManyBuyers, pauseEnrollments, openDealOnProperty, type FieldValue, type WriteResult,
 } from '@/lib/crm-write';
 import { useConfirm } from '@/components/ds/Confirm';
 import { buyersForPipelineDeal, pipelineDealOptions } from '@/lib/buyer-pipeline';
 import { ENDING_STAGES, fridayOverrideAsk, isFridayIso, readyToMarketChecks, tcFileBlockers } from '@/lib/deal-close';
-import { stopEnrollment } from '@/lib/plans';
+import { rememberPlan, stopEnrollment, stopEnrollments, triggerLabel } from '@/lib/plans';
 import { SMART_LIST_QUIET_MIN, isDeadLeadStage, isReactivationLead } from '@/lib/reactivation';
 import { BUYER_STAGES, PIPELINE_STAGES, PODIO_NEW_SUBMISSIONS, PODIO_SUBMISSION_STAGES, PODIO_TOTAL_SUBMISSIONS, SELLER_STAGES, podioItemInList, podioRowStage, type PodioSubmission, SELLER_STAGE_LABELS, dealStageColor, isDealStage, offDispo, onDispoBoard, sellerStageColor, sellerStageForDeal, sellerStageGroup, sellerUnderContract, nativeSubmissionDeals, submissionListMatch, isDeadStage, opensDeal, leadStagePicks } from '@/lib/stages';
 import { submissionIdentity, submissionOpenTarget } from '@/lib/vendor-sellers';
 import { formatPhone, toE164 } from '@/lib/talkr';
+import {
+  DEMO_BUYER_LINES, buyerGaps, buyerSeed, demoCallProfile, emptyProfile, profileBuyBox, quickAddSeed,
+  type BuyerProfileSeed, type CallProfile, type ProfileKind, type ProfileLine,
+} from '@/lib/call-profile';
+import { type Contact, rankContacts } from '@/lib/contact-search';
 import { PHONE_OTHER_TAB } from '@/lib/softphone-lock';
 import type { IconName } from '@/app/components/talkr/Icon';
 import { fmtDuration, parseMoney, relativeTime, useTalkrPhone } from './useTalkrPhone';
@@ -54,6 +61,7 @@ import { adjacentOpenRow, adjacentRecordId, adjacentStage, openRowId, stepIndex,
 import { deleteSmartList, insertSmartList, loadSmartLists, smartListVisible } from '@/lib/smart-lists';
 import { buyerListIds, buyerListLabelOf, effectiveBuyerList, inBuyerList } from '@/lib/buyer-list-profile';
 import { loadPeopleMemoryRaw, readPeopleMemory, writePeopleMemory } from '@/lib/people-memory';
+import { DEFAULT_PEOPLE_SIDE, loadPeopleSide, noteSide, peopleSideFor, savePeopleSide, sideLanding, type PeopleSide, type PeopleSideMemory } from '@/lib/people-side';
 import { openTcFiles, stepTc as nextTcId, tcPlace } from '@/lib/tc-nav';
 import { dealPinsFor, isArchivedRecord, recordListOf, urlDealOf } from '@/lib/url-deal';
 import { type NavHash, type NavRef, backAction, decodeNavHash, encodeNavHash, formatFrom, parseFrom, sameRef } from '@/lib/nav-hash';
@@ -66,14 +74,20 @@ import { DEFAULT_PINNED_LISTS, applySmartListDrop, layoutSmartLists, togglePinne
 import { plansForRecord } from '@/lib/action-plan-catalog';
 import { loadDismissedNotifs, mergeDismissed, notificationDbIds, saveDismissedNotifs, visibleNotifs, forRep } from '@/lib/notif-dismiss';
 import { loadBellDismissals, saveBellDismissals } from '@/lib/bell-dismissals';
+import { isBellCatMuted, loadBellMutes, saveBellMutes, setBellMuteUser } from '@/lib/bell-mute-prefs';
+import { bellNotifEvent, bellSoundDedupeKey, BELL_CAT_NOTIFY_EVENTS } from '@/lib/bell-sound';
 import { phoneTail } from '@/lib/bell-events';
+import { getAudioPrefs, playEvent, setAudioPrefs, setBellMuteChecker } from '@/lib/phone-audio';
 import { withFloorBellMutes } from '@/lib/floor-notify';
 import { useFloorNotifyPrefs } from '@/lib/floor-notify-prefs';
-import { GAP_BELL_CAT, sectionGaps, type SectionGap } from '@/lib/section-gaps';
+import { GAP_BELL_CAT, sectionGaps, withTitleFallbacks, type SectionGap } from '@/lib/section-gaps';
 import { flagsForStage, formatSourceScore, isDealSource, isNationalSource, sourceGetsEmailFollowup, sourceScorecard } from '@/lib/source-score';
-import { recommendStage } from '@/app/components/record/record-logic';
+import { recommendStage, type StagePick } from '@/app/components/record/record-logic';
 import { type Recipient, sendSummary, textMany } from '@/lib/sms';
 import { restoreDraft, withRestored } from '@/lib/compose-drafts';
+import { raiseToast, setToastAction, type ToastTone } from './toastStore';
+import { clearComposerIf, getComposerText, setComposerText } from './composerStore';
+import { perfLap, perfLapEnd, perfLapStart, perfNow, usePerfTrack } from './perf';
 import { sendEmail } from '@/lib/google';
 import { openReach } from '@/app/components/record/reach';
 import { emailPlain, looksLikeHtml } from '@/lib/email-html';
@@ -84,28 +98,38 @@ import { dispoFields } from '@/lib/dispo-fields';
 import { listingUrl } from '@/lib/dispo';
 import { demoFor } from '@/components/dispo-campaign/demo-data';
 import { indexByPhone, syncTalkrToRecords } from '@/lib/talkr-sync';
+import { talkrUserMap } from '@/lib/sms-record';
 import { dialWithExtension, onExtensionOpenRecord } from '@/lib/talkr-extension';
 import { generateOffer as generateOfferWrite, logOffer as logOfferWrite, offerMoney } from '@/lib/offers';
 import { useCallQueue, type QueueKind } from '@/lib/call-queue';
 import { marketTiming } from '@/lib/dispo-sop';
-import { dbId, dealRank, taskDueFields, loadBuyerTimeline, loadPhoneTexts, loadRecordComms, loadRecordTimeline, mergeThread, personMarket, type PhoneText, relative, type MatchView, type OfferGap, type OfferGapPerson } from '@/lib/crm';
+import { sampleEmailRows } from '@/lib/sample-mail';
+import { dbId, dealRank, taskDueFields, loadBuyerTimeline, loadPhoneTexts, loadRecordFeedRows, recordCommsFrom, recordTimelineFrom, type RecordFeedRows, mergeThread, personMarket, type PhoneText, relative, type MatchView, type OfferGap, type OfferGapPerson } from '@/lib/crm';
 import { marketLabel, stateCodeOf as placeStateCode, stateNameOf } from '@/lib/place-names';
+import { serverFilters, usePeoplePage } from '@/lib/people-page';
+import { HISTORY_TYPES, isAutomationRow } from '@/app/components/record/record-tabs';
 import { historyWindow, loadStageHistory, stageEventEntry, stageHistoryIds, type HistoryMatch, type StageEvent } from '@/lib/stage-history';
 import { HISTORY_WHEN, MONEY_BUCKETS, PROPERTY_STEPS, STACK_STEPS, SUBMISSION_STEPS, anyInRange, atLeastOf, listStack, moneyRange } from '@/lib/people-stack';
 import { GAP_WITHIN, closeCallsNeeded, gapOf, withinOf } from '@/lib/offer-gap';
+import { inDateWindow } from '@/lib/date-window';
+import { gapLine, gapPasses, gapTitle, gapUp, room } from '@/lib/attack-gap';
+import {
+  UW_TRIAGE_LABEL, askShortfallPct, hasSubmitterPhotos, uwTriageBucket, uwTriageForDeal, uwTriageHint, type UwTriageBucket,
+} from '@/lib/submission-uwtriage';
 import { offerBand } from '@/lib/offer-band';
-import { addedOn, inDrawnOrder, peopleColumnSort, peopleSortColumn } from '@/lib/list-sort';
+import { addedOn, cmpSort, inDrawnOrder, peopleColumnSort, peopleSortColumn, type SortDir } from '@/lib/list-sort';
 import { recall } from '@/lib/screen-memory';
-import { TASK_VIEWS, dueLabel, inTaskView, overdueFirst } from '@/lib/task-views';
+import { REP_TASK_VIEWS, TASK_VIEWS, dueLabel, inTaskView, nextTaskMayMove, openShownIds, overdueFirst, revertFailed, taskVisible } from '@/lib/task-views';
+import { daysInStageLabel, dealKeyNumber, myBandDeals, myBandTasks, myUpcomingTasks } from '@/lib/today-band';
 import { taskRecordOf } from '@/lib/task-record';
 import { optionAtRisk, optionReadouts } from '@/supabase/functions/_shared/option-clock';
 import { DEAL_COL_LABELS, trackerSheet } from '@/lib/deal-tracker-sheet';
 import { whatWeKnowFields } from '@/lib/what-we-know';
-import { ENTITY_LABELS, STATE_NAMES, buildGazetteer, entityKind, resolveMarkets, type EntityKind, type Place } from '@/lib/market-geo';
+import { ENTITY_LABELS, STATE_NAMES, buildGazetteer, entityKind, resolveMarkets, type EntityKind, type Gazetteer, type Place } from '@/lib/market-geo';
 import { openPopup, propertyLinks, streetViewImage } from '@/lib/property-links';
 import { collectPhotos, demoGallery, photoIndexOf } from '@/lib/house-photos';
 import { loadDealAlbum, pullDrivePhotos } from '@/lib/deal-files';
-import { CUSTOM_TAB, REPORT_RANGES, REPORT_TABS, type Kpi, type ReportRaw, buildReport, homeKpis, rangeOf, reportCsv, sampleReportRaw } from '@/lib/reporting';
+import { ADMIN_REPORT_TABS, CUSTOM_TAB, TEAM_STOPLIGHT_TAB, REPORT_RANGES, REPORT_TABS, type Kpi, type ReportRaw, buildReport, homeKpis, rangeOf, reportCsv, sampleReportRaw } from '@/lib/reporting';
 import { BUYR, COMPR, DEAL_MACHINE, LANE, TALKR_INK, TALKR_TINT } from '@/app/clozr/brand';
 import { boardFace } from '@/lib/rep-art';
 import { BADGES, DEFAULT_TZ, type Goals, PERIODS as LB_PERIODS, type SalesPerson, applyLeaderboardResets, badgesFor, buildBadgeContext, buildLeaderboard, calculatePoints, getCalls, getContracts, getConversations, resolveTitles } from '@/lib/leaderboard';
@@ -134,9 +158,13 @@ import { type AddDrafts, draftFor, dropDraft, hasTyped, keepDraft } from '@/lib/
 import type { CmdAction, CmdData } from './command-rows';
 import { parseSearch, searchKey, searchRank, searchRows, type SearchKey } from '@/lib/list-search';
 import { onWorkspaceReset } from '@/lib/active-workspace';
+import { filterActivityByUser } from '@/lib/activity-user-filter';
 import { foldEmailThreads } from '@/lib/email-thread';
 import { useRecordFeedLive } from './useRecordFeedLive';
-import { heatText, responseTone, tempText } from '@/lib/heat';
+import { heat, heatText, responseTone, tempText } from '@/lib/heat';
+import { type RequestContext, type RequestDeal, addressLine, pickBuyerDeal } from '@/lib/contract-request';
+import { setPendingContract } from '@/lib/contract-request-store';
+import { parseDollars } from '@/lib/money';
 
 /** Every record type Quick Add can create. */
 export type AddKind = 'seller' | 'coseller' | 'address' | 'property' | 'buyer' | 'deal' | 'task' | 'appointment' | 'note' | 'vendor';
@@ -149,12 +177,7 @@ export type AddAsk =
   | { kind: 'dupe'; dupe: QuickDupe }
   | { kind: 'scope'; others: { id: number; name: string }[]; address: string };
 
-/**
- * What a toast is saying: a write that landed, one that did not, or anything
- * else. Every toast used to wear the same green square, so "Could not save"
- * looked exactly like "Saved".
- */
-export type ToastTone = 'success' | 'error' | 'info';
+export type { ToastTone } from './toastStore';
 
 /** How a toast from a canWrite-off branch reads when it was written for the demo. */
 const DEMO_ANSWER = /\(demo\)$|signed-in workspace\.?$|^Sign in (to|with) /;
@@ -171,8 +194,10 @@ const PEOPLE_VIEW_KEY = 'clozr.peopleView';
 /** The People toolbar filter set. 'Any' means the filter is off. */
 export type PeopleFilters = {
   owner: string; stage: string; source: string; tag: string; date: string; sort: string;
-  /** 'Any' | 'Not run' | 'Run' — whether COMPR has underwritten the lead. */
+  /** 'Any' | 'Not run' | 'Run' | 'Run, no offer' — whether COMPR has underwritten the lead. */
   compr?: string;
+  /** Lead heat (lib/heat.ts): 'Any' | 'Hot' | 'Warm' | 'Mild' | 'Cool' | 'Cold'. Talkr's HOT/WARM/COLD stands in where there is no score. */
+  heat?: string;
   /**
    * Offer gaps (migration 70). `gapBasis` and `gapWithin` are modifiers, not
    * filters: they say which number the two counts below are measured against,
@@ -200,6 +225,16 @@ export type PeopleFilters = {
   historyWhen?: string;
   historyFrom?: string;
   historyTo?: string;
+  /** When the record was added: a named window, or Custom with `addedFrom` / `addedTo` (YYYY-MM-DD). */
+  addedWhen?: string; addedFrom?: string; addedTo?: string;
+  /**
+   * Our offer (or the underwriter high) against their ask. Positive room is a
+   * deal we can attack: asking $100k, we can offer $120k, gap +$20k.
+   * `attackBasis` says which number. On its own it narrows nothing.
+   */
+  attackGap?: string; attackBasis?: string;
+  /** UW triage bucket for submissions (Top 25% green / Decline bucket / Review). */
+  uwTriage?: string;
   /** Offer and ARV: a bucket, or 'Custom' with `…Min`/`…Max` ("150k"). Any of their deals in range matches. */
   offer?: string; offerMin?: string; offerMax?: string;
   arv?: string; arvMin?: string; arvMax?: string;
@@ -296,6 +331,41 @@ export const LAST_IMPORT = 'Last import';
  */
 export const subKey = (id: string) => (id.startsWith('sub:') ? id.split('~')[0] : id);
 const subDealId = (id: string) => subKey(id).slice(4);
+/** The lists that render a vendor table rather than people (vendorsFor in useClozr). */
+const VENDOR_LIST_NAMES = new Set(['Vendors', 'Lenders', 'Title Companies', 'Photographers / Notaries', 'Wholesalers', 'Partners']);
+/** Rows per server-side People page (lib/people-page.ts). */
+const PEOPLE_PAGE_SIZE = 50;
+/** Every People column; `kind` tells the table how to render the cell, and 'name' is always shown. */
+const PEOPLE_COLUMNS: { key: string; label: string; kind: string; locked?: boolean }[] = [
+  { key: 'name', label: 'Name', kind: 'name', locked: true },
+  { key: 'stage', label: 'Stage', kind: 'stage' },
+  { key: 'property', label: 'Property', kind: 'property' },
+  { key: 'phone', label: 'Phone', kind: 'contact' },
+  { key: 'assigned', label: 'Assigned', kind: 'assigned' },
+  { key: 'source', label: 'Source', kind: 'muted' },
+  { key: 'lastComm', label: 'Last communication', kind: 'muted' },
+  { key: 'nextTask', label: 'Next task', kind: 'text' },
+  { key: 'score', label: 'Lead score', kind: 'score' },
+  { key: 'offer', label: 'Offer', kind: 'strong' },
+  { key: 'created', label: 'Date added', kind: 'muted' },
+  // Off by default; the Columns menu and saved views turn them on.
+  { key: 'email', label: 'Email', kind: 'contact' },
+  { key: 'market', label: 'Market', kind: 'muted' },
+  { key: 'city', label: 'City', kind: 'muted' },
+  { key: 'zip', label: 'ZIP', kind: 'muted' },
+  { key: 'asking', label: 'Asking', kind: 'strong' },
+  { key: 'motivation', label: 'Motivation', kind: 'text' },
+  { key: 'timeline', label: 'Timeline', kind: 'muted' },
+  { key: 'condition', label: 'Condition', kind: 'muted' },
+  { key: 'occupancy', label: 'Occupancy', kind: 'muted' },
+  { key: 'tags', label: 'Tags', kind: 'muted' },
+  // List stacking (lib/people-stack): ARV of their deal, deals sent, properties held, lists they are on.
+  { key: 'arv', label: 'ARV', kind: 'strong' },
+  { key: 'subs', label: 'Submissions', kind: 'muted' },
+  { key: 'props', label: 'Properties', kind: 'muted' },
+  { key: 'stack', label: 'List stack', kind: 'muted' },
+  { key: 'uwTriage', label: 'UW triage', kind: 'uwTriage' },
+];
 
 export type ClozrState = {
   screen: string;
@@ -341,13 +411,14 @@ export type ClozrState = {
   navFrom: string | null;
   personTab: string;
   composerTab: string;
-  composerText: string;
   comprTab: string;
   compsInc: Record<string, boolean>;
   rehabPreset: 'low' | 'med' | 'heavy';
   visionRun: boolean;
   exitSel: string;
   peopleList: string;
+  /** Leads or Submissions on the People rail, and the list last open on each (lib/people-side). */
+  peopleSide: PeopleSideMemory;
   /** Full smart-list order, including pins. Empty until the saved layout loads. */
   smartListOrder: string[];
   /** Labels pinned to the top of the smart-list rail. */
@@ -433,7 +504,14 @@ export type ClozrState = {
   dialerTab: string;
   dialNumber: string;
   callState: 'idle' | 'live' | 'wrap';
-  callSec: number;
+  /**
+   * The demo's scripted call: when it went live and when it ended (epoch ms).
+   * A Talkr call reads both from the softphone. The clock ticks in the
+   * components that show it (useCallClock), never in this state.
+   */
+  callStartedAt: number | null;
+  callEndedAt: number | null;
+  /** The demo's scripted call: how many transcript lines have been said. */
   transcriptN: number;
   callTarget: CallTarget | null;
   muted: boolean;
@@ -479,8 +557,11 @@ export type ClozrState = {
   /** The last records opened, newest first: 'person:<id>' or 'buyer:<id>'. The command bar lists them on an empty query. */
   recentIds: string[];
   quickAddOpen: boolean;
-  /** The buyer profile form: null closed; buyerId null = new buyer. Live mode only. */
-  profileOpen: { buyerId: number | null } | null;
+  /**
+   * The buyer profile form: null closed; buyerId null = new buyer. Live mode
+   * only. `seed`: what a call said (the dialer's "From this call").
+   */
+  profileOpen: { buyerId: number | null; seed?: BuyerProfileSeed } | null;
   notifOpen: boolean;
   notifRead: Record<string, boolean>;
   aiOpen: boolean;
@@ -495,18 +576,6 @@ export type ClozrState = {
   accountMenuOpen: boolean;
   /** The Tools menu that holds the product links when the nav is too narrow for them. */
   toolsMenuOpen: boolean;
-  toast: string | null;
-  /** Bumped on every toast so the dismissal timer re-arms on a repeat message. */
-  toastSeq: number;
-  /**
-   * The tone of the toast raised at `seq`. Keyed to the sequence rather than
-   * stored bare, because a few writers set `toast` straight into state
-   * (sendToThread, Quick Add), and those must read as info rather than
-   * inherit the red of an error that came before them.
-   */
-  toastTone: { seq: number; tone: ToastTone } | null;
-  /** A button on the toast raised at `seq` (Undo on a ticked task or a mute), keyed like `toastTone`. */
-  toastAction: { seq: number; label: string; run: () => void } | null;
   /** Bumped on every dial so the call clock restarts on a call-during-a-call. */
   callSeq: number;
   tvMode: boolean;
@@ -535,7 +604,7 @@ export type ClozrState = {
   planId: string;
   planDraft: { name: string; trigger: string; steps: PlanStep[] } | null;
   /** Smart lists saved from the current filter set. */
-  savedLists: { id: string; name: string; filters: PeopleFilters; cols: string[]; access?: string[]; mine?: boolean }[];
+  savedLists: { id: string; name: string; filters: PeopleFilters; cols: string[]; access?: string[]; mine?: boolean; group?: string }[];
   /** People toolbar filters. */
   pf: PeopleFilters;
   pfOpen: string | null;
@@ -555,18 +624,26 @@ export type ClozrState = {
   /** Filter selections for the Deals / Dispo / Buyers / Tasks toolbars. */
   gf: {
     dealOwner: string; dealMarket: string; dealStatus: string;
+    /** When the deal came in (submitted, else created): a named window or Custom. */
+    dealAdded?: string; dealAddedFrom?: string; dealAddedTo?: string;
+    /** Our offer or the underwriter high, against their asking price. */
+    dealGap?: string; dealGapBasis?: string;
     dispoMarket: string; dispoRep: string;
     /** Markets are filtered state-then-city (lib/market-geo), not by raw string. */
     buyerState: string; buyerCity: string; buyerEntity: string;
     buyerType: string; buyerStatus: string; buyerStage: string;
     /** 'Any' | 'Has phone' | 'No phone' and the email pair. */
     buyerPhone: string; buyerEmail: string;
+    /** When the buyer was added. */
+    buyerAdded?: string; buyerAddedFrom?: string; buyerAddedTo?: string;
     /** Who the buyer is assigned to (migration 128): rep names and/or 'Unassigned'. */
     buyerOwner?: string;
     /** A stage the buyer has ever been at (migration 125), and when they reached it. */
     buyerHistory?: string; buyerHistoryWhen?: string; buyerHistoryFrom?: string; buyerHistoryTo?: string;
     /** A deal already on the pipeline: the list is the buyers matched to it. */
     buyerDeal?: string;
+    /** Tags on the buyer: passes on any one picked. */
+    buyerTag?: string;
     taskType: string; taskAssigned: string;
   };
   /** Which create dialog is open, and the field values it has collected. */
@@ -672,24 +749,39 @@ const dealPatchTimers = new Map<string, number>();
 /** The same for an offer just logged on a record. */
 const offerPatchTimers = new Map<string, number>();
 /** Lead stages a house is underwritten in: opening one pulls what COMPR has saved for it. */
-const UNDERWRITING_STAGES = new Set(['New Submission', 'New Submissions', 'Underwriting', 'Underwriting - Need Info', 'Underwriting Complete']);
+/**
+ * Whether opening a record only checks its COMPR report's photos rather than
+ * taking COMPR's numbers. It used to take them only while underwriting, so
+ * an offer revised in COMPR after the first offer never reached the record.
+ * Now every stage takes them except a house under contract, in escrow, out
+ * to buyers (Ready To Market), closed or dead, whose numbers are settled. Hand-set offers stay put (the server keeps low_set
+ * and high_set).
+ */
+export function comprCheckOnly(stage: string): boolean {
+  return /contract|escrow|ready to market|clos|dead|lost|sold|terminat|archiv/i.test(stage || '');
+}
+
+/** The same rows read back (a re-read after a save); compared as JSON so a changed field counts. */
+function sameRows(a: unknown[], b: unknown[]): boolean {
+  return a.length === b.length && JSON.stringify(a) === JSON.stringify(b);
+}
 
 const INITIAL: ClozrState = {
   screen: 'home', personId: 'p1', buyerId: 'b1', dispoId: 'p6', tcId: 'p6',
-  personTab: 'Activity', composerTab: 'Text', composerText: '',
+  personTab: 'Activity', composerTab: 'Text',
   comprTab: 'Overview', compsInc: {}, rehabPreset: 'med', visionRun: false, exitSel: 'Wholesale',
-  peopleList: 'My Leads', smartListOrder: [], pinnedSmartLists: DEFAULT_PINNED_LISTS, peopleCursor: 0, cursorList: 'My Leads', secretIds: [], smartListOpen: false, dealPatches: {}, comprPhotoGaps: {}, comprRunning: [], offerPatches: {}, agentPick: null, quickReach: null, buyerCompose: null, photoShow: null, drivePhotos: {}, peopleColsByList: {}, colsOpen: false, peopleSel: {}, peopleQ: '', buyerList: 'buyers', buyerCursor: 0, buyerCursorList: 'buyers', buyerQ: '', buyerGeniusOnly: false, vendorType: 'Any', vendorState: 'Any', vendorSubs: 'Any', vendorSort: 'Name', vendorView: 'grouped', tcFeedFilter: 'All', importKind: 'sellers',
+  peopleList: 'My Leads', peopleSide: DEFAULT_PEOPLE_SIDE, smartListOrder: [], pinnedSmartLists: DEFAULT_PINNED_LISTS, peopleCursor: 0, cursorList: 'My Leads', secretIds: [], smartListOpen: false, dealPatches: {}, comprPhotoGaps: {}, comprRunning: [], offerPatches: {}, agentPick: null, quickReach: null, buyerCompose: null, photoShow: null, drivePhotos: {}, peopleColsByList: {}, colsOpen: false, peopleSel: {}, peopleQ: '', buyerList: 'buyers', buyerCursor: 0, buyerCursorList: 'buyers', buyerQ: '', buyerGeniusOnly: false, vendorType: 'Any', vendorState: 'Any', vendorSubs: 'Any', vendorSort: 'Name', vendorView: 'grouped', tcFeedFilter: 'All', importKind: 'sellers',
   dealsView: 'pipeline', dealsArchived: false, dealExtraStages: [], stageOverrides: {}, dealStageOverrides: {}, dragging: null,
   dispoFilter: 'Active Inventory', dispoTab: 'Overview', campaignStep: 1, campaignLaunched: false, acceptedOffer: null, matchQ: '', matchFilterOn: {}, mutedCats: {}, mutedUntil: {},
   talkrFolder: 'Inbox', talkrConv: 'i1',
-  dialerOpen: false, phoneMin: false, demoIncoming: null, dialerTab: 'Dial', dialNumber: '', callState: 'idle', callSec: 0, transcriptN: 0,
+  dialerOpen: false, phoneMin: false, demoIncoming: null, dialerTab: 'Dial', dialNumber: '', callState: 'idle', callStartedAt: null, callEndedAt: null, transcriptN: 0,
   callTarget: null, muted: false, hold: false, rec: true, ai: true,
   keypadOpen: false, transferOpen: null, transferTo: '', callerIdOpen: false,
   inboxChannel: 'All', inboxFilter: 'Mine', inboxConv: 'i1',
   tasksView: 'Today', taskFocus: null, tasksDone: {}, taskLeaving: {},
   tcDone: {}, tcHud: {}, tcGates: {}, reportTab: 'Overview', reportRange: '30 Days',
   searchOpen: false, contractsOpen: false, searchQ: '', composerFocusSeq: 0, offerSheetOpen: false, recentIds: [], quickAddOpen: false, profileOpen: null, notifOpen: false, notifRead: {}, aiOpen: false, aiQ: '', aiAnswer: null, aiBusy: false, aiHistory: [],
-  teamView: 'me', teamMenuOpen: false, accountMenuOpen: false, toolsMenuOpen: false, toast: null, toastSeq: 0, toastTone: null, toastAction: null, callSeq: 0,
+  teamView: 'me', teamMenuOpen: false, accountMenuOpen: false, toolsMenuOpen: false, callSeq: 0,
   tvMode: false,
   lbPeriod: 'last-30-days', lbSort: 'points', lbScope: 'all', lbQ: '', lbMenu: {}, lbPointsOpen: false,
   liveSection: 'Sellers',
@@ -698,17 +790,18 @@ const INITIAL: ClozrState = {
   savedLists: [],
   navFrom: null, recordLoading: null,
   pf: {
-    owner: 'Any', stage: 'Any', source: 'Any', tag: 'Any', date: 'Any', compr: 'Any', sort: 'Recent',
+    owner: 'Any', stage: 'Any', source: 'Any', tag: 'Any', date: 'Any', compr: 'Any', heat: 'Any', sort: 'Recent',
     gapBasis: 'Either', gapWithin: 'Within $20k', closeCalls: 'Any', declined: 'Any', submitter: 'Any',
     phone: 'Any', email: 'Any',
     history: 'Any', historyWhen: 'Ever', historyFrom: 'Any', historyTo: 'Any',
+    addedWhen: 'Any', addedFrom: 'Any', addedTo: 'Any', attackGap: 'Any', attackBasis: 'Our offer', uwTriage: 'Any',
     offer: 'Any', offerMin: 'Any', offerMax: 'Any', arv: 'Any', arvMin: 'Any', arvMax: 'Any',
     market: 'Any', subs: 'Any', props: 'Any', stack: 'Any',
   },
 
   pfOpen: null, gapOpen: null, pfMoreOpen: false,
-  calView: 'Week', isMobile: false, moreOpen: false, notifCat: 'All', buyerTab: 'Activity', dismissedAlerts: {},
-  gf: { dealOwner: 'Any', dealMarket: 'Any', dealStatus: 'Any', dispoMarket: 'Any', dispoRep: 'Any', buyerState: 'Any', buyerCity: 'Any', buyerEntity: 'Any', buyerType: 'Any', buyerStatus: 'Any', buyerStage: 'Any', buyerPhone: 'Any', buyerEmail: 'Any', buyerOwner: 'Any', buyerHistory: 'Any', buyerHistoryWhen: 'Any', buyerHistoryFrom: 'Any', buyerHistoryTo: 'Any', buyerDeal: 'Any', taskType: 'Any', taskAssigned: 'Any' },
+  calView: 'Week', isMobile: false, moreOpen: false, notifCat: 'Important', buyerTab: 'Activity', dismissedAlerts: {},
+  gf: { dealOwner: 'Any', dealMarket: 'Any', dealStatus: 'Any', dealAdded: 'Any', dealAddedFrom: 'Any', dealAddedTo: 'Any', dealGap: 'Any', dealGapBasis: 'Our offer', dispoMarket: 'Any', dispoRep: 'Any', buyerState: 'Any', buyerCity: 'Any', buyerEntity: 'Any', buyerType: 'Any', buyerStatus: 'Any', buyerStage: 'Any', buyerPhone: 'Any', buyerEmail: 'Any', buyerAdded: 'Any', buyerAddedFrom: 'Any', buyerAddedTo: 'Any', buyerOwner: 'Any', buyerHistory: 'Any', buyerHistoryWhen: 'Any', buyerHistoryFrom: 'Any', buyerHistoryTo: 'Any', buyerDeal: 'Any', buyerTag: 'Any', taskType: 'Any', taskAssigned: 'Any' },
   addOpen: null, addForm: {}, sent: {}, queueCleared: {}, queueRun: null, queueDone: null, queueResume: null, queueCalled: {}, bulkMenu: null, bulkSend: null, planReturnTo: null, planDrafting: false,
   commsChannel: 'All', recordUser: 'Any', pins: {}, pinsOpen: true,
   laneOpen: false, lanePersonId: null, laneQ: '', laneThread: [], laneBusy: false, laneChats: [], laneChatId: null, laneList: false, laneLocal: {},
@@ -758,7 +851,7 @@ const STAGE_COLORS: Record<string, string> = {
   // A stage walk that reads left to right as a spectrum; green only once money is committed.
   'New Lead': '#0284c7', Contacted: '#64748b', Qualified: '#0891b2', Appointment: '#7c3aed',
   'Offer Sent': '#d97706', Negotiation: '#ea580c', 'Under Contract': '#15803d', Dispo: '#ff7a45',
-  Assigned: '#c026d3', Closing: '#16a34a', Closed: '#18181b', Lost: '#dc2626',
+  Assigned: '#c026d3', Closing: '#16a34a', Closed: 'var(--ink, #18181b)', Lost: '#dc2626',
 };
 
 const stageColor = (s: string) => STAGE_COLORS[s] || (isDealStage(s) ? dealStageColor(s) : sellerStageColor(s));
@@ -972,7 +1065,31 @@ const MATCH_CHIPS: { label: string; pass: (x: { score: number; status: string; m
   { label: 'Hide passed', pass: (x) => x.mstatus !== 'not_interested' },
 ];
 
-export function useClozr({ showAiCards = true, live = null, me = null, workspaceId = null, crmOk = true, crmPartial = false, reload, refreshSeller, refreshDeal, loadGallery, patchLocal, workspaceName = null, role = null, placesKey = null, talkrUrl = null, readOnly = false, offerSend = false, ready = true, board = undefined }: {
+/**
+ * Likely-next stage, per feed array and record: the feed array is kept stable
+ * between loads (useClozr's recordFeed), so a view rebuild with the same feed
+ * reuses the answer instead of reading every entry's text again.
+ */
+/**
+ * A lead's search key, kept per row object. A seller re-read after a save is
+ * a new object and gets a new key; every other lead keeps the one it had,
+ * instead of all 14,000 being rebuilt for one changed row.
+ */
+const searchKeys = new WeakMap<Person, SearchKey>();
+function cachedSearchKey(p: Person): SearchKey {
+  let k = searchKeys.get(p);
+  if (!k) { k = personSearchKey(p); searchKeys.set(p, k); }
+  return k;
+}
+const stagePicks = new WeakMap<object, Map<string, StagePick>>();
+function cachedStagePick(feed: object, key: string, pick: () => StagePick): StagePick {
+  let byKey = stagePicks.get(feed);
+  if (!byKey) { byKey = new Map(); stagePicks.set(feed, byKey); }
+  let hit = byKey.get(key);
+  if (!hit) { hit = pick(); byKey.set(key, hit); }
+  return hit;
+}
+export function useClozr({ showAiCards = true, live = null, me = null, workspaceId = null, crmOk = true, crmPartial = false, reload, refreshSeller, refreshSellers, refreshDeal, refreshDeals, refreshBuyer, refreshBuyers, refreshTask, loadGallery, patchLocal, workspaceName = null, role = null, placesKey = null, talkrUrl = null, readOnly = false, offerSend = false, ready = true, board = undefined }: {
   /** Talkr Platform origin from Settings → Integrations; null means Talkr's production API. */
   talkrUrl?: string | null;
   showAiCards?: boolean;
@@ -1009,8 +1126,18 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
   reload?: () => void;
   /** Re-read one seller and their deals after a save on that record (lib/use-crm.ts). */
   refreshSeller?: (sellerId: number) => Promise<void>;
+  /** Re-read several sellers at once after a bulk send or bulk write, instead of the whole workspace. */
+  refreshSellers?: (sellerIds: number[]) => Promise<void>;
   /** Re-read one deal's seller and deals after a save on that deal. */
   refreshDeal?: (dealId: number) => Promise<void>;
+  /** Re-read several deals' sellers at once after a bulk write. */
+  refreshDeals?: (dealIds: number[]) => Promise<void>;
+  /** Re-read one buyer after a save on that record (lib/use-crm.ts). */
+  refreshBuyer?: (buyerId: number) => Promise<void>;
+  /** Re-read several buyers at once after a bulk write. */
+  refreshBuyers?: (buyerIds: number[]) => Promise<void>;
+  /** Re-read one task after it was made or changed (lib/use-crm.ts). */
+  refreshTask?: (taskId: number) => Promise<void>;
   /** Read every photo on these deals into their galleries. */
   loadGallery?: (dealIds: number[]) => Promise<void>;
   /** Change rows already on screen with no read (lib/use-crm.ts patchLocal). */
@@ -1062,6 +1189,22 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     });
     return () => { cancel = true; };
   }, []);
+  // Settings › Try new design, per user (prefs.ts): the deal page and the
+  // desk Dialer's new layout when on, the classic ones when off (the default).
+  // An external store, so flipping it re-renders every screen at once.
+  const newDesign = useSyncExternalStore(subscribeNewDesign, () => newDesignOn(me), () => false);
+  // Leads or Submissions on the People rail, per browser (lib/people-side).
+  const peopleSideLoaded = useRef(false);
+  useEffect(() => {
+    let cancel = false;
+    queueMicrotask(() => {
+      if (cancel) return;
+      const mem = loadPeopleSide();
+      peopleSideLoaded.current = true;
+      setS((st) => ({ ...st, peopleSide: mem }));
+    });
+    return () => { cancel = true; };
+  }, []);
   // Dismissed bell rows (missed calls, texts) have no notifications row to
   // mark, so the ids live in the browser. Read after mount, same as the pins.
   useEffect(() => {
@@ -1099,8 +1242,11 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
   // whole workspace (about 29). Anything else, or the demo, reloads as before.
   const refreshPerson = useCallback((pid: string | null | undefined) => {
     const n = pid && /^s\d+$/.test(pid) ? Number(pid.slice(1)) : NaN;
-    if (refreshSeller && Number.isFinite(n)) void refreshSeller(n);
-    else reload?.();
+    // The promise settles once the re-read has landed, for a caller that
+    // has to swap an optimistic row for the real one.
+    if (refreshSeller && Number.isFinite(n)) return refreshSeller(n).catch(() => undefined);
+    reload?.();
+    return Promise.resolve();
   }, [refreshSeller, reload]);
   const refreshDealOf = useCallback((dealId: string | number | null | undefined, photos = false) => {
     const n = typeof dealId === 'number' ? dealId : dealId && /^d\d+$/.test(dealId) ? Number(dealId.slice(1)) : NaN;
@@ -1108,15 +1254,18 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     void refreshDeal(n);
     if (photos) void loadGallery?.([n]);
   }, [refreshDeal, loadGallery, reload]);
+  // A bulk write re-reads the rows it wrote (a few reads per 200 ids), not
+  // the whole workspace. Without the batch reader it reloads as before.
+  const rereadSellers = useCallback((ids: number[]) => { if (refreshSellers) void refreshSellers(ids); else reload?.(); }, [refreshSellers, reload]);
+  const rereadDeals = useCallback((ids: number[]) => { if (refreshDeals) void refreshDeals(ids); else reload?.(); }, [refreshDeals, reload]);
+  const rereadBuyers = useCallback((ids: number[]) => { if (refreshBuyers) void refreshBuyers(ids); else reload?.(); }, [refreshBuyers, reload]);
 
-  // The open seller record's own communications, read by seller *or* deal:
-  // the workspace load is the newest 500 rows across everyone and only by
-  // seller, so a deal's email with its buyer or title company, or an older
-  // thread, never reached the record. Merged into commsFor below.
-  const [recordComms, setRecordComms] = useState<{ pid: string; rows: Communication[] } | null>(null);
-  // The open seller record's own timeline (activity and messages, by seller and
-  // deal): the workspace load is the newest few hundred across everyone.
-  const [recordTimeline, setRecordTimeline] = useState<{ pid: string; rows: TimelineEntry[] } | null>(null);
+  // The open seller record's own activity and messages, read by seller *or*
+  // deal (lib/crm loadRecordFeedRows): the workspace load is the newest few
+  // hundred across everyone and only by seller, so a deal's email with its
+  // buyer or title company, or an older thread, never reached the record.
+  // One read feeds both recordTimeline and recordComms (commsFor below).
+  const [recordFeedRows, setRecordFeedRows] = useState<{ pid: string; rows: RecordFeedRows } | null>(null);
   // The same for an open buyer record (loadBuyerTimeline).
   const [buyerRecordTimeline, setBuyerRecordTimeline] = useState<{ bid: string; rows: TimelineEntry[] } | null>(null);
   // The rep's own call queue (lib/call-queue.ts, migration 79): one per rep,
@@ -1141,26 +1290,33 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       if (rows) {
         setS((st) => ({
           ...st,
-          savedLists: rows.map((l) => ({ id: l.id, name: l.name, filters: { ...INITIAL.pf, ...l.filters }, cols: l.cols, access: l.access, mine: l.mine })),
+          savedLists: rows.map((l) => ({ id: l.id, name: l.name, filters: { ...INITIAL.pf, ...l.filters }, cols: l.cols, access: l.access, mine: l.mine, group: l.group })),
         }));
       }
       setSmartListsReady(true);
     });
     return () => { alive = false; };
   }, [liveOn, workspaceId, me]);
+  // The realtor count is shown only on the People and Buyers rails (Agents,
+  // Realtors), so it is read the first time one of them opens, once per
+  // workspace, as the markets below are. A failed read is asked again on the next visit.
+  const onBuyersScreen = s.screen === 'buyers';
+  const corpusShown = onBuyersScreen || s.screen === 'people';
+  const corpusFor = useRef<number | null>(null);
   useEffect(() => {
-    if (!liveOn || workspaceId == null) return;
-    let cancel = false;
-    void loadRealtorCorpus(workspaceId, { q: '', limit: 0, offset: 0 }).then((res) => {
-      if (!cancel && res.ok) setRealtorCorpusTotal(res.total);
+    if (!liveOn || workspaceId == null || !corpusShown || corpusFor.current === workspaceId) return;
+    const ws = workspaceId;
+    corpusFor.current = ws;
+    void loadRealtorCorpus(ws, { q: '', limit: 0, offset: 0 }).then((res) => {
+      if (corpusFor.current !== ws) return;
+      if (res.ok) setRealtorCorpusTotal(res.total);
+      else corpusFor.current = null;
     });
-    return () => { cancel = true; };
-  }, [liveOn, workspaceId]);
+  }, [liveOn, workspaceId, corpusShown]);
   // The markets walk the whole realtor corpus and only Buyers reads them (the
   // Realtors city and state filters, the map), so they load the first time
   // Buyers opens rather than on every app load. An empty answer (the RPC
   // failed or timed out) is asked again on the next visit.
-  const onBuyersScreen = s.screen === 'buyers';
   const marketsFor = useRef<number | null>(null);
   useEffect(() => {
     if (!liveOn || workspaceId == null || !onBuyersScreen || marketsFor.current === workspaceId) return;
@@ -1206,9 +1362,21 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
   const recordBid = live && workspaceId != null && s.screen === 'buyer' && s.buyerId ? s.buyerId : null;
   // A reply synced from Gmail, a text or a call filed on the open record redraws its feed.
   const feedNonce = useRecordFeedLive(workspaceId, { sellerId: recordPid ? dbId(recordPid) : null, buyerId: recordBid ? dbId(recordBid) : null });
+  // What a save on the open seller record changes: its person row
+  // (refreshPerson swaps in a fresh one, a full reload replaces them all) and
+  // its deals' stages. The record's feed and stage history are read again when
+  // these move, not on every workspace change: a lead landing elsewhere, the
+  // gallery or the reporting pass used to re-read the open record's 500
+  // messages each time.
+  const recordPerson = recordPid ? D.people.find((p) => p.id === recordPid) ?? D.archivedPeople?.find((p) => p.id === recordPid) ?? null : null;
+  const recordDealStages = useMemo(
+    () => (recordPid ? [...D.deals, ...s.newDeals].filter((d) => d.personId === recordPid).map((d) => d.id + ':' + d.stage).join(',') : ''),
+    [recordPid, D.deals, s.newDeals],
+  );
   // The open record's stage history (migration 125), for its timeline: the
-  // seller with every one of its deals, or the buyer. Reloaded with the
-  // workspace, so a move made here shows on the next load.
+  // seller with every one of its deals, or the buyer. Read again when the
+  // seller record changes (above); a buyer's with the workspace.
+  const stageRecord: unknown = recordPid ? recordPerson : D;
   const [recordStages, setRecordStages] = useState<{ key: string; rows: StageEvent[] } | null>(null);
   const stageKey = recordPid ? 's:' + recordPid : live && workspaceId != null && s.screen === 'buyer' && s.buyerId ? 'b:' + s.buyerId : null;
   useEffect(() => {
@@ -1216,19 +1384,25 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     let alive = true;
     const [kind, id] = stageKey.split(':');
     void loadStageHistory(workspaceId, kind === 's' ? 'seller' : 'buyer', dbId(id))
-      .then((rows) => { if (alive && rows) setRecordStages({ key: stageKey, rows }); });
+      .then((rows) => { if (alive && rows) setRecordStages((cur) => (cur && cur.key === stageKey && sameRows(cur.rows, rows) ? cur : { key: stageKey, rows })); });
     return () => { alive = false; };
-  }, [stageKey, workspaceId, D]);
+  }, [stageKey, workspaceId, stageRecord, recordDealStages]);
 
   // "Ever been at this stage", for the People and Buyers filters: the database
   // answers with ids (lib/stage-history), held against the question asked so
-  // a stale answer never filters a new one. Asked again on every workspace
-  // load, since a move made since then changes the answer.
+  // a stale answer never filters a new one. Asked again when a stage on
+  // screen moves (a move made here, or one a reload brought in), since that
+  // changes the answer; a tag, a photo or a notification does not.
   const peopleHistoryKey = live && workspaceId != null && s.pf.history && s.pf.history !== 'Any'
     ? ['seller', s.pf.history, s.pf.historyWhen ?? 'Ever', s.pf.historyFrom ?? 'Any', s.pf.historyTo ?? 'Any'].join('|') : null;
   const buyerHistoryKey = live && workspaceId != null && s.gf.buyerHistory && s.gf.buyerHistory !== 'Any'
     ? ['buyer', s.gf.buyerHistory, s.gf.buyerHistoryWhen ?? 'Ever', s.gf.buyerHistoryFrom ?? 'Any', s.gf.buyerHistoryTo ?? 'Any'].join('|') : null;
   const [historyHits, setHistoryHits] = useState<Record<string, HistoryMatch>>({});
+  // Built only while a history filter is on.
+  const historyStages = useMemo(() => [
+    peopleHistoryKey ? D.people.map((p) => p.stage).join('|') + '#' + D.deals.map((d) => d.stage + ':' + (d.leadStage ?? '')).join('|') : '',
+    buyerHistoryKey ? D.buyers.map((b) => b.status).join('|') : '',
+  ].join('#'), [peopleHistoryKey, buyerHistoryKey, D.people, D.deals, D.buyers]);
   useEffect(() => {
     if (workspaceId == null) return;
     let alive = true;
@@ -1241,7 +1415,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       });
     }
     return () => { alive = false; };
-  }, [peopleHistoryKey, buyerHistoryKey, workspaceId, D]);
+  }, [peopleHistoryKey, buyerHistoryKey, workspaceId, historyStages]);
   const recordDealIds = useMemo(
     () => (recordPid ? [...D.deals, ...s.newDeals].filter((d) => d.personId === recordPid).map((d) => dbId(d.id)) : []),
     [recordPid, D.deals, s.newDeals],
@@ -1261,14 +1435,33 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     if (!galleryKey || !loadGallery) return;
     void loadGallery(galleryKey.split(',').map(Number));
   }, [galleryKey, loadGallery]);
-  const recordName = (recordPid && [...D.people, ...(D.archivedPeople ?? [])].find((p) => p.id === recordPid)?.name) || '';
+  const recordName = recordPerson?.name || '';
+  // The open record's feed, read by one loader so a send can read it too (settle,
+  // below) and hand the rows over in the same render that drops its optimistic row.
+  const loadFeed = useCallback((): Promise<{ pid: string; rows: RecordFeedRows } | null> => {
+    if (!recordPid || workspaceId == null) return Promise.resolve(null);
+    const pid = recordPid;
+    return loadRecordFeedRows(workspaceId, dbId(pid), recordDealKey ? recordDealKey.split(',').map(Number) : [])
+      .then((rows) => (rows ? { pid, rows } : null), () => null);
+  }, [recordPid, workspaceId, recordDealKey]);
+  // Rows that read back as what is already shown are left alone: the seller
+  // slice refresh after a send and the realtime bump for its row each re-read
+  // the feed, and setting the same rows again rebuilt the whole view for nothing.
+  const applyFeedRows = useCallback((pid: string, rows: RecordFeedRows) => {
+    setRecordFeedRows((cur) => (cur && cur.pid === pid && sameRows(cur.rows.acts, rows.acts) && sameRows(cur.rows.comms, rows.comms) ? cur : { pid, rows }));
+  }, []);
+  // Not on s.newComms: an optimistic row's arrival and departure were two more
+  // reads per send. A send reads the feed itself once the row is saved.
   useEffect(() => {
     if (!recordPid || workspaceId == null) return;
     let alive = true;
-    void loadRecordComms(workspaceId, dbId(recordPid), recordDealKey ? recordDealKey.split(',').map(Number) : [], recordName)
-      .then((rows) => { if (alive && rows) setRecordComms({ pid: recordPid, rows }); });
+    void loadFeed().then((r) => { if (alive && r) applyFeedRows(r.pid, r.rows); });
     return () => { alive = false; };
-  }, [recordPid, workspaceId, recordDealKey, recordName, s.newComms.length]);
+  }, [recordPid, workspaceId, loadFeed, applyFeedRows, recordPerson, recordDealStages, feedNonce]);
+  const recordComms = useMemo(
+    () => (recordFeedRows ? { pid: recordFeedRows.pid, rows: recordCommsFrom(recordFeedRows.rows, recordName) } : null),
+    [recordFeedRows, recordName],
+  );
 
   // The real phone. Signed in means Talkr: calls, transcript, intelligence and
   // the inbox come from Talkr Platform. The demo keeps the scripted call.
@@ -1297,7 +1490,6 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       phoneMin: false,
       dialerTab: 'Dial',
       callState: 'live',
-      callSec: 0,
       transcriptN: 0,
       callSeq: prev.callSeq + 1,
       callTarget: found ? { ...found, phone: shown } : { name: call.contact_name ?? shown, phone: shown, personId: null },
@@ -1325,16 +1517,35 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
    */
   const canWrite = !!live && workspaceId !== null && !readOnly;
   // Bell rows dismissed on another device (migration 189), merged in on top of
-  // this browser's own list. Read again when the workspace data reloads.
+  // this browser's own list. Read once per workspace: keyed on `live`, every
+  // save's reload and every refreshed row read them again.
   useEffect(() => {
-    if (!live || workspaceId === null || !me) return;
+    if (!liveOn || workspaceId === null || !me) return;
     let cancel = false;
     void loadBellDismissals(workspaceId, me).then((ids) => {
       if (cancel || !ids?.length) return;
       setS((st) => ({ ...st, notifRead: mergeDismissed(st.notifRead, ids) }));
     });
     return () => { cancel = true; };
-  }, [live, workspaceId, me]);
+  }, [liveOn, workspaceId, me]);
+
+  // Bell mutes from this browser, keyed to the signed-in user. Read on the
+  // next tick: a synchronous set inside the effect re-renders mid-commit
+  // (react-hooks/set-state-in-effect), and the mutes are not needed before it.
+  useEffect(() => {
+    if (!me) return;
+    setBellMuteUser(me);
+    const t = window.setTimeout(() => {
+      const m = loadBellMutes();
+      setS((st) => ({ ...st, mutedCats: m.mutedCats, mutedUntil: m.mutedUntil }));
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [me]);
+
+  useEffect(() => {
+    setBellMuteChecker((cat) => isBellCatMuted(cat, { mutedCats: sRef.current.mutedCats, mutedUntil: sRef.current.mutedUntil }));
+    return () => setBellMuteChecker(() => false);
+  }, []);
 
   /**
    * Today — null while prerendering, the real date on the client.
@@ -1347,20 +1558,30 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
    * left open overnight keeps yesterday's date until it is reloaded.
    */
   const now = useSyncExternalStore(NOW_STORE.subscribe, NOW_STORE.getSnapshot, NOW_STORE.getServerSnapshot);
-  const rep = useCallback((id: string | null | undefined) => (id ? D.team[id] : null), [D]);
+  const team = D.team;
+  const rep = useCallback((id: string | null | undefined) => (id ? team[id] : null), [team]);
   const repName = useCallback(
     (id: string | null | undefined) => rep(id)?.name ?? 'Unassigned', [rep]);
   /** Avatar letters. A leftover assigned/owner id is not always on the roster. */
   const repInit = useCallback(
     (id: string | null | undefined) => rep(id)?.initials ?? '—', [rep]);
-  // The open record's own timeline (loadRecordTimeline): after repName, which names its rows.
-  useEffect(() => {
-    if (!recordPid || workspaceId == null) return;
-    let alive = true;
-    void loadRecordTimeline(workspaceId, dbId(recordPid), recordDealKey ? recordDealKey.split(',').map(Number) : [], recordName, (id) => repName(id))
-      .then((rows) => { if (alive && rows) setRecordTimeline({ pid: recordPid, rows }); });
-    return () => { alive = false; };
-  }, [recordPid, workspaceId, recordDealKey, recordName, s.newComms.length, D, repName, feedNonce]);
+  // The open record's own timeline, mapped from the feed rows: after repName,
+  // which names its rows. A roster change renames them without a read.
+  const recordTimeline = useMemo(
+    () => (recordFeedRows ? { pid: recordFeedRows.pid, rows: recordTimelineFrom(recordFeedRows.rows, recordName, (id) => repName(id)) } : null),
+    [recordFeedRows, recordName, repName],
+  );
+  // The workspace feed with the open record's own, once each, newest first:
+  // merged and sorted once per load, not on every view rebuild.
+  const recordFeed = useMemo(() => {
+    if (!live || !recordTimeline?.rows.length) return null;
+    const seen = new Set(D.timeline.map((t) => t.id));
+    const rows = [...D.timeline, ...recordTimeline.rows.filter((t) => !seen.has(t.id))]
+      .map((t) => ({ t, at: Date.parse(t.at ?? '') || 0 }))
+      .sort((a, b) => b.at - a.at)
+      .map((x) => x.t);
+    return { pid: recordTimeline.pid, rows };
+  }, [live, D.timeline, recordTimeline]);
   useEffect(() => {
     if (!recordBid || workspaceId == null) return;
     let alive = true;
@@ -1387,11 +1608,15 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
   useEffect(() => { sRef.current = s; }, [s]);
 
   const set = useCallback((patch: Partial<ClozrState> | ((prev: ClozrState) => Partial<ClozrState>)) => {
-    setS((prev) => ({ ...prev, ...(typeof patch === 'function' ? patch(prev) : patch) }));
+    setS((prev) => {
+      const next = typeof patch === 'function' ? patch(prev) : patch;
+      // An empty patch means "leave it". A new object here rebuilds the whole
+      // workspace view, which is what froze the screen on every digit key.
+      if (!next || !Object.keys(next).length) return prev;
+      return { ...prev, ...next };
+    });
   }, []);
 
-  // Raising a toast is state only; the dismissal timer is owned by an effect
-  // below. `toastSeq` re-arms it when the same message fires twice in a row.
   // Say 'success' only once a write has landed, and 'error' when it has not.
   //
   // With canWrite off, the branches below answer as the demo does: "Saved
@@ -1401,33 +1626,62 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
   const { confirm, confirmReason } = useConfirm();
   /** A TC note being saved (sendTcMsg), so a second Enter does not post it twice. */
   const tcNoteBusy = useRef(false);
+  // The toast lives in toastStore, not in `s`: raising one no longer rebuilds
+  // the view model (every send raised two).
+  // Keyed on whether a workspace is loaded, not on the workspace itself: every
+  // callback that can toast (go, and the open* ones under it) took a new
+  // identity on each re-read, and the memos holding them rebuilt with it.
   const toast = useCallback((msg: string, tone: ToastTone = 'info', action?: { label: string; run: () => void }) => {
     // A live workspace this user can't write to is read-only too, never "(demo)".
-    if ((readOnly || (!!live && !canWrite)) && DEMO_ANSWER.test(msg)) { msg = readOnly ? READ_ONLY_MESSAGE : READ_ONLY_LIVE; tone = 'info'; }
-    set((prev) => ({
-      toast: msg, toastSeq: prev.toastSeq + 1, toastTone: { seq: prev.toastSeq + 1, tone },
-      toastAction: action ? { seq: prev.toastSeq + 1, ...action } : null,
-    }));
-  }, [set, readOnly, live, canWrite]);
+    if ((readOnly || (liveOn && !canWrite)) && DEMO_ANSWER.test(msg)) { msg = readOnly ? READ_ONLY_MESSAGE : READ_ONLY_LIVE; tone = 'info'; }
+    raiseToast(msg, tone, action);
+  }, [readOnly, liveOn, canWrite]);
   // A toast with an Undo button; the shell shows it while this toast is up.
   const toastUndo = useCallback((msg: string, undo: () => void) => {
     toast(msg);
-    set((prev) => ({ toastAction: { seq: prev.toastSeq, label: 'Undo', run: undo } }));
-  }, [toast, set]);
+    setToastAction({ label: 'Undo', run: undo });
+  }, [toast]);
   // The bell's Mute quiets one kind of alert for an hour, and says so: the
   // toast offers Undo, and the bell shows it until it ends (notifMutes).
-  const unmuteCat = useCallback((cat: string) => set((st) => {
-    const m = { ...st.mutedCats };
-    const u = { ...st.mutedUntil };
-    delete m[cat];
-    delete u[cat];
-    return { mutedCats: m, mutedUntil: u };
-  }), [set]);
+  // It also matches Settings → Audio (same notification switches) until unmute.
+  const priorBellSoundOn = useRef<Partial<Record<string, boolean>>>({});
+  const syncBellSoundPrefs = useCallback((cat: string, on: boolean) => {
+    const events = BELL_CAT_NOTIFY_EVENTS[cat];
+    if (!events?.length) return;
+    const p = getAudioPrefs();
+    const nextEvents = { ...p.events };
+    for (const ev of events) nextEvents[ev] = { ...nextEvents[ev], on };
+    setAudioPrefs({ events: nextEvents });
+  }, []);
+  const unmuteCat = useCallback((cat: string) => {
+    if (priorBellSoundOn.current[cat]) syncBellSoundPrefs(cat, true);
+    delete priorBellSoundOn.current[cat];
+    set((st) => {
+      const m = { ...st.mutedCats };
+      const u = { ...st.mutedUntil };
+      delete m[cat];
+      delete u[cat];
+      const next = { mutedCats: m, mutedUntil: u };
+      if (me) saveBellMutes(next);
+      return next;
+    });
+  }, [set, me, syncBellSoundPrefs]);
   const muteCat = useCallback((cat: string) => {
     const until = Date.now() + 3_600_000;
-    set((st) => ({ mutedCats: { ...st.mutedCats, [cat]: true }, mutedUntil: { ...st.mutedUntil, [cat]: until } }));
+    const events = BELL_CAT_NOTIFY_EVENTS[cat];
+    if (events?.length) {
+      const p = getAudioPrefs();
+      const wasOn = events.some((ev) => p.events[ev]?.on);
+      priorBellSoundOn.current[cat] = wasOn;
+      if (wasOn) syncBellSoundPrefs(cat, false);
+    }
+    set((st) => {
+      const next = { mutedCats: { ...st.mutedCats, [cat]: true }, mutedUntil: { ...st.mutedUntil, [cat]: until } };
+      if (me) saveBellMutes(next);
+      return next;
+    });
     toastUndo('Muted ' + mutedLabel(cat) + ' for 1 hour', () => unmuteCat(cat));
-  }, [set, toastUndo, unmuteCat]);
+  }, [set, toastUndo, unmuteCat, me, syncBellSoundPrefs]);
   // Each mute ends on its own hour. One timer for the soonest, owned by this
   // effect, so it is cleared on unmount and re-armed when the mutes change
   // (muted again since, that one keeps its own hour).
@@ -1464,18 +1718,12 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
    * appeared in the conversation.
    */
   const sendToThread = useCallback((key: string, msg: string) => {
-    setS((prev) => {
-      const text = prev.composerText.trim();
-      if (!text) return { ...prev, toast: 'Type a message first', toastSeq: prev.toastSeq + 1 };
-      const time = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-      return {
-        ...prev,
-        composerText: '',
-        sent: { ...prev.sent, [key]: [...(prev.sent[key] ?? []), { text, time }] },
-        toast: msg,
-        toastSeq: prev.toastSeq + 1,
-      };
-    });
+    const text = getComposerText().trim();
+    if (!text) return raiseToast('Type a message first');
+    const time = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    setComposerText('');
+    setS((prev) => ({ ...prev, sent: { ...prev.sent, [key]: [...(prev.sent[key] ?? []), { text, time }] } }));
+    raiseToast(msg);
   }, []);
 
   /**
@@ -1507,7 +1755,6 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       return {
         screen, quickAddOpen: false, notifOpen: false, searchOpen: false, contractsOpen: false,
         teamMenuOpen: false, accountMenuOpen: false, toolsMenuOpen: false, offerSheetOpen: false,
-        composerText: '',
         ...(sticky ? { quickReach: st.quickReach } : {}),
         // Partnerships opens People on its submissions, never a seller list it does not have.
         ...(screen === 'people' && !peopleListOk(role, st.peopleList, st.savedLists.some((l) => l.name === st.peopleList)) ? { peopleList: PARTNER_START_LIST } : {}),
@@ -1529,11 +1776,24 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         ...(extra || {}),
       };
     });
+    // The shared composer (buyer text, TC note, Talkr, Inbox) empties on every
+    // move; the record Composer refills from its own per-record draft.
+    setComposerText('');
   }, [set, role, toast]);
 
   // Every record opened goes to the front of recentIds (the command bar's empty-query list).
   const noteRecent = useCallback((key: string) => set((prev) => ({ recentIds: [key, ...prev.recentIds.filter((k) => k !== key)].slice(0, 8) })), [set]);
   const openPerson = useCallback((id: string) => { go('person', { personId: id, personTab: 'Activity', personDealId: null }); noteRecent('person:' + id); }, [go, noteRecent]);
+  // The list carries a short note (migration 284). Opening the record reads the
+  // whole seller, including the full notes, through loadSellerSlice. Once per
+  // open, and again after a full load (it brings back the short note). Keyed on
+  // live.team, which only a full load replaces: keyed on live, the read's own
+  // merge re-ran this for as long as the record stayed open.
+  const fullLoad = live?.team;
+  useEffect(() => {
+    if (!fullLoad || s.screen !== 'person') return;
+    void refreshPerson(s.personId);
+  }, [fullLoad, s.screen, s.personId, refreshPerson]);
   // A row that names one deal opens the record pinned to it. A wholesaler or
   // partner carries every house they sent on one contact, so the record left
   // unpinned shows their best-ranked deal: for Complete Homes, an old one.
@@ -1548,6 +1808,13 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     go('buyer', { buyerId: id });
     noteRecent('buyer:' + id);
   }, [go, noteRecent, realtorPage.rows]);
+  // The plan builder reopens the plan sessionStorage names, so naming it first
+  // lands on this plan instead of whichever one was open last.
+  const openPlan = useCallback((planId: string | number, from: 'person' | 'buyer' | 'people' | 'buyers') => {
+    const id = typeof planId === 'number' ? planId : Number(planId.replace(/^[a-z]+/, ''));
+    if (id) rememberPlan(id);
+    go('plans', { planId: 'ap' + id, planReturnTo: from });
+  }, [go]);
   // A row that means "this deal" (a closing on Home, a notification, a search
   // hit) opens the deal where this role works it. Every role can open the
   // property record, so a role without Dispo or TC lands there instead of on
@@ -1651,12 +1918,14 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     setS((st) => ({
       ...st, screen, ...record,
       quickAddOpen: false, notifOpen: false, searchOpen: false, teamMenuOpen: false, accountMenuOpen: false, toolsMenuOpen: false,
-      moreOpen: false, composerText: st.screen === screen ? st.composerText : '',
+      moreOpen: false,
       ...(screen === 'person' && st.screen !== 'person' ? { personTab: 'Activity' } : {}),
       // Where it was opened from, as the address says; nothing when it doesn't.
       navFrom: ok ? want!.from : null,
       ...(screen === 'people' && !peopleListOk(role, st.peopleList, st.savedLists.some((l) => l.name === st.peopleList)) ? { peopleList: PARTNER_START_LIST } : {}),
     }));
+    // Leaving a screen empties the shared composer; the record Composer keeps its own draft.
+    if (sRef.current.screen !== screen) setComposerText('');
     return hashFor(screen, ok && want!.id && key ? want!.id : null, landing === 'home', deal, ok ? want!.from : null);
   }, [D, role, toast, landing, workspaceId]);
 
@@ -1766,7 +2035,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
   const dialHere = useCallback((to: string, target?: CallTarget | null, opts?: { session?: boolean }) => {
     const shown = formatPhone(to);
     set((prev) => ({
-      dialerOpen: true, phoneMin: false, dialerTab: 'Dial', callState: 'live', callSec: 0, transcriptN: 0,
+      dialerOpen: true, phoneMin: false, dialerTab: 'Dial', callState: 'live', transcriptN: 0,
       callSeq: prev.callSeq + 1,
       callTarget: target && target.name && target.name !== target.phone ? { ...target, phone: shown } : { name: shown, phone: shown, personId: target?.personId ?? null },
       dialNumber: shown, keypadOpen: false, transferOpen: null, callerIdOpen: false,
@@ -1875,7 +2144,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       return true;
     }
     set((prev) => ({
-      dialerOpen: true, phoneMin: false, dialerTab: 'Dial', callState: 'live', callSec: 0, transcriptN: 1,
+      dialerOpen: true, phoneMin: false, dialerTab: 'Dial', callState: 'live', callStartedAt: Date.now(), callEndedAt: null, transcriptN: 1,
       callSeq: prev.callSeq + 1,
       callTarget: target || { name: 'Kara Mitchell', phone: '(210) 555-0136', personId: 'p1' },
       dialNumber: (target && target.phone) || '(210) 555-0136',
@@ -1885,14 +2154,14 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
 
   const endCall = useCallback(() => {
     if (phoneEnabled) hangupCall();
-    set({ callState: 'wrap', keypadOpen: false, transferOpen: null });
+    set((prev) => ({ callState: 'wrap', callEndedAt: prev.callState === 'live' ? Date.now() : prev.callEndedAt, keypadOpen: false, transferOpen: null }));
   }, [set, phoneEnabled, hangupCall]);
 
   const finishCall = useCallback((msg: string, tone: ToastTone = 'info') => {
     if (phoneEnabled) resetPhone();
     // Back to the keypad for the next call; on a phone the full-screen phone
     // comes out from behind its pill, since that is where the wrap-up was saved.
-    set({ callState: 'idle', callSec: 0, transcriptN: 0, hold: false, muted: false, keypadOpen: false, transferOpen: null, dialerTab: 'Dial', phoneMin: false });
+    set({ callState: 'idle', callStartedAt: null, callEndedAt: null, transcriptN: 0, hold: false, muted: false, keypadOpen: false, transferOpen: null, dialerTab: 'Dial', phoneMin: false });
     toast(msg, tone);
   }, [set, toast, phoneEnabled, resetPhone]);
 
@@ -1985,14 +2254,14 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         set((prev) => ({ laneOpen: !prev.laneOpen, aiOpen: false }));
         return;
       }
-      if (/^[1-9]$/.test(e.key)) {
+      // Digits pick a Quick Add row only while that menu is open. They used to
+      // call set() on every 1–9, including inside a phone field, and that
+      // rebuilt the whole CRM on each key.
+      if (!typing && /^[1-9]$/.test(e.key) && sRef.current.quickAddOpen) {
         const go = quickAddRef.current[Number(e.key) - 1];
-        set((prev) => {
-          if (!prev.quickAddOpen || !go) return {};
-          e.preventDefault();
-          queueMicrotask(go);
-          return {};
-        });
+        if (!go) return;
+        e.preventDefault();
+        queueMicrotask(go);
       }
     };
     // Capture: the chord wins even when a screen (or a framed app) stops
@@ -2001,32 +2270,26 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [set]);
 
-  // Live-call clock: ticks once a second while a call is up, and advances the
-  // live transcript every four seconds.
-  useEffect(() => {
-    if (callState !== 'live') return;
-    const id = setInterval(() => {
-      set((prev) => ({
-        callSec: phoneEnabled ? (sp.startedAt ? Math.floor((Date.now() - sp.startedAt) / 1000) : 0) : prev.callSec + 1,
-        transcriptN: phoneEnabled ? 0 : Math.min(8, 1 + Math.floor(prev.callSec / 4)),
-      }));
-    }, 1000);
-    return () => clearInterval(id);
-  }, [callState, s.callSeq, set, phoneEnabled, sp.startedAt]);
+  // The call's start and end. The m:ss clock ticks in the components that
+  // show it (useCallClock), so a live call does not rebuild the view model and
+  // re-render the shell once a second.
+  const callTimer = useMemo<CallTimer>(
+    () => (phoneEnabled ? { startedAt: sp.startedAt, endedAt: sp.endedAt } : { startedAt: s.callStartedAt, endedAt: s.callEndedAt }),
+    [phoneEnabled, sp.startedAt, sp.endedAt, s.callStartedAt, s.callEndedAt],
+  );
 
-  // The tone of the toast on screen now; anything raised without one is info.
-  const toastTone: ToastTone = s.toastTone && s.toastTone.seq === s.toastSeq ? s.toastTone.tone : 'info';
-  const toastAction = s.toastAction && s.toastAction.seq === s.toastSeq ? s.toastAction : null;
-
-  // Auto-dismiss the toast. An error stays longer: it is the one message
-  // that asks the reader to do something, and 2.6 seconds is not enough to
-  // read "Could not save…" and what follows it.
+  // The demo's scripted transcript: a line every four seconds, eight in all.
+  // One state change per line, timed to when it is due, not a per-second tick.
+  const demoStartedAt = s.callStartedAt;
+  const demoLines = s.transcriptN;
   useEffect(() => {
-    if (!s.toast) return;
-    // One with a button (Undo) stays long enough to reach for it.
-    const id = setTimeout(() => set({ toast: null }), toastTone === 'error' ? 6000 : toastAction ? 5000 : 2600);
+    if (phoneEnabled || callState !== 'live' || demoStartedAt == null || demoLines >= 8) return;
+    const due = demoStartedAt + demoLines * 4000;
+    const id = setTimeout(() => {
+      set({ transcriptN: Math.min(8, 1 + Math.floor((Date.now() - demoStartedAt) / 4000)) });
+    }, Math.max(0, due - Date.now()));
     return () => clearTimeout(id);
-  }, [s.toast, s.toastSeq, toastTone, toastAction, set]);
+  }, [phoneEnabled, callState, demoStartedAt, demoLines, set]);
 
   // ---- graph writes ---------------------------------------------------------
   // Creating a record appends to the session graph in state; the view-model
@@ -2087,7 +2350,17 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         return toast(still ? message : message + ' · Open Quick Add again to retry', 'error');
       }
       set((prev) => ({ ...(still ? { addOpen: null, addForm: {}, addAsk: null, addBusy: null, addError: null } : {}), addDrafts: dropDraft(prev.addDrafts, kind) }));
-      reload?.();
+      // What was made is re-read on its own: the record for a note, address,
+      // seller, co-seller, deal or a house on a record; the task row; the
+      // buyer. An appointment, a vendor, a house on nobody, or an address
+      // moved for everyone on it still re-reads the workspace.
+      const onRecord = kind === 'note' || (kind === 'address' && f.scope !== 'everyone') || kind === 'deal';
+      if (onRecord && f.personId) void refreshPerson(f.personId);
+      else if ((kind === 'seller' || kind === 'coseller') && r.id != null) void refreshPerson('s' + r.id);
+      else if (kind === 'property' && (f.personId || f.vendorId || f.name?.trim()) && r.id != null) void refreshPerson('s' + r.id);
+      else if (kind === 'task' && r.id != null && refreshTask) void refreshTask(r.id);
+      else if (kind === 'buyer' && r.id != null && refreshBuyer) void refreshBuyer(r.id);
+      else reload?.();
       toast(kind === 'address' ? r.message || 'Address saved' : ADD_SAVED[kind] ?? 'Saved', 'success');
       // Straight to what was made, as the demo does. A task, an appointment or a
       // note stays where it was made; so does a property with nobody on it.
@@ -2106,11 +2379,16 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       // A deal, or a house tied to a seller or a vendor, is underwritten as that deal's house.
       const onDeal = (kind === 'deal' || (kind === 'property' && (f.personId || f.vendorId))) ? r.dealId ?? null : null;
       if (['seller', 'property', 'deal'].includes(kind) && f.compr !== 'Off' && hasAddress && Number.isFinite(sellerId)) {
-        void runCompr(workspaceId, sellerId, onDeal).then((c) => { toast(c.ok ? 'COMPR finished · numbers on the record' : 'COMPR: ' + c.message, c.ok ? 'success' : 'error'); if (c.ok) reload?.(); });
+        void runCompr(workspaceId, sellerId, onDeal).then((c) => {
+          toast(c.ok ? 'COMPR finished · numbers on the record' : 'COMPR: ' + c.message, c.ok ? 'success' : 'error');
+          // The numbers and photos landed on that house: re-read it, not the workspace.
+          if (!c.ok) return;
+          if (onDeal != null) refreshDealOf(onDeal, true); else void refreshPerson('s' + sellerId);
+        });
       }
     });
     }
-  }, [workspaceId, me, role, reload, set, toast, openPerson, openBuyer, openPersonDeal, confirmReason]);
+  }, [workspaceId, me, role, reload, set, toast, openPerson, openBuyer, openPersonDeal, confirmReason, refreshPerson, refreshDealOf, refreshTask, refreshBuyer]);
 
   /**
    * Creates whichever record the open dialog is for and wires it into the
@@ -2165,10 +2443,13 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       const kind = prev.addOpen;
       if (!kind) return prev;
       const uid = nextId('r').slice(2);
-      const done = (patch: Partial<ClozrState>, msg: string): ClozrState => ({
-        ...prev, ...patch, addOpen: null, addForm: {}, addDrafts: dropDraft(prev.addDrafts, kind),
-        toast: msg, toastSeq: prev.toastSeq + 1,
-      });
+      // Raised from inside the updater: the message depends on what the
+      // updater finds (a duplicate, a co-seller's host). The app does not run
+      // under StrictMode, so the updater runs once.
+      const done = (patch: Partial<ClozrState>, msg: string): ClozrState => {
+        raiseToast(msg);
+        return { ...prev, ...patch, addOpen: null, addForm: {}, addDrafts: dropDraft(prev.addDrafts, kind) };
+      };
       const allPeople = [...D.people, ...prev.newPeople];
 
       if (kind === 'seller' || kind === 'coseller') {
@@ -2279,7 +2560,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           lastPurchase: '—', lastActivity: 'Today', offers: '0 submitted',
           why: [], issue: 'Buy box is incomplete — fill it in to get match scores.',
           activity: { calls: 0, texts: 0, emails: 0, viewed: 0, clicks: 0, offers: 0, walkthroughs: 0, purchases: 0, declines: 0 },
-          summary: ['Added today'],
+          summary: val('note') ? ['Added today', val('note')] : ['Added today'],
         };
         return done(
           { newBuyers: [...prev.newBuyers, nb], screen: 'buyer', buyerId: bid },
@@ -2486,7 +2767,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         });
         return toast(r.message || 'Could not save that stage.', 'error');
       }
-      reload?.();
+      // The deal and its seller re-read alone; the override holds until that lands.
+      refreshDealOf(dealId);
       if (overrideNote && workspaceId != null) void logActivity(workspaceId, 'deal', dbId(dealId), 'stage', 'Ready To Market override', overrideNote, me).catch(() => {});
       if (stage === 'Ready To Market' && workspaceId != null) {
         const id = dbId(dealId);
@@ -2496,28 +2778,62 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         if (Number.isFinite(sellerId)) void syncComprMarketing(workspaceId, sellerId, id).catch(() => {});
       }
     });
-  }, [canWrite, workspaceId, me, reload, toast, D.deals]);
+  }, [canWrite, workspaceId, me, refreshDealOf, toast, D.deals]);
 
   const persistTask = useCallback((taskId: string, done: boolean) => {
     if (!canWrite) return;
+    const task = D.tasks.find((t) => t.id === taskId);
     void setTaskDone(taskId, done, me).then((r) => {
       if (!r.ok) {
-        // The tick did not stick: put the box back the way the database has it.
+        // The tick did not stick: put the box back the way the database has
+        // it. The loaded row says so unless an earlier tick this session
+        // changed it, which only the override remembers.
         setS((prev) => {
           const next = { ...prev.tasksDone };
-          delete next[taskId];
+          if (task?.done === !done) delete next[taskId];
+          else next[taskId] = !done;
           return { ...prev, tasksDone: next };
         });
         return toast(r.message || 'Could not save that task.', 'error');
       }
       // The override stays: it is what the database now says, and it keeps a
       // just-completed task on screen (struck through) instead of vanishing.
-      // The row changes in place; its seller's next task is re-read.
+      // Every screen reads the tick through it, so the loaded row is left as
+      // the next load brings it: patching it rebuilt the whole workspace view
+      // once more for nothing. The seller is re-read only when this task
+      // could change the next task their row shows (lib/task-views).
       if (!patchLocal) return reload?.();
-      patchLocal('tasks', { id: taskId, done });
-      refreshPerson(D.tasks.find((t) => t.id === taskId)?.personId);
+      const pid = task?.personId;
+      const shown = pid ? (D.people.find((p) => p.id === pid) ?? D.archivedPeople?.find((p) => p.id === pid))?.nextTask : undefined;
+      if (!task || nextTaskMayMove(shown, task.title, done)) refreshPerson(pid);
     });
-  }, [canWrite, me, reload, patchLocal, refreshPerson, D.tasks, toast]);
+  }, [canWrite, me, reload, patchLocal, refreshPerson, D.tasks, D.people, D.archivedPeople, toast]);
+
+  /**
+   * persistTask for many ticks the screen already shows: one bulk write
+   * (lib/crm-write setTasksDone), then one re-read of their sellers. A task
+   * that did not save goes back the way the database has it, and the toast
+   * says how many (with `action`, an Undo for the ones that did). Resolves
+   * with the ids that saved.
+   */
+  const persistTasks = useCallback(async (ids: string[], done: boolean, action?: { label: string; run: () => void }): Promise<string[]> => {
+    if (!canWrite || !ids.length) return ids;
+    const { failed, message } = await setTasksDone(ids, done, me);
+    const bad = new Set(failed);
+    const saved = ids.filter((id) => !bad.has(id));
+    if (failed.length) {
+      const loaded = new Map(D.tasks.map((t) => [t.id, t.done] as const));
+      startTransition(() => setS((prev) => ({ ...prev, tasksDone: revertFailed(prev.tasksDone, failed, done, (id) => loaded.get(id)) })));
+      const them = failed.length === 1 ? 'it' : 'them';
+      toast(`Could not save ${failed.length.toLocaleString()} of ${ids.length.toLocaleString()} tasks${message ? ` (${message})` : ''}. Left ${them} ${done ? 'open to try again' : 'done'}.`, 'error', saved.length ? action : undefined);
+    }
+    if (!saved.length) return saved;
+    if (!patchLocal) { reload?.(); return saved; }
+    const savedSet = new Set(saved);
+    const sellers = new Set(D.tasks.filter((t) => savedSet.has(t.id) && /^s\d+$/.test(t.personId)).map((t) => dbId(t.personId)));
+    if (sellers.size) rereadSellers([...sellers]);
+    return saved;
+  }, [canWrite, me, reload, patchLocal, rereadSellers, D.tasks, toast]);
 
   /**
    * Move a task's due time, through the same write as the record's Reschedule,
@@ -2784,7 +3100,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       + 'Happy to walk through the numbers or adjust the close date — what would make this an easy yes for you and your wife?';
     const openDraft = () => {
       openPerson('p2');
-      set({ composerTab: 'Text', composerText: draft, aiOpen: false });
+      set({ composerTab: 'Text', aiOpen: false });
+      setComposerText(draft);
     };
 
     if (lower.includes('call') && lower.includes('taylor')) {
@@ -2911,27 +3228,55 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
    * Rows are keyed by Talkr's message id, so this is idempotent and a reply
    * lands on the record's timeline beside the text that prompted it.
    */
+  const livePeople = live?.people;
   const sellerByPhone = useMemo(
-    () => indexByPhone(live?.people ?? [], dbId),
-    [live],
+    () => indexByPhone(livePeople ?? [], dbId),
+    [livePeople],
+  );
+  // Buyers too, so a text with a buyer lands on the buyer; and each Talkr seat
+  // as a CLOZR user (by sign-in address), so a text typed in Talkr credits
+  // the person who sent it.
+  const liveBuyers = live?.buyers;
+  const buyerByPhone = useMemo(() => indexByPhone(liveBuyers ?? [], dbId), [liveBuyers]);
+  const talkrTeam = phone.data.team;
+  const repByTalkrUser = useMemo(
+    () => talkrUserMap(talkrTeam, Object.values(D.team).map((r) => ({ user_id: r.id, email: r.email ?? null }))),
+    [talkrTeam, D.team],
   );
   const talkrSignature = [
-    phone.data.convs.map((c) => c.id + ':' + (c.last_message_at ?? '')).join('|'),
+    // The last text's status too: a delivery receipt does not move the time.
+    phone.data.convs.map((c) => c.id + ':' + (c.last_message_at ?? '') + ':' + (c.last_message?.status ?? '')).join('|'),
     phone.data.history.map((h) => h.id + ':' + h.status).join('|'),
   ].join('#');
   const syncedRef = useRef('');
+  // The threads whose newest message is a reply from the other side.
+  const inboundSignature = phone.data.convs
+    .filter((c) => c.last_message?.direction === 'inbound')
+    .map((c) => c.id + ':' + (c.last_message_at ?? '')).join('|');
+  const inboundSyncedRef = useRef('');
+  // The latest of what the pass reads, so a re-render does not restart the wait.
+  const syncInputs = useRef({ data: phone.data, sellerByPhone, buyerByPhone, repByTalkrUser, refreshPerson });
+  useEffect(() => { syncInputs.current = { data: phone.data, sellerByPhone, buyerByPhone, repByTalkrUser, refreshPerson }; });
   useEffect(() => {
     if (!canWrite || workspaceId === null || talkrSignature === '#') return;
     if (syncedRef.current === talkrSignature) return;
-    syncedRef.current = talkrSignature;
-    // Only the sellers that got a new message or call are re-read; a busy
-    // first pass (a new browser) leaves the rest to the next full load.
-    void syncTalkrToRecords(workspaceId, phone.data.convs, phone.data.history, sellerByPhone, phone.data.me?.org?.id)
-      .then((ids) => { for (const id of (ids ?? []).slice(0, TALKR_REFRESH_MAX)) refreshPerson('s' + id); });
-    // The arrays are what talkrSignature summarises; depending on their
-    // identity would re-sync on every poll that changed nothing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [talkrSignature, canWrite, workspaceId, sellerByPhone, refreshPerson]);
+    // One call moves through ringing, answered and completed in a few
+    // seconds, and each step changed the signature: the pass waits for the
+    // burst to go quiet, so a call is mirrored once rather than once a step.
+    // A new reply has no burst to wait for: it goes to the record (and from
+    // there, by realtime, to every open Activity feed) at once.
+    const reply = !!inboundSignature && inboundSyncedRef.current !== inboundSignature && inboundSyncedRef.current !== '';
+    const t = window.setTimeout(() => {
+      syncedRef.current = talkrSignature;
+      inboundSyncedRef.current = inboundSignature || '-';
+      const { data, sellerByPhone: index, buyerByPhone: buyers, repByTalkrUser: reps, refreshPerson: reread } = syncInputs.current;
+      // Only the sellers that got a new message or call are re-read; a busy
+      // first pass (a new browser) leaves the rest to the next full load.
+      void syncTalkrToRecords(workspaceId, data.convs, data.history, index, data.me?.org?.id, { buyers, reps })
+        .then((ids) => { for (const id of (ids ?? []).slice(0, TALKR_REFRESH_MAX)) reread('s' + id); });
+    }, reply ? 250 : 2500);
+    return () => window.clearTimeout(t);
+  }, [talkrSignature, inboundSignature, canWrite, workspaceId]);
 
   // What the CRM knows about the party on the line, so the model does not
   // re-ask it and never voices our numbers.
@@ -2997,8 +3342,10 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
   // today comes back tomorrow if the section is still blank.
   const sectionGapList = useMemo(() => {
     if (!live || !me) return [] as SectionGap[];
-    const day = new Date().toISOString().slice(0, 10);
-    return sectionGaps(D.deals, me, role === 'owner' || role === 'admin').map((g) => ({ ...g, id: `${g.id}:${day}` }));
+    // The Central day, so a reminder dismissed in the afternoon stays dismissed until morning.
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+    const deals = withTitleFallbacks(D.deals, D.vendors ?? [], D.transactions ?? []);
+    return sectionGaps(deals, me, role === 'owner' || role === 'admin').map((g) => ({ ...g, id: `${g.id}:${day}` }));
   }, [D, live, me, role]);
   const myNotifications = useMemo(() => {
     if (!live) return D.notifications;
@@ -3010,6 +3357,37 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     }));
     return [...gaps, ...forRep(D.notifications, ME, sellerRep, buyerRep, role === 'owner')];
   }, [D, s.newPeople, live, role, ME, sectionGapList]);
+
+  // Bell rows that land through CRM reload (not only Talkr's live bus) still
+  // get a chime when Settings → Audio has that event on.
+  const bellSoundSeen = useRef<Set<string>>(new Set());
+  const bellSoundPrimed = useRef(false);
+  useEffect(() => {
+    bellSoundPrimed.current = false;
+    bellSoundSeen.current.clear();
+  }, [workspaceId, me]);
+  useEffect(() => {
+    if (!live || !me) return;
+    const notifMuted = withFloorBellMutes(s.mutedCats, floorNotify);
+    // Only what the Important view lists chimes: a good reply, a mention, a
+    // task, a missed call. Not a STOP, an auto-reply or bookkeeping.
+    const rows = visibleNotifs(myNotifications, s.notifRead, 'Important', notifMuted);
+    if (!bellSoundPrimed.current) {
+      bellSoundPrimed.current = true;
+      for (const n of rows) {
+        if (n.unread && !s.notifRead[n.id]) bellSoundSeen.current.add(n.id);
+      }
+      return;
+    }
+    for (const n of rows) {
+      if (!n.unread || s.notifRead[n.id] || bellSoundSeen.current.has(n.id)) continue;
+      bellSoundSeen.current.add(n.id);
+      if (isBellCatMuted(n.cat, { mutedCats: s.mutedCats, mutedUntil: s.mutedUntil })) continue;
+      const ev = bellNotifEvent(n);
+      if (!ev) continue;
+      playEvent(ev, undefined, bellSoundDedupeKey(n, ev));
+    }
+  }, [live, me, myNotifications, floorNotify, s.mutedCats, s.mutedUntil, s.notifRead]);
 
   // Clozr AI's order (lib/today-ai.ts): the rules' list shows first, the
   // ranked order swaps in when it lands, once per workspace, rep and day.
@@ -3037,15 +3415,21 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
   // the entity, and the row each buyer draws as. It only changes when the
   // buyers or the address book do, so it is not redone on every keystroke,
   // call tick or menu toggle the way everything inside V is.
-  const buyerIndex = useMemo(() => {
-    const buyers: Buyer[] = canSeeBuyers(role) ? [...D.buyers, ...s.newBuyers] : [];
+  // The city → state gazetteer is our own address history: a city we have
+  // actually worked is a city we can place. It is read off every lead and
+  // handed on as the same object while its answers are the same, so a seller
+  // re-read after a save does not place 12,000 buyers again.
+  const gazKey = useMemo(() => {
     const people = [
       ...D.people.filter((p) => !s.newPeople.some((n) => n.id === p.id)),
       ...s.newPeople,
     ];
-    // The city → state gazetteer is our own address history: a city we have
-    // actually worked is a city we can place.
-    const marketGaz = buildGazetteer(people.map((p) => ({ city: p.property.city, state: p.property.st })));
+    return [...buildGazetteer(people.map((p) => ({ city: p.property.city, state: p.property.st }))).city].map((e) => e.join('\t')).join('\n');
+  }, [D.people, s.newPeople]);
+  const marketGaz = useMemo<Gazetteer>(() => ({ city: new Map(gazKey ? gazKey.split('\n').map((l) => l.split('\t') as [string, string]) : []) }), [gazKey]);
+  const buyerIndex = useMemo(() => {
+    perfLapStart('buyerIndex');
+    const buyers: Buyer[] = canSeeBuyers(role) ? [...D.buyers, ...s.newBuyers] : [];
     const places = new Map<string, Place[]>(buyers.map((b) => [b.id, resolveMarkets(b.markets, marketGaz)]));
     const entityOf = new Map<string, EntityKind>(buyers.map((b) => [b.id, entityKind(b.name, b.company, b.entityType)]));
     const placesOf = (id: string) => places.get(id) ?? [];
@@ -3096,14 +3480,17 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     const cityPlaces = [...new Map(buyers.flatMap((b) => placesOf(b.id)).filter((p) => p.city).map((p) => [`${p.city}, ${p.state}`, p])).entries()]
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([label, p]) => ({ label, city: p.city!, state: p.state }));
+    perfLapEnd();
     return { marketGaz, places, entityOf, rows, stateCounts, unplacedBuyers, bulk, cityPlaces };
-  }, [role, D.buyers, D.team, s.newBuyers, D.people, s.newPeople, openBuyer]);
+  }, [role, D.buyers, D.team, s.newBuyers, marketGaz, openBuyer]);
 
   // Each lead's search key (lib/list-search), built when the leads change
   // rather than on every search, so a query only runs substring checks.
   const peopleSearchKeys = useMemo(() => {
+    perfLapStart('peopleSearchKeys');
     const m = new Map<string, SearchKey>();
-    for (const p of [...D.people, ...s.newPeople]) m.set(p.id, personSearchKey(p));
+    for (const p of [...D.people, ...s.newPeople]) m.set(p.id, cachedSearchKey(p));
+    perfLapEnd();
     return m;
   }, [D.people, s.newPeople]);
 
@@ -3112,7 +3499,30 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
   // every keystroke in a composer among them, and re-merging 13,000 people,
   // 5,000 deals and 12,000 buyers each time was a large share of that
   // rebuild. These change only when the data or a session edit does.
+  //
+  // The deals and the buyers are merged on their own, so a seller re-read
+  // (a new people list) hands on the same deal and buyer lists, and what is
+  // built from those alone (dealIndex, the Buyers rows) is not built again.
+  const graphDeals = useMemo(() => {
+    const deals: Deal[] = [...D.deals.map((d) => {
+      const o = s.dealStageOverrides[d.id];
+      const staged = o && o.stage !== d.stage ? { ...d, stage: o.stage } : d;
+      const p = s.dealPatches[d.id];
+      return p ? { ...staged, ...p } : staged;
+    }), ...s.newDeals];
+    // A 'Prospect' deal only holds a lead's underwriting numbers (every Podio
+    // submission has one). The record still reads it; totals, closings and
+    // boards count the deals that are real.
+    const pipelineDeals = deals.filter((d) => d.stage !== 'Prospect' && !d.archived);
+    return { deals, pipelineDeals };
+  }, [D.deals, s.dealStageOverrides, s.dealPatches, s.newDeals]);
+  // Acquisitions never gets buyer records in the client graph: RLS already
+  // empties the live load; scrubbing here covers demo / view-as too.
+  const seeBuyers = canSeeBuyers(role);
+  const graphBuyers = useMemo((): Buyer[] => (seeBuyers ? [...D.buyers, ...s.newBuyers] : []), [seeBuyers, D.buyers, s.newBuyers]);
+  const graphT0 = perfNow();
   const graph = useMemo(() => {
+    perfLapStart('graph');
     // The live graph: the seed data with anything created this session merged in.
     // Every lookup below goes through these, so a new seller shows up on the
     // property, in People, in search, on the pipeline and in reporting at once.
@@ -3128,21 +3538,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       const offered = offer !== undefined && offer !== p.offer;
       return moved || offered ? { ...p, ...(moved ? { stage } : {}), ...(offered ? { offer } : {}) } : p;
     });
-    const deals: Deal[] = [...D.deals.map((d) => {
-      const o = s.dealStageOverrides[d.id];
-      const staged = o && o.stage !== d.stage ? { ...d, stage: o.stage } : d;
-      const p = s.dealPatches[d.id];
-      return p ? { ...staged, ...p } : staged;
-    }), ...s.newDeals];
-    // A 'Prospect' deal only holds a lead's underwriting numbers (every Podio
-    // submission has one). The record still reads it; totals, closings and
-    // boards count the deals that are real.
-    const pipelineDeals = deals.filter((d) => d.stage !== 'Prospect' && !d.archived);
-    const comms: Communication[] = [...D.communications, ...s.newComms];
-    // Acquisitions never gets buyer records in the client graph — RLS already
-    // empties the live load; scrubbing here covers demo / view-as too.
-    const seeBuyers = canSeeBuyers(role);
-    const buyers: Buyer[] = seeBuyers ? [...D.buyers, ...s.newBuyers] : [];
+    const { deals, pipelineDeals } = graphDeals;
+    const buyers = graphBuyers;
     const tasks: Task[] = [...D.tasks, ...s.newTasks];
     const vendors: Vendor[] = [...D.vendors, ...s.newVendors];
     // Session edits OVERRIDE the seed entry with the same id rather than sitting
@@ -3168,17 +3565,97 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // An archived partner who still owns open submissions: reachable by id so
     // those submissions open the record, but on no People list or search.
     for (const p of D.archivedPeople ?? []) if (!personById.has(p.id)) personById.set(p.id, p);
-    return { people, deals, pipelineDeals, comms, seeBuyers, buyers, tasks, vendors, plans, enrollments, personById };
-  }, [D, role, s.newPeople, s.stageOverrides, s.offerPatches, s.dealStageOverrides, s.dealPatches, s.newDeals, s.newComms, s.newBuyers, s.newTasks, s.newVendors, s.newPlans, s.newEnrollments]);
+    perfLapEnd();
+    return { people, deals, pipelineDeals, seeBuyers, buyers, tasks, vendors, plans, enrollments, personById };
+  // Keyed on the rows it merges, not on D itself: a notification or a settings
+  // row arriving over realtime replaces the workspace object but not these.
+  }, [D.people, graphDeals, graphBuyers, seeBuyers, D.tasks, D.vendors, D.actionPlans, D.enrollments, D.archivedPeople, s.newPeople, s.stageOverrides, s.offerPatches, s.newTasks, s.newVendors, s.newPlans, s.newEnrollments]);
+  usePerfTrack('graph', graph, graphT0);
+  // Messages written this session (an optimistic send, a Quick Add note) merged
+  // with the loaded ones, apart from graph: a send adds its row and takes it
+  // back once the real one lands, and each of those used to re-merge 13,000
+  // people, the deals, the buyers and the search keys.
+  const comms: Communication[] = useMemo(() => [...D.communications, ...s.newComms], [D.communications, s.newComms]);
 
   /** Hidden from People and Buyers until Account restores them (a session pick, or the tag that survives a reload). */
   const secretHidden = useCallback((id: string, tags?: string[] | null) => s.secretIds.includes(id) || isSecretBlacklisted(tags), [s.secretIds]);
 
+  // Deals by contact, once per graph rather than on every rebuild of V: the
+  // contact's deal (lib/crm dealRank: its open contract, else its latest real
+  // deal, else its latest submission), the deal on their own address, their
+  // deal count, and the lookups by id.
+  const graphDealList = graph.deals;
+  const graphBuyerList = graph.buyers;
+  const dealIndex = useMemo(() => {
+    const deals = graphDealList;
+    const buyers = graphBuyerList;
+    const rankOf = (d: Deal) => dealRank({ id: d.id, stage: d.stage, contract_date: d.tracker?.contractDate, submitted_at: d.submittedAt });
+    const bestDeal = new Map<string, Deal>();
+    // The contact's deal on their own address. A partner contact carries many
+    // deals; their property card names their own house, so its photo has to
+    // come from that house's deal, not from their newest submission.
+    const ownDeal = new Map<string, Deal>();
+    const dealCountByPerson = new Map<string, number>();
+    for (const d of deals) {
+      if (!d.archived) dealCountByPerson.set(d.personId, (dealCountByPerson.get(d.personId) ?? 0) + 1);
+      const cur = bestDeal.get(d.personId);
+      if (!cur || rankOf(d) > rankOf(cur)) bestDeal.set(d.personId, d);
+      if (!d.propertyId) continue;
+      const key = d.personId + '|' + d.propertyId;
+      const own = ownDeal.get(key);
+      if (!own || rankOf(d) > rankOf(own)) ownDeal.set(key, d);
+    }
+    const buyerById = new Map(buyers.map((b) => [b.id, b]));
+    // List stacking: what a contact's deals add up to (lib/people-stack). A
+    // submission row ('sub:<deal>') is one deal; its counts are its sender's.
+    const dealsByPerson = new Map<string, Deal[]>();
+    for (const d of deals) {
+      if (!d.personId) continue;
+      const list = dealsByPerson.get(d.personId);
+      if (list) list.push(d); else dealsByPerson.set(d.personId, [d]);
+    }
+    const dealBySub = new Map(deals.map((d) => ['sub:' + d.id, d] as const));
+    const dealById = new Map(deals.map((d) => [d.id, d] as const));
+    return { rankOf, bestDeal, ownDeal, dealCountByPerson, buyerById, dealsByPerson, dealBySub, dealById };
+  }, [graphDealList, graphBuyerList]);
+
+  // The filter menus' option lists, read off every lead or buyer (markets,
+  // sources, tags, types, statuses): once per graph, not on every keystroke.
+  const facets = useMemo(() => {
+    const { people, buyers } = graph;
+    const marketSet = new Set(people.map((p) => p.market).filter((m) => m && m !== '—'));
+    const peopleMarkets = Array.from(marketSet).sort((a, b) => a.localeCompare(b));
+    // One entry per place: "Charlotte, NC", never a spelled-out state name.
+    const MARKETS = ['Any', ...Array.from(marketSet).sort((a, b) => marketLabel(a).localeCompare(marketLabel(b)))];
+    const sources = ['Any', ...Array.from(new Set(people.map((p) => p.source)))];
+    const tags = ['Any', ...Array.from(new Set(people.flatMap((p) => p.tags)))];
+    const buyerTypes = ['Any', ...Array.from(new Set(buyers.map((b) => b.type)))];
+    const buyerStatuses = ['Any', ...Array.from(new Set(buyers.map((b) => b.status)))];
+    const tagCounts = new Map<string, number>();
+    for (const b of buyers) {
+      if (secretHidden(b.id, b.tags)) continue;
+      for (const t of b.tags ?? []) tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
+    }
+    const buyerTagOptions = [...tagCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t]) => t);
+    return { peopleMarkets, MARKETS, sources, tags, buyerTypes, buyerStatuses, buyerTagOptions };
+  }, [graph, secretHidden]);
+
   // The Buyers filters over every buyer, apart from V for the same reason as
   // graph: the clock and the composer no longer re-filter 12,000 buyers.
+  //
+  // Deals already on the pipeline, so Buyers can show who fits one of them.
+  // Apart from the rows below: it names a deal by its seller's address when
+  // the deal has none, so it follows the people, and the rows do not.
+  const graphPersonById = graph.personById;
+  const buyerPipelineMenu = useMemo(() => pipelineDealOptions(graphDealList.map((d) => ({
+    id: d.id, stage: d.stage || '', archived: !!d.archived,
+    addr: d.addr || graphPersonById.get(d.personId)?.property.addr || 'Deal',
+  }))), [graphDealList, graphPersonById]);
+  const buyerDealLabel = s.gf.buyerDeal ?? 'Any';
+  const pickedPipelineId = buyerDealLabel === 'Any' ? null : buyerPipelineMenu.find((c) => c.label === buyerDealLabel)?.id ?? null;
   const buyerView = useMemo(() => {
-    const { deals, personById } = graph;
-    const person = (id: string) => personById.get(id);
+    perfLapStart('buyerView');
+    const deals = graphDealList;
     // Markets arrive as free text and hold four kinds of thing at once: state
     // codes, cities, counties and ZIPs. lib/market-geo places each one so the
     // filters can read state → city instead of listing every raw string.
@@ -3223,16 +3700,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     };
 
     const ownerPicks = picksOf(s.gf.buyerOwner);
-    // Deals already on the pipeline, so Buyers can show who fits one of them.
-    const buyerPipelineMenu = pipelineDealOptions(deals.map((d) => ({
-      id: d.id, stage: d.stage || '', archived: !!d.archived,
-      addr: d.addr || person(d.personId)?.property.addr || 'Deal',
-    })));
-    const buyerDealLabel = s.gf.buyerDeal ?? 'Any';
-    const pickedPipeline = buyerDealLabel === 'Any' ? null : buyerPipelineMenu.find((c) => c.label === buyerDealLabel) ?? null;
-    const pickedDeal = pickedPipeline ? deals.find((d) => d.id === pickedPipeline.id) : undefined;
+    const pickedDeal = pickedPipelineId ? deals.find((d) => d.id === pickedPipelineId) : undefined;
     const dealScores = buyersForPipelineDeal(
-      pickedPipeline ? D.matches.filter((m) => m.dealId === pickedPipeline.id).map((m) => ({ buyerId: m.buyerId, score: m.score })) : [],
+      pickedPipelineId ? D.matches.filter((m) => m.dealId === pickedPipelineId).map((m) => ({ buyerId: m.buyerId, score: m.score })) : [],
       pickedDeal?.buyerId,
       buyerDealLabel !== 'Any',
     );
@@ -3244,20 +3714,24 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         && matchesPick(s.gf.buyerType, b.type)
         && matchesPick(s.gf.buyerStatus, b.status)
         && matchesPick(s.gf.buyerStage, b.stage ?? '')
+        && matchesAnyPick(s.gf.buyerTag, b.tags)
         && (!ownerPicks.length || ownerPicks.some((o) => (o === 'Unassigned' ? !b.assigned : D.team[b.assigned ?? '']?.name === o)))
         && matchesContactFilters(b.phone, b.email, s.gf.buyerPhone, s.gf.buyerEmail)
+        && inDateWindow(b.createdAt, s.gf.buyerAdded, s.gf.buyerAddedFrom, s.gf.buyerAddedTo)
         // Ever at a stage (migration 125): nothing matches until the database answers.
         && (!buyerHistoryKey || !!historyHits[buyerHistoryKey]?.buyers.has(dbId(b.id)))
         && (!dealScores || dealScores.has(b.id)))
       .map(({ b, row }) => ({ ...row, dealMatch: dealScores?.get(b.id) ?? 0 }));
-    return { marketGaz, NO_STATE, unplacedBuyers, stateOptions, stateCodeOf, cityOptions, buyerPipelineMenu, buyerRows };
-  }, [graph, buyerIndex, secretHidden, s.gf, D.team, D.matches, buyerHistoryKey, historyHits]);
+    perfLapEnd();
+    return { marketGaz, NO_STATE, unplacedBuyers, stateOptions, stateCodeOf, cityOptions, buyerRows };
+  }, [graphDealList, buyerIndex, secretHidden, s.gf, D.team, D.matches, buyerHistoryKey, historyHits, pickedPipelineId, buyerDealLabel]);
 
   // Buyer search over every buyer, ranked once per query. The query is
   // deferred, so typing in the search box redraws at once and the 12,000-row
   // ranking follows when React has a moment, instead of blocking each key.
   const buyerQDeferred = useDeferredValue(s.buyerQ);
   const buyerSearchView = useMemo(() => {
+    perfLapStart('buyerSearchView');
     const search = parseSearch(buyerQDeferred);
     const ranks = new Map<string, number>();
     if (search) {
@@ -3266,12 +3740,654 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         if (r >= 0) ranks.set(b.id, r);
       }
     }
+    perfLapEnd();
     return { search, ranks };
   }, [buyerView.buyerRows, buyerQDeferred]);
 
+  // The open buyer list (lib/buyer-lists): the system pens by the workspace's
+  // buyer profile, or the rows an import just wrote.
+  const buyerList = s.buyerList === LAST_IMPORT ? LAST_IMPORT : effectiveBuyerList(s.buyerList);
+  // That list's rows, through the Genius toggle and the (deferred) search:
+  // once per change to those, not a 12,000-row filter on every render of V.
+  const buyerListRows = useMemo(() => {
+    const importIds = new Set(buyerList === LAST_IMPORT && s.lastImport?.kind === 'buyers' ? s.lastImport.ids : []);
+    const { search, ranks } = buyerSearchView;
+    return buyerView.buyerRows.filter((b) =>
+      (buyerList === LAST_IMPORT ? importIds.has(b.id) : inBuyerList(buyerList, b))
+      && (!s.buyerGeniusOnly || b.genius)
+      && (!search || ranks.has(b.id)));
+  }, [buyerView.buyerRows, buyerList, s.lastImport, s.buyerGeniusOnly, buyerSearchView]);
+
+  // The seller stage list. Live workspaces run the 44-stage acquisitions
+  // list; the sample graph keeps its twelve. D.STAGES is the pipeline
+  // (deal stages) in live mode.
+  const sellerStages: string[] = live ? SELLER_STAGE_LABELS : (D.STAGES as string[]);
+  // Talkr's hot/warm/cold by number, re-read when its conversations change.
+  const talkrTemp = useMemo(() => {
+    const m = new Map<string, string>();
+    if (talkrLive) {
+      for (const c of phone.data.convs) {
+        const temp = (c.temperature ?? '').toUpperCase();
+        if ((temp === 'HOT' || temp === 'WARM' || temp === 'COLD') && !m.has(c.their_number)) m.set(c.their_number, temp);
+      }
+    }
+    return m;
+  }, [talkrLive, phone.data.convs]);
+  const peopleQDeferred = useDeferredValue(s.peopleQ);
+
+  // The People lists' machinery, apart from V: the lead temperature, offer
+  // gaps, list stacks, UW triage, the toolbar filters and sort, the smart
+  // list definitions and their counts. It reads the graph, the filters, the
+  // ticked tasks and the session's stage moves, so a keystroke in a search
+  // box or a composer, a menu, the call clock and the rest of V's inputs no
+  // longer re-run twenty passes over 14,000 leads.
+  const podioSubmissions = (D as { podioSubmissions?: PodioSubmission[] }).podioSubmissions;
+  const peopleCore = useMemo(() => {
+    const { people, deals, tasks, personById } = graph;
+    const { bestDeal, dealsByPerson, dealBySub } = dealIndex;
+    const person = (id: string) => personById.get(id);
+    const dealOf = (pid: string) => bestDeal.get(pid);
+    const fmt = money;
+    const taskOpen = (t: Task) => !(s.tasksDone[t.id] ?? t.done);
+    // A live lead has no score yet. Where Talkr has a thread with its number,
+    // Talkr's hot/warm/cold is the one temperature it can honestly show; with
+    // neither, the record shows nothing rather than "0 COLD".
+    const leadTemp = (p: Person): string => (p.score != null
+      ? (p.score >= 85 ? 'HOT' : p.score >= 70 ? 'WARM' : 'COLD')
+      : talkrTemp.get(toE164(p.phone) ?? '') ?? '');
+    // Read once: the lists asked tasks.some() per person, people x tasks on
+    // every render (keystrokes included) across ~11k leads.
+    const dueNowIds = new Set(tasks.filter((t) => taskOpen(t) && (t.bucket === 'overdue' || t.bucket === 'today')).map((t) => t.personId));
+    const overdueIds = new Set(tasks.filter((t) => taskOpen(t) && t.bucket === 'overdue').map((t) => t.personId));
+    /** The heat word a lead filters and sorts by: its score band, else Talkr's temperature as a word. */
+    const heatWord = (p: Person): string => (p.score != null ? heat(p.score).label : ({ HOT: 'Hot', WARM: 'Warm', COLD: 'Cold' } as Record<string, string>)[leadTemp(p)] ?? '');
+    const gapsByPerson = new Map<string, OfferGap[]>();
+    for (const g of D.offerGaps) {
+      // 'sub:<deal>' is a Submissions row (one deal); without it every gap filter emptied those lists.
+      for (const key of [g.vendorId, g.sellerId, 'sub:' + g.dealId]) {
+        if (!key) continue;
+        const cur = gapsByPerson.get(key);
+        if (cur) cur.push(g);
+        else gapsByPerson.set(key, [g]);
+      }
+    }
+    const hasGaps = gapsByPerson.size > 0;
+    const GAP_BASES = ['Either', 'Actual offer', 'UW high'];
+    /**
+     * The gap this offer is judged on. 'Actual offer' measures the ask against
+     * the number we sent, 'UW high' against our underwriting ceiling, 'Either'
+     * against whichever was closer. A deal with no ceiling has no UW-high gap,
+     * so it drops out of that basis rather than counting as a zero.
+     */
+    const gapUnder = (g: OfferGap, basis: string | undefined): number | null => gapOf(g, basis);
+    type GapStat = { offers: number; closeCalls: number; closest: number | null; declined: number; won: number };
+    const NO_GAPS: GapStat = { offers: 0, closeCalls: 0, closest: null, declined: 0, won: 0 };
+    const gapStatOf = (id: string, f: PeopleFilters): GapStat => {
+      const gaps = gapsByPerson.get(subKey(id));
+      if (!gaps || gaps.length === 0) return NO_GAPS;
+      const within = withinOf(f.gapWithin);
+      let closeCalls = 0, declined = 0, won = 0;
+      let closest: number | null = null;
+      for (const g of gaps) {
+        const d = gapUnder(g, f.gapBasis);
+        if (d != null) {
+          if (d <= within) closeCalls += 1;
+          if (closest == null || d < closest) closest = d;
+        }
+        if (g.stage === 'Offer Declined') declined += 1;
+        else if (g.stage === 'Closed' || g.stage === 'Under Contract - Buyer') won += 1;
+      }
+      return { offers: gaps.length, closeCalls, closest, declined, won };
+    };
+    /** '3+' → 3, 'Any' or unset → 0. */
+    const atLeast = (v: string | undefined) => (v && v !== 'Any' ? Number(v.replace('+', '')) || 0 : 0);
+    /** Wholesalers who have submitted a deal we offered on, for the Submitter filter. */
+    const submitterOffers = new Map<string, number>();
+    for (const g of D.offerGaps) if (g.company && g.company !== '—') submitterOffers.set(g.company, (submitterOffers.get(g.company) ?? 0) + 1);
+    const submitters = Array.from(submitterOffers.keys()).sort((a, b) => a.localeCompare(b));
+    const gapMatchOf = (f: PeopleFilters) => {
+      const needClose = closeCallsNeeded(f);
+      const needDeclined = atLeast(f.declined);
+      const submitters = picksOf(f.submitter);
+      if (!needClose && !needDeclined && !submitters.length) return () => true;
+      return (id: string) => {
+        if (submitters.length && !(gapsByPerson.get(subKey(id)) ?? []).some((g) => submitters.includes(g.company))) return false;
+        if (!needClose && !needDeclined) return true;
+        const st = gapStatOf(id, f);
+        return st.closeCalls >= needClose && st.declined >= needDeclined;
+      };
+    };
+
+    const personForUwTriage = (p: Person, d: Deal) => {
+      const seller = d.personId ? person(d.personId) : undefined;
+      const who = seller ?? (p.id.startsWith('sub:') ? p : undefined);
+      return who ? { intake: who.intake, notes: who.notes } : null;
+    };
+    const uwTriageOfDeal = (d: Deal, p?: Person) =>
+      uwTriageForDeal(
+        { asking: d.asking, institutional: d.institutional, sourcePhotos: d.sourcePhotos, photosUrl: d.photosUrl, photos: d.photos },
+        p ? personForUwTriage(p, d) : (d.personId ? personForUwTriage({ id: d.personId } as Person, d) : null),
+      );
+    const uwTriageOfPerson = (p: Person) => {
+      const d = dealBySub.get(subKey(p.id)) ?? dealOf(p.id);
+      return d ? uwTriageOfDeal(d, p) : null;
+    };
+    const UW_TRIAGE_LISTS = new Set<string>([UW_TRIAGE_LABEL.green, UW_TRIAGE_LABEL.decline]);
+    const uwTriageBucketForList = (label: string): UwTriageBucket | null =>
+      label === UW_TRIAGE_LABEL.green ? 'green' : label === UW_TRIAGE_LABEL.decline ? 'decline' : null;
+    type Stack = { subs: number; props: number; stack: number; offers: number[]; arvs: number[]; offer: number | null; arv: number | null };
+    const stackCache = new Map<string, Stack>();
+    const stackOf = (p: Person): Stack => {
+      const hit = stackCache.get(p.id);
+      if (hit) return hit;
+      const sub = dealBySub.get(subKey(p.id));
+      const owner = sub ? person(sub.personId) : p;
+      const theirs = dealsByPerson.get(sub ? sub.personId : p.id) ?? [];
+      const mine = sub ? [sub] : theirs;
+      const best = sub ?? dealOf(p.id);
+      const offers = mine.map((d) => d.contract).filter((n): n is number => n != null && n > 0);
+      const arvs = mine.map((d) => d.arv).filter((n): n is number => n != null && n > 0);
+      const v: Stack = {
+        subs: theirs.length,
+        props: new Set([...theirs.map((d) => d.propertyId), owner?.property.propertyId].filter(Boolean)).size,
+        stack: listStack(owner?.tags ?? p.tags, owner?.name ?? p.name, owner?.source ?? p.source),
+        offers, arvs,
+        offer: best?.contract ?? (offers.length ? Math.max(...offers) : null),
+        arv: best?.arv ?? (arvs.length ? Math.max(...arvs) : null),
+      };
+      stackCache.set(p.id, v);
+      return v;
+    };
+    const historyKeyOf = (f: PeopleFilters) => ['seller', f.history, f.historyWhen ?? 'Ever', f.historyFrom ?? 'Any', f.historyTo ?? 'Any'].join('|');
+
+    const PF_DEFS: { key: keyof PeopleFilters; label: string; options: string[]; multi?: boolean }[] = [
+      // Multi: pick as many as you like (lib/multi-filter); a lead passes on any of them.
+      { key: 'owner', label: 'Owner', options: ['Any', ...Object.values(D.team).map((r) => r.name), 'Unassigned'], multi: true },
+      { key: 'stage', label: 'Stage', options: ['Any', ...sellerStages], multi: true },
+      { key: 'source', label: 'Source', options: facets.sources, multi: true },
+      { key: 'tag', label: 'Tags', options: facets.tags, multi: true },
+      { key: 'date', label: 'Date', options: ['Any', 'Created today', 'Contacted today', 'No contact 7 days', 'Closing this month'], multi: true },
+      { key: 'phone', label: 'Phone', options: [...PHONE_FILTERS], multi: true },
+      { key: 'email', label: 'Email', options: [...EMAIL_FILTERS], multi: true },
+      { key: 'compr', label: 'COMPR', options: ['Any', 'Not run', 'Run', 'Run, no offer'], multi: true },
+      { key: 'heat', label: 'Heat', options: ['Any', 'Hot', 'Warm', 'Mild', 'Cool', 'Cold'], multi: true },
+      { key: 'sort', label: 'Sort', options: ['Recent', 'Date added', 'Oldest added', 'Lead score', 'Name', 'Stage', 'Oldest',
+        'ARV (high to low)', 'Offer (high to low)', 'Offer vs ask', 'UW high vs ask', 'Market (A to Z)', 'Most submissions', 'Most properties', 'Largest list stack'] },
+    ];
+    // The gap filters only exist once there are offered deals behind them, so a
+    // workspace with no offers gets no controls that cannot do anything.
+    if (hasGaps) PF_DEFS.push(
+      { key: 'gapBasis', label: 'Gap basis', options: GAP_BASES },
+      { key: 'gapWithin', label: 'Close is', options: Object.keys(GAP_WITHIN) },
+      { key: 'closeCalls', label: 'Close calls', options: ['Any', '1+', '2+', '3+', '5+'] },
+      { key: 'declined', label: 'Declined', options: ['Any', '1+', '3+', '5+'] },
+      { key: 'submitter', label: 'Submitter', options: ['Any', ...submitters], multi: true },
+    );
+    if (live) {
+      PF_DEFS.push({
+        key: 'uwTriage', label: 'UW triage',
+        options: ['Any', UW_TRIAGE_LABEL.green, UW_TRIAGE_LABEL.decline, UW_TRIAGE_LABEL.review],
+      });
+    }
+    /** A lead has been underwritten when its deal carries a COMPR report or an ARV. */
+    const comprRan = (pid: string) => { const d = dealOf(pid); return !!(d?.underwritingUrl || d?.arv); };
+    /** One Date pick. */
+    const dateOk = (d: string, p: Person) => {
+      if (d === 'Created today') return /Today/i.test(p.created);
+      if (d === 'Contacted today') return p.lastCommTs != null && p.lastCommTs < 600;
+      if (d === 'No contact 7 days') return p.lastCommTs == null || p.lastCommTs > 10000;
+      if (d === 'Closing this month') return !!dealOf(p.id)?.close;
+      return true;
+    };
+    const pfMatchOf = (f: PeopleFilters) => {
+      const gapOk = gapMatchOf(f);
+      const offerR = moneyRange(f.offer, f.offerMin, f.offerMax);
+      const arvR = moneyRange(f.arv, f.arvMin, f.arvMax);
+      const needSubs = atLeastOf(f.subs);
+      const needProps = atLeastOf(f.props);
+      const needStack = atLeastOf(f.stack);
+      const historyOn = !!f.history && f.history !== 'Any' && live;
+      const hist = historyOn ? historyHits[historyKeyOf(f)] : undefined;
+      const owners = picksOf(f.owner);
+      const dates = picksOf(f.date);
+      const comprs = picksOf(f.compr);
+      return (p: Person) => {
+      // Each filter may hold several picks: a lead passes a filter on any one of them.
+      if (owners.length && !owners.some((o) => (o === 'Unassigned' ? !p.assigned : repName(p.assigned) === o))) return false;
+      if (!matchesPick(f.stage, p.stage)) return false;
+      if (!matchesPick(f.source, p.source)) return false;
+      if (!matchesAnyPick(f.tag, p.tags)) return false;
+      if (dates.length && !dates.some((d) => dateOk(d, p))) return false;
+      if (comprs.length) {
+        const ran = comprRan(p.id);
+        if (!comprs.some((c) => c === (ran ? 'Run' : 'Not run') || (c === 'Run, no offer' && ran && !p.offer))) return false;
+      }
+      if (!matchesPick(f.heat, heatWord(p))) return false;
+      if (!matchesContactFilters(p.phone, p.email, f.phone, f.email)) return false;
+      if (!gapOk(p.id)) return false;
+      if (!matchesPick(f.market, p.market)) return false;
+      if (offerR || arvR || needSubs || needProps || needStack) {
+        const st = stackOf(p);
+        if (offerR && !anyInRange(st.offers, offerR)) return false;
+        if (arvR && !anyInRange(st.arvs, arvR)) return false;
+        if (st.subs < needSubs || st.props < needProps || st.stack < needStack) return false;
+      }
+      if (historyOn) {
+        // Until the database answers, nothing matches rather than everything.
+        if (!hist) return false;
+        const sub = dealBySub.get(subKey(p.id));
+        if (sub ? !hist.deals.has(dbId(sub.id)) : !hist.sellers.has(dbId(p.id))) return false;
+      }
+      if (!inDateWindow(p.createdAt, f.addedWhen, f.addedFrom, f.addedTo)) return false;
+      if (f.attackGap && f.attackGap !== 'Any') {
+        const d = dealBySub.get(subKey(p.id)) ?? dealOf(p.id);
+        const ours = f.attackBasis === 'UW high' ? d?.institutional : d?.contract;
+        if (!gapPasses(room(ours, d?.asking), f.attackGap)) return false;
+      }
+      if (f.uwTriage && f.uwTriage !== 'Any') {
+        const bucket = uwTriageOfPerson(p);
+        const want = f.uwTriage === UW_TRIAGE_LABEL.green ? 'green'
+          : f.uwTriage === UW_TRIAGE_LABEL.decline ? 'decline'
+            : f.uwTriage === UW_TRIAGE_LABEL.review ? 'review' : null;
+        if (!want || bucket !== want) return false;
+      }
+      return true;
+      };
+    };
+    const pfMatch = pfMatchOf(s.pf);
+    const addedMs = (p: Person) => Date.parse(p.createdAt || '') || 0;
+    /** Biggest room first. A contact with no ask or no offer sorts last. */
+    const roomSort = (a: Person, b: Person, high: boolean) => {
+      const gap = (p: Person) => {
+        const d = dealBySub.get(subKey(p.id)) ?? dealOf(p.id);
+        return room(high ? d?.institutional : d?.contract, d?.asking);
+      };
+      const ar = gap(a), br = gap(b);
+      if (ar == null && br == null) return 0;
+      if (ar == null) return 1;
+      if (br == null) return -1;
+      return br - ar;
+    };
+    const pfSort = (a: Person, b: Person) => {
+      switch (s.pf.sort) {
+        case 'Date added': return addedMs(b) - addedMs(a);
+        case 'Oldest added': return addedMs(a) - addedMs(b);
+        // Unscored leads sort after every scored one, not as zeros.
+        case 'Lead score': return (b.score ?? -1) - (a.score ?? -1);
+        case 'Name': return a.name.localeCompare(b.name);
+        case 'Stage': return sellerStages.indexOf(a.stage) - sellerStages.indexOf(b.stage);
+        case 'Oldest': return (b.lastCommTs ?? 1e9) - (a.lastCommTs ?? 1e9);
+        // No figure sorts after every figure, not as a zero.
+        case 'ARV (high to low)': return (stackOf(b).arv ?? -1) - (stackOf(a).arv ?? -1);
+        case 'Offer (high to low)': return (stackOf(b).offer ?? -1) - (stackOf(a).offer ?? -1);
+        case 'Offer vs ask': return roomSort(a, b, false);
+        case 'UW high vs ask': return roomSort(a, b, true);
+        case 'Market (A to Z)': {
+          const ma = a.market && a.market !== '—' ? a.market : null;
+          const mb = b.market && b.market !== '—' ? b.market : null;
+          return ma && mb ? ma.localeCompare(mb) : ma ? -1 : mb ? 1 : 0;
+        }
+        case 'Most submissions': return stackOf(b).subs - stackOf(a).subs;
+        case 'Most properties': return stackOf(b).props - stackOf(a).props;
+        case 'Largest list stack': return stackOf(b).stack - stackOf(a).stack;
+        default: return (a.lastCommTs ?? 1e9) - (b.lastCommTs ?? 1e9);
+      }
+    };
+    const isPodioUs = (p: Person) => /Podio stage:\s*US\b/i.test(p.notes ?? '');
+    const listDefs: Record<string, (p: Person) => boolean> = {
+      // Hot or warm with no touch in 3 days, or a task already overdue: the first thing a rep should open.
+      'Needs attention': (p) => (['HOT', 'WARM'].includes(leadTemp(p)) && (p.lastCommTs == null || p.lastCommTs > 3 * 1440)) || overdueIds.has(p.id),
+      'My Leads': (p) => p.assigned === ME,
+      'New Leads': (p) => (live ? sellerStageGroup(p.stage) === 'lead' : p.stage === 'New Lead'),
+      'DM Prospects': (p) => isDmProspect(p.source, p.tags),
+      'Hot Leads': (p) => leadTemp(p) === 'HOT',
+      // A live seller's next-task line names only its earliest task and says
+      // "Yesterday" for a day-late one, so live reads the tasks' due-date buckets.
+      'Follow Up Today': (p) => /Today|Now|Overdue/.test(p.nextTask)
+        || (!!live && dueNowIds.has(p.id)),
+      'No Contact': (p) => p.lastCommTs == null,
+      'Offers Out': (p) => (live ? sellerStageGroup(p.stage) === 'offer' : ['Offer Sent', 'Negotiation'].includes(p.stage)),
+      Appointments: (p) => (live ? p.stage.startsWith('Appointment') : p.stage === 'Appointment'),
+      'Long-Term Follow-Up': (p) => p.tags.includes('Long-term'),
+      // Same rules as AI Autopilot's nightly reactivation (lib/reactivation.ts).
+      'Dead Leads': (p) => (live ? isDeadLeadStage(p.stage) : p.stage === 'Lost'),
+      Reactivation: (p) => (live ? isReactivationLead(p.stage, p.lastCommTs) : (p.lastCommTs ?? 0) > SMART_LIST_QUIET_MIN && p.stage !== 'Lost'),
+      Unassigned: (p) => !p.assigned,
+      'Recently Active': (p) => p.lastCommTs != null && p.lastCommTs < 200,
+      // Podio Partnerships › Submissions views — order matches Podio's Team rail.
+      'New Submissions': (p) => (PODIO_NEW_SUBMISSIONS as readonly string[]).includes(p.stage),
+      'Total Submissions': (p) => (PODIO_SUBMISSION_STAGES as readonly string[]).includes(p.stage) || isPodioUs(p),
+      'New Submission': (p) => p.stage === 'New Submission' && !isPodioUs(p),
+      Underwriting: (p) => p.stage === 'Underwriting',
+      'Underwrite Declined': (p) => p.stage === 'Underwrite Declined',
+      'Underwriting - Need Info': (p) => p.stage === 'Underwriting - Need Info',
+      'Underwriting Complete': (p) => p.stage === 'Underwriting Complete',
+      'Offer Made': (p) => p.stage === 'Offer Made',
+      'Pending Response': (p) => p.stage === 'Pending Response',
+      'Offer Declined': (p) => p.stage === 'Offer Declined',
+      'Offer Accepted': (p) => p.stage === 'Offer Accepted',
+      'Under Contract - Seller': (p) => p.stage === 'Under Contract - Seller',
+      'Auction.com': (p) => p.stage === 'Auction.com',
+      US: (p) => isPodioUs(p),
+      [UW_TRIAGE_LABEL.green]: (p) => uwTriageOfPerson(p) === 'green',
+      [UW_TRIAGE_LABEL.decline]: (p) => uwTriageOfPerson(p) === 'decline',
+    };
+    // Operational lists first, then Podio submission views in Podio's order.
+    const SMART_LIST_ORDER = [
+      'Needs attention', 'My Leads', 'New Leads', 'DM Prospects', 'Hot Leads', 'Follow Up Today', 'No Contact',
+      'Offers Out', 'Appointments', 'Long-Term Follow-Up', 'Dead Leads', 'Reactivation',
+      'Unassigned', 'Recently Active',
+      'New Submissions', 'New Submission', 'Underwriting',
+      UW_TRIAGE_LABEL.green, UW_TRIAGE_LABEL.decline,
+      'Total Submissions', ...PODIO_TOTAL_SUBMISSIONS,
+    ];
+    // Only Sellers is people-shaped. Buyers routes to the buyer screen; the
+    // vendor-backed lists render a vendor table; the rest have no data behind
+    // them, so they are disabled rather than showing an empty list.
+    const customDefs: Record<string, (p: Person) => boolean> = { Sellers: () => true };
+    // Submissions are deals (one house each). Counting sellers hid the ~4,000
+    // Podio rows behind the few hundred people who submitted them.
+    const submissionLabels = new Set<string>(['New Submissions', 'Total Submissions', ...PODIO_TOTAL_SUBMISSIONS]);
+    // Podio's own items when the sync has them: every count is Podio's, item for item.
+    const podioSubs: PodioSubmission[] = podioSubmissions ?? [];
+    // Podio is retired (Oct 2026): the team imports and moves submissions in
+    // CLOZR. The lists are CLOZR's own deals, one row per house on its lead
+    // stage, so an import or a stage move is the list. Podio's item ledger is
+    // no longer what the lists count.
+    const exactPodio = false;
+    // Podio's stage, unless the house was moved in CLOZR (this session, or by a
+    // person since Podio's last stage change): Podio never hears of those moves.
+    const subStage = (i: PodioSubmission) => podioRowStage(i, i.dealId ? s.stageOverrides['sub:' + i.dealId] : null);
+    // Sheet imports (iFinder and the rest) have no Podio item. They still count.
+    const podioDealIds = new Set(podioSubs.flatMap((i) => (i.dealId ? [i.dealId] : [])));
+    // A sheet submission moved this session (Underwriting Complete) is on its new
+    // list right away, as a Podio item is; the saved stage only arrives on reload.
+    const subDeals = deals.map((d) => {
+      const moved = s.stageOverrides['sub:' + d.id];
+      return moved && moved !== d.leadStage ? { ...d, leadStage: moved } : d;
+    });
+    const countForRaw = (label: string) => {
+      if (live && UW_TRIAGE_LISTS.has(label)) {
+        const want = uwTriageBucketForList(label);
+        return want == null ? 0 : subDeals.filter((d) => !d.archived && uwTriageOfDeal(d) === want).length;
+      }
+      if (live && submissionLabels.has(label)) {
+        return exactPodio
+          ? podioSubs.filter((i) => podioItemInList(subStage(i), label)).length + nativeSubmissionDeals(subDeals, podioDealIds, label).length
+          : subDeals.filter((d) => !d.archived && submissionListMatch(d.leadStage, label, d.stage)).length;
+      }
+      return people.filter(listDefs[label] ?? (() => false)).filter(pfMatch).length;
+    };
+    // Each list's count once per change to the data or the filters, not once per render of V.
+    const countCache = new Map<string, number>();
+    const countFor = (label: string) => {
+      let n = countCache.get(label);
+      if (n === undefined) { n = countForRaw(label); countCache.set(label, n); }
+      return n;
+    };
+    const savedCounts = new WeakMap<object, number>();
+    const savedListCount = (filters: PeopleFilters) => {
+      let n = savedCounts.get(filters);
+      if (n === undefined) { n = people.filter(pfMatchOf(filters)).length; savedCounts.set(filters, n); }
+      return n;
+    };
+    const submissionPerson = (d: Deal, from: 'podio' | 'sheet' = 'podio'): Person => {
+      const seller = d.personId ? person(d.personId) : undefined;
+      const addr = d.addr || seller?.property.addr || 'Submission';
+      const home = seller?.property;
+      // A sellers-table person keeps their own name, phone, and email. Vendors
+      // attached as sellers fill only what that person does not already have.
+      const who = submissionIdentity(seller, d.vendorSellers ?? [], addr);
+      return {
+        id: 'sub:' + d.id,
+        name: who.name,
+        stage: s.stageOverrides['sub:' + d.id] || d.leadStage || 'New Submission',
+        score: null,
+        assigned: d.owner || seller?.assigned || null,
+        source: d.tracker?.leadSource || seller?.source || (from === 'podio' ? 'Podio' : 'Import'),
+        phone: who.phone,
+        email: who.email,
+        lastComm: seller?.lastComm || '—',
+        lastCommTs: seller?.lastCommTs ?? null,
+        nextTask: '—',
+        offer: d.contract != null ? fmt(d.contract) : null,
+        created: (d.submittedAt || d.createdAt || '').slice(0, 10) || '—',
+        createdAt: d.submittedAt || d.createdAt,
+        tags: [from === 'podio' ? 'Podio submission' : 'Submission', ...who.vendorLabels.map((n) => 'Seller · ' + n)],
+        market: seller?.market && seller.market !== '—' ? seller.market : personMarket(null, d.city || home?.city, home?.st),
+        notes: null,
+        motivation: '—', timeline: '—', condition: '—', occupancy: '—', mortgage: '—',
+        asking: d.asking != null ? fmt(d.asking) : '—',
+        desiredClose: '—', decisionMakers: '—',
+        property: {
+          addr, city: d.city || home?.city || '', st: d.st || home?.st || '', zip: d.zip || home?.zip || '',
+          // The deal's own house, else the seller's: the map pins the submission, not where the seller lives.
+          ...(d.lat != null && d.lng != null ? { lat: d.lat, lng: d.lng } : home?.lat != null && home?.lng != null && !d.addr ? { lat: home.lat, lng: home.lng } : {}),
+          beds: home?.beds ?? 0, baths: home?.baths ?? 0, sqft: home?.sqft ?? 0, year: home?.year ?? 0,
+          lot: home?.lot || '—', type: home?.type || '—', img: d.heroUrl || d.photos?.[0] || '', apn: home?.apn || '—',
+        },
+      };
+    };
+    return { talkrTemp, leadTemp, dueNowIds, gapsByPerson, hasGaps, gapUnder, gapStatOf, submitters, submitterOffers, gapMatchOf, personForUwTriage, uwTriageOfDeal, uwTriageOfPerson, UW_TRIAGE_LISTS, uwTriageBucketForList, stackOf, PF_DEFS, comprRan, pfMatchOf, pfMatch, pfSort, isPodioUs, listDefs, SMART_LIST_ORDER, customDefs, submissionLabels, podioSubs, exactPodio, subStage, podioDealIds, subDeals, countFor, savedListCount, submissionPerson };
+  }, [graph, dealIndex, facets, talkrTemp, D.team, D.offerGaps, podioSubmissions, live, ME, s.pf, s.tasksDone, s.stageOverrides, historyHits, repName, sellerStages]);
+
+  // Server-side paging (lib/people-page.ts, migration 358): a smart list or
+  // filter set the server can answer reads one page of PEOPLE_PAGE_SIZE rows,
+  // filtered, sorted and searched in Postgres, instead of the pass over every
+  // lead below. Null: that list stays in memory. Not gated on the screen, so
+  // the page is warm when People opens and the record's prev/next keep its order.
+  const pageSpec = useMemo(() => {
+    if (!live || VENDOR_LIST_NAMES.has(s.peopleList) || s.peopleList === LAST_IMPORT) return null;
+    const saved = s.savedLists.some((l) => l.name === s.peopleList);
+    if (!saved && (peopleCore.submissionLabels.has(s.peopleList) || peopleCore.UW_TRIAGE_LISTS.has(s.peopleList))) return null;
+    return serverFilters({
+      list: s.peopleList, saved, pf: s.pf as Record<string, string | undefined>, q: peopleQDeferred, me: ME,
+      teamIds: Object.fromEntries(Object.values(D.team).map((r) => [r.name, r.id])),
+      hiddenIds: s.secretIds, stageOrder: sellerStages,
+    });
+  }, [live, s.peopleList, s.savedLists, s.pf, peopleQDeferred, ME, D.team, s.secretIds, sellerStages, peopleCore]);
+  // The page number, keyed on the filters: a new list, filter or search starts at page one.
+  const pageKey = JSON.stringify(pageSpec);
+  const [pageAt, setPageAt] = useState({ key: pageKey, page: 0 });
+  const peoplePageNo = pageAt.key === pageKey ? pageAt.page : 0;
+  const setPeoplePageNo = useCallback((page: number) => setPageAt({ key: pageKey, page }), [pageKey]);
+  const peoplePage = usePeoplePage({
+    workspaceId: pageSpec && workspaceId != null ? workspaceId : null,
+    filters: pageSpec?.filters ?? {}, sort: pageSpec?.sort, dir: pageSpec?.dir, page: peoplePageNo, pageSize: PEOPLE_PAGE_SIZE,
+  });
+  // Until the first page lands the in-memory rows stand in, so the list never
+  // flashes empty; a failed read (a timeout, no network) also falls back to
+  // them, with the error kept on V.peoplePage.error.
+  const paged = !!pageSpec && !peoplePage.error && !(peoplePage.loading && !peoplePage.rows.length && !peoplePage.total);
+
+  // The open People list's rows, filtered, sorted and searched (the search
+  // deferred, so the box redraws before the 14,000-row pass runs): once per
+  // change to the list, the filters, the search or the data.
+  const peopleListView = useMemo(() => {
+    const { people, deals } = graph;
+    const { dealById } = dealIndex;
+    const { listDefs, customDefs, pfMatch, pfSort, submissionLabels, podioSubs, exactPodio, subStage, podioDealIds, subDeals, submissionPerson, UW_TRIAGE_LISTS, uwTriageBucketForList, uwTriageOfDeal } = peopleCore;
+    const isSavedList = s.savedLists.some((l) => l.name === s.peopleList);
+    const filterFn = isSavedList
+      ? () => true
+      : listDefs[s.peopleList] || customDefs[s.peopleList] || (() => true);
+    const peopleSearch = parseSearch(peopleQDeferred);
+    const importIdSet = new Set(s.lastImport?.ids ?? []);
+    const showingSubmissions = live && submissionLabels.has(s.peopleList);
+    const showingUwTriageList = live && UW_TRIAGE_LISTS.has(s.peopleList);
+    // Search runs over every lead in the list (not just the drawn page) and
+    // ranks name matches first; the list's sort orders within each rank.
+    // "View imported": the leads and submissions the last import wrote, nothing else.
+    const lastImportRows = s.peopleList === LAST_IMPORT && s.lastImport && s.lastImport.kind !== 'buyers' && s.lastImport.kind !== 'vendors'
+      ? [...people.filter((p) => importIdSet.has(p.id)), ...deals.filter((d) => importIdSet.has('sub:' + d.id)).map((d) => submissionPerson(d))]
+      : null;
+    // One row per Podio item: Podio's stage on it, and a resubmission CLOZR keeps on
+    // one deal shows once per submission ('sub:d12~4567'). Items with no CLOZR deal
+    // (tests, no address, an ambiguous match) are counted and noted, not listed.
+    const podioListed = showingSubmissions && exactPodio ? podioSubs.filter((i) => podioItemInList(subStage(i), s.peopleList)) : [];
+    const podioOutside = s.subPartner ? 0 : podioListed.filter((i) => !i.dealId || !dealById.has(i.dealId)).length;
+    const podioArchived = s.subPartner ? 0 : podioListed.filter((i) => i.dealId && dealById.get(i.dealId)?.archived).length;
+    const podioRows = (): Person[] => {
+      const seen = new Set<string>();
+      return podioListed.flatMap((i) => {
+        const d = i.dealId ? dealById.get(i.dealId) : undefined;
+        // A submission is archived from its deal; Podio still lists the item, CLOZR does not.
+        if (!d || d.archived || (s.subPartner && d.personId !== s.subPartner.id)) return [];
+        const base = submissionPerson(d);
+        const id = seen.has(d.id) ? `${base.id}~${i.itemId}` : base.id;
+        seen.add(d.id);
+        return [{ ...base, id, stage: subStage(i) || base.stage, created: (i.createdOn || '').slice(0, 10) || base.created, createdAt: i.createdOn || base.createdAt }];
+      });
+    };
+    const sheetRows = showingSubmissions && exactPodio
+      ? nativeSubmissionDeals(subDeals, podioDealIds, s.peopleList)
+        .filter((d) => !s.subPartner || d.personId === s.subPartner.id)
+        .map((d) => submissionPerson(d, 'sheet'))
+      : [];
+    // A paged list: the server's rows, with this session's stage moves on them.
+    const peopleFiltered = paged ? peoplePage.rows.map((p) => {
+      const stage = s.stageOverrides[p.id];
+      return stage && stage !== p.stage ? { ...p, stage } : p;
+    }) : searchRows((lastImportRows ?? (showingSubmissions || showingUwTriageList
+      ? (exactPodio ? [...podioRows(), ...sheetRows] : subDeals.filter((d) => {
+        if (d.archived || (s.subPartner && d.personId !== s.subPartner.id)) return false;
+        if (showingUwTriageList) {
+          const want = uwTriageBucketForList(s.peopleList);
+          return want != null && uwTriageOfDeal(d) === want;
+        }
+        return submissionListMatch(d.leadStage, s.peopleList, d.stage);
+      }).map((d) => submissionPerson(d, 'sheet')))
+      : people.filter((p) => !secretHidden(p.id, p.tags)).filter(filterFn)))
+      .filter((p) => !showingSubmissions || !secretHidden(p.id, p.tags))
+      .filter(pfMatch)
+      .sort(pfSort), (p) => peopleSearchKeys.get(p.id) ?? personSearchKey(p), peopleSearch);
+    return { isSavedList, filterFn, peopleSearch, showingSubmissions, showingUwTriageList, podioOutside, podioArchived, peopleFiltered };
+  }, [graph, dealIndex, peopleCore, live, s.peopleList, s.savedLists, s.lastImport, s.subPartner, peopleQDeferred, secretHidden, peopleSearchKeys, paged, peoplePage.rows, s.stageOverrides]);
+
+  // What the open People list draws from and how the cursor sits on it,
+  // apart from V so the row objects below are rebuilt only when these change.
+  const peopleColumnsView = useMemo(() => {
+    const DEFAULT_PEOPLE_COLS = !seesSellerLists(role)
+      // Source rides under the name, so it is not a column of its own until the picker says so.
+      ? ['name', 'stage', 'property', 'uwTriage', 'phone', 'assigned', 'lastComm', 'offer', 'created']
+      : ['name', 'stage', 'property', 'phone', 'assigned', 'lastComm', 'nextTask', 'score', 'offer', 'created'];
+    // Saved against the smart list, so each list remembers its own field set.
+    const visibleColKeys = s.peopleColsByList[s.peopleList] || DEFAULT_PEOPLE_COLS;
+    // In the order the rep put them (Columns menu), the locked Name first.
+    const peopleColumns = [
+      ...PEOPLE_COLUMNS.filter((c) => c.locked),
+      ...visibleColKeys.flatMap((k) => PEOPLE_COLUMNS.filter((c) => c.key === k && !c.locked)),
+    ];
+    return { DEFAULT_PEOPLE_COLS, visibleColKeys, peopleColumns };
+  }, [role, s.peopleColsByList, s.peopleList]);
+  const isVendorList = VENDOR_LIST_NAMES.has(s.peopleList) || (s.peopleList === LAST_IMPORT && s.lastImport?.kind === 'vendors');
+  const listLen = isVendorList ? 0 : peopleListView.peopleFiltered.length;
+  const peopleCursor = s.cursorList === s.peopleList ? Math.min(s.peopleCursor, Math.max(0, listLen - 1)) : 0;
+  // A submission row ('sub:<deal>') with a seller on the sellers table opens
+  // that seller's record pinned to the deal; one without a seller row opens
+  // its deal sheet, with personId cleared so the previous record is not
+  // borrowed. The sheet is what the team opens when there is no seller row.
+  const openListed = useCallback((p: Person) => {
+    const { deals, personById } = graph;
+    if (!p.id.startsWith('sub:')) return openPerson(p.id);
+    const dealId = subDealId(p.id);
+    const d = deals.find((x) => x.id === dealId);
+    if (d && submissionOpenTarget(d.personId, !!personById.get(d.personId)) === 'person') {
+      go('person', { personId: d.personId, personTab: 'Activity', personDealId: d.id });
+      noteRecent('person:' + d.personId);
+      return;
+    }
+    go('dealSheet', { personId: '', dealSheetDealId: dealId });
+  }, [graph, openPerson, go, noteRecent]);
+  // A click on a row (table, card, map pin) puts the cursor on it first, the
+  // way Enter does, so coming back to the list lands on that row, drawn and
+  // scrolled into view, instead of wherever the arrows last were.
+  const peopleListName = s.peopleList;
+  const openListedAt = useCallback((p: Person, rowIndex: number) => {
+    set({ peopleCursor: rowIndex, cursorList: peopleListName });
+    openListed(p);
+  }, [set, peopleListName, openListed]);
+  // The People table's rows: one object per lead in the open list, its cells
+  // built when the row is drawn. Once per change to the list, the selection,
+  // the cursor or the columns rather than 14,000 objects per render of V.
+  const peopleRows = useMemo(() => {
+    const peopleFiltered = peopleListView.peopleFiltered;
+    const { peopleColumns } = peopleColumnsView;
+    const { stackOf, uwTriageOfPerson, leadTemp, personForUwTriage } = peopleCore;
+    const { bestDeal, dealBySub } = dealIndex;
+    const dealOf = (pid: string) => bestDeal.get(pid);
+    const fmt = money;
+    return peopleFiltered.map((p, rowIndex) => {
+    // Cells are built when a row is drawn, not for all 11,000 on every
+    // render: the list only draws a page at a time (components/ds/useReveal).
+    const values = (): Record<string, string | number> => ({
+      name: p.name, stage: p.stage, property: p.property.addr, phone: p.phone,
+      assigned: repName(p.assigned), source: p.source, lastComm: p.lastComm,
+      nextTask: p.nextTask, score: p.score ?? '', offer: p.offer || '—', created: p.createdAt ? addedOn(p.createdAt) : p.created,
+      email: p.email || '—', market: p.market || '—', city: p.property.city || '—', zip: p.property.zip || '—',
+      asking: p.asking || '—', motivation: p.motivation || '—', timeline: p.timeline || '—',
+      condition: p.condition || '—', occupancy: p.occupancy || '—', tags: p.tags.length ? p.tags.join(', ') : '—',
+      ...(() => {
+        const st = stackOf(p);
+        return { arv: st.arv != null ? fmt(st.arv) : '—', subs: st.subs, props: st.props, stack: st.stack };
+      })(),
+      uwTriage: (() => {
+        const b = uwTriageOfPerson(p);
+        return b ? UW_TRIAGE_LABEL[b] : '—';
+      })(),
+    });
+    const open = () => openListedAt(p, rowIndex);
+    // Built on the first draw and kept: this row object lives until the
+    // list, the selection, the cursor or the columns change (the memo above).
+    const buildCells = () => {
+        const v = values();
+        const triageBucket = uwTriageOfPerson(p);
+        const triageDeal = dealBySub.get(subKey(p.id)) ?? dealOf(p.id);
+        const noPhotos = triageDeal ? !hasSubmitterPhotos(
+          { sourcePhotos: triageDeal.sourcePhotos, photosUrl: triageDeal.photosUrl, photos: triageDeal.photos },
+          personForUwTriage(p, triageDeal),
+        ) : false;
+        return peopleColumns.map((c) => ({
+          key: c.key, kind: c.kind, v: v[c.key],
+          isName: c.kind === 'name', isStage: c.kind === 'stage', isProperty: c.kind === 'property',
+          isUwTriage: c.kind === 'uwTriage' && triageBucket != null,
+          uwTriageHint: triageBucket ? uwTriageHint(triageBucket, triageDeal ? askShortfallPct(triageDeal.asking, triageDeal.institutional) : null, noPhotos) : '',
+          uwTriageColor: triageBucket === 'green' ? '#16a34a' : triageBucket === 'decline' ? '#dc2626' : '#ca8a04',
+          // An unscored lead leaves the cell blank, or shows Talkr's temperature.
+          isScore: c.kind === 'score' && p.score != null, isAssigned: c.kind === 'assigned',
+          isTemp: c.kind === 'score' && p.score == null && !!leadTemp(p), temp: leadTemp(p), tempColor: tempColor(leadTemp(p)),
+          isPlain: ['text', 'muted', 'strong'].includes(c.kind) || (c.kind === 'uwTriage' && triageBucket == null),
+          isContact: c.kind === 'contact',
+          color: c.kind === 'muted' ? 'var(--muted, #52525b)' : c.kind === 'strong' ? 'var(--ink, #18181b)' : 'var(--ink-2, #27272a)',
+          weight: c.kind === 'strong' ? '500' : '400',
+          initials: initialsOf(p.name),
+          stageColor: stageColor(p.stage),
+          cityLine: p.property.city + ', ' + p.property.st + ' ' + p.property.zip,
+          scorePct: (p.score ?? 0) + '%', scoreColor: scoreColor(p.score),
+          assignedColor: p.assigned ? 'var(--ink-2, #27272a)' : '#dc2626',
+          assignedInitials: p.assigned ? initialsOf(repName(p.assigned)) : '',
+          // Last touch, aged: minutes since, null when there was none.
+          isLast: c.key === 'lastComm', lastAge: p.lastCommTs,
+          heatLabel: p.score != null ? heat(p.score).label : '',
+          source: p.source,
+        }));
+    };
+    let built: ReturnType<typeof buildCells> | null = null;
+    return {
+      id: p.id, name: p.name, phone: p.phone, email: p.email, checked: !!s.peopleSel[p.id], focused: rowIndex === peopleCursor && !isVendorList,
+      rowBg: s.peopleSel[p.id] ? 'var(--mint-dim, #e7f8f1)' : rowIndex === peopleCursor && !isVendorList ? 'var(--surface-2, #f4f4f5)' : 'var(--surface, #fff)',
+      toggle: () => set((st) => ({ peopleSel: { ...st.peopleSel, [p.id]: !st.peopleSel[p.id] } })),
+      open,
+      get cells() { return (built ??= buildCells()); },
+    };
+  });
+  }, [peopleListView.peopleFiltered, peopleColumnsView, peopleCore, dealIndex, s.peopleSel, peopleCursor, isVendorList, repName, openListedAt, set]);
+
+  const vT0 = perfNow();
   const V = useMemo(() => {
     const fmt = money;
-    const { people, deals, pipelineDeals, comms, seeBuyers, buyers, tasks, vendors, plans, enrollments, personById } = graph;
+    perfLapStart('V');
+    const { people, deals, pipelineDeals, seeBuyers, buyers, tasks, vendors, plans, enrollments, personById } = graph;
     /**
      * Archive a deal from anywhere it shows (the board, the list, Dispo, the
      * deal sheet, the record) — or bring it back. It is one deal row, so it
@@ -3299,19 +4415,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         toast(`${what} is back on the board`, 'success');
       });
     };
-    // A live lead has no score yet. Where Talkr has a thread with its number,
-    // Talkr's hot/warm/cold is the one temperature it can honestly show; with
-    // neither, the record shows nothing rather than "0 COLD".
-    const talkrTemp = new Map<string, string>();
-    if (talkrLive) {
-      for (const c of phone.data.convs) {
-        const t = (c.temperature ?? '').toUpperCase();
-        if ((t === 'HOT' || t === 'WARM' || t === 'COLD') && !talkrTemp.has(c.their_number)) talkrTemp.set(c.their_number, t);
-      }
-    }
-    const leadTemp = (p: Person): string => (p.score != null
-      ? (p.score >= 85 ? 'HOT' : p.score >= 70 ? 'WARM' : 'COLD')
-      : talkrTemp.get(toE164(p.phone) ?? '') ?? '');
+    const { leadTemp, dueNowIds, gapsByPerson, hasGaps, gapUnder, gapStatOf, submitterOffers, gapMatchOf, personForUwTriage, uwTriageOfDeal, PF_DEFS, comprRan, listDefs, SMART_LIST_ORDER, customDefs, submissionLabels, podioDealIds, subDeals, countFor, savedListCount } = peopleCore;
+    const { peopleMarkets, MARKETS } = facets;
+    const { isSavedList, peopleSearch, showingSubmissions, podioOutside, podioArchived, peopleFiltered } = peopleListView;
     const person = (id: string) => personById.get(id);
 
     /**
@@ -3333,33 +4439,16 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       };
     };
     const textCtx = { repName: (me && D.team[me]?.name) || '', company: workspaceName || '' };
-    // A contact's deal: its open contract, else its latest real deal, else its latest submission (lib/crm dealRank).
-    const rankOf = (d: Deal) => dealRank({ id: d.id, stage: d.stage, contract_date: d.tracker?.contractDate, submitted_at: d.submittedAt });
-    const bestDeal = new Map<string, Deal>();
-    // The contact's deal on their own address. A partner contact carries many
-    // deals; their property card names their own house, so its photo has to
-    // come from that house's deal, not from their newest submission.
-    const ownDeal = new Map<string, Deal>();
-    const dealCountByPerson = new Map<string, number>();
-    for (const d of deals) {
-      if (!d.archived) dealCountByPerson.set(d.personId, (dealCountByPerson.get(d.personId) ?? 0) + 1);
-      const cur = bestDeal.get(d.personId);
-      if (!cur || rankOf(d) > rankOf(cur)) bestDeal.set(d.personId, d);
-      if (!d.propertyId) continue;
-      const key = d.personId + '|' + d.propertyId;
-      const own = ownDeal.get(key);
-      if (!own || rankOf(d) > rankOf(own)) ownDeal.set(key, d);
-    }
+    // A contact's deal: its open contract, else its latest real deal, else its latest submission (dealIndex above).
+    const { rankOf, bestDeal, ownDeal, dealCountByPerson, buyerById, dealBySub, dealById } = dealIndex;
     const dealOf = (pid: string) => bestDeal.get(pid);
     const photoDealOf = (p: Person) => (p.property.propertyId ? ownDeal.get(p.id + '|' + p.property.propertyId) : undefined) || dealOf(p.id);
-    const buyerById = new Map(buyers.map((b) => [b.id, b]));
     const buyer = (id: string) => buyerById.get(id)
       || realtorPage.rows.find((b) => b.id === id)
       || (realtorPin?.id === id ? realtorPin : undefined);
     // The seller stage list. Live workspaces run the 44-stage acquisitions
     // list; the sample graph keeps its twelve. D.STAGES is the pipeline
     // (deal stages) in live mode.
-    const sellerStages: string[] = live ? SELLER_STAGE_LABELS : (D.STAGES as string[]);
     const dealStageOf = (d: Deal | undefined, p: Person | undefined) => d?.stage ?? p?.stage ?? '';
 
     // The record in view. The demo falls back to a sample record; a live
@@ -3571,6 +4660,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         refreshDealOf(d.id, true);
       });
     };
+    perfLap('record-deal');
     const B = buyer(s.buyerId) || (live ? null : buyers[0]) || BLANK_BUYER;
     const DP0 = people.find((p) => p.id === s.dispoId) || (live ? null : people[5] || people[0]) || BLANK_PERSON;
     const pinnedDeal = s.dispoDealId ? deals.find((d) => d.id === s.dispoDealId && d.personId === DP0.id) : undefined;
@@ -3627,6 +4717,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     };
 
     // ---- nav ----
+    perfLap('dispo-tc-pick');
     const navDefs: [string, string][] = [
       ['Today', 'today'], ['People', 'people'], ['Inbox', 'inbox'], ['Dialer', 'dialer'], ['Tasks', 'tasks'], ['Calendar', 'calendar'],
       ['Deals', 'deals'], ['Contracts', 'contracts'], ['Dispo', 'dispo'], ['Buyers', 'buyers'], ['Reporting', 'reporting'], ['Coaching', 'coaching'],
@@ -3639,8 +4730,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       label, key, on: activeKey === key, go: () => go(key),
       /** The Dialer item carries the Talkr mark. */
       talkrMark: key === 'dialer',
-      color: activeKey === key ? '#18181b' : '#52525b',
-      bg: activeKey === key ? '#f4f4f5' : 'transparent',
+      color: activeKey === key ? 'var(--ink, #18181b)' : 'var(--muted, #52525b)',
+      bg: activeKey === key ? 'var(--surface-2, #f4f4f5)' : 'transparent',
     }));
     // Lane's notes for this rep that nobody has read yet: the pulse on the
     // Lane button. Opening Lane reads them and puts the latest in its panel.
@@ -3663,18 +4754,18 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     const navToolDefs = [
       {
         label: 'COMPR', dot: COMPR,
-        color: '#52525b', bg: 'transparent',
+        color: 'var(--muted, #52525b)', bg: 'transparent',
         go: openComprHere,
       },
       {
         label: 'Lane', dot: LANE, badge: laneUnread.length,
-        color: s.laneOpen ? '#18181b' : '#52525b', bg: s.laneOpen ? '#f4f4f5' : 'transparent',
+        color: s.laneOpen ? 'var(--ink, #18181b)' : 'var(--muted, #52525b)', bg: s.laneOpen ? 'var(--surface-2, #f4f4f5)' : 'transparent',
         go: () => (s.laneOpen ? set({ laneOpen: false }) : openLaneFresh()),
       },
       // Genius is a page of its own: search any address, reopen past searches.
       ...(canSee(role, 'genius') ? [{
         label: 'Genius', dot: '#0A8560',
-        color: s.screen === 'genius' ? '#18181b' : '#52525b', bg: s.screen === 'genius' ? '#f4f4f5' : 'transparent',
+        color: s.screen === 'genius' ? 'var(--ink, #18181b)' : 'var(--muted, #52525b)', bg: s.screen === 'genius' ? 'var(--surface-2, #f4f4f5)' : 'transparent',
         go: () => go('genius'),
       }] : []),
       // Deal Machine is a screen, not a drawer: the program that drives the
@@ -3682,20 +4773,20 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       // log, buyers lists and everything it found.
       ...(canSee(role, 'buyr') ? [{
         label: 'Buyr', dot: BUYR,
-        color: s.screen === 'buyr' ? '#18181b' : '#52525b',
-        bg: s.screen === 'buyr' ? '#f4f4f5' : 'transparent',
+        color: s.screen === 'buyr' ? 'var(--ink, #18181b)' : 'var(--muted, #52525b)',
+        bg: s.screen === 'buyr' ? 'var(--surface-2, #f4f4f5)' : 'transparent',
         go: () => go('buyr'),
       }] : []),
       ...(canSee(role, 'dealMachine') ? [{
         label: 'Deal Machine', dot: DEAL_MACHINE,
-        color: activeKey === 'dealMachine' ? '#18181b' : '#52525b',
-        bg: activeKey === 'dealMachine' ? '#f4f4f5' : 'transparent',
+        color: activeKey === 'dealMachine' ? 'var(--ink, #18181b)' : 'var(--muted, #52525b)',
+        bg: activeKey === 'dealMachine' ? 'var(--surface-2, #f4f4f5)' : 'transparent',
         go: () => go('dealMachine'),
       }] : []),
     ];
     // Picking a tool from the Tools menu closes it; inline, the close is a no-op.
     const navTools = navToolDefs.map((t) => ({ ...t, go: () => { set({ toolsMenuOpen: false }); t.go(); } }));
-    const toolsActive = navToolDefs.some((t) => t.bg !== 'transparent');
+    const toolsActive = navTools.some((t) => t.bg !== 'transparent');
     // Every entry opens the create dialog for that record type; an appointment
     // made from a record is with that record's seller.
     // Quick Add offers only what the role can read back afterwards.
@@ -3713,6 +4804,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // the entire team's and any one rep's; everyone else sees their own, so a
     // rep is never shown a switcher that changes nothing. The demo has no
     // workspace to scope and keeps its sample figures.
+    perfLap('nav');
     const homeCanScope = !!live && isAdmin(role);
     const homeRep: string | null = !homeCanScope || s.teamView === 'me' ? ME
       : s.teamView === 'team' ? null
@@ -3728,11 +4820,11 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       ['New leads today', '7', '+2 vs avg', '#16a34a'],
       ['Unactioned leads', '2', 'oldest 3m 14s', '#dc2626'],
       ['Speed to lead', '2m 41s', '−38s', '#16a34a'],
-      ['Calls today', '38', '3h 05m talk', '#71717a'],
-      ['Talk time', '3h 05m', 'team 11h 20m', '#71717a'],
-      ['Offers sent', '4', '$782K total', '#71717a'],
+      ['Calls today', '38', '3h 05m talk', 'var(--meta, #71717a)'],
+      ['Talk time', '3h 05m', 'team 11h 20m', 'var(--meta, #71717a)'],
+      ['Offers sent', '4', '$782K total', 'var(--meta, #71717a)'],
       ['Contracts signed', '1', 'Benton Ct', '#16a34a'],
-      ['Closing this month', '5', '$104K fees', '#71717a'],
+      ['Closing this month', '5', '$104K fees', 'var(--meta, #71717a)'],
     ];
     const homeStats: Kpi[] = live ? liveStats : sampleStats.map(([k, v, d, dColor]) => ({ k, v, d, dColor }));
 
@@ -3791,9 +4883,6 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // owns them, so the team's unassigned import pile stays out. Ordered the
     // way the screen claims: urgency first.
     const taskOpen = (t: Task) => !(s.tasksDone[t.id] ?? t.done);
-    // Read once: the lists asked tasks.some() per person, people x tasks on
-    // every render (keystrokes included) across ~11k leads.
-    const dueNowIds = new Set(tasks.filter((t) => taskOpen(t) && (t.bucket === 'overdue' || t.bucket === 'today')).map((t) => t.personId));
     const mine = (who: string | null) => (homeRep === null ? true : who === homeRep);
     const mineLead = (who: string | null) => (homeRep === null ? who !== null : who === homeRep);
     const taskLook = {
@@ -3812,8 +4901,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           personTab: 'Activity',
           personDealId: rec.dealId ?? null,
           composerTab: t.type === 'text' ? 'Text' : 'Email',
-          composerText: t.note,
         });
+        setComposerText(t.note ?? '');
       }
       return openPersonDeal(rec.id, rec.dealId);
     };
@@ -3879,7 +4968,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       return {
         addr: p.property.addr, sub: p.property.city + ' · ' + repName(d.owner),
         fee: fmt(d.assignment), when: d.close,
-        color: days === null ? '#52525b' : days < 0 ? '#b91c1c' : days <= 7 ? '#b45309' : '#52525b',
+        color: days === null ? 'var(--muted, #52525b)' : days < 0 ? '#b91c1c' : days <= 7 ? '#b45309' : 'var(--muted, #52525b)',
         open: () => openTc(p.id, d.id),
       };
     });
@@ -3943,195 +5032,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // A deal reaches two people: the wholesaler who submitted it and, when we
     // have one, the seller. Both keys point at the same gap rows, so the same
     // filters read the same way on a vendor list and on a people list.
-    const gapsByPerson = new Map<string, OfferGap[]>();
-    for (const g of D.offerGaps) {
-      // 'sub:<deal>' is a Submissions row (one deal); without it every gap filter emptied those lists.
-      for (const key of [g.vendorId, g.sellerId, 'sub:' + g.dealId]) {
-        if (!key) continue;
-        const cur = gapsByPerson.get(key);
-        if (cur) cur.push(g);
-        else gapsByPerson.set(key, [g]);
-      }
-    }
-    const hasGaps = gapsByPerson.size > 0;
-    const GAP_BASES = ['Either', 'Actual offer', 'UW high'];
-    /**
-     * The gap this offer is judged on. 'Actual offer' measures the ask against
-     * the number we sent, 'UW high' against our underwriting ceiling, 'Either'
-     * against whichever was closer. A deal with no ceiling has no UW-high gap,
-     * so it drops out of that basis rather than counting as a zero.
-     */
-    const gapUnder = (g: OfferGap, basis: string | undefined): number | null => gapOf(g, basis);
-    type GapStat = { offers: number; closeCalls: number; closest: number | null; declined: number; won: number };
-    const NO_GAPS: GapStat = { offers: 0, closeCalls: 0, closest: null, declined: 0, won: 0 };
-    const gapStatOf = (id: string, f: PeopleFilters): GapStat => {
-      const gaps = gapsByPerson.get(subKey(id));
-      if (!gaps || gaps.length === 0) return NO_GAPS;
-      const within = withinOf(f.gapWithin);
-      let closeCalls = 0, declined = 0, won = 0;
-      let closest: number | null = null;
-      for (const g of gaps) {
-        const d = gapUnder(g, f.gapBasis);
-        if (d != null) {
-          if (d <= within) closeCalls += 1;
-          if (closest == null || d < closest) closest = d;
-        }
-        if (g.stage === 'Offer Declined') declined += 1;
-        else if (g.stage === 'Closed' || g.stage === 'Under Contract - Buyer') won += 1;
-      }
-      return { offers: gaps.length, closeCalls, closest, declined, won };
-    };
-    /** '3+' → 3, 'Any' or unset → 0. */
-    const atLeast = (v: string | undefined) => (v && v !== 'Any' ? Number(v.replace('+', '')) || 0 : 0);
-    /** Wholesalers who have submitted a deal we offered on, for the Submitter filter. */
-    const submitterOffers = new Map<string, number>();
-    for (const g of D.offerGaps) if (g.company && g.company !== '—') submitterOffers.set(g.company, (submitterOffers.get(g.company) ?? 0) + 1);
-    const submitters = Array.from(submitterOffers.keys()).sort((a, b) => a.localeCompare(b));
-    const gapMatchOf = (f: PeopleFilters) => {
-      const needClose = closeCallsNeeded(f);
-      const needDeclined = atLeast(f.declined);
-      const submitters = picksOf(f.submitter);
-      if (!needClose && !needDeclined && !submitters.length) return () => true;
-      return (id: string) => {
-        if (submitters.length && !(gapsByPerson.get(subKey(id)) ?? []).some((g) => submitters.includes(g.company))) return false;
-        if (!needClose && !needDeclined) return true;
-        const st = gapStatOf(id, f);
-        return st.closeCalls >= needClose && st.declined >= needDeclined;
-      };
-    };
-
-    // List stacking: what a contact's deals add up to (lib/people-stack). A
-    // submission row ('sub:<deal>') is one deal; its counts are its sender's.
-    const dealsByPerson = new Map<string, Deal[]>();
-    for (const d of deals) {
-      if (!d.personId) continue;
-      const list = dealsByPerson.get(d.personId);
-      if (list) list.push(d); else dealsByPerson.set(d.personId, [d]);
-    }
-    const dealBySub = new Map(deals.map((d) => ['sub:' + d.id, d] as const));
-    type Stack = { subs: number; props: number; stack: number; offers: number[]; arvs: number[]; offer: number | null; arv: number | null };
-    const stackCache = new Map<string, Stack>();
-    const stackOf = (p: Person): Stack => {
-      const hit = stackCache.get(p.id);
-      if (hit) return hit;
-      const sub = dealBySub.get(subKey(p.id));
-      const owner = sub ? person(sub.personId) : p;
-      const theirs = dealsByPerson.get(sub ? sub.personId : p.id) ?? [];
-      const mine = sub ? [sub] : theirs;
-      const best = sub ?? dealOf(p.id);
-      const offers = mine.map((d) => d.contract).filter((n): n is number => n != null && n > 0);
-      const arvs = mine.map((d) => d.arv).filter((n): n is number => n != null && n > 0);
-      const v: Stack = {
-        subs: theirs.length,
-        props: new Set([...theirs.map((d) => d.propertyId), owner?.property.propertyId].filter(Boolean)).size,
-        stack: listStack(owner?.tags ?? p.tags, owner?.name ?? p.name, owner?.source ?? p.source),
-        offers, arvs,
-        offer: best?.contract ?? (offers.length ? Math.max(...offers) : null),
-        arv: best?.arv ?? (arvs.length ? Math.max(...arvs) : null),
-      };
-      stackCache.set(p.id, v);
-      return v;
-    };
-    const peopleMarkets = Array.from(new Set(people.map((p) => p.market).filter((m) => m && m !== '—'))).sort((a, b) => a.localeCompare(b));
-    const historyKeyOf = (f: PeopleFilters) => ['seller', f.history, f.historyWhen ?? 'Ever', f.historyFrom ?? 'Any', f.historyTo ?? 'Any'].join('|');
-
-    const PF_DEFS: { key: keyof PeopleFilters; label: string; options: string[]; multi?: boolean }[] = [
-      // Multi: pick as many as you like (lib/multi-filter); a lead passes on any of them.
-      { key: 'owner', label: 'Owner', options: ['Any', ...Object.values(D.team).map((r) => r.name), 'Unassigned'], multi: true },
-      { key: 'stage', label: 'Stage', options: ['Any', ...sellerStages], multi: true },
-      { key: 'source', label: 'Source', options: ['Any', ...Array.from(new Set(people.map((p) => p.source)))], multi: true },
-      { key: 'tag', label: 'Tags', options: ['Any', ...Array.from(new Set(people.flatMap((p) => p.tags)))], multi: true },
-      { key: 'date', label: 'Date', options: ['Any', 'Created today', 'Contacted today', 'No contact 7 days', 'Closing this month'], multi: true },
-      { key: 'phone', label: 'Phone', options: [...PHONE_FILTERS], multi: true },
-      { key: 'email', label: 'Email', options: [...EMAIL_FILTERS], multi: true },
-      { key: 'compr', label: 'COMPR', options: ['Any', 'Not run', 'Run'], multi: true },
-      { key: 'sort', label: 'Sort', options: ['Recent', 'Date added', 'Oldest added', 'Lead score', 'Name', 'Stage', 'Oldest',
-        'ARV (high to low)', 'Offer (high to low)', 'Market (A to Z)', 'Most submissions', 'Most properties', 'Largest list stack'] },
-    ];
-    // The gap filters only exist once there are offered deals behind them, so a
-    // workspace with no offers gets no controls that cannot do anything.
-    if (hasGaps) PF_DEFS.push(
-      { key: 'gapBasis', label: 'Gap basis', options: GAP_BASES },
-      { key: 'gapWithin', label: 'Close is', options: Object.keys(GAP_WITHIN) },
-      { key: 'closeCalls', label: 'Close calls', options: ['Any', '1+', '2+', '3+', '5+'] },
-      { key: 'declined', label: 'Declined', options: ['Any', '1+', '3+', '5+'] },
-      { key: 'submitter', label: 'Submitter', options: ['Any', ...submitters], multi: true },
-    );
-    /** A lead has been underwritten when its deal carries a COMPR report or an ARV. */
-    const comprRan = (pid: string) => { const d = dealOf(pid); return !!(d?.underwritingUrl || d?.arv); };
-    /** One Date pick. */
-    const dateOk = (d: string, p: Person) => {
-      if (d === 'Created today') return /Today/i.test(p.created);
-      if (d === 'Contacted today') return p.lastCommTs != null && p.lastCommTs < 600;
-      if (d === 'No contact 7 days') return p.lastCommTs == null || p.lastCommTs > 10000;
-      if (d === 'Closing this month') return !!dealOf(p.id)?.close;
-      return true;
-    };
-    const pfMatchOf = (f: PeopleFilters) => {
-      const gapOk = gapMatchOf(f);
-      const offerR = moneyRange(f.offer, f.offerMin, f.offerMax);
-      const arvR = moneyRange(f.arv, f.arvMin, f.arvMax);
-      const needSubs = atLeastOf(f.subs);
-      const needProps = atLeastOf(f.props);
-      const needStack = atLeastOf(f.stack);
-      const historyOn = !!f.history && f.history !== 'Any' && live;
-      const hist = historyOn ? historyHits[historyKeyOf(f)] : undefined;
-      const owners = picksOf(f.owner);
-      const dates = picksOf(f.date);
-      const comprs = picksOf(f.compr);
-      return (p: Person) => {
-      // Each filter may hold several picks: a lead passes a filter on any one of them.
-      if (owners.length && !owners.some((o) => (o === 'Unassigned' ? !p.assigned : repName(p.assigned) === o))) return false;
-      if (!matchesPick(f.stage, p.stage)) return false;
-      if (!matchesPick(f.source, p.source)) return false;
-      if (!matchesAnyPick(f.tag, p.tags)) return false;
-      if (dates.length && !dates.some((d) => dateOk(d, p))) return false;
-      if (comprs.length && !comprs.includes(comprRan(p.id) ? 'Run' : 'Not run')) return false;
-      if (!matchesContactFilters(p.phone, p.email, f.phone, f.email)) return false;
-      if (!gapOk(p.id)) return false;
-      if (!matchesPick(f.market, p.market)) return false;
-      if (offerR || arvR || needSubs || needProps || needStack) {
-        const st = stackOf(p);
-        if (offerR && !anyInRange(st.offers, offerR)) return false;
-        if (arvR && !anyInRange(st.arvs, arvR)) return false;
-        if (st.subs < needSubs || st.props < needProps || st.stack < needStack) return false;
-      }
-      if (historyOn) {
-        // Until the database answers, nothing matches rather than everything.
-        if (!hist) return false;
-        const sub = dealBySub.get(subKey(p.id));
-        if (sub ? !hist.deals.has(dbId(sub.id)) : !hist.sellers.has(dbId(p.id))) return false;
-      }
-      return true;
-      };
-    };
-    const pfMatch = pfMatchOf(s.pf);
-    const addedMs = (p: Person) => Date.parse(p.createdAt || '') || 0;
-    const pfSort = (a: Person, b: Person) => {
-      switch (s.pf.sort) {
-        case 'Date added': return addedMs(b) - addedMs(a);
-        case 'Oldest added': return addedMs(a) - addedMs(b);
-        // Unscored leads sort after every scored one, not as zeros.
-        case 'Lead score': return (b.score ?? -1) - (a.score ?? -1);
-        case 'Name': return a.name.localeCompare(b.name);
-        case 'Stage': return sellerStages.indexOf(a.stage) - sellerStages.indexOf(b.stage);
-        case 'Oldest': return (b.lastCommTs ?? 1e9) - (a.lastCommTs ?? 1e9);
-        // No figure sorts after every figure, not as a zero.
-        case 'ARV (high to low)': return (stackOf(b).arv ?? -1) - (stackOf(a).arv ?? -1);
-        case 'Offer (high to low)': return (stackOf(b).offer ?? -1) - (stackOf(a).offer ?? -1);
-        case 'Market (A to Z)': {
-          const ma = a.market && a.market !== '—' ? a.market : null;
-          const mb = b.market && b.market !== '—' ? b.market : null;
-          return ma && mb ? ma.localeCompare(mb) : ma ? -1 : mb ? 1 : 0;
-        }
-        case 'Most submissions': return stackOf(b).subs - stackOf(a).subs;
-        case 'Most properties': return stackOf(b).props - stackOf(a).props;
-        case 'Largest list stack': return stackOf(b).stack - stackOf(a).stack;
-        default: return (a.lastCommTs ?? 1e9) - (b.lastCommTs ?? 1e9);
-      }
-    };
+    perfLap('home');
     /** Controls that change how the filters read rather than narrowing the list. */
-    const PF_MODIFIERS: (keyof PeopleFilters)[] = ['sort', 'gapBasis', 'gapWithin', 'historyWhen', 'historyFrom', 'historyTo', 'offerMin', 'offerMax', 'arvMin', 'arvMax'];
+    const PF_MODIFIERS: (keyof PeopleFilters)[] = ['sort', 'gapBasis', 'gapWithin', 'historyWhen', 'historyFrom', 'historyTo', 'addedFrom', 'addedTo', 'attackBasis', 'offerMin', 'offerMax', 'arvMin', 'arvMax'];
     const isModifier = (k: keyof PeopleFilters) => PF_MODIFIERS.includes(k);
     const activeFilterCount = (Object.keys(s.pf) as (keyof PeopleFilters)[])
       .filter((k) => !isModifier(k) && s.pf[k] !== 'Any' && s.pf[k] !== undefined).length;
@@ -4155,8 +5058,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           ? () => set((st) => ({ pf: { ...st.pf, [d.key]: togglePick(st.pf[d.key], o) }, pfOpen: o === 'Any' ? null : st.pfOpen, gapOpen: null, peopleSel: {} }))
           : () => set((st) => ({ pf: { ...st.pf, [d.key]: o }, pfOpen: null, gapOpen: null, peopleSel: {} })),
       })),
-      bg: on ? '#E7F8F1' : 'var(--c-btn-bg)',
-      color: on ? '#0A8560' : '#27272a',
+      bg: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--c-btn-bg)',
+      color: on ? 'var(--tx-mint, #0a8560)' : 'var(--ink-2, #27272a)',
       border: on ? '#0A8560' : 'var(--c-btn-line)',
       };
     });
@@ -4172,11 +5075,12 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           label: o, on: multi ? isPicked(value, o) : value === o, meta: undefined as string | undefined,
           go: multi ? () => { pick(togglePick(value, o)); if (o === 'Any') set({ pfOpen: null }); } : () => { pick(o); set({ pfOpen: null }); },
         })),
-        bg: on ? '#E7F8F1' : 'var(--c-btn-bg)', color: on ? '#0A8560' : '#27272a', border: on ? '#0A8560' : 'var(--c-btn-line)',
+        bg: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--c-btn-bg)', color: on ? 'var(--tx-mint, #0a8560)' : 'var(--ink-2, #27272a)', border: on ? '#0A8560' : 'var(--c-btn-line)',
       };
     };
     const MORE_CLEAR: Partial<PeopleFilters> = {
       history: 'Any', historyWhen: 'Ever', historyFrom: 'Any', historyTo: 'Any',
+      addedWhen: 'Any', addedFrom: 'Any', addedTo: 'Any', attackGap: 'Any', attackBasis: 'Our offer', uwTriage: 'Any',
       offer: 'Any', offerMin: 'Any', offerMax: 'Any', arv: 'Any', arvMin: 'Any', arvMax: 'Any',
       market: 'Any', subs: 'Any', props: 'Any', stack: 'Any',
     };
@@ -4187,7 +5091,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       open: s.pfMoreOpen,
       toggle: () => set((st) => ({ pfMoreOpen: !st.pfMoreOpen, pfOpen: null })),
       close: () => set({ pfMoreOpen: false }),
-      active: (['history', 'offer', 'arv', 'market', 'subs', 'props', 'stack'] as const).filter((k) => (s.pf[k] ?? 'Any') !== 'Any').length,
+      active: (['history', 'offer', 'arv', 'market', 'subs', 'props', 'stack', 'addedWhen', 'attackGap', 'uwTriage'] as const).filter((k) => (s.pf[k] ?? 'Any') !== 'Any').length,
       values: s.pf,
       set: pfSet,
       clear: () => pfSet(MORE_CLEAR),
@@ -4200,7 +5104,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         vendorType: 'Any', vendorState: 'Any', vendorSubs: 'Any',
         pf: {
           owner: 'Any', stage: 'Any', source: 'Any', tag: 'Any', date: 'Any', compr: 'Any',
-          closeCalls: 'Any', declined: 'Any', submitter: 'Any', phone: 'Any', email: 'Any',
+          closeCalls: 'Any', declined: 'Any', submitter: 'Any', phone: 'Any', email: 'Any', heat: 'Any',
           sort: 'Recent', gapBasis: s.pf.gapBasis, gapWithin: s.pf.gapWithin, ...MORE_CLEAR,
         },
         pfOpen: null,
@@ -4212,53 +5116,6 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       set((st) => ({ pf: { ...st.pf, sort: next }, pfOpen: null, peopleSel: {} }));
     };
 
-    const isPodioUs = (p: Person) => /Podio stage:\s*US\b/i.test(p.notes ?? '');
-    const listDefs: Record<string, (p: Person) => boolean> = {
-      'My Leads': (p) => p.assigned === ME,
-      'New Leads': (p) => (live ? sellerStageGroup(p.stage) === 'lead' : p.stage === 'New Lead'),
-      'DM Prospects': (p) => isDmProspect(p.source, p.tags),
-      'Hot Leads': (p) => leadTemp(p) === 'HOT',
-      // A live seller's next-task line names only its earliest task and says
-      // "Yesterday" for a day-late one, so live reads the tasks' due-date buckets.
-      'Follow Up Today': (p) => /Today|Now|Overdue/.test(p.nextTask)
-        || (!!live && dueNowIds.has(p.id)),
-      'No Contact': (p) => p.lastCommTs == null,
-      'Offers Out': (p) => (live ? sellerStageGroup(p.stage) === 'offer' : ['Offer Sent', 'Negotiation'].includes(p.stage)),
-      Appointments: (p) => (live ? p.stage.startsWith('Appointment') : p.stage === 'Appointment'),
-      'Long-Term Follow-Up': (p) => p.tags.includes('Long-term'),
-      // Same rules as AI Autopilot's nightly reactivation (lib/reactivation.ts).
-      'Dead Leads': (p) => (live ? isDeadLeadStage(p.stage) : p.stage === 'Lost'),
-      Reactivation: (p) => (live ? isReactivationLead(p.stage, p.lastCommTs) : (p.lastCommTs ?? 0) > SMART_LIST_QUIET_MIN && p.stage !== 'Lost'),
-      Unassigned: (p) => !p.assigned,
-      'Recently Active': (p) => p.lastCommTs != null && p.lastCommTs < 200,
-      // Podio Partnerships › Submissions views — order matches Podio's Team rail.
-      'New Submissions': (p) => (PODIO_NEW_SUBMISSIONS as readonly string[]).includes(p.stage),
-      'Total Submissions': (p) => (PODIO_SUBMISSION_STAGES as readonly string[]).includes(p.stage) || isPodioUs(p),
-      'New Submission': (p) => p.stage === 'New Submission' && !isPodioUs(p),
-      Underwriting: (p) => p.stage === 'Underwriting',
-      'Underwrite Declined': (p) => p.stage === 'Underwrite Declined',
-      'Underwriting - Need Info': (p) => p.stage === 'Underwriting - Need Info',
-      'Underwriting Complete': (p) => p.stage === 'Underwriting Complete',
-      'Offer Made': (p) => p.stage === 'Offer Made',
-      'Pending Response': (p) => p.stage === 'Pending Response',
-      'Offer Declined': (p) => p.stage === 'Offer Declined',
-      'Offer Accepted': (p) => p.stage === 'Offer Accepted',
-      'Under Contract - Seller': (p) => p.stage === 'Under Contract - Seller',
-      'Auction.com': (p) => p.stage === 'Auction.com',
-      US: (p) => isPodioUs(p),
-    };
-    // Operational lists first, then Podio submission views in Podio's order.
-    const SMART_LIST_ORDER = [
-      'My Leads', 'New Leads', 'DM Prospects', 'Hot Leads', 'Follow Up Today', 'No Contact',
-      'Offers Out', 'Appointments', 'Long-Term Follow-Up', 'Dead Leads', 'Reactivation',
-      'Unassigned', 'Recently Active',
-      'New Submissions', 'New Submission', 'Underwriting',
-      'Total Submissions', ...PODIO_TOTAL_SUBMISSIONS,
-    ];
-    // Only Sellers is people-shaped. Buyers routes to the buyer screen; the
-    // vendor-backed lists render a vendor table; the rest have no data behind
-    // them, so they are disabled rather than showing an empty list.
-    const customDefs: Record<string, (p: Person) => boolean> = { Sellers: () => true };
     const VENDOR_LISTS: Record<string, string | null> = {
       Vendors: null, Lenders: 'Lender', 'Title Companies': 'Title Company', 'Photographers / Notaries': 'Photographer/Notary',
       Wholesalers: 'Wholesaler', Partners: 'Institutional seller',
@@ -4288,53 +5145,33 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       'Photographers / Notaries': vendorsFor('Photographers / Notaries').length,
       Agents: realtorCorpusTotal, Wholesalers: vendorsFor('Wholesalers').length, Partners: vendorsFor('Partners').length,
     };
-    const mkList = (label: string, count: number) => ({
-      label, count,
-      go: () => set({ peopleList: label, peopleSel: {} }),
-      bg: s.peopleList === label ? '#E7F8F1' : 'transparent',
-      color: s.peopleList === label ? '#0A8560' : '#27272a',
-      weight: s.peopleList === label ? 600 : 500,
-      pin: s.pinnedSmartLists.includes(label) ? '#18181b' : '#e4e4e7',
-      pinned: s.pinnedSmartLists.includes(label),
-    });
-    // Submissions are deals (one house each). Counting sellers hid the ~4,000
-    // Podio rows behind the few hundred people who submitted them.
-    const submissionLabels = new Set<string>(['New Submissions', 'Total Submissions', ...PODIO_TOTAL_SUBMISSIONS]);
-    // Podio's own items when the sync has them: every count is Podio's, item for item.
-    const podioSubs: PodioSubmission[] = (D as { podioSubmissions?: PodioSubmission[] }).podioSubmissions ?? [];
-    // Podio is retired (Oct 2026): the team imports and moves submissions in
-    // CLOZR. The lists are CLOZR's own deals, one row per house on its lead
-    // stage, so an import or a stage move is the list. Podio's item ledger is
-    // no longer what the lists count.
-    const exactPodio = false;
-    // Podio's stage, unless the house was moved in CLOZR (this session, or by a
-    // person since Podio's last stage change): Podio never hears of those moves.
-    const subStage = (i: PodioSubmission) => podioRowStage(i, i.dealId ? s.stageOverrides['sub:' + i.dealId] : null);
-    // Sheet imports (iFinder and the rest) have no Podio item. They still count.
-    const podioDealIds = new Set(podioSubs.flatMap((i) => (i.dealId ? [i.dealId] : [])));
-    // A sheet submission moved this session (Underwriting Complete) is on its new
-    // list right away, as a Podio item is; the saved stage only arrives on reload.
-    const subDeals = deals.map((d) => {
-      const moved = s.stageOverrides['sub:' + d.id];
-      return moved && moved !== d.leadStage ? { ...d, leadStage: moved } : d;
-    });
-    const countFor = (label: string) => live && submissionLabels.has(label)
-      ? (exactPodio
-        ? podioSubs.filter((i) => podioItemInList(subStage(i), label)).length + nativeSubmissionDeals(subDeals, podioDealIds, label).length
-        : subDeals.filter((d) => !d.archived && submissionListMatch(d.leadStage, label, d.stage)).length)
-      : people.filter(listDefs[label] ?? (() => false)).filter(pfMatch).length;
-    const smartLists = SMART_LIST_ORDER.filter((l, i, a) => a.indexOf(l) === i && listDefs[l]).map((l) => mkList(l, countFor(l)));
+    // A count is worked out when a rail draws it: every smart list's pass over
+    // the leads used to run on each rebuild of the view, whatever the screen.
+    const mkList = (label: string, count: number | (() => number)) => {
+      let n = typeof count === 'number' ? count : null;
+      return {
+        label,
+        get count() { return (n ??= (count as () => number)()); },
+        go: () => set({ peopleList: label, peopleSel: {} }),
+        bg: s.peopleList === label ? 'var(--mint-dim, #e7f8f1)' : 'transparent',
+        color: s.peopleList === label ? '#0A8560' : 'var(--ink-2, #27272a)',
+        weight: s.peopleList === label ? 600 : 500,
+        pin: s.pinnedSmartLists.includes(label) ? 'var(--ink, #18181b)' : 'var(--divider, #e4e4e7)',
+        pinned: s.pinnedSmartLists.includes(label),
+      };
+    };
+    const smartLists = SMART_LIST_ORDER.filter((l, i, a) => a.indexOf(l) === i && listDefs[l]).map((l) => mkList(l, () => countFor(l)));
     // Podio-shaped rail: group headers + indented stage children (same order as Podio Team views).
     const submissionNav = [
       {
         kind: 'group' as const,
         ...mkList('New Submissions', countFor('New Submissions')),
-        children: PODIO_NEW_SUBMISSIONS.map((label) => mkList(label, countFor(label))),
+        children: PODIO_NEW_SUBMISSIONS.map((label) => mkList(label, () => countFor(label))),
       },
       {
         kind: 'group' as const,
         ...mkList('Total Submissions', countFor('Total Submissions')),
-        children: PODIO_TOTAL_SUBMISSIONS.map((label) => mkList(label, countFor(label))),
+        children: PODIO_TOTAL_SUBMISSIONS.map((label) => mkList(label, () => countFor(label))),
       },
     ];
     // Partnerships works submissions and vendors only: no seller smart lists.
@@ -4365,13 +5202,14 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         disabled: dead,
         title: dead ? 'No ' + l.toLowerCase() + ' in the graph yet — add one from Quick Add to enable this list' : '',
         go: dead ? () => {} : l === 'Buyers' ? () => go('buyers') : l === 'Agents' ? () => { setRealtorOffset(0); go('buyers', { buyerList: 'realtors', buyerQ: '', buyerGeniusOnly: false }); } : () => set({ peopleList: l, peopleSel: {}, vendorType: 'Any', vendorState: 'Any', vendorSubs: 'Any' }),
-        color: dead ? '#c4c4c8' : s.peopleList === l ? '#0A8560' : '#27272a',
+        color: dead ? '#c4c4c8' : s.peopleList === l ? '#0A8560' : 'var(--ink-2, #27272a)',
       };
     });
     const canSeeList = (l: { access?: string[]; mine?: boolean }) => smartListVisible(l, ME);
     const savedListRows = s.savedLists.filter(canSeeList).map((l) => ({
-      ...mkList(l.name, people.filter(pfMatchOf(l.filters)).length),
+      ...mkList(l.name, savedListCount(l.filters)),
       id: l.id,
+      group: l.group ?? '',
       accessLabel: !l.access?.length ? 'Everyone' : l.access.length === 1 && l.access[0] === ME ? 'Only you' : l.access.length === 1 ? '1 person' : l.access.length + ' people',
       go: () => openSavedList(l.id),
       // Only the one who saved it can delete it (saved_views RLS). The rail asks first.
@@ -4379,124 +5217,10 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       remove: () => deleteSavedList(l.id),
     }));
     const hasSavedLists = s.savedLists.length > 0;
-    const isSavedList = s.savedLists.some((l) => l.name === s.peopleList);
-    const filterFn = isSavedList
-      ? () => true
-      : listDefs[s.peopleList] || customDefs[s.peopleList] || (() => true);
-    const peopleSearch = parseSearch(s.peopleQ);
-    const showingSubmissions = live && submissionLabels.has(s.peopleList);
-    const submissionPerson = (d: Deal, from: 'podio' | 'sheet' = 'podio'): Person => {
-      const seller = d.personId ? person(d.personId) : undefined;
-      const addr = d.addr || seller?.property.addr || 'Submission';
-      const home = seller?.property;
-      // A sellers-table person keeps their own name, phone, and email. Vendors
-      // attached as sellers fill only what that person does not already have.
-      const who = submissionIdentity(seller, d.vendorSellers ?? [], addr);
-      return {
-        id: 'sub:' + d.id,
-        name: who.name,
-        stage: s.stageOverrides['sub:' + d.id] || d.leadStage || 'New Submission',
-        score: null,
-        assigned: d.owner || seller?.assigned || null,
-        source: d.tracker?.leadSource || seller?.source || (from === 'podio' ? 'Podio' : 'Import'),
-        phone: who.phone,
-        email: who.email,
-        lastComm: seller?.lastComm || '—',
-        lastCommTs: seller?.lastCommTs ?? null,
-        nextTask: '—',
-        offer: d.contract != null ? fmt(d.contract) : null,
-        created: (d.submittedAt || d.createdAt || '').slice(0, 10) || '—',
-        createdAt: d.submittedAt || d.createdAt,
-        tags: [from === 'podio' ? 'Podio submission' : 'Submission', ...who.vendorLabels.map((n) => 'Seller · ' + n)],
-        market: seller?.market && seller.market !== '—' ? seller.market : personMarket(null, d.city || home?.city, home?.st),
-        notes: null,
-        motivation: '—', timeline: '—', condition: '—', occupancy: '—', mortgage: '—',
-        asking: d.asking != null ? fmt(d.asking) : '—',
-        desiredClose: '—', decisionMakers: '—',
-        property: {
-          addr, city: d.city || home?.city || '', st: d.st || home?.st || '', zip: d.zip || home?.zip || '',
-          // The deal's own house, else the seller's: the map pins the submission, not where the seller lives.
-          ...(d.lat != null && d.lng != null ? { lat: d.lat, lng: d.lng } : home?.lat != null && home?.lng != null && !d.addr ? { lat: home.lat, lng: home.lng } : {}),
-          beds: home?.beds ?? 0, baths: home?.baths ?? 0, sqft: home?.sqft ?? 0, year: home?.year ?? 0,
-          lot: home?.lot || '—', type: home?.type || '—', img: d.heroUrl || d.photos?.[0] || '', apn: home?.apn || '—',
-        },
-      };
-    };
-    // Search runs over every lead in the list (not just the drawn page) and
-    // ranks name matches first; the list's sort orders within each rank.
-    // "View imported": the leads and submissions the last import wrote, nothing else.
-    const lastImportRows = s.peopleList === LAST_IMPORT && s.lastImport && s.lastImport.kind !== 'buyers' && s.lastImport.kind !== 'vendors'
-      ? [...people.filter((p) => importIdSet.has(p.id)), ...deals.filter((d) => importIdSet.has('sub:' + d.id)).map((d) => submissionPerson(d))]
-      : null;
-    // One row per Podio item: Podio's stage on it, and a resubmission CLOZR keeps on
-    // one deal shows once per submission ('sub:d12~4567'). Items with no CLOZR deal
-    // (tests, no address, an ambiguous match) are counted and noted, not listed.
-    const dealById = new Map(deals.map((d) => [d.id, d] as const));
-    const podioListed = showingSubmissions && exactPodio ? podioSubs.filter((i) => podioItemInList(subStage(i), s.peopleList)) : [];
-    const podioOutside = s.subPartner ? 0 : podioListed.filter((i) => !i.dealId || !dealById.has(i.dealId)).length;
-    const podioArchived = s.subPartner ? 0 : podioListed.filter((i) => i.dealId && dealById.get(i.dealId)?.archived).length;
-    const podioRows = (): Person[] => {
-      const seen = new Set<string>();
-      return podioListed.flatMap((i) => {
-        const d = i.dealId ? dealById.get(i.dealId) : undefined;
-        // A submission is archived from its deal; Podio still lists the item, CLOZR does not.
-        if (!d || d.archived || (s.subPartner && d.personId !== s.subPartner.id)) return [];
-        const base = submissionPerson(d);
-        const id = seen.has(d.id) ? `${base.id}~${i.itemId}` : base.id;
-        seen.add(d.id);
-        return [{ ...base, id, stage: subStage(i) || base.stage, created: (i.createdOn || '').slice(0, 10) || base.created, createdAt: i.createdOn || base.createdAt }];
-      });
-    };
-    const sheetRows = showingSubmissions && exactPodio
-      ? nativeSubmissionDeals(subDeals, podioDealIds, s.peopleList)
-        .filter((d) => !s.subPartner || d.personId === s.subPartner.id)
-        .map((d) => submissionPerson(d, 'sheet'))
-      : [];
-    const peopleFiltered = searchRows((lastImportRows ?? (showingSubmissions
-      ? (exactPodio ? [...podioRows(), ...sheetRows] : subDeals.filter((d) => !d.archived && submissionListMatch(d.leadStage, s.peopleList, d.stage) && (!s.subPartner || d.personId === s.subPartner.id)).map((d) => submissionPerson(d, 'sheet')))
-      : people.filter((p) => !secretHidden(p.id, p.tags)).filter(filterFn)))
-      .filter((p) => !showingSubmissions || !secretHidden(p.id, p.tags))
-      .filter(pfMatch)
-      .sort(pfSort), (p) => peopleSearchKeys.get(p.id) ?? personSearchKey(p), peopleSearch);
     // Columns are data-driven so the list can show only the fields you pick.
     // `kind` tells the table how to render the cell; 'name' is always shown.
-    const PEOPLE_COLUMNS: { key: string; label: string; kind: string; locked?: boolean }[] = [
-      { key: 'name', label: 'Name', kind: 'name', locked: true },
-      { key: 'stage', label: 'Stage', kind: 'stage' },
-      { key: 'property', label: 'Property', kind: 'property' },
-      { key: 'phone', label: 'Phone', kind: 'contact' },
-      { key: 'assigned', label: 'Assigned', kind: 'assigned' },
-      { key: 'source', label: 'Source', kind: 'muted' },
-      { key: 'lastComm', label: 'Last communication', kind: 'muted' },
-      { key: 'nextTask', label: 'Next task', kind: 'text' },
-      { key: 'score', label: 'Lead score', kind: 'score' },
-      { key: 'offer', label: 'Offer', kind: 'strong' },
-      { key: 'created', label: 'Date added', kind: 'muted' },
-      // Off by default; the Columns menu and saved views turn them on.
-      { key: 'email', label: 'Email', kind: 'contact' },
-      { key: 'market', label: 'Market', kind: 'muted' },
-      { key: 'city', label: 'City', kind: 'muted' },
-      { key: 'zip', label: 'ZIP', kind: 'muted' },
-      { key: 'asking', label: 'Asking', kind: 'strong' },
-      { key: 'motivation', label: 'Motivation', kind: 'text' },
-      { key: 'timeline', label: 'Timeline', kind: 'muted' },
-      { key: 'condition', label: 'Condition', kind: 'muted' },
-      { key: 'occupancy', label: 'Occupancy', kind: 'muted' },
-      { key: 'tags', label: 'Tags', kind: 'muted' },
-      // List stacking (lib/people-stack): ARV of their deal, deals sent, properties held, lists they are on.
-      { key: 'arv', label: 'ARV', kind: 'strong' },
-      { key: 'subs', label: 'Submissions', kind: 'muted' },
-      { key: 'props', label: 'Properties', kind: 'muted' },
-      { key: 'stack', label: 'List stack', kind: 'muted' },
-    ];
-    const DEFAULT_PEOPLE_COLS = ['name', 'stage', 'property', 'phone', 'assigned', 'source', 'lastComm', 'nextTask', 'score', 'offer', 'created'];
-    // Saved against the smart list, so each list remembers its own field set.
-    const visibleColKeys = s.peopleColsByList[s.peopleList] || DEFAULT_PEOPLE_COLS;
-    // In the order the rep put them (Columns menu), the locked Name first.
-    const peopleColumns = [
-      ...PEOPLE_COLUMNS.filter((c) => c.locked),
-      ...visibleColKeys.flatMap((k) => PEOPLE_COLUMNS.filter((c) => c.key === k && !c.locked)),
-    ];
+    perfLap('people-filtered');
+    const { DEFAULT_PEOPLE_COLS, visibleColKeys, peopleColumns } = peopleColumnsView;
     const setCols = (keys: string[]) =>
       set((st) => ({ peopleColsByList: { ...st.peopleColsByList, [st.peopleList]: keys } }));
     const peopleColPicker = PEOPLE_COLUMNS.map((c) => {
@@ -4507,9 +5231,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           if (c.locked) return;
           setCols(on ? visibleColKeys.filter((k) => k !== c.key) : [...visibleColKeys, c.key]);
         },
-        box: on ? '#18181b' : '#fff',
-        boxBorder: on ? '#18181b' : '#d4d4d8',
-        color: c.locked ? '#a1a1aa' : '#18181b',
+        box: on ? 'var(--ink, #18181b)' : 'var(--surface, #fff)',
+        boxBorder: on ? 'var(--ink, #18181b)' : 'var(--line, #d4d4d8)',
+        color: c.locked ? 'var(--subtle, #a1a1aa)' : 'var(--ink, #18181b)',
       };
     });
     const peopleColsShown = peopleColumns.length;
@@ -4533,7 +5257,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     })();
     const saveSmartList = () => set({ smartListOpen: true });
     const closeSmartList = () => set({ smartListOpen: false });
-    const commitSmartList = (name: string, access: string[]) => {
+    const commitSmartList = (name: string, access: string[], group = '') => {
       const trimmed = name.trim();
       if (!trimmed) return toast('Name the list first');
       const unique = savedListNames.includes(trimmed) ? trimmed + ' ' + (savedListDefs.length + 1) : trimmed;
@@ -4545,6 +5269,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         cols: s.peopleColsByList[s.peopleList] || DEFAULT_PEOPLE_COLS,
         access: ids,
         mine: true,
+        ...(group.trim() ? { group: group.trim().slice(0, 40) } : {}),
       };
       set((prev) => ({
         savedLists: [...prev.savedLists, made],
@@ -4580,7 +5305,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       if (readOnly) return toast(READ_ONLY_MESSAGE);
       set((st) => ({
         savedLists: st.savedLists.filter((x) => x.id !== id),
-        peopleList: gone.name === st.peopleList ? 'My Leads' : st.peopleList,
+        peopleList: gone.name === st.peopleList ? (seesSellerLists(role) ? 'My Leads' : PARTNER_START_LIST) : st.peopleList,
       }));
       void deleteSmartList(live ? workspaceId : null, live ? me : null, id, s.savedLists).then((ok) => {
         if (ok) return toast('Deleted "' + gone.name + '"', 'success');
@@ -4590,10 +5315,28 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     };
 
     // Vendor-backed lists render a vendor table instead of the people table.
-    const isVendorList = Object.prototype.hasOwnProperty.call(VENDOR_LISTS, s.peopleList);
-    const listLen = isVendorList ? 0 : peopleFiltered.length;
-    const peopleCursor = s.cursorList === s.peopleList ? Math.min(s.peopleCursor, Math.max(0, listLen - 1)) : 0;
-    const smartListNames = [...SMART_LIST_ORDER.filter((l, i, a) => a.indexOf(l) === i && listDefs[l]), ...s.savedLists.filter(canSeeList).map((l) => l.name)];
+    // Leads | Submissions (lib/people-side). Leads is the seller smart lists,
+    // the saved lists and Sellers; Submissions is the stage lists. Vendors and
+    // Last import sit under both, so they keep the half last picked.
+    const sellerSide = seesSellerLists(role);
+    const savedNames = savedListRows.map((l) => l.label);
+    const leadNames = [...operationalLists.map((l) => l.label), ...savedNames];
+    const submissionNames = smartLists.filter((l) => submissionLabels.has(l.label)).map((l) => l.label);
+    const listSide: PeopleSide | null = submissionLabels.has(s.peopleList) ? 'submissions'
+      : isSavedList || s.peopleList === 'Sellers' || listDefs[s.peopleList] ? 'leads' : null;
+    const peopleSide = peopleSideFor({ sellerLists: sellerSide, listSide, remembered: s.peopleSide.side });
+    // Partnerships has no Leads half, so its saved lists sit under Submissions.
+    const smartListNames = peopleSide === 'leads' ? leadNames : sellerSide ? submissionNames : [...submissionNames, ...savedNames];
+    const setPeopleSide = (side: PeopleSide) => {
+      if (side === peopleSide || !sellerSide) return;
+      const mem = listSide ? noteSide(s.peopleSide, listSide, s.peopleList) : s.peopleSide;
+      const next: PeopleSideMemory = { side, last: mem.last };
+      savePeopleSide(next);
+      const to = sideLanding(side, next, side === 'leads' ? leadNames : submissionNames);
+      const saved = to ? s.savedLists.find((l) => l.name === to) : undefined;
+      if (saved) { set({ peopleSide: next }); openSavedList(saved.id); return; }
+      set(to ? { peopleSide: next, peopleList: to, peopleSel: {}, peopleCursor: 0, cursorList: to } : { peopleSide: next });
+    };
     const moveInList = (dir: 1 | -1) => {
       if (isVendorList || !listLen) return;
       set({ peopleCursor: stepIndex(peopleCursor, listLen, dir), cursorList: s.peopleList });
@@ -4720,7 +5463,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         closestGap: g.closest == null ? '—' : fmt(g.closest),
         declined: g.declined ? String(g.declined) : '—',
         openGaps: g.offers ? () => set({ gapOpen: v.id }) : null,
-        checked: !!s.peopleSel[v.id], rowBg: s.peopleSel[v.id] ? '#E7F8F1' : '#fff',
+        checked: !!s.peopleSel[v.id], rowBg: s.peopleSel[v.id] ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)',
         toggle: () => set((st) => ({ peopleSel: { ...st.peopleSel, [v.id]: !st.peopleSel[v.id] } })),
         call: () => startCall({ name: v.contact === '—' ? v.name : v.contact, phone: v.phone }),
         };
@@ -4737,7 +5480,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       const r = await setVendorMainPoc(dbId(v.id), !v.mainPoc);
       if (!r.ok) return toast(r.message ?? 'Could not save that.', 'error');
       toast(v.mainPoc ? 'No longer the main contact' : `${v.contact === '—' ? v.name : v.contact} is the main contact${v.state ? ' in ' + v.state : ''}`, 'success');
-      reload?.();
+      if (patchLocal) patchLocal('vendors', { id: v.id, mainPoc: !v.mainPoc }); else reload?.();
     }
     async function editVendorLocation(v: Vendor) {
       if (!canWrite) return toast('Sign in to edit a vendor.');
@@ -4748,7 +5491,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       const r = await setVendorLocation(dbId(v.id), m ? m[1] : next.trim() || null, m ? m[2] : null);
       if (!r.ok) return toast(r.message ?? 'Could not save that.', 'error');
       toast('Location saved', 'success');
-      reload?.();
+      if (patchLocal) patchLocal('vendors', { id: v.id, city: m ? m[1] : next.trim() || null, state: m ? m[2] : null }); else reload?.();
     }
     // Grouped: title companies and the like by company, then location, main
     // contact first; photographers and notaries (one-person businesses) by
@@ -4795,7 +5538,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         mkMenuPeople('vsubs', 'Submissions', ['Any', '1+', '10+', '50+', '100+', '500+'], vendorSubsMin ? s.vendorSubs : 'Any', (v) => set({ vendorSubs: v, peopleSel: {} })),
         // Sort is an order, not a filter: it never lights up or counts as one.
         { ...mkMenuPeople('sort', 'Sort', ['Name', ...Object.keys(VENDOR_SORTS)], vendorSort, (v) => set({ vendorSort: v })), on: false, label: vendorSort === 'Name' ? 'Sort' : vendorSort,
-          bg: 'var(--c-btn-bg)', color: '#27272a', border: 'var(--c-btn-line)' },
+          bg: 'var(--c-btn-bg)', color: 'var(--ink-2, #27272a)', border: 'var(--c-btn-line)' },
       ] : []),
     ];
     const vendorViewToggle = (['grouped', 'table'] as const).map((k) => ({
@@ -4854,48 +5597,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       };
     })();
 
-    const peopleRows = peopleFiltered.map((p, rowIndex) => {
-      // Cells are built when a row is drawn, not for all 11,000 on every
-      // render: the list only draws a page at a time (components/ds/useReveal).
-      const values = (): Record<string, string | number> => ({
-        name: p.name, stage: p.stage, property: p.property.addr, phone: p.phone,
-        assigned: repName(p.assigned), source: p.source, lastComm: p.lastComm,
-        nextTask: p.nextTask, score: p.score ?? '', offer: p.offer || '—', created: p.createdAt ? addedOn(p.createdAt) : p.created,
-        email: p.email || '—', market: p.market || '—', city: p.property.city || '—', zip: p.property.zip || '—',
-        asking: p.asking || '—', motivation: p.motivation || '—', timeline: p.timeline || '—',
-        condition: p.condition || '—', occupancy: p.occupancy || '—', tags: p.tags.length ? p.tags.join(', ') : '—',
-        ...(() => {
-          const st = stackOf(p);
-          return { arv: st.arv != null ? fmt(st.arv) : '—', subs: st.subs, props: st.props, stack: st.stack };
-        })(),
-      });
-      const open = () => openListedAt(p, rowIndex);
-      return {
-        id: p.id, checked: !!s.peopleSel[p.id], focused: rowIndex === peopleCursor && !isVendorList,
-        rowBg: s.peopleSel[p.id] ? '#E7F8F1' : rowIndex === peopleCursor && !isVendorList ? '#f4f4f5' : '#fff',
-        toggle: () => set((st) => ({ peopleSel: { ...st.peopleSel, [p.id]: !st.peopleSel[p.id] } })),
-        open,
-        get cells() {
-          const v = values();
-          return peopleColumns.map((c) => ({
-            key: c.key, kind: c.kind, v: v[c.key],
-            isName: c.kind === 'name', isStage: c.kind === 'stage', isProperty: c.kind === 'property',
-            // An unscored lead leaves the cell blank, or shows Talkr's temperature.
-            isScore: c.kind === 'score' && p.score != null, isAssigned: c.kind === 'assigned',
-            isTemp: c.kind === 'score' && p.score == null && !!leadTemp(p), temp: leadTemp(p), tempColor: tempColor(leadTemp(p)),
-            isPlain: ['text', 'muted', 'strong'].includes(c.kind),
-            isContact: c.kind === 'contact',
-            color: c.kind === 'muted' ? '#52525b' : c.kind === 'strong' ? '#18181b' : '#27272a',
-            weight: c.kind === 'strong' ? '500' : '400',
-            initials: initialsOf(p.name),
-            stageColor: stageColor(p.stage),
-            cityLine: p.property.city + ', ' + p.property.st + ' ' + p.property.zip,
-            scorePct: (p.score ?? 0) + '%', scoreColor: scoreColor(p.score),
-            assignedColor: p.assigned ? '#27272a' : '#dc2626',
-          }));
-        },
-      };
-    });
+    perfLap('people-cols');
+    perfLap('people-rows');
     const selectionCount = Object.values(s.peopleSel).filter(Boolean).length;
     const selectedIds = Object.keys(s.peopleSel).filter((id) => s.peopleSel[id]);
     const blacklist = (kind: 'person' | 'buyer', ids: string[], reason = '') => {
@@ -4917,9 +5620,23 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           set((st) => ({ secretIds: st.secretIds.filter((id) => !clean.includes(id)) }));
           return toast(r.message || 'Could not save the blacklist.', 'error');
         }
-        reload?.();
+        refreshTagged(kind, clean, SECRET_BLACKLIST_TAG);
         toast(done, 'success');
       });
+    };
+    /**
+     * A seller tag that starts an action plan (plan_on_seller_change) also
+     * writes enrollments and tasks, which only the full load reads. The plan
+     * stores its trigger as triggerLabel's text (lib/plans.ts).
+     */
+    const tagStartsPlan = (tag: string) => plans.some((pl) => pl.active && pl.trigger === triggerLabel('tag', tag.trim()));
+    /** Re-read records a tag was written on (the tag is the one added, if any). */
+    const refreshTagged = (kind: 'person' | 'buyer', ids: string[], added?: string) => {
+      // A few buyers each re-read when there is no batch reader, as before.
+      if (kind === 'buyer' && !refreshBuyers && refreshBuyer && ids.length <= 5) return ids.forEach((id) => void refreshBuyer(dbId(id)));
+      if (kind === 'buyer') return rereadBuyers(ids.map(dbId));
+      if (added && tagStartsPlan(added)) return reload?.();
+      rereadSellers(ids.map(dbId));
     };
     const restoreSecret = (id: string) => {
       const personHit = people.some((p) => p.id === id);
@@ -4928,7 +5645,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       const write = personHit ? untagSellers : untagBuyers;
       void write([id], SECRET_BLACKLIST_TAG).then((r) => {
         if (!r.ok) return toast(r.message || 'Could not restore that.', 'error');
-        reload?.();
+        refreshTagged(personHit ? 'person' : 'buyer', [id]);
         toast('Restored', 'success');
       });
     };
@@ -4968,11 +5685,18 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       clear: () => set({ peopleSel: {} }),
     };
     const selectable: { id: string }[] = isVendorList ? vendorRows : peopleFiltered;
-    /** After a bulk write: re-read, clear the selection, say what happened. */
-    const afterBulk = (r: { ok: boolean; message?: string }, msg: string) => {
+    /** Re-read People rows after a bulk write: the sellers, and a submission row's deal. */
+    const rereadRows = (ids: string[]) => {
+      const subs = [...new Set(ids.filter((id) => id.startsWith('sub:')).map((id) => dbId(subDealId(id))))];
+      const sellers = ids.filter((id) => !id.startsWith('sub:')).map(dbId);
+      if (subs.length) rereadDeals(subs);
+      if (sellers.length) rereadSellers(sellers);
+    };
+    /** After a bulk write: re-read the rows it wrote (the workspace when `all`), clear the selection, say what happened. */
+    const afterBulk = (r: { ok: boolean; message?: string }, msg: string, ids: string[], all = false) => {
       if (!r.ok) return toast(r.message || 'That did not save.', 'error');
       set({ peopleSel: {}, bulkMenu: null });
-      reload?.();
+      if (all) reload?.(); else rereadRows(ids);
       return toast(msg, 'success');
     };
     /** "Select [N]" on the bulk bar: the first N rows of the list, optionally only leads nobody owns yet. */
@@ -5004,7 +5728,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
             return toast(`${i ? said.slice(0, i).join(' · ') + ' saved, then ' : ''}${r.message || 'that did not save.'}`, 'error');
           }
         }
-        afterBulk({ ok: true }, `${total.toLocaleString('en-US')} assigned: ${said.join(' · ')}`);
+        afterBulk({ ok: true }, `${total.toLocaleString('en-US')} assigned: ${said.join(' · ')}`, blocks.flatMap((b) => b.ids));
       },
       close: () => set({ bulkMenu: null }),
     };
@@ -5020,24 +5744,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // A deal whose seller is only a vendor (or has no person in the graph)
     // opens its deal sheet, with personId cleared so the previous record is
     // not borrowed. The sheet is what the team opens when there is no seller row.
-    const openListed = (p: Person) => {
-      if (!p.id.startsWith('sub:')) return openPerson(p.id);
-      const dealId = subDealId(p.id);
-      const d = deals.find((x) => x.id === dealId);
-      if (d && submissionOpenTarget(d.personId, !!person(d.personId)) === 'person') {
-        go('person', { personId: d.personId, personTab: 'Activity', personDealId: d.id });
-        noteRecent('person:' + d.personId);
-        return;
-      }
-      go('dealSheet', { personId: '', dealSheetDealId: dealId });
-    };
     // A click on a row (table, card, map pin) puts the cursor on it first, the
     // way Enter does, so coming back to the list lands on that row, drawn and
     // scrolled into view, instead of wherever the arrows last were.
-    const openListedAt = (p: Person, rowIndex: number) => {
-      set({ peopleCursor: rowIndex, cursorList: s.peopleList });
-      openListed(p);
-    };
     const exportSelected = () => {
       const rows = selectedIds.map((id) => peopleFiltered.find((p) => p.id === id) || person(id)).filter((p): p is Person => !!p);
       const cols: [string, (p: Person) => string][] = [
@@ -5098,6 +5807,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
             for (const id of sellers) if (!saved.has(id) && next[id] === st) delete next[id];
             return { stageOverrides: next };
           });
+          // Not a row re-read: the move fans out in the database (deals opened
+          // or moved, TC files, checklist tasks, plan enrollments, activity).
           reload?.();
           const moved = (r.moved ?? 0).toLocaleString('en-US');
           if (!r.ok) return toast(`${moved} of ${sellers.length.toLocaleString('en-US')} moved, then it stopped: ${r.message}`, 'error');
@@ -5111,12 +5822,12 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           const ids = [...selectedIds];
           set({ peopleSel: {}, bulkMenu: null });
           if (!canWrite) { ids.forEach((id) => enroll(pl.id, id)); return; }
-          // Four enrolments at a time, one reload and one summary — not a toast per seller.
+          // A few requests per 200 sellers (lib/crm-write enrollMany), one reload and one summary, not a toast per seller.
           toast('Enrolling ' + ids.length + ' in ' + pl.name + '…');
           void (async () => {
             let added = 0, already = 0, failed = 0, queued = 0;
             let firstError = '';
-            const rs = await eachLimited(ids, 4, (id) => enrollInPlan(workspaceId, pl.id, id, me));
+            const rs = await enrollSellersInPlan(workspaceId, pl.id, ids, me);
             for (const r of rs) {
               if (!r.ok) { failed++; firstError ||= r.message || ''; } else if (r.already) already++; else { added++; queued += r.queued ?? 0; }
             }
@@ -5155,8 +5866,11 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
               if (!ok) return;
               set({ peopleSel: {} });
               toast(`COMPR queued for ${todo.length}`);
+              // The runs write the deals, their photos and the house: the sellers
+              // and their deals re-read (the hero is on the deal row), and a
+              // record opened later reads its whole gallery, as after a full load.
               void runComprMany(ws, todo, (n, total) => { if (n === total || n % 10 === 0) toast(`COMPR ${n}/${total}`); })
-                .then((r) => { reload?.(); toast(`COMPR done · ${r.ok} run${r.failed ? ` · ${r.failed} failed: ${r.firstError}` : ''}`); });
+                .then((r) => { rereadSellers(todo.map((t) => (typeof t === 'number' ? t : t.sellerId))); toast(`COMPR done · ${r.ok} run${r.failed ? ` · ${r.failed} failed: ${r.firstError}` : ''}`); });
             });
             return;
           }
@@ -5171,7 +5885,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           if (label === 'Add Tag') {
             const tag = window.prompt('Tag to add to ' + selectedIds.length + (selectedIds.length === 1 ? ' person' : ' people') + ':');
             if (!tag?.trim()) return;
-            return canWrite ? void tagSellers(selectedIds, tag).then((res) => afterBulk(res, 'Tagged "' + tag.trim() + '"')) : toast('Tagged (demo)');
+            return canWrite ? void tagSellers(selectedIds, tag).then((res) => afterBulk(res, 'Tagged "' + tag.trim() + '"', selectedIds, tagStartsPlan(tag))) : toast('Tagged (demo)');
           }
           if (label === 'Remove Tag') {
             // Offer the tags the selection actually carries.
@@ -5179,7 +5893,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
             if (!onSel.length) return toast('None of the selected people have tags');
             const tag = window.prompt('Tag to remove from ' + selectedIds.length + (selectedIds.length === 1 ? ' person' : ' people') + '. On the selection: ' + onSel.join(', '), onSel.length === 1 ? onSel[0] : '');
             if (!tag?.trim()) return;
-            return canWrite ? void untagSellers(selectedIds, tag).then((res) => afterBulk(res, 'Removed "' + tag.trim() + '"')) : toast('Removed (demo)');
+            return canWrite ? void untagSellers(selectedIds, tag).then((res) => afterBulk(res, 'Removed "' + tag.trim() + '"', selectedIds)) : toast('Removed (demo)');
           }
           if (label === 'Pause action plans' || label === 'Stop action plans') {
             const pause = label.startsWith('Pause');
@@ -5189,12 +5903,11 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
             void confirm({ title: `${word} the action plan on ${lives.length} ${lives.length === 1 ? 'person' : 'people'}?`, confirmLabel: `${word} plans`, tone: pause ? 'default' : 'danger' }).then((ok) => {
             if (!ok) return;
             if (!canWrite) return toast(`${word}ped (demo)`);
-            void Promise.all(lives.map((e) => (pause ? pauseEnrollment(dbId(e.id), 'manual') : stopEnrollment(dbId(e.id))))).then((rs) => {
-              const bad = rs.find((r) => !r.ok);
-              if (bad && !rs.some((r) => r.ok)) return toast(bad.message || `Could not ${pause ? 'pause' : 'stop'} the plan.`, 'error');
+            const enIds = lives.map((e) => dbId(e.id));
+            void (pause ? pauseEnrollments(enIds, 'manual') : stopEnrollments(enIds)).then((r) => {
+              if (!r.done) return toast(r.message || `Could not ${pause ? 'pause' : 'stop'} the plan.`, 'error');
               reload?.();
-              const n = rs.filter((r) => r.ok).length;
-              toast(`${pause ? 'Paused' : 'Stopped'} action plan on ${n}`, 'success');
+              toast(`${pause ? 'Paused' : 'Stopped'} action plan on ${r.done}`, 'success');
             });
             });
             return;
@@ -5282,6 +5995,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       channel: s.bulkSend,
       close: () => set({ bulkSend: null }),
       workspaceId, canWrite, textCtx, toast, reload,
+      // After a bulk send: the sellers it reached, not the whole workspace.
+      refreshSellers,
       // A vendor's first name is the contact's; the company rides along as {{company}}.
       people: isVendorList ? selectedVendors.map((v) => ({
         id: v.id, dbId: dbId(v.id), name: v.contact === '—' ? v.name : v.contact, phone: real(v.phone), email: real(v.email),
@@ -5300,6 +6015,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     };
 
     // ---- PERSON ----
+    perfLap('people-bulk');
     const personFields = whatWeKnowFields(P, recDealOf(P.id));
     /**
      * "Contract": what the contracts table says about this house's purchase
@@ -5356,8 +6072,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       ...(D.transactions.some((t) => t.personId === P.id) ? ['TC'] : []), 'Files & Links', 'AI'];
     const personTabs = personTabNames.map((t) => ({
       label: t, active: s.personTab === t, go: () => set({ personTab: t }),
-      color: s.personTab === t ? '#18181b' : '#71717a',
-      border: s.personTab === t ? '#18181b' : 'transparent',
+      color: s.personTab === t ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)',
+      border: s.personTab === t ? 'var(--ink, #18181b)' : 'transparent',
     }));
     const isCommsTab = s.personTab === 'Communications';
     const isTcTab = s.personTab === 'TC';
@@ -5365,22 +6081,26 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     const isFilesTab = s.personTab === 'Files & Links';
     const isFeedTab = !isCommsTab && !isTcTab && !isFilesTab;
     // A call note already shows under its call, so only the Notes tab lists it on its own.
-    const typeFilters: Record<string, (t: { type: string; underCall?: boolean }) => boolean> = {
+    const typeFilters: Record<string, (t: { type: string; underCall?: boolean; agent?: unknown }) => boolean> = {
       Activity: (t) => !t.underCall,
       Notes: (t) => t.type === 'note' || t.type === 'tc',
       Emails: (t) => t.type === 'email',
       Texts: (t) => /sms/.test(t.type),
       Calls: (t) => t.type === 'call',
       AI: (t) => t.type === 'call' || t.type === 'compr',
+      // The record's tab row (components/record/record-tabs): what automations
+      // did to it, and the changes to the record itself.
+      Automations: isAutomationRow,
+      History: (t) => HISTORY_TYPES.has(t.type),
     };
     const typeFilter = typeFilters[s.personTab] || typeFilters.Activity;
     const talkrIcon = (type: string): IconName | null =>
       /sms/.test(type) ? 'msg' : type === 'call' ? 'phone' : type === 'voicemail' ? 'voicemail' : type === 'email' ? 'mail' : null;
     const tlIcon: Record<string, [string, string]> = {
       call: ['#e6142e', 'Call'], sms_in: ['#e6142e', 'SMS in'], sms_out: ['#e6142e', 'SMS out'],
-      offer: ['#d97706', 'Offer'], compr: [COMPR, 'COMPR'], stage: ['#71717a', 'Stage'],
-      note: ['#71717a', 'Note'], email: ['#52525b', 'Email'], task: ['#71717a', 'Automation'], lead: ['#71717a', 'Lead'],
-      tc: ['#1f7a4d', 'TC'],
+      offer: ['#d97706', 'Offer'], compr: [COMPR, 'COMPR'], stage: ['var(--meta, #71717a)', 'Stage'],
+      note: ['var(--meta, #71717a)', 'Note'], email: ['var(--muted, #52525b)', 'Email'], task: ['var(--meta, #71717a)', 'Automation'], lead: ['var(--meta, #71717a)', 'Lead'],
+      tc: ['#1f7a4d', 'TC'], voicemail: ['#e6142e', 'Voicemail'], ai_agent: ['#0f766e', 'AI agent'],
     };
     // Anything written this session — a composer send, a Quick Add note — goes
     // on the front of the feed. Without this the Activity tab was a fixed
@@ -5413,13 +6133,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // stage moves, and messages tied to it. The partner's other houses (and the
     // contact's own stage rows) stay on the contact's full record.
     // The workspace feed plus the open record's own (loaded apart, older rows included), once each, newest first.
-    const recTL = live && recordTimeline?.pid === P.id ? recordTimeline.rows : [];
-    const TL = recTL.length
-      ? (() => {
-        const seen = new Set(D.timeline.map((t) => t.id));
-        return [...D.timeline, ...recTL.filter((t) => !seen.has(t.id))].sort((a, b) => (Date.parse(b.at ?? '') || 0) - (Date.parse(a.at ?? '') || 0));
-      })()
-      : D.timeline;
+    // Merged and sorted once per load (recordFeed, above the view model), not on every view rebuild.
+    const TL = recordFeed && recordFeed.pid === P.id ? recordFeed.rows : D.timeline;
     const submissionTimeline = (d: Deal) => {
       const dealNo = dbId(d.id);
       const stages = live && recordStages?.key === 's:' + P.id
@@ -5435,9 +6150,18 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       ...(live ? (focusDeal ? submissionTimeline(focusDeal) : withStages(TL.filter((t) => t.entity === P.id), stageTimeline('s:' + P.id, P.id))) : P.id === 'p1' ? D.timeline : D.timeline.slice(4)),
     ].filter(typeFilter).map((t) => ({
       // A received email is from its sender: their name when the record knows it, else the address.
-      id: t.id, who: t.user && D.team[t.user] ? D.team[t.user].name : 'email' in t && t.email?.inbound ? (t.email.fromName || t.email.from || t.who) : t.who,
-      actor: t.user && D.team[t.user] ? D.team[t.user].name : 'System', time: t.time, title: t.title, body: t.body || '', hasBody: !!t.body,
+      id: t.id, who: 'agent' in t && t.agent ? t.agent.name : t.user && D.team[t.user] ? D.team[t.user].name : 'email' in t && t.email?.inbound ? (t.email.fromName || t.email.from || t.who) : t.who,
+      // An AI agent's row shows the agent's picture and name (migration 269); a message
+      // it sent also says it was the agent, since "Text sent · Riley" reads as a person.
+      agent: 'agent' in t && !!t.agent, agentTag: 'agent' in t && !!t.agent && t.type !== 'ai_agent',
+      actor: t.user && D.team[t.user] ? D.team[t.user].name : 'System',
+      toRep: 'toRep' in t && t.toRep ? t.toRep : null,
+      // The line a text or call went out on ("(210) 555-0123 · Morgan"), beside who sent it.
+      line: 'line' in t && t.line ? t.line : null,
+      time: t.time, title: t.title, body: t.body || '', hasBody: !!t.body,
       isCall: t.type === 'call', isSms: /sms/.test(t.type), ai: t.ai || null,
+      // A text we sent ("Viewed" when its CLOZR link was opened), and whose line an inbound one reached.
+      smsOut: t.type === 'sms_out',
       callNote: 'callNote' in t && t.callNote ? t.callNote : null,
       email: 'email' in t && t.email ? t.email : null,
       ...(() => {
@@ -5455,8 +6179,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       // A stored communication ('ct123'): CallInsight loads its recording and transcript.
       commId: live && /^ct\d+$/.test(t.id) ? Number(t.id.slice(2)) : null,
       chan: (tlIcon[t.type] || tlIcon.note)[1], color: (tlIcon[t.type] || tlIcon.note)[0],
-      initials: t.user ? (D.team[t.user] ? D.team[t.user].initials : 'AI') : initialsOf('email' in t && t.email?.fromName ? t.email.fromName : t.who),
-      avatar: t.user && D.team[t.user]?.avatar ? D.team[t.user].avatar! : '',
+      initials: 'agent' in t && t.agent ? initialsOf(t.agent.name) : t.user ? (D.team[t.user] ? D.team[t.user].initials : 'AI') : initialsOf('email' in t && t.email?.fromName ? t.email.fromName : t.who),
+      avatar: 'agent' in t && t.agent ? t.agent.avatar || '' : t.user && D.team[t.user]?.avatar ? D.team[t.user].avatar! : '',
       // A row Talkr carried has no rep to show, and a "T" says nothing about
       // what happened: the avatar cell shows the channel instead.
       icon: !t.user && /^talkr$/i.test(t.who) ? talkrIcon(t.type) : null,
@@ -5466,6 +6190,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       clozr: (!t.user || t.user === 'system') && /^(clozr|system|automation|lead intake)$/i.test(t.who),
       objections: t.ai ? t.ai.objections.map((o) => ({ o })) : [],
     }));
+    perfLap('record-timeline');
     const reachPid = s.quickReach?.personId ?? P.id;
     const reachFeed = [
       ...s.newComms.filter((c) => c.personId === reachPid).slice().reverse().map((c) => ({
@@ -5488,12 +6213,12 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     const composerTabs = ['Text', 'Email', 'Note'].map((t) => ({
       label: t, pressed: s.composerTab === t,
       go: () => set({ composerTab: t }),
-      color: s.composerTab === t ? '#18181b' : '#71717a',
-      bg: s.composerTab === t ? '#fff' : 'transparent',
+      color: s.composerTab === t ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)',
+      bg: s.composerTab === t ? 'var(--surface, #fff)' : 'transparent',
       shadow: s.composerTab === t ? '0 1px 2px rgba(0,0,0,.06)' : 'none',
     }));
-    // The Activity chips: one stream, filtered by channel. The chip state is
-    // still `personTab`, so a hand-off that names a tab keeps working.
+    // The classic record's activity chips: one stream, filtered by channel.
+    // The chip state is `personTab`, so a hand-off that names a tab keeps working.
     const recordChips = ([['All', 'Activity'], ['Calls', 'Calls'], ['Texts', 'Texts'], ['Email', 'Emails'], ['Notes', 'Notes']] as const).map(([label, tab]) => ({
       label, tab, pressed: s.personTab === tab || (tab === 'Activity' && !(s.personTab in typeFilters)),
       go: () => set({ personTab: tab }),
@@ -5581,12 +6306,15 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       color: stageColor(st),
     }));
     const ownTimeline = live ? TL.filter((t) => t.entity === P.id) : P.id === 'p1' ? D.timeline : [];
-    const stagePick = recommendStage({
+    // It reads every entry's text, email bodies included: worked out once per
+    // feed and stage, not on every view rebuild (a busy record's mail runs to megabytes).
+    const stageDealStage = recDealOf(P.id)?.stage ?? null;
+    const stagePick = cachedStagePick(TL, [P.id, P.stage, stageDealStage, P.offer].join('\u0001'), () => recommendStage({
       stage: P.stage,
-      dealStage: recDealOf(P.id)?.stage ?? null,
+      dealStage: stageDealStage,
       offerAmount: P.offer,
       activity: ownTimeline.map((t) => ({ type: t.type, title: t.title, body: t.body || t.ai?.summary || t.email?.body || '' })),
-    });
+    }));
     const DEMO_FOR_DEAL: Record<string, string> = {
       'Under Contract Seller': 'Under Contract', 'Ready To Market': 'Dispo', 'Buyer Under Contract': 'Assigned', 'In Escrow': 'Closing', Closed: 'Closed',
     };
@@ -5643,7 +6371,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     const comprTabNames = ['Overview', 'Comps', 'Map', 'Property', 'Rehab', 'Photos', 'Market', 'Buy Boxes', 'Exits', 'Risk', 'Report'];
     const comprTabs = comprTabNames.map((t) => ({
       label: t, go: () => set({ comprTab: t }),
-      color: s.comprTab === t ? '#18181b' : '#71717a',
+      color: s.comprTab === t ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)',
       border: s.comprTab === t ? COMPR : 'transparent',
     }));
     const inc = (c: { id: string; inc: boolean }) => (s.compsInc[c.id] == null ? c.inc : s.compsInc[c.id]);
@@ -5651,9 +6379,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       ...c, included: inc(c), priceF: fmt(c.price), ppsfF: '$' + c.ppsf,
       sqftF: c.sqft.toLocaleString(), distF: c.dist + ' mi',
       condColor: c.cond === 'C2' ? '#5aa63c' : c.cond === 'C3' ? '#c79111' : '#db6b33',
-      rowBg: inc(c) ? '#fff' : '#fafafa', textColor: inc(c) ? '#18181b' : '#a1a1aa',
-      btnLabel: inc(c) ? 'Exclude' : 'Include', btnBg: inc(c) ? '#fff' : '#0A8560', btnColor: inc(c) ? '#18181b' : '#fff',
-      pinBg: inc(c) ? '#18181b' : '#fff', pinBorder: inc(c) ? '#18181b' : '#a1a1aa',
+      rowBg: inc(c) ? 'var(--surface, #fff)' : 'var(--canvas, #fafafa)', textColor: inc(c) ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)',
+      btnLabel: inc(c) ? 'Exclude' : 'Include', btnBg: inc(c) ? 'var(--surface, #fff)' : '#0A8560', btnColor: inc(c) ? 'var(--ink, #18181b)' : 'var(--surface, #fff)',
+      pinBg: inc(c) ? 'var(--ink, #18181b)' : 'var(--surface, #fff)', pinBorder: inc(c) ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)',
       left: c.x + '%', top: c.y + '%',
       toggle: () => set((st) => ({ compsInc: { ...st.compsInc, [c.id]: !inc(c) } })),
     }));
@@ -5692,7 +6420,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       });
     };
     const intel = D.propertyIntel.map(([k, v, tone]) => ({
-      k, v, color: tone === 'good' ? '#16a34a' : tone === 'caution' ? '#d97706' : '#a1a1aa',
+      k, v, color: tone === 'good' ? '#16a34a' : tone === 'caution' ? '#d97706' : 'var(--subtle, #a1a1aa)',
     }));
     const buyBoxMatches = [buyers[3], buyers[4], buyers[5], buyers[0]].filter(Boolean).map((b) => ({
       name: b.company, match: b.match, why: b.why.map((w) => ({ w })), issue: b.issue,
@@ -5720,6 +6448,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       ['Call Queues', 0], ['Campaigns', 0], ['Numbers', 0],
       ['Recordings', D.communications.filter((c) => !!c.dur).length],
     ];
+    perfLap('record-rest');
     const myTalkrId = phone.data.me?.id ?? null;
     const tHistory = phone.data.history;
     const isVoicemail = (h: (typeof tHistory)[number]) => h.direction === 'inbound' && h.has_recording && !h.user_name;
@@ -5740,7 +6469,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     ]) as [string, number][]).map(([label, count]) => ({
       label, count, go: () => set({ talkrFolder: label }),
       bg: s.talkrFolder === label ? TALKR_TINT : 'transparent',
-      color: s.talkrFolder === label ? TALKR_INK : '#27272a',
+      color: s.talkrFolder === label ? TALKR_INK : 'var(--ink-2, #27272a)',
     }));
     const convOf = (m: (typeof D.inbox)[number]) => {
       const isBuyer = !m.personId;
@@ -5785,7 +6514,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       : null;
     const talkrConvs = (liveTalkrConvs ?? D.inbox.map(convOf)).map((c) => ({
       ...c, active: s.talkrConv === c.id,
-      bg: s.talkrConv === c.id ? '#f4f4f5' : '#fff',
+      bg: s.talkrConv === c.id ? 'var(--surface-2, #f4f4f5)' : 'var(--surface, #fff)',
       // Opening a thread reads it; landing on the newest one does not.
       go: () => { set({ talkrConv: c.id }); if (talkrLive && c.unread) phone.markRead(c.id); },
     }));
@@ -5827,13 +6556,12 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     const talkrMsgs = withSent(msgs, 'talkr:' + TC.id).map(([dir, text, time]) => ({
       text, time, isIn: dir === 'in', isOut: dir === 'out', isSys: dir === 'sys',
       align: dir === 'out' ? 'flex-end' : dir === 'sys' ? 'center' : 'flex-start',
-      bg: dir === 'out' ? '#18181b' : dir === 'sys' ? '#fff' : '#f4f4f5',
-      color: dir === 'out' ? '#fff' : dir === 'sys' ? '#71717a' : '#18181b',
-      border: dir === 'sys' ? '#e4e4e7' : 'transparent',
+      bg: dir === 'out' ? 'var(--ink, #18181b)' : dir === 'sys' ? 'var(--surface, #fff)' : 'var(--surface-2, #f4f4f5)',
+      color: dir === 'out' ? 'var(--surface, #fff)' : dir === 'sys' ? 'var(--meta, #71717a)' : 'var(--ink, #18181b)',
+      border: dir === 'sys' ? 'var(--divider, #e4e4e7)' : 'transparent',
     }));
-    const callMin = Math.floor(s.callSec / 60);
-    const callSecs = s.callSec % 60;
-    const callClock = callMin + ':' + (callSecs < 10 ? '0' : '') + callSecs;
+    // The ended call's length, for the wrap-up. A live call's clock is useCallClock(V.callTimer).
+    const callDuration = endedCallClock(callTimer);
     const transcriptAll: [string, string][] = [
       ['Taylor', "Hi Kara, it's Taylor with Acme Homes — got your text. Is now still good?"],
       ['Kara', 'Yes, perfect. I went over the offer with my brother last night.'],
@@ -5847,20 +6575,32 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     const callTargetFirst = (s.callTarget?.name ?? 'Seller').split(' ')[0] || 'Seller';
     const myFirst = (phone.data.me?.display_name ?? 'You').split(' ')[0] || 'You';
     const liveLines = [
-      ...phone.tx.lines.map((l) => ({ who: l.speaker === 'rep' ? myFirst : callTargetFirst, text: l.text, color: l.speaker === 'rep' ? '#71717a' : '#e6142e' })),
+      ...phone.tx.lines.map((l) => ({ who: l.speaker === 'rep' ? myFirst : callTargetFirst, text: l.text, color: l.speaker === 'rep' ? 'var(--meta, #71717a)' : '#e6142e' })),
       ...(phone.tx.partial.seller ? [{ who: callTargetFirst, text: phone.tx.partial.seller + '…', color: '#e6142e' }] : []),
-      ...(phone.tx.partial.rep ? [{ who: myFirst, text: phone.tx.partial.rep + '…', color: '#71717a' }] : []),
+      ...(phone.tx.partial.rep ? [{ who: myFirst, text: phone.tx.partial.rep + '…', color: 'var(--meta, #71717a)' }] : []),
     ];
+    // The demo's call to a number with no sample record is a cash buyer calling
+    // back, so "From this call" (CallProfileCard) has something to fill.
+    const demoE164 = !phoneEnabled && s.callTarget && !s.callTarget.personId && !s.callTarget.buyerId ? toE164(s.callTarget.phone) : null;
+    const demoBuyerCall = !!demoE164 && !people.some((p) => toE164(p.phone) === demoE164) && !buyers.some((b) => toE164(b.phone) === demoE164);
     const transcript = phoneEnabled
       ? liveLines
-      : transcriptAll.slice(0, s.transcriptN).map(([who, text]) => ({
-        who, text, color: who === 'Kara' ? '#e6142e' : '#71717a',
-      }));
+      : demoBuyerCall
+        ? DEMO_BUYER_LINES.slice(0, s.transcriptN).map(([rep, text]) => ({ who: rep ? 'Taylor' : 'Marcus', text, color: rep ? 'var(--meta, #71717a)' : '#e6142e' }))
+        : transcriptAll.slice(0, s.transcriptN).map(([who, text]) => ({
+          who, text, color: who === 'Kara' ? '#e6142e' : 'var(--meta, #71717a)',
+        }));
+    // What "From this call" reads: finished lines only (a partial line is still being said).
+    const callProfileLines: ProfileLine[] = phoneEnabled
+      ? phone.turns.map((t) => ({ rep: t.speaker === 'rep', text: t.text }))
+      : demoBuyerCall
+        ? DEMO_BUYER_LINES.slice(0, s.transcriptN).map(([rep, text]) => ({ rep, text }))
+        : transcriptAll.slice(0, s.transcriptN).map(([who, text]) => ({ rep: who === 'Taylor', text }));
     // 'Live' (supervision) is dropped by the dialer for anyone who cannot monitor.
     const dialerTabs = ['Dial', 'Queue', 'Recent', 'Voicemail', 'RVM', 'Live'].map((t) => ({
       label: t, go: () => set({ dialerTab: t }),
-      bg: s.dialerTab === t ? '#fff' : 'transparent',
-      color: s.dialerTab === t ? '#18181b' : '#71717a',
+      bg: s.dialerTab === t ? 'var(--surface, #fff)' : 'transparent',
+      color: s.dialerTab === t ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)',
       shadow: s.dialerTab === t ? '0 1px 2px rgba(0,0,0,.06)' : 'none',
     }));
     const keypad = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'].map((k) => ({
@@ -5904,6 +6644,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // With nobody queued by hand, the Queue tab is Today: the same rows in the
     // same order, so a session dials exactly the list Today shows. It used to
     // be the first five people with any open task, whoever owned them.
+    perfLap('talkr');
     const suggested = todayBase.rows.filter((r) => !r.done).map((r) => {
       const target: CallTarget = r.target;
       return {
@@ -5953,7 +6694,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       if (run.at < 0 || run.talliedAt === run.at) return run;
       const k = personKey(run.list[run.at]!.target);
       if (who && who !== k) return run;
-      return { ...run, tally: tallyOutcome(run.tally, key, k, s.callSec), talliedAt: run.at };
+      return { ...run, tally: tallyOutcome(run.tally, key, k, callSeconds(callTimer.startedAt, callTimer.endedAt ?? Date.now())), talliedAt: run.at };
     };
     /**
      * Dial the next number in a running session, skipping anyone without a
@@ -6293,6 +7034,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       ['Harold Kim', '(713) 555-0188', '0:48 · "Confirming Saturday at 10, call me back"', 'Yesterday'],
       ['Gary Whitfield', '(281) 555-0170', '0:22 · "Still thinking, call Tuesday"', 'Aug 31'],
     ] as [string, string, string, string][]).map(([name, from, text, time]) => ({ id: null as string | null, hasRecording: false, name, text, time, callBack: callBackFrom(name, from) }));
+    perfLap('call-queue');
     const callTarget = s.callTarget || { name: '—', phone: s.dialNumber };
     // The CLOZR record behind a number, as the Talkr dialer's CallContext panel
     // shows it (app/components/talkr/CallContext.tsx `ClozrRecord`).
@@ -6311,8 +7053,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         ['Notes', (p.notes ?? '').replace(/\s+/g, ' ').trim().slice(0, 240)],
       ] as [string, string][])
         .filter(([, v]) => v && v !== '—'),
-      openTasks: tasks.filter((t) => t.personId === p.id && !t.done).map((t) => ({ title: t.title, due: t.due })),
+      openTasks: tasks.filter((t) => t.personId === p.id && !(s.tasksDone[t.id] ?? t.done)).map((t) => ({ title: t.title, due: t.due })),
       open: () => openPerson(p.id),
+      sellerId: live && p.id ? dbId(p.id) : null, email: p.email,
     });
     /** A deal as one line: its property, and its stage when it has one. */
     const dealLine = (dealId: string | undefined) => {
@@ -6341,6 +7084,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         ] as [string, string][]).filter(([, v]) => v && v !== '—' && v !== '0'),
         openTasks: [],
         open: () => openBuyer(b.id),
+        buyerId: live && b.id ? dbId(b.id) : null, email: b.email,
       };
     };
     const dialerRecordFor = (number: string): (ClozrRecord & { target: CallTarget }) | null => {
@@ -6351,9 +7095,118 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       const b = buyers.find((x) => toE164(x.phone) === e);
       return b ? { ...buyerRecord(b), target: { name: b.name, phone: b.phone, buyerId: b.id } } : null;
     };
+    /**
+     * The dialer's Texts card: the texts on record with whoever owns the
+     * number (oldest first, as a thread reads), and who a reply goes to. The
+     * live thread comes from Talkr; this is what the demo and a number Talkr
+     * has no thread for show.
+     */
+    const dialerTextsFor = (number: string) => {
+      const e = toE164(number);
+      if (!e) return { texts: [], recipient: null as Recipient | null, name: '' };
+      const p = people.find((x) => toE164(x.phone) === e);
+      const b = p ? undefined : buyers.find((x) => toE164(x.phone) === e);
+      const texts = comms
+        .filter((c) => c.channel === 'sms' && (p ? c.personId === p.id : b ? c.buyerId === b.id : false))
+        .slice()
+        .sort((x, y) => (y.ts ?? 0) - (x.ts ?? 0))
+        .slice(-40)
+        .map((c) => ({ id: c.id, dir: c.dir === 'in' ? 'in' as const : 'out' as const, body: c.preview, time: c.time }));
+      const recipient: Recipient | null = p ? recipientOf(p.id)
+        : b ? { sellerId: null, buyerId: dbId(b.id), name: b.name, phone: b.phone } : null;
+      return { texts, recipient, name: p?.name ?? b?.name ?? '' };
+    };
+    /**
+     * The dialer's Email tab: who owns the number, their address, and the
+     * record to open when there is none on file. Live, the history is read
+     * from the Gmail sync (loadContactEmail); the sample graph builds it from
+     * the record's own email entries (lib/sample-mail).
+     */
+    const dialerEmailFor = (number: string) => {
+      const e = toE164(number);
+      if (!e) return null;
+      const p = people.find((x) => toE164(x.phone) === e);
+      const b = p ? undefined : buyers.find((x) => toE164(x.phone) === e);
+      if (!p && !b) return null;
+      const raw = (p?.email ?? b?.email ?? '').trim();
+      const email = raw.includes('@') ? raw : '';
+      const sellerId = p ? dbId(p.id) : null;
+      const buyerId = b ? dbId(b.id) : null;
+      const sample = live || !email ? [] : sampleEmailRows(
+        { email, sellerId, buyerId, mine: (D.team[ME]?.name.split(' ')[0] ?? 'you').toLowerCase() + '@acmehomes.com' },
+        // The sample timeline is Kara Mitchell's (p1).
+        p?.id === 'p1' ? D.timeline : [],
+        comms.filter((c) => (p ? c.personId === p.id && !c.buyerId : c.buyerId === b!.id)),
+      );
+      return {
+        kind: p ? 'seller' as const : 'buyer' as const,
+        name: p?.name ?? b!.name, email, sellerId, buyerId, sample,
+        open: () => (p ? openPerson(p.id) : openBuyer(b!.id)),
+      };
+    };
+    // Who the dial box may offer this role: Partnerships
+    // only the sellers on its submissions (the People lists it works), and
+    // buyers only to a role that sees the buyer list.
+    const dialSubSellers = seesSellerLists(role) ? null : new Set(
+      subDeals.filter((d) => !d.archived && (podioDealIds.has(d.id) || submissionListMatch(d.leadStage, 'Total Submissions', d.stage))).map((d) => d.personId),
+    );
+    const dialerSees = (c: Contact): boolean => {
+      if (c.kind === 'buyer') return canSeeBuyers(role);
+      if (c.kind !== 'seller') return true;
+      if (!canSee(role, 'person')) return false;
+      if (!dialSubSellers) return true;
+      // A loaded seller is "s12"; the database's is 12, or "12:+1…" for an other number; Talkr's own are "t…".
+      const base = String(c.id).split(':')[0];
+      return dialSubSellers.has(/^\d+$/.test(base) ? 's' + base : base);
+    };
+    // The dial box's name lookup over the people and buyers already loaded: instant, and the
+    // demo's only source. The dialer adds vendors and anyone not loaded from the database.
+    const dialerContacts = (q: string): Contact[] => rankContacts([
+      ...people.filter((p) => p.phone).map((p): Contact => ({ kind: 'seller', id: p.id, name: p.name, email: p.email || null, phone: p.phone, sub: p.property.addr || null })),
+      ...buyers.filter((b) => b.phone).map((b): Contact => ({ kind: 'buyer', id: b.id, name: b.name, email: b.email || null, phone: b.phone, sub: b.company || null })),
+    ].filter(dialerSees), q, 8);
     const callPersonRec = s.callTarget?.personId ? person(s.callTarget.personId) : undefined;
     const callBuyerRec = s.callTarget?.buyerId ? buyer(s.callTarget.buyerId) : undefined;
     const callRecord = callPersonRec ? personRecord(callPersonRec) : callBuyerRec ? buyerRecord(callBuyerRec) : s.callTarget ? dialerRecordFor(s.callTarget.phone) : null;
+    // "From this call" (components/talkr/CallProfileCard): the caller's profile
+    // from the transcript, for a number with no record or a buyer with gaps.
+    const callProfileE164 = s.callTarget ? toE164(s.callTarget.phone) : null;
+    const callProfileBuyer = callBuyerRec ?? (!callPersonRec && callProfileE164 ? buyers.find((b) => toE164(b.phone) === callProfileE164) : undefined);
+    const callProfilePhone = callProfileE164 ? formatPhone(callProfileE164) : null;
+    const callProfile = {
+      /** One call: the card's memory is per key, so a new call starts empty. */
+      key: callState === 'idle' ? null : `${callProfileE164 ?? s.callTarget?.phone ?? ''}|${callTimer.startedAt ?? 'ringing'}`,
+      phone: callProfileE164,
+      phoneLabel: callProfilePhone,
+      recordKind: (callRecord?.kind ?? null) as ProfileKind | null,
+      /** The buy-box facts the buyer on the line is missing; empty for anyone else. */
+      buyerGaps: callProfileBuyer ? buyerGaps({ markets: callProfileBuyer.markets, price: callProfileBuyer.buyBox.price, strategy: callProfileBuyer.strategy, type: callProfileBuyer.buyBox.type }) : [],
+      buyerName: callProfileBuyer?.name ?? null,
+      lines: callProfileLines,
+      repLabel: (phone.data.me?.display_name ?? (me && D.team[me]?.name) ?? 'Rep').split(' ')[0] || 'Rep',
+      workspaceId: phoneEnabled ? workspaceId : null,
+      /** The sample-data demo's answer: no network, the scripted buyer call's fields as each line is said. */
+      demo: phoneEnabled ? null : demoBuyerCall ? demoCallProfile(s.transcriptN) : emptyProfile(),
+      /** The buy box can be edited from here only on a signed-in workspace. */
+      canEditBuyBox: !!live && !!callProfileBuyer,
+    };
+    /**
+     * Opens the form for that kind filled from the call; the rep reviews and
+     * saves. A buyer on a signed-in workspace gets the full buyer profile
+     * (it has every buy-box field); everything else, and the demo, Quick Add.
+     */
+    const createFromCallProfile = (kind: Exclude<ProfileKind, 'unknown'>, p: CallProfile) => {
+      if (readOnly) return toast('This is a read-only preview. Nothing can be added from here.');
+      if (kind === 'buyer' && live) return set({ profileOpen: { buyerId: null, seed: buyerSeed(p, callProfilePhone) } });
+      const { addKind, seed } = quickAddSeed(kind, p, callProfilePhone);
+      openAdd(addKind, seed);
+    };
+    /** The buyer on the line's buy box, its empty parts filled from the call. */
+    const addCallProfileToBuyBox = (p: CallProfile) => {
+      if (!callProfileBuyer) return;
+      if (!live) return toast('Buy box editing runs on a signed-in workspace.');
+      set({ profileOpen: { buyerId: dbId(callProfileBuyer.id), seed: { box: profileBuyBox(p, { gaps: true }) } } });
+    };
     const sum = phone.summary;
     // What the call yielded, for the rep to correct before Accept writes it.
     // `key` names the summary field, which is how acceptWrap takes the edits
@@ -6377,6 +7230,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // Today's rows (todayBase) with the screen's state on top, and the one save
     // every seller call goes through: Today's rail, the desk wrap-up and the
     // phone's wrap-up all plan with lib/call-outcomes and save with saveOutcome.
+    perfLap('dialer-records');
     const todayAll = todayBase.rows;
     const todayOpen = todayAll.filter((r) => !r.done);
     const todayRowOf = (pid: string | null | undefined) => (pid ? todayAll.find((r) => r.pid === pid) : undefined);
@@ -6455,6 +7309,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         if (hadCall) finishCall(msg, tone);
         else toast(msg, tone);
       };
+      // A new task, appointment or drip lands on lists only a full read
+      // carries; everything else the plan writes is on this record.
+      const structural = !!(plan.task?.create || plan.appointment || plan.enroll);
 
       // View-as: an admin's preview places real calls but writes nothing.
       if (readOnly) {
@@ -6622,7 +7479,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       // ---- Phase B: close the call and move on.
       const text = plan.text?.on ? plan.text : null;
       close(outcomeToast(plan, { textQueued: !!text, owner: owner ? repName(owner) : null }), 'success');
-      reload?.();
+      void refreshPerson(pid);
       // Offer accepted: the deal for the house on screen (the pinned deal, else
       // this seller's open deal on that property, else a new one at Prospect,
       // where a deal sits until the contract makes it Under Contract Seller)
@@ -6660,7 +7517,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         }
         const rec = text ? recipientOf(pid) : null;
         if (text && rec) {
-          jobs.push(textMany(wid, [rec], text.body, textCtx).then(
+          jobs.push(textMany(wid, [rec], text.body, { ...textCtx, carrier: 'reply' }).then(
             (res) => { if (res[0]?.error) failed.push(`text not sent (${res[0].error})`); },
             (e: Error) => { failed.push(`text not sent (${e.message})`); },
           ));
@@ -6680,7 +7537,15 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
             set((st) => (st.todayDone[pid] ? { todayDone: { ...st.todayDone, [pid]: { ...st.todayDone[pid]!, failed: short } } } : {}));
           }
         }
-        reload?.();
+        if (structural) { reload?.(); return; }
+        void refreshPerson(pid);
+        // The seller read does not carry the task list: a follow-up moved to
+        // a new time is re-read as its own row (Tasks and the calendar), and
+        // one ticked off is marked done in place, as persistTask does.
+        if (t?.reschedule && ledger.ok['task-move']) {
+          if (refreshTask) void refreshTask(dbId(t.reschedule.id)); else reload?.();
+        }
+        if (t?.complete && ledger.ok['task-done']) patchLocal?.('tasks', { id: t.complete.id, done: true });
       })();
       return { ...ledger, saved: true };
     };
@@ -6843,6 +7708,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // Live: one column per deal stage, one card per deal (a seller with no
     // deal is not on the pipeline). Demo: the sample graph keys deals on the
     // seller's stage, so columns are the seller stages and cards are people.
+    perfLap('today');
     const ownerOf = (d: Deal | undefined, p: Person) => repName(d?.owner || p.assigned);
     const demoRooms = [D.IMG.kitchen, D.IMG.bath, D.IMG.living, D.IMG.bed].filter((u): u is string => !!u);
     const houseOf = (p: Person, d?: Deal) => {
@@ -6865,10 +7731,14 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       const street = placesKey && (d?.addr || p.property.addr) !== '—' ? streetViewImage(line, placesKey) : '';
       return { photos, img: photos[0] || street, street, streetOnly: photos.length === 0 && !!street, dealDbId: live && d ? dbId(d.id) : null };
     };
-    const dealFilters = (d: Deal | undefined, p: Person) =>
-      (s.gf.dealOwner === 'Any' || ownerOf(d, p) === s.gf.dealOwner || d?.tracker?.acqAgent === s.gf.dealOwner || d?.tracker?.dispoAgent === s.gf.dealOwner)
+    const dealFilters = (d: Deal | undefined, p: Person) => {
+      const ours = s.gf.dealGapBasis === 'UW high' ? d?.institutional : d?.contract;
+      return (s.gf.dealOwner === 'Any' || ownerOf(d, p) === s.gf.dealOwner || d?.tracker?.acqAgent === s.gf.dealOwner || d?.tracker?.dispoAgent === s.gf.dealOwner)
       && (s.gf.dealMarket === 'Any' || p.market === s.gf.dealMarket)
-      && (s.gf.dealStatus === 'Any' || (d?.tracker?.contractStatus || dealStageOf(d, p)) === s.gf.dealStatus);
+      && (s.gf.dealStatus === 'Any' || (d?.tracker?.contractStatus || dealStageOf(d, p)) === s.gf.dealStatus)
+      && inDateWindow(d?.submittedAt || d?.createdAt, s.gf.dealAdded, s.gf.dealAddedFrom, s.gf.dealAddedTo)
+      && gapPasses(room(ours, d?.asking), s.gf.dealGap);
+    };
     // Archived deals show only in the Archived view, and only there.
     const dealPasses = (d: Deal | undefined, p: Person) => dealFilters(d, p) && (s.dealsArchived ? !!d?.archived : !d?.archived);
     const SELLER_COL = 'Seller · ';
@@ -6982,7 +7852,12 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         fridayClose: !!d && !PIPELINE_DONE.has(stg) && isFridayIso(d.tracker?.scheduledClose),
         // The card's own stage picker: the same move as a drag, by click or keyboard.
         setStage: live && d && !d.archived ? (next: string) => { void moveDealStage(d, next); } : null,
-        addedAt: d?.createdAt || '', added: d?.createdAt ? addedOn(d.createdAt) : '—',
+        addedAt: (d?.submittedAt || d?.createdAt) || '', added: (d?.submittedAt || d?.createdAt) ? addedOn(d?.submittedAt || d?.createdAt) : '—',
+        offerRoom: room(d?.contract, d?.asking),
+        uwRoom: room(d?.institutional, d?.asking),
+        gapLine: d ? gapLine(d.asking, d.contract, d.institutional) : null,
+        gapTitle: d ? gapTitle(d.asking, d.contract, d.institutional) : '',
+        gapUp: d ? gapUp(d.asking, d.contract, d.institutional) : false,
         // A live deal from contract onward with no title company on its team.
         noTitle: live && !!d && d.hasTitle === false && /under contract|escrow|ready to market/i.test(stg),
         phone: p.phone || '', email: p.email || '',
@@ -7004,6 +7879,19 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         dragId: live && d ? d.id : p.id,
       };
     };
+    const pairSortValue = (p: Person, d: Deal | undefined, key: string): string | number => {
+      if (key === 'added') return d?.submittedAt || d?.createdAt || '';
+      if (key === 'address') return d?.addr || p.property.addr;
+      if (key === 'seller') return p.name;
+      if (key === 'price') return d?.contract ?? '';
+      if (key === 'offerRoom') return room(d?.contract, d?.asking) ?? '';
+      if (key === 'uwRoom') return room(d?.institutional, d?.asking) ?? '';
+      if (key === 'close') {
+        const n = closeSortKey(d?.tracker?.scheduledClose);
+        return n == null || n === Number.MAX_SAFE_INTEGER ? '' : n;
+      }
+      return '';
+    };
     const PROSPECT = 'Prospect';
     // Live: Prospect first (a lead's deal sheet, thousands of them, paged), then the pipeline, then any added columns.
     const dealsCols = lazy(() => [...(live ? [PROSPECT] : []), ...(D.STAGES as string[]), ...(live ? s.dealExtraStages : [])].map((stg) => {
@@ -7016,8 +7904,11 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       // Search, then build only the page asked for.
       // Search keys built once per load, not on every keystroke.
       const keys = paged ? pairs.map(({ p, d }) => cardSearch(p, d)) : [];
-      const page = paged ? (needle: string, limit: number) => {
-        const hits = needle ? pairs.filter((_, i) => keys[i].includes(needle)) : pairs;
+      const page = paged ? (needle: string, limit: number, sort?: { key: string; dir: SortDir }) => {
+        const hits = needle ? pairs.filter((_, i) => keys[i].includes(needle)) : pairs.slice();
+        if (sort && sort.key !== 'tracker') {
+          hits.sort((a, b) => cmpSort(pairSortValue(a.p, a.d, sort.key), pairSortValue(b.p, b.d, sort.key), sort.dir));
+        }
         return { total: hits.length, cards: hits.slice(0, limit).map(({ p, d }) => dealCard(stg, p, d)) };
       } : undefined;
       const totalRaw = pairs.reduce((a, { d }) => a + (d?.contract || 0), 0);
@@ -7077,7 +7968,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         addr: d.addr || p.property.addr, seller: p.name, stage: dealStageOf(d, p), stageColor: stageColor(dealStageOf(d, p)),
         // The row's stage picker: the same save as a drag on the board, which a phone and the table cannot do.
         setStage: live && !d.archived ? (stg: string) => { void moveDealStage(d, stg); } : null,
-        addedAt: d.createdAt || '', added: d.createdAt ? addedOn(d.createdAt) : '—', contractAt: T?.contractDate || '',
+        addedAt: d.submittedAt || d.createdAt || '', added: (d.submittedAt || d.createdAt) ? addedOn(d.submittedAt || d.createdAt) : '—', contractAt: T?.contractDate || '',
+        offerRoom: room(d.contract, d.asking), uwRoom: room(d.institutional, d.asking),
+        gapLine: gapLine(d.asking, d.contract, d.institutional), gapTitle: gapTitle(d.asking, d.contract, d.institutional), gapUp: gapUp(d.asking, d.contract, d.institutional),
         img: house.img, street: house.street, photos: house.photos, streetOnly: house.streetOnly, dealDbId: house.dealDbId,
         dealType: d.structure || dealTypeLabel(T?.transactionType),
         search: [d.addr || p.property.addr, d.addr ? d.city : p.property.city, p.name, T?.acqAgent, T?.dispoAgent, T?.leadSource, T?.no, d.structure || T?.transactionType].join(' ').toLowerCase(),
@@ -7126,6 +8019,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     });
     });
     // Only the files still being worked: a closed or terminated deal's file is history.
+    perfLap('deals');
     const tcOpenFiles = openTcFiles(D.transactions, (id) => dealById.get(id));
     const tcOpenCount = tcOpenFiles.length;
     // The board's stage order, with every deal in that stage. Empty stages
@@ -7159,8 +8053,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     const tcHere = tcPlace(tcColumns, tcCurrent);
     const dealsViews = (['pipeline', 'table'] as const).map((v) => ({
       label: v === 'pipeline' ? 'Pipeline' : 'Table', go: () => set({ dealsView: v }),
-      bg: s.dealsView === v ? '#fff' : 'transparent',
-      color: s.dealsView === v ? '#18181b' : '#71717a',
+      bg: s.dealsView === v ? 'var(--surface, #fff)' : 'transparent',
+      color: s.dealsView === v ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)',
       shadow: s.dealsView === v ? '0 1px 2px rgba(0,0,0,.06)' : 'none',
     }));
 
@@ -7207,8 +8101,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     ];
     const dispoFilters = dispoCounts.map(([label, count]) => ({
       label, count, go: () => set({ dispoFilter: label }),
-      bg: s.dispoFilter === label ? '#E7F8F1' : 'transparent',
-      color: s.dispoFilter === label ? '#0A8560' : '#27272a',
+      bg: s.dispoFilter === label ? 'var(--mint-dim, #e7f8f1)' : 'transparent',
+      color: s.dispoFilter === label ? '#0A8560' : 'var(--ink-2, #27272a)',
     }));
     const inventory = dispoPool
       .filter((d) => chipOf(d, s.dispoFilter))
@@ -7256,8 +8150,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     const dispoTabNames = ['Overview', 'Matches', 'Genius', 'Marketing', 'Activity', 'Communications', 'Offers', 'Walkthroughs', 'Files', 'Assignment'];
     const dispoTabs = dispoTabNames.map((t) => ({
       label: t, go: () => set({ dispoTab: t }),
-      color: s.dispoTab === t ? '#18181b' : '#71717a',
-      border: s.dispoTab === t ? '#18181b' : 'transparent',
+      color: s.dispoTab === t ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)',
+      border: s.dispoTab === t ? 'var(--ink, #18181b)' : 'transparent',
     }));
     const dispoHead = ([
       ['Contract', fmt(dd.contract)], ['ARV', fmt(dd.arv)], ['Rehab', fmt(dd.rehab)],
@@ -7280,7 +8174,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       .filter(({ b, score, mstatus }) => MATCH_CHIPS.every((c) => !s.matchFilterOn[c.label] || c.pass({ score, status: b.status, mstatus })))
       .map(({ b, score, why, mstatus }) => ({
         id: b.id, company: b.company, name: b.name, initials: b.initials, match: score,
-        matchColor: score >= 90 ? '#0A8560' : score >= 80 ? '#b45309' : '#71717a',
+        matchColor: score >= 90 ? '#0A8560' : score >= 80 ? '#b45309' : 'var(--meta, #71717a)',
         markets: b.markets.join(' · '), ceiling: b.ceiling, type: b.buyBox.type, rehabTol: b.rehabTol,
         strategy: b.strategy, lastPurchase: b.lastPurchase, lastActivity: b.lastActivity,
         engagement: b.responseKnown === false ? '—' : b.engagement + '%', engPct: b.responseKnown === false ? '0%' : b.engagement + '%',
@@ -7349,17 +8243,17 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         // Net assumed $2,500 of closing costs and EMD was always zero on a live row; neither is known.
         offer: fmt(o.offer), assignment: fmt(assignment), net: live ? '—' : fmt(assignment - 2500), emd: o.emd ? fmt(o.emd) : '—',
         inspection: o.inspection, closing: o.closing, financing: o.financing, pof: o.pof,
-        pofColor: o.pof === 'Verified' ? '#0A8560' : o.pof === '—' ? '#71717a' : '#b45309', terms: o.terms, confidence: o.confidence,
+        pofColor: o.pof === 'Verified' ? '#0A8560' : o.pof === '—' ? 'var(--meta, #71717a)' : '#b45309', terms: o.terms, confidence: o.confidence,
         confColor: o.confidence >= 85 ? '#0A8560' : o.confidence >= 70 ? '#b45309' : '#b91c1c',
         flags: o.flags.map((f) => ({
           f,
           color: ({
             'Highest offer': '#16a34a', 'Best net': '#15803d',
-            'Fastest close': '#d97706', 'Strongest terms': '#18181b',
+            'Fastest close': '#d97706', 'Strongest terms': 'var(--ink, #18181b)',
           } as Record<string, string>)[f],
         })),
         hasFlags: o.flags.length > 0, selected: pickedOffer === o.id,
-        rowBg: pickedOffer === o.id ? '#E7F8F1' : '#fff',
+        rowBg: pickedOffer === o.id ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)',
         select: () => set({ acceptedOffer: o.id }),
         open: () => openBuyer(b.id),
       };
@@ -7410,7 +8304,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       .map(({ w, b, p }) => {
       return {
         buyer: b.company, contact: b.name, addr: p.property.addr, date: w.date, time: w.time, status: w.status,
-        color: ({ Requested: '#b45309', Confirmed: '#0A8560', Scheduled: '#0A8560', Completed: '#71717a', 'No Show': '#b91c1c' } as Record<string, string>)[w.status],
+        color: ({ Requested: '#b45309', Confirmed: '#0A8560', Scheduled: '#0A8560', Completed: 'var(--meta, #71717a)', 'No Show': '#b91c1c' } as Record<string, string>)[w.status],
         confirm: () => toast(live ? 'Confirming a walkthrough is not connected yet — nothing was sent.' : b.company + ' confirmed'),
       };
     });
@@ -7425,7 +8319,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     ]) as [string, string, string][]).map(([t, text, kind]) => ({ t, text, kind }));
 
     // ---- BUYERS ----
-    const { marketGaz, NO_STATE, unplacedBuyers, stateOptions, stateCodeOf, cityOptions, buyerPipelineMenu, buyerRows } = buyerView;
+    perfLap('dispo');
+    const { marketGaz, NO_STATE, unplacedBuyers, stateOptions, stateCodeOf, cityOptions, buyerRows } = buyerView;
     // Free-agent realtors are not in `buyers` (that load times out). This page
     // is the Realtors list: search already happened on the server.
     const realtorTableRows = realtorPage.rows.map((b) => {
@@ -7460,7 +8355,6 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // The Buyers screen's visible rows after list chip, Genius, and search — what
     // left/right and Enter walk. Same set the open buyer record arrows use.
     const buyerListNames = buyerListIds();
-    const buyerList = s.buyerList === LAST_IMPORT ? LAST_IMPORT : effectiveBuyerList(s.buyerList);
     const buyerListLabel = (id: string) => (id === LAST_IMPORT && s.lastImport
       ? `${s.lastImport.label} · ${s.lastImport.ids.length.toLocaleString('en-US')} imported`
       : (buyerListLabelOf(id) ?? id));
@@ -7468,20 +8362,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // were already searched on the server, so their page is taken as is.
     // Ranked once per (deferred) query in buyerSearchView, not per render.
     const buyerSearch = buyerSearchView.search;
-    const buyerRanks = new Map<string, number>();
-    const buyerMatches = (b: (typeof buyerRows)[number]) => {
-      if (!buyerSearch) return true;
-      const r = buyerSearchView.ranks.get(b.id);
-      if (r === undefined) return false;
-      buyerRanks.set(b.id, r);
-      return true;
-    };
     const onRealtors = live && buyerList === 'realtors';
-    const buyerImportIds = new Set(buyerList === LAST_IMPORT && s.lastImport?.kind === 'buyers' ? s.lastImport.ids : []);
-    const buyerNavRows = onRealtors ? realtorTableRows : buyerRows.filter((b) =>
-      (buyerList === LAST_IMPORT ? buyerImportIds.has(b.id) : inBuyerList(buyerList, b))
-      && (!s.buyerGeniusOnly || b.genius)
-      && buyerMatches(b));
+    const buyerNavRows = onRealtors ? realtorTableRows : buyerListRows;
     const buyerNavLen = buyerNavRows.length;
     const buyerCursor = s.buyerCursorList === buyerList ? Math.min(s.buyerCursor, Math.max(0, buyerNavLen - 1)) : 0;
     const moveBuyerInList = (dir: 1 | -1) => {
@@ -7511,7 +8393,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       const nextRows = next === 'realtors' ? realtorTableRows : buyerRows.filter((b) =>
         inBuyerList(next, b)
         && (!s.buyerGeniusOnly || b.genius)
-        && buyerMatches(b));
+        && (!buyerSearch || buyerSearchView.ranks.has(b.id)));
       if (next === 'realtors') setRealtorOffset(0);
       const enteringRealtors = next === 'realtors' ? { buyerQ: '', buyerGeniusOnly: false } : {};
       if (s.screen === 'buyer' && nextRows.length) {
@@ -7534,6 +8416,19 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     };
     // What the Buyers bulk bar (components/BuyerBulkBar.tsx) acts on: the
     // buyers by id, the deals worth marketing and the plans to enroll in.
+    const bulkDealsOf = () => dispoPool.flatMap((d) => {
+      const p = person(d.personId);
+      const stage = d.stage || dealStageOf(d, p);
+      if (!p || !['Under Contract Seller', 'Ready To Market', 'Buyer Under Contract'].includes(stage)) return [];
+      const price = d.tracker?.marketedPrice || (d.contract && d.assignment ? d.contract + d.assignment : d.contract);
+      const addr = d.addr || p.property.addr;
+      return [{
+        id: dbId(d.id), label: addr + ' · ' + stage,
+        // Dispo merge fields ({{full_address}}, {{arv}}, {{comps_link}} …), lib/message-templates DISPO_FIELDS.
+        fields: dispoFields(d, p, addr, price),
+      }];
+    });
+    let bulkDeals: ReturnType<typeof bulkDealsOf> | undefined;
     const buyerBulk = {
       canWrite, workspaceId, me, textCtx, toast, reload,
       // The realtor page is not in the buyer index (the corpus never loads
@@ -7548,18 +8443,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         }])),
         ...buyerIndex.bulk,
       } as typeof buyerIndex.bulk : buyerIndex.bulk,
-      deals: dispoPool.flatMap((d) => {
-        const p = person(d.personId);
-        const stage = d.stage || dealStageOf(d, p);
-        if (!p || !['Under Contract Seller', 'Ready To Market', 'Buyer Under Contract'].includes(stage)) return [];
-        const price = d.tracker?.marketedPrice || (d.contract && d.assignment ? d.contract + d.assignment : d.contract);
-        const addr = d.addr || p.property.addr;
-        return [{
-          id: dbId(d.id), label: addr + ' · ' + stage,
-          // Dispo merge fields ({{full_address}}, {{arv}}, {{comps_link}} …) — lib/message-templates DISPO_FIELDS.
-          fields: dispoFields(d, p, addr, price),
-        }];
-      }),
+      // Built when the bulk bar or a buyer record reads them: the merge fields
+      // of every active deal were worked out on each rebuild of the view.
+      get deals() { return (bulkDeals ??= bulkDealsOf()); },
       plans: plansForRecord(plans, 'buyer').map((pl) => ({ id: pl.id, name: pl.name })),
       /** Every plan saved in the Builder, for "Add to action plan": buyer plans first, paused ones marked. */
       allPlans: plans.map((pl) => ({ id: pl.id, name: pl.name, active: pl.active, audience: pl.audience ?? '', steps: pl.steps.length })),
@@ -7580,7 +8466,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
             return false;
           }
         }
-        reload?.();
+        // Only the buyer rows change (assigned_to): those re-read.
+        rereadBuyers(blocks.flatMap((b) => b.ids.map(dbId)));
         toast(`${total.toLocaleString('en-US')} assigned: ${said.join(' · ')}`, 'success');
         return true;
       },
@@ -7610,9 +8497,12 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         if (workspaceId === null) return toast('Sign in to enroll buyers.');
         void (async () => {
           let enrolled = 0; let already = 0; let queued = 0;
-          for (const id of buyerIds) {
+          // In order, stopping at the first refusal, as one buyer at a time did.
+          const rs = await enrollManyBuyers(workspaceId, planId, buyerIds.map((id) => {
             const b = buyers.find((x) => x.id === id);
-            const r = await enrollBuyerInPlan(workspaceId, planId, id, me, { name: b?.name ?? '', company: b?.company ?? '' });
+            return { id, fields: { name: b?.name ?? '', company: b?.company ?? '' } };
+          }), me, true);
+          for (const r of rs) {
             if (!r.ok) return toast(r.message || 'Could not enroll.', 'error');
             if (r.already) already++; else { enrolled++; queued += r.queued ?? 0; }
           }
@@ -7625,11 +8515,10 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         const lives = enrollments.filter((e) => e.buyerId && buyerIds.includes(e.buyerId) && e.status === 'active' && /^en\d+$/.test(e.id));
         if (!lives.length) return toast('None of those buyers have a running action plan');
         if (!canWrite) return toast('Action plans paused (demo)');
-        void Promise.all(lives.map((e) => pauseEnrollment(dbId(e.id), 'manual'))).then((rs) => {
-          const bad = rs.find((r) => !r.ok);
-          if (bad && !rs.some((r) => r.ok)) return toast(bad.message || 'Could not pause the plan.', 'error');
+        void pauseEnrollments(lives.map((e) => dbId(e.id)), 'manual').then((r) => {
+          if (!r.done) return toast(r.message || 'Could not pause the plan.', 'error');
           reload?.();
-          toast(`Paused action plan on ${rs.filter((r) => r.ok).length} buyer${rs.filter((r) => r.ok).length === 1 ? '' : 's'}`, 'success');
+          toast(`Paused action plan on ${r.done} buyer${r.done === 1 ? '' : 's'}`, 'success');
         });
       },
       /** Stop the active action plan on each selected buyer. */
@@ -7638,20 +8527,20 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           setS((prev) => ({
             ...prev,
             newEnrollments: prev.newEnrollments.filter((e) => !e.buyerId || !buyerIds.includes(e.buyerId)),
-            toast: 'Action plan stopped', toastSeq: prev.toastSeq + 1,
           }));
+          toast('Action plan stopped');
           return;
         }
         const lives = enrollments.filter((e) => e.buyerId && buyerIds.includes(e.buyerId) && e.status !== 'done' && /^en\d+$/.test(e.id));
         if (!lives.length) return toast('None of those buyers are on an action plan');
-        void Promise.all(lives.map((e) => stopEnrollment(dbId(e.id)))).then((rs) => {
-          const bad = rs.find((r) => !r.ok);
-          if (bad) return toast(bad.message || 'Could not stop the plan.', 'error');
+        void stopEnrollments(lives.map((e) => dbId(e.id))).then((r) => {
+          if (!r.ok) return toast(r.message || 'Could not stop the plan.', 'error');
           reload?.();
           toast(`Stopped action plan on ${lives.length} buyer${lives.length === 1 ? '' : 's'}`, 'success');
         });
       },
     };
+    perfLap('buyers-nav');
     const bb = B.buyBox;
     const buyBoxRows = ([
       ['Price', bb.price], ['Year', bb.year], ['Sqft', bb.sqft], ['Beds', bb.beds], ['Bathrooms', bb.baths],
@@ -7676,28 +8565,44 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       ['Purchases', ba.purchases], ['Declines', ba.declines],
     ] as [string, number][]).map(([k, v]) => ({ k, v: capped(v) }));
     const buyerSummary = B.summary.map((t) => ({ t }));
-    const stars = [1, 2, 3, 4, 5].map((i) => ({ on: i <= B.stars, color: i <= B.stars ? '#ff7a45' : '#e4e4e7' }));
+    const stars = [1, 2, 3, 4, 5].map((i) => ({ on: i <= B.stars, color: i <= B.stars ? '#ff7a45' : 'var(--divider, #e4e4e7)' }));
     // Same shape as the people record's activity: a channel, a title, the body,
     // and on a call the recording (CallInsight) or the sample AI summary.
     const buyerChan = (type: string): [string, string] => {
       const map: Record<string, [string, string]> = {
         call: ['#e6142e', 'Call'], sms_in: ['#e6142e', 'SMS in'], sms_out: ['#e6142e', 'SMS out'], sms: ['#e6142e', 'SMS out'],
-        offer: ['#d97706', 'Offer'], compr: ['#0A8560', 'COMPR'], stage: ['#71717a', 'Stage'],
-        note: ['#71717a', 'Note'], email: ['#52525b', 'Email'], task: ['#71717a', 'Automation'],
-        portal: ['#4f46e5', 'Portal'], purchase: ['#15803d', 'Purchase'], ai_agent: ['#0f766e', 'AI agent'],
+        offer: ['#d97706', 'Offer'], compr: ['#0A8560', 'COMPR'], stage: ['var(--meta, #71717a)', 'Stage'],
+        note: ['var(--meta, #71717a)', 'Note'], email: ['var(--muted, #52525b)', 'Email'], task: ['var(--meta, #71717a)', 'Automation'],
+        portal: ['#4f46e5', 'Portal'], purchase: ['#15803d', 'Purchase'], ai_agent: ['#0f766e', 'AI agent'], voicemail: ['#e6142e', 'Voicemail'],
       };
-      return map[type] || ['#71717a', type ? type.charAt(0).toUpperCase() + type.slice(1) : 'Note'];
+      return map[type] || ['var(--meta, #71717a)', type ? type.charAt(0).toUpperCase() + type.slice(1) : 'Note'];
     };
     type BuyerEvent = {
       id: string; chan: string; color: string; title: string; body: string; time: string; who: string;
-      isCall: boolean; commId: number | null; email: TimelineEntry['email'] | null;
+      isCall: boolean; isSms: boolean; commId: number | null; email: TimelineEntry['email'] | null;
       ai: { summary: string; objections: string[]; next: string } | null;
+      actor: string;
+      toRep?: string | null;
+      /** The line a text or call went out on, beside who sent it. */
+      line?: string | null;
+      /** The teammate or AI agent who did it, so the feed shows their photo; null when the buyer or a system did. */
+      rep?: { name: string; avatar: string } | null;
+      /** An AI agent's message (migration 269): the header says so beside its name. */
+      agentTag?: boolean;
     };
+    const repFace = (id: string | null | undefined) => (id && D.team[id] ? { name: D.team[id].name, avatar: D.team[id].avatar || '' } : null);
     const buyerFrom = (t: TimelineEntry): BuyerEvent => {
       const [color, chan] = buyerChan(t.type);
+      const rep = t.agent ? { name: t.agent.name, avatar: t.agent.avatar || '' } : repFace(t.user);
+      const actor = rep ? rep.name : t.user && D.team[t.user] ? D.team[t.user].name : 'System';
       return {
-        id: t.id, chan, color, title: t.title, body: t.body || '', time: t.time, who: t.who,
+        id: t.id, chan, color, title: t.title, body: t.body || '', time: t.time, who: rep ? rep.name : t.who, rep,
+        agentTag: !!t.agent && t.type !== 'ai_agent',
         isCall: t.type === 'call',
+        isSms: /sms/i.test(t.type),
+        actor,
+        toRep: t.toRep ?? null,
+        line: t.line ?? null,
         // Any stored message: a call loads its recording, an email its HTML.
         commId: /^ct\d+$/.test(t.id) ? Number(t.id.slice(2)) : null,
         email: t.email ?? null, ai: t.ai ?? null,
@@ -7705,15 +8610,15 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     };
     const buyerSent: BuyerEvent[] = (s.sent['buyer:' + B.id] ?? []).slice().reverse().map((m, i) => ({
       id: 'sent-' + i, chan: 'SMS out', color: '#e6142e', title: 'Text sent', body: m.text, time: m.time, who: 'You',
-      isCall: false, commId: null, email: null, ai: null,
+      isCall: false, isSms: true, commId: null, email: null, ai: null, rep: repFace(ME), actor: repName(ME),
     }));
     const buyerDemo: BuyerEvent[] = [
-      { id: 'bd1', chan: 'Offer', color: '#d97706', title: 'Submitted $238,500', body: 'Willow Street · cash, 14-day close.', time: '10:02 AM', who: B.name, isCall: false, commId: null, email: null, ai: null },
-      { id: 'bd2', chan: 'Portal', color: '#4f46e5', title: 'Opened COMPR report', body: 'Willow Street · 12 photos viewed.', time: '9:44 AM', who: B.name, isCall: false, commId: null, email: null, ai: null },
-      { id: 'bd3', chan: 'Email', color: '#52525b', title: 'Campaign opened', body: '', time: '9:41 AM', who: B.name, isCall: false, commId: null, email: { subject: 'Willow Street — new deal', from: 'deals@clozr.app', fromName: 'CLOZR', to: [B.email], inbound: false, body: 'Willow Street is live. 3 bed, light rehab, assignment on the sheet.' }, ai: null },
-      { id: 'bd4', chan: 'SMS in', color: '#e6142e', title: 'Text received', body: 'Can we get in Willow tomorrow at 2:30? Bringing my GC.', time: 'Yesterday', who: B.name, isCall: false, commId: null, email: null, ai: null },
-      ...(B.activity.purchases > 0 ? [{ id: 'bd5', chan: 'Purchase', color: '#15803d', title: 'Closed 4481 Elm St', body: '$262,000 · assignment $19,500.', time: 'Jul 14', who: B.name, isCall: false, commId: null, email: null, ai: null }] : []),
-      { id: 'bd6', chan: 'Call', color: '#e6142e', title: 'Buy box review with Morgan', body: '12 minutes. Walked the price ceiling and the rehab rule.', time: 'Jul 2', who: 'Morgan', isCall: true, commId: null, email: null, ai: { summary: 'Buyer wants light rehab under $300K in Dallas and asked to walk Willow with their GC. They have not closed a deal with us yet.', objections: ['Rehab scope looks heavier than light', 'Wants a same-week walkthrough'], next: 'Send the walkthrough window and a tighter rehab scope before they go quiet.' } },
+      { id: 'bd1', chan: 'Offer', color: '#d97706', title: 'Submitted $238,500', body: 'Willow Street · cash, 14-day close.', time: '10:02 AM', who: B.name, isCall: false, isSms: false, actor: B.name, commId: null, email: null, ai: null },
+      { id: 'bd2', chan: 'Portal', color: '#4f46e5', title: 'Opened COMPR report', body: 'Willow Street · 12 photos viewed.', time: '9:44 AM', who: B.name, isCall: false, isSms: false, actor: 'System', commId: null, email: null, ai: null },
+      { id: 'bd3', chan: 'Email', color: 'var(--muted, #52525b)', title: 'Campaign opened', body: '', time: '9:41 AM', who: B.name, isCall: false, isSms: false, actor: 'System', commId: null, email: { subject: 'Willow Street — new deal', from: 'deals@clozr.app', fromName: 'CLOZR', to: [B.email], inbound: false, body: 'Willow Street is live. 3 bed, light rehab, assignment on the sheet.' }, ai: null },
+      { id: 'bd4', chan: 'SMS in', color: '#e6142e', title: 'Text received', body: 'Can we get in Willow tomorrow at 2:30? Bringing my GC.', time: 'Yesterday', who: B.name, isCall: false, isSms: true, actor: 'System', commId: null, email: null, ai: null },
+      ...(B.activity.purchases > 0 ? [{ id: 'bd5', chan: 'Purchase', color: 'var(--tx-green, #15803d)', title: 'Closed 4481 Elm St', body: '$262,000 · assignment $19,500.', time: 'Jul 14', who: B.name, isCall: false, isSms: false, actor: B.name, commId: null, email: null, ai: null }] : []),
+      { id: 'bd6', chan: 'Call', color: '#e6142e', title: 'Buy box review with Morgan', body: '12 minutes. Walked the price ceiling and the rehab rule.', time: 'Jul 2', who: 'Morgan', isCall: true, isSms: false, actor: 'Morgan', commId: null, email: null, ai: { summary: 'Buyer wants light rehab under $300K in Dallas and asked to walk Willow with their GC. They have not closed a deal with us yet.', objections: ['Rehab scope looks heavier than light', 'Wants a same-week walkthrough'], next: 'Send the walkthrough window and a tighter rehab scope before they go quiet.' } },
     ];
     /** The buyer's own load (loadBuyerTimeline) with anything newer from the workspace load, newest first. */
     const buyerFeed = (bid: string): TimelineEntry[] => {
@@ -7723,10 +8628,11 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       const seen = new Set(ws.map((t) => t.id));
       return [...ws, ...own.filter((t) => !seen.has(t.id))].sort((a, b) => (Date.parse(b.at ?? '') || 0) - (Date.parse(a.at ?? '') || 0));
     };
-    const buyerTimeline: BuyerEvent[] = [
+    const buyerTimelineAll: BuyerEvent[] = [
       ...buyerSent,
       ...(live ? withStages(buyerFeed(B.id), stageTimeline('b:' + B.id, B.id)).map(buyerFrom) : buyerDemo),
     ];
+    const buyerTimeline = foldEmailThreads(filterActivityByUser(buyerTimelineAll, s.recordUser));
     // The record shows the placed name ("San Antonio, TX") where we could place
     // it, and the raw string where we could not, so a market that needs fixing
     // is visible on the buyer rather than only in the filters.
@@ -7743,7 +8649,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         amount: fmt(o.offer),
         addr: (d as Deal | undefined)?.addr || p?.property.addr || 'Deal',
         status: o.terms || 'Submitted',
-        color: accepted ? '#16a34a' : /declin|lost|dead/i.test(o.terms) ? '#b91c1c' : '#71717a',
+        color: accepted ? '#16a34a' : /declin|lost|dead/i.test(o.terms) ? '#b91c1c' : 'var(--meta, #71717a)',
         when: o.closing,
         open: d ? () => openDispo(d.personId, undefined, d.id) : undefined,
       };
@@ -7762,7 +8668,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         addr: d.addr || p?.property.addr || 'Deal',
         price: fmt(d.contract),
         stage: d.stage || '—',
-        color: closed ? '#16a34a' : '#71717a',
+        color: closed ? '#16a34a' : 'var(--meta, #71717a)',
         when: d.close || d.tracker?.closedOn || '',
         open: () => (closed ? openTc(d.personId, d.id) : openDispo(d.personId, undefined, d.id)),
       };
@@ -7824,18 +8730,19 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         return [{
           addr: p.property.addr,
           status: offer ? 'Offered ' + fmt(offer.offer) : m.replied ? 'Replied ' + m.replied : m.viewed ? 'Viewed ' + m.viewed : m.sent ? 'Sent ' + m.sent : 'Match ' + m.score,
-          color: offer ? '#16a34a' : '#71717a',
+          color: offer ? '#16a34a' : 'var(--meta, #71717a)',
         }];
       })
       : [
         { addr: 'Willow Street', status: 'Offered $238,500', color: '#16a34a' },
-        { addr: 'Easton Avenue', status: 'Viewed 2×', color: '#71717a' },
-        { addr: '123 Oakview Drive', status: 'Match ' + B.match + ' · pre-market', color: '#0A8560' },
+        { addr: 'Easton Avenue', status: 'Viewed 2×', color: 'var(--meta, #71717a)' },
+        { addr: '123 Oakview Drive', status: 'Match ' + B.match + ' · pre-market', color: 'var(--tx-mint, #0a8560)' },
       ];
 
     // ---- TC ----
     // The sample list's ticks are per file like the checklist's: keyed by the
     // open file's transaction id (its tcId when it has no transaction).
+    perfLap('buyer-record');
     const tcSampleKey = tcTxOf()?.id ?? TP.id;
     const tcSampleDone = s.tcDone[tcSampleKey] ?? {};
     const tcDoneOf = (i: number, it: { done: boolean }) => (tcSampleDone[i] == null ? it.done : tcSampleDone[i]);
@@ -7845,8 +8752,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         k: it.k, owner: it.owner, date: it.date, done, blocker: it.blocker || '',
         blockerColor: it.blocker === 'critical' ? '#dc2626' : it.blocker === 'warning' ? '#d97706' : 'transparent',
         toggle: () => set((st) => ({ tcDone: { ...st.tcDone, [tcSampleKey]: { ...st.tcDone[tcSampleKey], [i]: !tcDoneOf(i, it) } } })),
-        bg: done ? '#16a34a' : '#fff', border: done ? '#16a34a' : '#c7c7cc',
-        textColor: done ? '#71717a' : '#18181b', deco: done ? 'line-through' : 'none',
+        bg: done ? '#16a34a' : 'var(--surface, #fff)', border: done ? '#16a34a' : '#c7c7cc',
+        textColor: done ? 'var(--meta, #71717a)' : 'var(--ink, #18181b)', deco: done ? 'line-through' : 'none',
       };
     });
     const tcDoneCount = tcItems.filter((t) => t.done).length;
@@ -7862,8 +8769,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       closed: PIPELINE_DONE.has((TD as Partial<Deal>).stage ?? ''),
     }) : [];
     const tcBlockers = [...tcLiveBlockers, ...(live ? [] : D.tcBlockers)].map((b) => ({
-      ...b, color: b.level === 'CRITICAL' ? '#dc2626' : b.level === 'NOTE' ? '#52525b' : '#d97706',
-      bg: b.level === 'CRITICAL' ? '#fee2e2' : b.level === 'NOTE' ? '#f4f4f5' : '#fef3c7',
+      ...b, color: b.level === 'CRITICAL' ? '#dc2626' : b.level === 'NOTE' ? 'var(--muted, #52525b)' : '#d97706',
+      bg: b.level === 'CRITICAL' ? 'var(--negative-soft, #fee2e2)' : b.level === 'NOTE' ? 'var(--surface-2, #f4f4f5)' : 'var(--caution-soft, #fef3c7)',
     }));
     const tcRoleColor: Record<string, string> = {
       Title: typeTone('Title').fg, TC: '#1f7a4d', Lane: 'var(--c-lane)', Buyer: typeTone('Buyer').fg, Dispo: typeTone('Buyer').fg,
@@ -7892,7 +8799,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       : D.tcFeed
     ).map((f) => ({
       ...f, initials: initialsOf(f.who.split(' ·')[0]),
-      roleColor: tcRoleColor[f.role.split(' ·')[0]] || '#71717a',
+      roleColor: tcRoleColor[f.role.split(' ·')[0]] || 'var(--meta, #71717a)',
     }));
     // Live: the parties the transaction file and the deal tracker actually name.
     const TPX = tcTxOf();
@@ -7941,6 +8848,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     };
     // Who a new record goes to. A TC adding a lead ties it to an acquisitions
     // rep and to herself as TC; everyone else picks an owner (themselves by default).
+    perfLap('tc');
     const amTc = role === 'tc';
     const teamRows = Object.values(D.team).filter((r) => r.id);
     const rank = (r: { memberRole?: string }) => (r.memberRole === 'acquisitions' ? 0 : r.memberRole === 'owner' || r.memberRole === 'admin' ? 1 : 2);
@@ -8053,6 +8961,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           { key: 'email', label: 'Email', ph: 'name@company.com', req: true },
           { key: 'markets', label: 'Markets', ph: 'Markets, comma separated' },
           { key: 'price', label: 'Price range', ph: 'Min – max' },
+          { key: 'note', label: 'Note', ph: 'What they buy, what they avoid, how they want deals', wide: true },
           assignField('buyer'),
         ],
       },
@@ -8161,6 +9070,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       home: 'M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5',
       people: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M22 21v-2a4 4 0 0 0-3-3.87',
       deals: 'M3 3v18h18 M7 15l4-4 3 3 5-6',
+      buyers: 'M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16 M4 6h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z',
       tasks: 'M9 11l3 3L22 4 M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11',
       inbox: 'M22 12h-6l-2 3h-4l-2-3H2 M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z',
       today: 'M16.13 12a4.13 4.13 0 1 1-8.26 0 4.13 4.13 0 0 1 8.26 0z M12 2.25V4.5 M12 19.5v2.25 M2.25 12H4.5 M19.5 12h2.25 M5.1 5.1l1.65 1.65 M17.25 17.25l1.65 1.65 M5.1 18.9l1.65-1.65 M17.25 6.75l1.65-1.65',
@@ -8172,7 +9082,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       label, key, icon: TAB_ICONS[key],
       active: activeKey === key,
       go: () => go(key),
-      color: activeKey === key ? 'var(--c-accent)' : '#71717a',
+      color: activeKey === key ? 'var(--c-accent)' : 'var(--meta, #71717a)',
       weight: activeKey === key ? '600' : '500',
     }));
     // ---- PHONE (the full-screen phone, phones only) -------------------------
@@ -8217,11 +9127,12 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       label: 'Lane · TC AI', key: 'lane', active: s.laneOpen,
       go: () => openLane(),
     }]);
+    perfLap('add-specs');
     const isMobile = s.isMobile;
     const moreOpen = s.moreOpen;
 
     // Compact card rows for the phone, replacing the wide tables.
-    const mobilePeopleCards = peopleFiltered.map((p, rowIndex) => ({
+    const mobilePeopleCards = !s.isMobile ? [] : peopleFiltered.map((p, rowIndex) => ({
       id: p.id, name: p.name, initials: initialsOf(p.name),
       stage: p.stage, stageColor: stageColor(p.stage),
       addr: p.property.addr, cityLine: p.property.city + ', ' + p.property.st,
@@ -8244,7 +9155,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       setStage: d.setStage,
       dealId: d.dealId, archived: d.archived,
       img: d.img, street: d.street, photos: d.photos, dealDbId: d.dealDbId,
-      contract: d.contract, profit: d.profit, close: d.close, closeBadge: d.closeBadge, added: d.added, addedAt: d.addedAt, contractAt: d.contractAt, cells: d.cells,
+      contract: d.contract, profit: d.profit, close: d.close, closeBadge: d.closeBadge, added: d.added, addedAt: d.addedAt, contractAt: d.contractAt, offerRoom: d.offerRoom, uwRoom: d.uwRoom, gapLine: d.gapLine, gapTitle: d.gapTitle, gapUp: d.gapUp, cells: d.cells,
       optionSeller: d.optionSeller, optionBuyer: d.optionBuyer,
       feeRaw: d.feeRaw, contractRaw: d.contractRaw, inPipeline: d.inPipeline,
       health: d.health, healthColor: d.healthColor,
@@ -8256,15 +9167,16 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // stream is everything tied to that seller plus anything tied to a buyer
     // talking about that seller's property — the graph is already connected, so
     // this is a filter, not a join table.
+    perfLap('mobile-cards');
     const CHAN_META: Record<string, { label: string; color: string; icon: string }> = {
       call: { label: 'Call', color: '#e6142e', icon: 'call' },
       sms: { label: 'SMS', color: '#e6142e', icon: 'sms' },
-      email: { label: 'Email', color: '#52525b', icon: 'email' },
+      email: { label: 'Email', color: 'var(--muted, #52525b)', icon: 'email' },
       voicemail: { label: 'Voicemail', color: '#d97706', icon: 'voicemail' },
       // Notes are written by a rep rather than exchanged with anyone, but they
       // belong in the same stream — without an entry here they fell through to
       // the email fallback below and a typed note showed up labelled "Email".
-      note: { label: 'Note', color: '#71717a', icon: 'note' },
+      note: { label: 'Note', color: 'var(--meta, #71717a)', icon: 'note' },
     };
     const commsChannels = ['All', 'Calls', 'SMS', 'Email', 'Voicemail', 'Notes'];
     const commsChannelMatch: Record<string, (c: Communication) => boolean> = {
@@ -8287,7 +9199,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       return {
         id: c.id, channel: meta.label, channelKey: c.channel, color: meta.color,
         inbound, dirLabel: inbound ? 'Inbound' : 'Outbound',
-        dirColor: inbound ? '#e6142e' : '#71717a',
+        dirColor: inbound ? '#e6142e' : 'var(--meta, #71717a)',
         party: c.party, time: c.time, preview: c.preview, dur: c.dur || '',
         hasDur: !!c.dur,
         rep: c.user ? repName(c.user) : null,
@@ -8304,8 +9216,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       label: c,
       count: personCommsAll.filter(commsChannelMatch[c] || commsChannelMatch.All).length,
       go: () => set({ commsChannel: c }),
-      bg: s.commsChannel === c ? '#fff' : 'transparent',
-      color: s.commsChannel === c ? '#18181b' : '#71717a',
+      bg: s.commsChannel === c ? 'var(--surface, #fff)' : 'transparent',
+      color: s.commsChannel === c ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)',
       shadow: s.commsChannel === c ? '0 1px 2px rgba(0,0,0,.06)' : 'none',
     }));
     const personCommsCount = personCommsAll.length;
@@ -8327,7 +9239,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           role: p.id === P.id ? 'Primary' : (p.source === 'Added on record' ? 'Co-seller' : 'Seller'),
           phone: p.phone, isCurrent: p.id === P.id,
           go: () => openPerson(p.id),
-          bg: p.id === P.id ? '#fafafa' : '#fff',
+          bg: p.id === P.id ? 'var(--canvas, #fafafa)' : 'var(--surface, #fff)',
         })),
       // Vendors attached as sellers on this deal. They are not people rows, so
       // the address match above never finds them. Opening one lands on their vendor contact.
@@ -8337,7 +9249,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         role: 'Vendor',
         phone: v.phone, isCurrent: false,
         go: () => go('people', { peopleList: vendorListOf(v.id), peopleQ: v.name || v.company, peopleSel: {} }),
-        bg: '#fff',
+        bg: 'var(--surface, #fff)',
       })),
     ];
     const sellerCount = sellersOnProperty.length;
@@ -8358,22 +9270,22 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     const txGates = s.tcGates[txKey] ?? {};
     const setTxDone = (id: string, v: boolean) => set((st) => ({ tcDone: { ...st.tcDone, [txKey]: { ...st.tcDone[txKey], [id]: v } } }));
     const SEV: Record<string, { color: string; bg: string; label: string }> = {
-      critical: { color: '#dc2626', bg: '#fef2f2', label: 'Critical' },
-      warning: { color: '#d97706', bg: '#fffbeb', label: 'Needs cure' },
-      cleared: { color: '#16a34a', bg: '#f0fdf4', label: 'Cleared' },
-      info: { color: '#52525b', bg: '#fafafa', label: 'Info' },
+      critical: { color: 'var(--tx-hot, #dc2626)', bg: 'var(--tint-red, #fef2f2)', label: 'Critical' },
+      warning: { color: '#d97706', bg: 'var(--tint-amber, #fffbeb)', label: 'Needs cure' },
+      cleared: { color: '#16a34a', bg: 'var(--tint-green-2, #f0fdf4)', label: 'Cleared' },
+      info: { color: 'var(--muted, #52525b)', bg: 'var(--canvas, #fafafa)', label: 'Info' },
     };
     const DUE: Record<string, { color: string; bg: string; label: string }> = {
-      met: { color: '#16a34a', bg: '#f0fdf4', label: 'Met' },
-      due: { color: '#d97706', bg: '#fffbeb', label: 'Near' },
-      overdue: { color: '#dc2626', bg: '#fef2f2', label: 'Overdue' },
-      open: { color: '#71717a', bg: '#fafafa', label: 'Open' },
+      met: { color: '#16a34a', bg: 'var(--tint-green-2, #f0fdf4)', label: 'Met' },
+      due: { color: '#d97706', bg: 'var(--tint-amber, #fffbeb)', label: 'Near' },
+      overdue: { color: 'var(--tx-hot, #dc2626)', bg: 'var(--tint-red, #fef2f2)', label: 'Overdue' },
+      open: { color: 'var(--meta, #71717a)', bg: 'var(--canvas, #fafafa)', label: 'Open' },
     };
     const DOC: Record<string, { color: string; bg: string }> = {
-      Received: { color: '#16a34a', bg: '#f0fdf4' },
-      Outstanding: { color: '#d97706', bg: '#fffbeb' },
-      Ordered: { color: '#0A8560', bg: '#E7F8F1' },
-      Sent: { color: '#0A8560', bg: '#E7F8F1' },
+      Received: { color: '#16a34a', bg: 'var(--tint-green-2, #f0fdf4)' },
+      Outstanding: { color: '#d97706', bg: 'var(--tint-amber, #fffbeb)' },
+      Ordered: { color: 'var(--tx-mint, #0a8560)', bg: 'var(--mint-dim, #e7f8f1)' },
+      Sent: { color: 'var(--tx-mint, #0a8560)', bg: 'var(--mint-dim, #e7f8f1)' },
     };
     const tone = (m: Record<string, { color: string; bg: string }>, k: string, fb: string) => m[k] || m[fb];
 
@@ -8386,8 +9298,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       titleCo: TX ? TX.titleCo : '—', contact: TX ? TX.titleContact : '—',
       phone: TX ? TX.titlePhone : '—', email: TX ? TX.titleEmail : '—',
       escrow: TX ? TX.escrow : '—', opened: TX ? TX.opened : '—', closing: TX ? TX.closing : '—',
-      color: TX && TX.commitment.status === 'Cleared' ? '#16a34a' : TX && TX.commitment.status === 'Received' ? '#d97706' : '#71717a',
-      bg: TX && TX.commitment.status === 'Cleared' ? '#f0fdf4' : TX && TX.commitment.status === 'Received' ? '#fffbeb' : '#fafafa',
+      color: TX && TX.commitment.status === 'Cleared' ? '#16a34a' : TX && TX.commitment.status === 'Received' ? '#d97706' : 'var(--meta, #71717a)',
+      bg: TX && TX.commitment.status === 'Cleared' ? 'var(--tint-green-2, #f0fdf4)' : TX && TX.commitment.status === 'Received' ? 'var(--tint-amber, #fffbeb)' : 'var(--canvas, #fafafa)',
     };
     const txExceptions = TX
       ? TX.commitment.exceptions.map((e) => {
@@ -8422,7 +9334,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
             id: e.id, party: e.party, amount: e.amount, holder: e.holder, due: e.due,
             received: emdStamp || e.received || '—', status: ok ? 'Received' : e.status,
             color: ok ? '#16a34a' : late ? '#dc2626' : '#d97706',
-            bg: ok ? '#f0fdf4' : late ? '#fef2f2' : '#fffbeb',
+            bg: ok ? 'var(--tint-green-2, #f0fdf4)' : late ? 'var(--tint-red, #fef2f2)' : 'var(--tint-amber, #fffbeb)',
             canMark: !ok, mark: markEmdReceived,
           };
         })
@@ -8485,11 +9397,11 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
                 // View as is read-only: the tick shows on screen and is never saved.
                 if (TX?.dbId && canWrite) void setTcTick(TX.dbId, 'checklist', t.id, next, me).then((r) => { if (!r.ok) toast(r.message ?? 'Could not save the tick.', 'error'); });
               },
-              box: done ? '#18181b' : '#fff',
-              boxBorder: done ? '#18181b' : t.critical ? '#ff7a45' : '#d4d4d8',
-              textColor: done ? '#a1a1aa' : '#18181b',
+              box: done ? 'var(--ink, #18181b)' : 'var(--surface, #fff)',
+              boxBorder: done ? 'var(--ink, #18181b)' : t.critical ? '#ff7a45' : 'var(--line, #d4d4d8)',
+              textColor: done ? 'var(--subtle, #a1a1aa)' : 'var(--ink, #18181b)',
               deco: done ? 'line-through' : 'none',
-              dayColor: done ? '#a1a1aa' : t.critical ? '#ff7a45' : '#71717a',
+              dayColor: done ? 'var(--subtle, #a1a1aa)' : t.critical ? '#ff7a45' : 'var(--meta, #71717a)',
             };
           });
           const n = tasks.filter((t) => t.done).length;
@@ -8509,8 +9421,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
               setTxDone(t.id, next);
               if (TX?.dbId && canWrite) void setTcTick(TX.dbId, 'checklist', t.id, next, me).then((r) => { if (!r.ok) toast(r.message ?? 'Could not save the tick.', 'error'); });
             },
-            bg: done ? '#16a34a' : '#fff', border: done ? '#16a34a' : '#c7c7cc',
-            textColor: done ? '#71717a' : '#18181b', deco: done ? 'line-through' : 'none',
+            bg: done ? '#16a34a' : 'var(--surface, #fff)', border: done ? '#16a34a' : '#c7c7cc',
+            textColor: done ? 'var(--meta, #71717a)' : 'var(--ink, #18181b)', deco: done ? 'line-through' : 'none',
           };
         })
       : tcItems;
@@ -8529,9 +9441,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           const reached = m.k === 'D0' ? true : inScope.length > 0 && inScope.every((t) => taskDone(t.id));
           return {
             k: m.k, t: m.t, sub: m.sub, reached, first: i === 0,
-            color: reached ? '#16a34a' : '#a1a1aa',
-            bg: reached ? '#16a34a' : '#e4e4e7',
-            labelColor: reached ? '#18181b' : '#71717a',
+            color: reached ? '#16a34a' : 'var(--subtle, #a1a1aa)',
+            bg: reached ? '#16a34a' : 'var(--divider, #e4e4e7)',
+            labelColor: reached ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)',
           };
         })
       : [];
@@ -8546,9 +9458,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
               set((st) => ({ tcHud: { ...st.tcHud, [txKey]: { ...st.tcHud[txKey], [h.id]: next } } }));
               if (TX?.dbId && canWrite) void setTcTick(TX.dbId, 'hud', h.id, next, me).then((r) => { if (!r.ok) toast(r.message ?? 'Could not save the tick.', 'error'); });
             },
-            box: done ? '#18181b' : '#fff',
-            boxBorder: done ? '#18181b' : '#d4d4d8',
-            textColor: done ? '#a1a1aa' : '#18181b',
+            box: done ? 'var(--ink, #18181b)' : 'var(--surface, #fff)',
+            boxBorder: done ? 'var(--ink, #18181b)' : 'var(--line, #d4d4d8)',
+            textColor: done ? 'var(--subtle, #a1a1aa)' : 'var(--ink, #18181b)',
           };
         })
       : [];
@@ -8591,14 +9503,14 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     const driveRaw = TX
       ? laneDrive({ ...TX, done: { ...TX.done, ...Object.fromEntries(Object.entries(txDone).filter(([id]) => allTasks.some((t) => t.id === id))) }, hudDone: { ...TX.hudDone, ...txHud }, signoff: txGates.signoff ?? TX.signoff, tcReview: txGates.review ?? TX.tcReview }, CL, new Date(), teamTc(D.team)?.name ?? 'TC')
       : null;
-    const driveTone = driveRaw?.status === 'red' ? { color: '#dc2626', bg: '#fef2f2' } : driveRaw?.status === 'yellow' ? { color: '#d97706', bg: '#fffbeb' } : { color: '#16a34a', bg: '#f0fdf4' };
+    const driveTone = driveRaw?.status === 'red' ? { color: 'var(--tx-hot, #dc2626)', bg: 'var(--tint-red, #fef2f2)' } : driveRaw?.status === 'yellow' ? { color: '#d97706', bg: 'var(--tint-amber, #fffbeb)' } : { color: '#16a34a', bg: 'var(--tint-green-2, #f0fdf4)' };
     const tcDrive = TX && driveRaw ? {
       ...driveRaw,
       statusLabel: driveRaw.status.toUpperCase(),
       ...driveTone,
       track: TX.dealType === 'novation' ? 'Novation' : 'Assignment',
       nextLabel: driveRaw.nextMilestone ? `${driveRaw.nextMilestone.k} ${driveRaw.nextMilestone.label} · in ${driveRaw.nextMilestone.inDays} day${driveRaw.nextMilestone.inDays === 1 ? '' : 's'}` : 'No milestone ahead',
-      triggers: driveRaw.triggers.map((t) => ({ ...t, color: t.level === 'red' ? '#dc2626' : '#d97706', bg: t.level === 'red' ? '#fef2f2' : '#fffbeb' })),
+      triggers: driveRaw.triggers.map((t) => ({ ...t, color: t.level === 'red' ? '#dc2626' : '#d97706', bg: t.level === 'red' ? 'var(--tint-red, #fef2f2)' : 'var(--tint-amber, #fffbeb)' })),
       hasTriggers: driveRaw.triggers.length > 0,
       hasOverdue: driveRaw.overdue.length > 0,
       hasDueToday: driveRaw.dueToday.length > 0,
@@ -8613,6 +9525,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // Drawer + drafts. askLane() hits the lane edge function when signed in.
     // The chat's property is the one Lane filed it under (or the record it was
     // opened from) — never whatever happens to be on screen.
+    perfLap('record-tx');
     const laneChat = s.laneChatId != null ? s.laneChats.find((c) => c.id === s.laneChatId) ?? null : null;
     const lanePerson = s.lanePersonId ? people.find((x) => x.id === s.lanePersonId) ?? null : null;
     const laneTx = lanePerson ? D.transactions.find((t) => t.personId === lanePerson.id) ?? null : null;
@@ -8735,8 +9648,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         label: o, on: value === o,
         go: () => { onPick(o); set({ pfOpen: null }); },
       })),
-      bg: value !== 'Any' ? '#E7F8F1' : 'var(--c-btn-bg)',
-      color: value !== 'Any' ? '#0A8560' : '#27272a',
+      bg: value !== 'Any' ? 'var(--mint-dim, #e7f8f1)' : 'var(--c-btn-bg)',
+      color: value !== 'Any' ? '#0A8560' : 'var(--ink-2, #27272a)',
       border: value !== 'Any' ? '#0A8560' : 'var(--c-btn-line)',
     });
     /** mkMenu for several picks (lib/multi-filter): stays open while picks go in and out; Any clears and closes. */
@@ -8751,10 +9664,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         go: () => { onPick(togglePick(value, o)); if (o === 'Any') set({ pfOpen: null }); },
       })),
     });
+    perfLap('lane');
     const REP_NAMES = Object.values(D.team).map((r) => r.name);
-    // One entry per place: "Charlotte, NC", never a spelled-out state name.
-    const MARKETS = ['Any', ...Array.from(new Set(people.map((p) => p.market).filter((m) => m && m !== '—')))
-      .sort((a, b) => marketLabel(a).localeCompare(marketLabel(b)))];
     const setF = (k: keyof typeof s.gf, v: string) => set((st) => ({ gf: { ...st.gf, [k]: v } }));
 
     // Deals
@@ -8777,6 +9688,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     const realtorCityOptions = [...new Set(realtorMarkets
       .filter((m) => !realtorPickedState || m.state === realtorPickedState)
       .map((m) => (realtorPickedState ? m.city : `${m.city}, ${m.state}`)))].sort((a, b) => a.localeCompare(b));
+    const { buyerTagOptions } = facets;
     const buyerMenus = [
       // A deal already on the pipeline: the list becomes the buyers matched to it, best score first.
       ...(onRealtors ? [] : [mkMenu('buyerDeal', 'Deal', ['Any', ...buyerPipelineMenu.map((d) => d.label)], s.gf.buyerDeal ?? 'Any', (v) => setF('buyerDeal', v))]),
@@ -8786,9 +9698,10 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         (v) => { setRealtorOffset(0); set((st) => ({ gf: { ...st.gf, buyerState: v, buyerCity: 'Any' } })); }),
       (onRealtors ? mkMenu : mkMultiMenu)('buyerCity', 'City', ['Any', ...(onRealtors ? realtorCityOptions : cityOptions)], onRealtors ? realtorCity : s.gf.buyerCity, (v) => { setRealtorOffset(0); setF('buyerCity', v); }),
       mkMultiMenu('buyerEntity', 'Entity', ['Any', ENTITY_LABELS.llc, ENTITY_LABELS.entity, ENTITY_LABELS.individual, ENTITY_LABELS.unclear], s.gf.buyerEntity, (v) => setF('buyerEntity', v)),
-      mkMultiMenu('buyerType', 'Type', ['Any', ...Array.from(new Set(buyers.map((b) => b.type)))], s.gf.buyerType, (v) => setF('buyerType', v)),
-      mkMultiMenu('buyerStatus', 'Status', ['Any', ...Array.from(new Set(buyers.map((b) => b.status)))], s.gf.buyerStatus, (v) => setF('buyerStatus', v)),
+      mkMultiMenu('buyerType', 'Type', facets.buyerTypes, s.gf.buyerType, (v) => setF('buyerType', v)),
+      mkMultiMenu('buyerStatus', 'Status', facets.buyerStatuses, s.gf.buyerStatus, (v) => setF('buyerStatus', v)),
       mkMultiMenu('buyerStage', 'Stage', ['Any', ...BUYER_STAGES], s.gf.buyerStage, (v) => setF('buyerStage', v)),
+      mkMultiMenu('buyerTag', 'Tag', ['Any', ...buyerTagOptions], s.gf.buyerTag ?? 'Any', (v) => setF('buyerTag', v)),
       // Realtors are corpus rows nobody owns yet; everywhere else, who the buyer is assigned to (migration 128).
       ...(onRealtors ? [] : [mkMultiMenu('buyerOwner', 'Owner', ['Any', ...REP_NAMES, 'Unassigned'], s.gf.buyerOwner ?? 'Any', (v) => setF('buyerOwner', v))]),
       // Everyone who was ever at a stage, wherever they are now (migration 125).
@@ -8800,22 +9713,33 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       mkMultiMenu('buyerEmail', 'Email', [...EMAIL_FILTERS], s.gf.buyerEmail, (v) => setF('buyerEmail', v)),
     ];
     // Tasks
+    // A rep's list is their own work (lib/task-views taskVisible); owners,
+    // admins and the TC, who works every closing, keep the whole team's, with
+    // My Tasks and Team to narrow it. The sample data shows everything.
+    const taskManager = !live || isAdmin(role) || role === 'tc';
+    /** Whose record a task hangs on: the seller's, the buyer's or the deal's owner. */
+    const taskOwner = (t: (typeof tasks)[number]) => (t.personId ? person(t.personId)?.assigned
+      : t.buyerId ? buyer(t.buyerId)?.assigned
+        : t.dealId ? deals.find((d) => d.id === t.dealId)?.owner : null) ?? null;
+    const myTasks = taskManager ? tasks : tasks.filter((t) => taskVisible(t, ME, false, taskOwner(t)));
     const taskMenus = [
       mkMenu('taskType', 'Type', ['Any', ...Array.from(new Set(tasks.map((t) => t.type)))], s.gf.taskType, (v) => setF('taskType', v)),
-      mkMenu('taskAssigned', 'Assigned', ['Any', ...REP_NAMES, 'Unassigned'], s.gf.taskAssigned, (v) => setF('taskAssigned', v)),
+      // A rep only sees their own tasks, so naming a teammate could only empty the list.
+      mkMenu('taskAssigned', 'Assigned', taskManager ? ['Any', ...REP_NAMES, 'Unassigned'] : ['Any', 'Unassigned'], s.gf.taskAssigned, (v) => setF('taskAssigned', v)),
     ];
-    const clearGf = () => set({ gf: { dealOwner: 'Any', dealMarket: 'Any', dealStatus: 'Any', dispoMarket: 'Any', dispoRep: 'Any', buyerState: 'Any', buyerCity: 'Any', buyerEntity: 'Any', buyerType: 'Any', buyerStatus: 'Any', buyerStage: 'Any', buyerPhone: 'Any', buyerEmail: 'Any', buyerOwner: 'Any', buyerHistory: 'Any', buyerHistoryWhen: 'Any', buyerHistoryFrom: 'Any', buyerHistoryTo: 'Any', buyerDeal: 'Any', taskType: 'Any', taskAssigned: 'Any' }, pfOpen: null });
+    const clearGf = () => set({ gf: { dealOwner: 'Any', dealMarket: 'Any', dealStatus: 'Any', dealAdded: 'Any', dealAddedFrom: 'Any', dealAddedTo: 'Any', dealGap: 'Any', dealGapBasis: 'Our offer', dispoMarket: 'Any', dispoRep: 'Any', buyerState: 'Any', buyerCity: 'Any', buyerEntity: 'Any', buyerType: 'Any', buyerStatus: 'Any', buyerStage: 'Any', buyerPhone: 'Any', buyerEmail: 'Any', buyerAdded: 'Any', buyerAddedFrom: 'Any', buyerAddedTo: 'Any', buyerOwner: 'Any', buyerHistory: 'Any', buyerHistoryWhen: 'Any', buyerHistoryFrom: 'Any', buyerHistoryTo: 'Any', buyerDeal: 'Any', buyerTag: 'Any', taskType: 'Any', taskAssigned: 'Any' }, pfOpen: null });
 
     // ---- ACTION PLANS ----------------------------------------------------------
     // Plans live in the graph; edits copy a seed plan into session state and
     // write there, so the seed data stays the baseline. Enrolling a seller shows
     // on their record and in the plan's own enrolled count.
+    perfLap('filter-menus');
     const PLAN_CHANNELS = ['sms', 'call', 'email', 'task'];
     const CHAN_TONE: Record<string, { label: string; color: string; bg: string }> = {
-      sms: { label: 'SMS', color: '#e6142e', bg: '#ffe9ec' },
-      call: { label: 'Call', color: '#e6142e', bg: '#ffe9ec' },
-      email: { label: 'Email', color: '#52525b', bg: '#f4f4f5' },
-      task: { label: 'Task', color: '#d97706', bg: '#fffbeb' },
+      sms: { label: 'SMS', color: '#e6142e', bg: 'var(--c-talkr-soft, #ffe9ec)' },
+      call: { label: 'Call', color: '#e6142e', bg: 'var(--c-talkr-soft, #ffe9ec)' },
+      email: { label: 'Email', color: 'var(--muted, #52525b)', bg: 'var(--surface-2, #f4f4f5)' },
+      task: { label: 'Task', color: '#d97706', bg: 'var(--tint-amber, #fffbeb)' },
     };
     const planOf = (id: string) => plans.find((pl) => pl.id === id) || plans[0] || BLANK_PLAN;
     const enrolledIn = (planId: string) => enrollments.filter((e) => e.planId === planId);
@@ -8843,9 +9767,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           upsertPlan({ ...pl, active: !pl.active });
           toast(pl.name + (pl.active ? ' paused' : ' activated'));
         },
-        bg: pl.id === s.planId ? '#E7F8F1' : '#fff',
-        border: pl.id === s.planId ? '#0A8560' : '#e4e4e7',
-        statusColor: pl.active ? '#16a34a' : '#a1a1aa',
+        bg: pl.id === s.planId ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)',
+        border: pl.id === s.planId ? '#0A8560' : 'var(--divider, #e4e4e7)',
+        statusColor: pl.active ? '#16a34a' : 'var(--subtle, #a1a1aa)',
         statusLabel: pl.active ? 'Active' : 'Paused',
       };
     });
@@ -8979,19 +9903,15 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           if (r.queued) toast(r.queued + (r.queued === 1 ? ' touch queued' : ' touches queued') + ' on the calendar', 'success');
         });
       }
-      setS((prev) => {
-        const already = [...D.enrollments, ...prev.newEnrollments]
-          .some((e) => e.personId === personId && e.planId === planId && e.status !== 'done');
-        if (already) return { ...prev, toast: 'Already enrolled', toastSeq: prev.toastSeq + 1 };
-        const p = [...D.people, ...prev.newPeople].find((x) => x.id === personId);
-        return {
-          ...prev,
-          newEnrollments: [...prev.newEnrollments,
-            { id: nextId('en'), personId, planId, step: 1, status: 'active', note: '' }],
-          toast: (p ? p.name : 'Seller') + ' enrolled',
-          toastSeq: prev.toastSeq + 1,
-        };
-      });
+      const already = enrollments.some((e) => e.personId === personId && e.planId === planId && e.status !== 'done');
+      if (already) return toast('Already enrolled');
+      const who = person(personId);
+      setS((prev) => ({
+        ...prev,
+        newEnrollments: [...prev.newEnrollments,
+          { id: nextId('en'), personId, planId, step: 1, status: 'active', note: '' }],
+      }));
+      toast((who ? who.name : 'Seller') + ' enrolled');
     };
     const holdPlan = (personId: string, pause: boolean) => {
       const cur = enrollments.find((e) => e.personId === personId && e.status !== 'done');
@@ -9007,9 +9927,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           ...prev.newEnrollments.filter((e) => !(e.personId === personId && (e.planId === '' || e.planId === cur.planId))),
           { ...cur, status: pause ? 'paused' : 'active', note: pause ? 'Paused' : '' },
         ],
-        toast: pause ? 'Action plan paused' : 'Action plan playing',
-        toastSeq: prev.toastSeq + 1,
       }));
+      toast(pause ? 'Action plan paused' : 'Action plan playing');
     };
     const unenroll = (personId: string) => {
       // Stop it in the database too; before this the stop only lived in this tab.
@@ -9025,8 +9944,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           .concat(D.enrollments.some((e) => e.personId === personId)
             ? [{ id: 'en_off_' + personId, personId, planId: '', step: 0, status: 'done', note: 'Stopped' }]
             : []),
-        toast: 'Action plan stopped', toastSeq: prev.toastSeq + 1,
       }));
+      toast('Action plan stopped');
     };
     const unenrollBuyer = (buyerId: string) => {
       const live = enrollments.find((e) => e.buyerId === buyerId && e.status !== 'done' && /^en\d+$/.test(e.id));
@@ -9040,8 +9959,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           .concat(D.enrollments.some((e) => e.buyerId === buyerId)
             ? [{ id: 'en_off_' + buyerId, personId: '', buyerId, planId: '', step: 0, status: 'done', note: 'Stopped' }]
             : []),
-        toast: 'Action plan stopped', toastSeq: prev.toastSeq + 1,
       }));
+      toast('Action plan stopped');
     };
     const enrollBuyer = (planId: string, buyerId: string) => {
       if (canWrite) {
@@ -9055,19 +9974,15 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           else toast((b?.name || 'Buyer') + ' enrolled', 'success');
         });
       }
-      setS((prev) => {
-        const already = [...D.enrollments, ...prev.newEnrollments]
-          .some((e) => e.buyerId === buyerId && e.planId === planId && e.status !== 'done');
-        if (already) return { ...prev, toast: 'Already enrolled', toastSeq: prev.toastSeq + 1 };
-        const b = [...D.buyers, ...prev.newBuyers].find((x) => x.id === buyerId);
-        return {
-          ...prev,
-          newEnrollments: [...prev.newEnrollments,
-            { id: nextId('en'), personId: '', buyerId, planId, step: 1, status: 'active', note: '' }],
-          toast: (b ? b.name : 'Buyer') + ' enrolled',
-          toastSeq: prev.toastSeq + 1,
-        };
-      });
+      const already = enrollments.some((e) => e.buyerId === buyerId && e.planId === planId && e.status !== 'done');
+      if (already) return toast('Already enrolled');
+      const b = buyers.find((x) => x.id === buyerId);
+      setS((prev) => ({
+        ...prev,
+        newEnrollments: [...prev.newEnrollments,
+          { id: nextId('en'), personId: '', buyerId, planId, step: 1, status: 'active', note: '' }],
+      }));
+      toast((b ? b.name : 'Buyer') + ' enrolled');
     };
     const planEnrolled = enrolledIn(PL.id).map((e) => {
       const p = person(e.personId);
@@ -9105,7 +10020,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           nextLabel: 'Next: ' + (myPlan.steps[Math.min(myEnrollment.step, myPlan.steps.length - 1)]?.title || '—'),
           paused: myEnrollment.status === 'paused',
           statusNote: myEnrollment.note || (myEnrollment.status === 'paused' ? 'Paused' : 'Playing'),
-          open: () => go('plans', { planId: myPlan.id, planReturnTo: 'person' }),
+          open: () => openPlan(myPlan.id, 'person'),
           pause: () => holdPlan(P.id, true),
           resume: () => holdPlan(P.id, false),
           stop: () => unenroll(P.id),
@@ -9126,7 +10041,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           pct: Math.round((myBuyerEnrollment.step / Math.max(1, myBuyerPlan.steps.length)) * 100) + '%',
           nextLabel: 'Next: ' + (myBuyerPlan.steps[Math.min(myBuyerEnrollment.step, myBuyerPlan.steps.length - 1)]?.title || '—'),
           statusNote: myBuyerEnrollment.note || (myBuyerEnrollment.status === 'paused' ? 'Paused' : 'Running'),
-          open: () => go('plans', { planId: myBuyerPlan.id, planReturnTo: 'buyer' }),
+          open: () => openPlan(myBuyerPlan.id, 'buyer'),
           stop: () => unenrollBuyer(B.id),
         }
       : null;
@@ -9138,6 +10053,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // ---- SWEEP: remaining controls --------------------------------------------
     // Call dispositions log the call and close the wrap-up, same as the wrap
     // buttons already did.
+    perfLap('plans');
     const dispositions = ['Interested', 'Appointment set', 'Callback', 'Not interested']
       .map((label) => ({
         label,
@@ -9149,18 +10065,19 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         },
       }));
     // Notification category filter.
-    const notifCatFilter = ['All', 'Mention', 'Call', 'SMS', 'Seller', 'Buyer', 'Dispo', 'Offer', 'Task', 'TC', 'System'].map((c) => ({
+    // Important first and by default: good replies and what names you (lib/reply-tone).
+    const notifCatFilter = ['Important', 'All', 'Good', 'Bad', 'Mention', 'Call', 'SMS', 'Email reply', 'Seller', 'Buyer', 'Dispo', 'Offer', 'Task', 'TC', 'System'].map((c) => ({
       c, on: s.notifCat === c,
       go: () => set({ notifCat: c }),
-      bg: s.notifCat === c ? '#18181b' : '#fff',
-      color: s.notifCat === c ? '#fff' : '#52525b',
+      bg: s.notifCat === c ? 'var(--ink, #18181b)' : 'var(--surface, #fff)',
+      color: s.notifCat === c ? 'var(--surface, #fff)' : 'var(--muted, #52525b)',
     }));
     // Buyer record tabs.
     const buyerTabs = ['Activity', 'Offers', 'Purchases', 'Campaigns', 'Contracts', 'Notes'].map((t) => ({
       label: t, active: s.buyerTab === t,
       go: () => set({ buyerTab: t }),
-      color: s.buyerTab === t ? '#18181b' : '#71717a',
-      border: s.buyerTab === t ? '#18181b' : 'transparent',
+      color: s.buyerTab === t ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)',
+      border: s.buyerTab === t ? 'var(--ink, #18181b)' : 'transparent',
     }));
     // Export the current table as CSV. Runs entirely in the browser — this app
     // is a static export, so there is no server to generate a file.
@@ -9204,22 +10121,22 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           newPeople: prev.newPeople.some((x) => x.id === base.id)
             ? prev.newPeople.map((x) => (x.id === base.id ? updated : x))
             : [...prev.newPeople, updated],
-          toast: 'Tag added · ' + t.trim(), toastSeq: prev.toastSeq + 1,
         };
       });
+      toast('Tag added · ' + t.trim());
     };
 
     // ---- INBOX ----
     const inboxChannels = ['All', 'SMS', 'Email', 'Calls', 'Voicemail'].map((c) => ({
       label: c, go: () => set({ inboxChannel: c }),
-      bg: s.inboxChannel === c ? '#fff' : 'transparent',
-      color: s.inboxChannel === c ? '#18181b' : '#71717a',
+      bg: s.inboxChannel === c ? 'var(--surface, #fff)' : 'transparent',
+      color: s.inboxChannel === c ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)',
       shadow: s.inboxChannel === c ? '0 1px 2px rgba(0,0,0,.06)' : 'none',
     }));
     const inboxFilters = ['Mine', 'Team', 'Unread', 'Assigned', 'Unassigned'].map((f) => ({
       label: f, go: () => set({ inboxFilter: f }),
-      bg: s.inboxFilter === f ? '#E7F8F1' : 'transparent',
-      color: s.inboxFilter === f ? '#0A8560' : '#52525b',
+      bg: s.inboxFilter === f ? 'var(--mint-dim, #e7f8f1)' : 'transparent',
+      color: s.inboxFilter === f ? '#0A8560' : 'var(--muted, #52525b)',
     }));
     const chMap: Record<string, string> = { SMS: 'sms', Email: 'email', Calls: 'call', Voicemail: 'voicemail' };
     const inboxConvs = D.inbox
@@ -9227,7 +10144,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       .filter((m) => (s.inboxFilter === 'Unread' ? m.unread > 0 : s.inboxFilter === 'Unassigned' ? !m.assigned : true))
       .map((m) => ({
         ...convOf(m), active: s.inboxConv === m.id,
-        bg: s.inboxConv === m.id ? '#f4f4f5' : '#fff',
+        bg: s.inboxConv === m.id ? 'var(--surface-2, #f4f4f5)' : 'var(--surface, #fff)',
         go: () => set({ inboxConv: m.id }),
       }));
     const IC = inboxConvs.find((c) => c.id === s.inboxConv)
@@ -9238,8 +10155,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     const inboxMsgs = withSent(icMsgs, 'inbox:' + IC.id).map(([dir, text, time]) => ({
       text, time, isSys: dir === 'sys',
       align: dir === 'out' ? 'flex-end' : 'flex-start',
-      bg: dir === 'out' ? '#18181b' : dir === 'sys' ? 'transparent' : '#f4f4f5',
-      color: dir === 'out' ? '#fff' : dir === 'sys' ? '#71717a' : '#18181b',
+      bg: dir === 'out' ? 'var(--ink, #18181b)' : dir === 'sys' ? 'transparent' : 'var(--surface-2, #f4f4f5)',
+      color: dir === 'out' ? 'var(--surface, #fff)' : dir === 'sys' ? 'var(--meta, #71717a)' : 'var(--ink, #18181b)',
     }));
     const icBuyer = IC.who as unknown as (typeof D.buyers)[number];
     const icPerson = IC.who as Person;
@@ -9253,6 +10170,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         ['Assigned', IC.assigned], ['Score', icPerson.score != null ? icPerson.score + ' · ' + (icPerson.score >= 85 ? 'HOT' : 'WARM') : leadTemp(icPerson) || '—'],
         ['Next task', icPerson.nextTask], ['Offer', icPerson.offer || '—'],
       ];
+    perfLap('inbox');
     const inboxCtx = inboxContext.map(([k, v]) => ({ k, v }));
     const openInboxRecord = () => (IC.isBuyer ? openBuyer(IC.who.id) : openPerson(IC.who.id));
 
@@ -9260,11 +10178,13 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // Which tasks each view lists and counts (lib/task-views): Today leads with
     // the overdue ones, and the counts are of open tasks, as the lists are.
     const isDone = (t: (typeof tasks)[number]) => (s.tasksDone[t.id] ?? (t.bucket === 'completed' || t.done)) === true;
-    const tasksViews = TASK_VIEWS.map((label) => ({
-      label, count: tasks.filter((t) => inTaskView(label, t, isDone(t), ME)).length, go: () => set({ tasksView: label }),
-      on: s.tasksView === label,
-      bg: s.tasksView === label ? '#E7F8F1' : 'transparent',
-      color: s.tasksView === label ? '#0A8560' : '#27272a',
+    const taskViewNames: readonly string[] = taskManager ? TASK_VIEWS : REP_TASK_VIEWS;
+    const tasksView = taskViewNames.includes(s.tasksView) ? s.tasksView : 'Today';
+    const tasksViews = taskViewNames.map((label) => ({
+      label, count: myTasks.filter((t) => inTaskView(label, t, isDone(t), ME)).length, go: () => set({ tasksView: label }),
+      on: tasksView === label,
+      bg: tasksView === label ? 'var(--mint-dim, #e7f8f1)' : 'transparent',
+      color: tasksView === label ? '#0A8560' : 'var(--ink-2, #27272a)',
     }));
     // Snooze moves the due date to tomorrow at 9 AM local, and leaves the tick
     // alone: it used to write tasksDone[id] = false, which re-opened a task
@@ -9277,7 +10197,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     };
     // A done task leaves every list but Completed; one just ticked stays long
     // enough to fade out (taskLeaving), so the tick reads as "gone", not "stuck".
-    const viewed = tasks.filter((t) => inTaskView(s.tasksView, t, isDone(t) && (s.tasksView === 'Completed' || !s.taskLeaving[t.id]), ME));
+    const viewed = myTasks.filter((t) => inTaskView(tasksView, t, isDone(t) && (tasksView === 'Completed' || !s.taskLeaving[t.id]), ME));
     const taskLookRows = {
       hasPerson: (id: string) => !!person(id),
       sellerOfDeal: (dealId: string) => deals.find((d) => d.id === dealId)?.personId ?? null,
@@ -9285,8 +10205,14 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     };
     const openTaskFromList = (t: Task) => {
       const rec = taskRecordOf(t, taskLookRows);
+      if (!rec && t.buyerId && refreshBuyer && /^b\d+$/.test(t.buyerId)) {
+        // A buyer the workspace load did not bring (Compr has 150k): read it, then open it.
+        const id = t.buyerId;
+        void refreshBuyer(Number(id.slice(1))).then(() => openBuyer(id));
+        return;
+      }
       if (!rec) {
-        toast('This task has no seller on it.', 'info');
+        toast('This task has no record on it.', 'info');
         return;
       }
       if (rec.kind === 'buyer') return openBuyer(rec.id);
@@ -9297,12 +10223,33 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           personTab: 'Activity',
           personDealId: rec.dealId ?? null,
           composerTab: t.type === 'text' ? 'Text' : 'Email',
-          composerText: t.note,
         });
+        setComposerText(t.note ?? '');
       }
       return openPersonDeal(rec.id, rec.dealId);
     };
-    const taskRows = (s.tasksView === 'Today' ? overdueFirst(viewed) : viewed)
+    // Ticks a task done (or opens it again), on screen and in the database.
+    // The Tasks list and Today's band share it, Undo included. The view
+    // rebuilds in a transition: the Tasks row shows its tick at once
+    // (screens/Tasks.tsx), and a second click is not held up behind the first.
+    const toggleTaskDone = (t: Task, done: boolean) => {
+      startTransition(() => set((st) => ({ tasksDone: { ...st.tasksDone, [t.id]: !done }, taskLeaving: !done ? { ...st.taskLeaving, [t.id]: true } : st.taskLeaving })));
+      persistTask(t.id, !done);
+      if (!done) {
+        setTimeout(() => startTransition(() => set((st) => { const l = { ...st.taskLeaving }; delete l[t.id]; return { taskLeaving: l }; })), 520);
+        // The row is gone in half a second, so a mis-tick needs a way back:
+        // Undo re-opens the task, on screen and in the database. A failed
+        // write's error toast replaces this one.
+        toast('Task done: ' + t.title, 'info', {
+          label: 'Undo',
+          run: () => {
+            startTransition(() => set((st) => { const l = { ...st.taskLeaving }; delete l[t.id]; return { tasksDone: { ...st.tasksDone, [t.id]: false }, taskLeaving: l }; }));
+            persistTask(t.id, false);
+          },
+        });
+      }
+    };
+    const taskRows = (tasksView === 'Today' ? overdueFirst(viewed) : viewed)
       .filter((t) => s.gf.taskType === 'Any' || t.type === s.gf.taskType)
       .filter((t) => s.gf.taskAssigned === 'Any'
         || (s.gf.taskAssigned === 'Unassigned' ? !t.assigned : repName(t.assigned) === s.gf.taskAssigned))
@@ -9312,33 +10259,18 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       const buyerRow = rec?.kind === 'buyer' ? buyer(rec.id) : undefined;
       const done = isDone(t);
       return {
-        leaving: !!s.taskLeaving[t.id] && s.tasksView !== 'Completed',
+        leaving: !!s.taskLeaving[t.id] && tasksView !== 'Completed',
         focused: s.taskFocus === t.id,
         id: t.id, title: t.title,
-        person: buyerRow?.name || p.name, addr: buyerRow ? '—' : p.property.addr, type: t.type, due: done ? t.due : dueLabel(t.due, t.bucket),
-        dueColor: !done && t.bucket === 'overdue' ? '#dc2626' : /Overdue/.test(t.due) ? '#dc2626' : /Now|Today/.test(t.due) ? '#18181b' : '#71717a',
-        assigned: repName(t.assigned), assignedColor: t.assigned ? '#27272a' : '#dc2626',
+        // The due label and the strike-through follow the tick, so the row
+        // draws them from its own (lib/task-views taskLook).
+        person: buyerRow?.name || p.name, addr: buyerRow ? '—' : p.property.addr, type: t.type, due: t.due, bucket: t.bucket,
+        assigned: repName(t.assigned), assignedColor: t.assigned ? 'var(--ink-2, #27272a)' : '#dc2626',
         priority: t.priority,
-        prColor: t.priority === 'Urgent' ? '#dc2626' : t.priority === 'High' ? '#d97706' : t.priority === 'Medium' ? '#0A8560' : '#71717a',
-        done, deco: done ? 'line-through' : 'none', textColor: done ? '#a1a1aa' : '#18181b',
+        prColor: t.priority === 'Urgent' ? '#dc2626' : t.priority === 'High' ? '#d97706' : t.priority === 'Medium' ? '#0A8560' : 'var(--meta, #71717a)',
+        done,
         note: t.note ?? '', hasNote: !!t.note,
-        toggle: () => {
-          set((st) => ({ tasksDone: { ...st.tasksDone, [t.id]: !done }, taskLeaving: !done ? { ...st.taskLeaving, [t.id]: true } : st.taskLeaving }));
-          persistTask(t.id, !done);
-          if (!done) {
-            setTimeout(() => set((st) => { const l = { ...st.taskLeaving }; delete l[t.id]; return { taskLeaving: l }; }), 520);
-            // The row is gone in half a second, so a mis-tick needs a way back:
-            // Undo re-opens the task, on screen and in the database. A failed
-            // write's error toast replaces this one.
-            toast('Task done: ' + t.title, 'info', {
-              label: 'Undo',
-              run: () => {
-                set((st) => { const l = { ...st.taskLeaving }; delete l[t.id]; return { tasksDone: { ...st.tasksDone, [t.id]: false }, taskLeaving: l }; });
-                persistTask(t.id, false);
-              },
-            });
-          }
-        },
+        toggle: () => toggleTaskDone(t, done),
         // Opens the seller (or deal / buyer) the task is on — never a blank
         // "Pick a seller" screen. A plan step still lands with its message in
         // the composer when there is one.
@@ -9347,33 +10279,107 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         snooze: () => snoozeTask(t.id),
       };
     });
+    // The header's "Complete all shown": every open task this view and its
+    // filters list, ticked in one state update (in a transition, as one tick
+    // is) and saved in one bulk write (persistTasks). No fade-out: a thousand
+    // rows animating at once would hold up the very paint it softens.
+    const shownOpen = openShownIds(taskRows);
+    const tickTasks = (ids: string[], done: boolean) => startTransition(() => set((st) => {
+      const next = { ...st.tasksDone };
+      for (const id of ids) next[id] = done;
+      return { tasksDone: next };
+    }));
+    const completeShown = async () => {
+      const ids = shownOpen;
+      if (!ids.length) return;
+      const n = ids.length.toLocaleString();
+      const noun = ids.length === 1 ? 'task' : 'tasks';
+      if (!(await confirm({
+        title: `Mark ${n} ${noun} done?`,
+        // plan_on_task_done (migration 34) and plan_on_enrollment_end: a closed
+        // step moves its plan's count on and sends nothing; the plan's last
+        // open step ends it, and an ended plan may route into its next plan.
+        body: 'Action plan steps among them count as done; the next step in each plan still sends at its own time. A plan left with no open steps ends, and if it continues into another plan, that plan can send its first message within minutes. Undo re-opens the tasks, not an ended plan.',
+        confirmLabel: `Mark ${n} done`,
+      }))) return;
+      tickTasks(ids, true);
+      // Undo waits for the write it undoes, so the two cannot land out of
+      // order, and re-opens what saved (what did not is open already).
+      const undo = { label: 'Undo', run: () => { tickTasks(ids, false); void write.then((saved) => persistTasks(saved, false)); } };
+      const write = persistTasks(ids, true, undo);
+      toast(`${n} ${noun} done`, 'info', undo);
+    };
+
+    // ---- TODAY BAND ----
+    // The rep's own work on Today, beside the call list (lib/today-band): their
+    // tasks due today or late, and the deals they own that are still moving.
+    // Mine for everyone, owners included: the Tasks screen has the team's.
+    const bandTasks = myBandTasks(tasks, ME, isDone, (t) => (t.personId ? person(t.personId)?.assigned : null));
+    const bandDealPairs = (live ? pipelineDeals : deals.filter((d) => d.arv && !d.archived)).flatMap((d) => {
+      const p = person(d.personId);
+      return p ? [{ d, p, owner: d.owner || p.assigned, archived: !!d.archived, stage: dealStageOf(d, p), daysInStage: d.daysInStage }] : [];
+    });
+    const bandDeals = myBandDeals(bandDealPairs, ME);
+    const bandTaskRow = (t: Task) => {
+      const rec = taskRecordOf(t, taskLookRows);
+      const p = rec?.kind === 'person' && rec.id ? person(rec.id) : undefined;
+      const b = rec?.kind === 'buyer' ? buyer(rec.id) : undefined;
+      return {
+        id: t.id, title: t.title, type: t.type,
+        who: b?.name || p?.name || '',
+        due: dueLabel(t.due, t.bucket), late: t.bucket === 'overdue',
+        open: () => openTaskFromList(t),
+        complete: () => toggleTaskDone(t, false),
+      };
+    };
+    const todayBand = {
+      taskCount: bandTasks.length,
+      overdueCount: bandTasks.filter((t) => t.bucket === 'overdue').length,
+      tasks: bandTasks.map(bandTaskRow),
+      /** The next few after today's, shown when the band is the whole page. */
+      upcoming: myUpcomingTasks(tasks, ME, isDone, (t) => (t.personId ? person(t.personId)?.assigned : null), 5).map(bandTaskRow),
+      dealCount: bandDeals.length,
+      deals: bandDeals.map(({ d, p, stage, daysInStage }) => {
+        const key = dealKeyNumber(d.contract, d.mao);
+        return {
+          id: d.id, addr: d.addr || p.property.addr, city: (d.addr ? d.city : p.property.city) || '', seller: p.name,
+          stage, key: key ? { label: key.label, value: fmt(key.value) } : null,
+          days: daysInStageLabel(daysInStage), stale: daysInStage >= 14,
+          open: () => openPersonDeal(p.id, d.id),
+        };
+      }),
+      allTasks: () => go('tasks', { tasksView: 'Today' }),
+      allDeals: () => go('deals'),
+    };
 
     // ---- CALENDAR ----
+    perfLap('tasks');
     const calDays = D.calendar.map((d) => ({
       day: d.day, today: d.day === 'Thu 4',
       items: d.items.map((it) => ({
         ...it,
         color: ({
-          Team: '#71717a', Dispo: '#ff7a45', Call: '#e6142e',
+          Team: 'var(--meta, #71717a)', Dispo: '#ff7a45', Call: '#e6142e',
           TC: '#1f7a4d', Appointment: '#16a34a', Offer: '#d97706',
         } as Record<string, string>)[it.kind],
       })),
     }));
 
     // ---- REPORTING ----
-    // Profitability carries commissions and the bank feed: owner/admin only
-    // (the demo, with no role, shows it). A hidden tab left selected falls back.
+    // Profitability carries commissions and the bank feed, and Team stoplight
+    // grades each teammate: owner/admin only (the demo, with no role, shows
+    // them). A hidden tab left selected falls back.
     const reportAdmin = isAdmin(role);
-    const reportTab = REPORT_TABS.includes(s.reportTab) && (reportAdmin || s.reportTab !== 'Profitability') ? s.reportTab : 'Overview';
-    const reportTabs = REPORT_TABS.filter((t) => reportAdmin || t !== 'Profitability').map((t) => ({
+    const reportTab = REPORT_TABS.includes(s.reportTab) && (reportAdmin || !ADMIN_REPORT_TABS.includes(s.reportTab)) ? s.reportTab : 'Overview';
+    const reportTabs = REPORT_TABS.filter((t) => reportAdmin || !ADMIN_REPORT_TABS.includes(t)).map((t) => ({
       label: t, go: () => set({ reportTab: t }),
-      color: reportTab === t ? '#18181b' : '#71717a',
-      border: reportTab === t ? '#18181b' : 'transparent',
+      color: reportTab === t ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)',
+      border: reportTab === t ? 'var(--ink, #18181b)' : 'transparent',
     }));
     const reportRanges = REPORT_RANGES.map((r) => ({
       label: r, go: () => set({ reportRange: r }),
-      bg: s.reportRange === r ? '#18181b' : '#fff',
-      color: s.reportRange === r ? '#fff' : '#27272a',
+      bg: s.reportRange === r ? 'var(--ink, #18181b)' : 'var(--surface, #fff)',
+      color: s.reportRange === r ? 'var(--surface, #fff)' : 'var(--ink-2, #27272a)',
     }));
     // The rows behind every tab: the workspace's own, or the sample graph laid
     // over recent weeks on /demo. Only built while Reporting is open.
@@ -9395,7 +10401,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       }];
     }).slice(0, 120);
     // The builder tab draws itself (components/reporting/custom); nothing to compute here.
-    const reportBlocks = () => (reportRaw && reportTab !== CUSTOM_TAB ? buildReport(reportTab, s.reportRange, reportRaw, { admin: reportAdmin }) : []);
+    const reportBlocks = () => (reportRaw && reportTab !== CUSTOM_TAB && reportTab !== TEAM_STOPLIGHT_TAB ? buildReport(reportTab, s.reportRange, reportRaw, { admin: reportAdmin }) : []);
     const reportRangeBounds = rangeOf(s.reportRange);
 
     // ---- NOTIFICATIONS ----
@@ -9403,6 +10409,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // gets read_at; a missed call or text is remembered for this member on the
     // server (migration 189), so it stays gone on every device, and in this
     // browser, which is all there is until 189 is applied.
+    perfLap('reporting');
     const dismissNotifIds = (ids: string[]) => {
       const fresh = ids.filter((id) => !sRef.current.notifRead[id]);
       if (!fresh.length) return;
@@ -9436,12 +10443,12 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       const markRead = () => dismissNotifIds([n.id]);
       return {
         ...n, isUnread: n.unread && !s.notifRead[n.id],
-        bg: n.unread && !s.notifRead[n.id] ? '#fff' : '#fafafa',
+        bg: n.unread && !s.notifRead[n.id] ? 'var(--surface, #fff)' : 'var(--canvas, #fafafa)',
         catColor: ({
           Seller: typeTone('Seller').fg, Buyer: typeTone('Buyer').fg, Dispo: '#ff7a45', Offer: '#16a34a',
-          Task: '#d97706', TC: '#1f7a4d', System: '#71717a', Mention: '#0A8560',
-          Call: '#e6142e', SMS: '#2563eb',
-          Badge: '#c4a35a', Leaderboard: '#0e7a57', Wheel: '#b45309', Contract: '#12946a', Lane: LANE,
+          Task: '#d97706', TC: '#1f7a4d', System: 'var(--meta, #71717a)', Mention: '#0A8560',
+          Call: '#e6142e', SMS: '#2563eb', inbound_sms: '#2563eb', 'Email reply': '#7c3aed',
+          Badge: '#c4a35a', Leaderboard: '#0e7a57', Wheel: '#b45309', Contract: '#12946a', 'Contract request': '#0A8560', Lane: LANE,
         } as Record<string, string>)[n.cat],
         // Nothing to open (an import summary, an email open): no button.
         actionLabel: n.link.screen === 'leaderboard' || ['Badge', 'Leaderboard', 'Wheel', 'Contract'].includes(n.cat) ? 'Leaderboard'
@@ -9468,6 +10475,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           else if (l.screen === 'inboxSms') { requestInboxSms(l.id); go('inbox'); }
           else if (l.screen === 'settings') { requestSettingsTab({ main: 'talkr', tab: 'numbers' }); go('settings'); }
           else if (l.screen === 'contracts') {
+            // A contract request's draft: Contracts opens on it.
+            if (/^k\d+$/.test(l.id)) setPendingContract(Number(l.id.slice(1)));
             if (canSee(role, 'contracts')) go('contracts');
             else set({ notifOpen: false, contractsOpen: true });
           } else if (l.screen === 'lane') {
@@ -9496,6 +10505,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     // app. Built only while the bar is open. What a row does comes back as
     // data through `runCommand`; the two hand-offs to the seller record
     // (openRecordComposer, openOfferSheet) the bar calls on the view-model.
+    perfLap('notifs');
     const cmdData: CmdData | null = s.searchOpen ? {
       role, can, screen: s.screen, focus: focusPid,
       focusBuyer: s.screen === 'buyer' && B.id ? B.id : null,
@@ -9524,7 +10534,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           find: [addr, d.city ?? (p && addr === p.property.addr ? p.property.city : ''), d.zip ?? '', stage, p?.name ?? ''].join(' '),
         }];
       }),
-      tasks: tasks.filter((t) => !t.done && !s.tasksDone[t.id]).map((t) => ({ id: t.id, title: t.title, due: t.due, who: repName(t.assigned), personId: t.personId, dealId: t.dealId ?? null, buyerId: t.buyerId ?? null })),
+      // The same tasks the Tasks screen shows this seat, so a jump lands on a row.
+      tasks: myTasks.filter((t) => !t.done && !s.tasksDone[t.id]).map((t) => ({ id: t.id, title: t.title, due: t.due, who: repName(t.assigned), personId: t.personId, dealId: t.dealId ?? null, buyerId: t.buyerId ?? null })),
       vendors: !canSee(role, 'people') ? [] : vendors.map((v) => ({
         id: v.id, name: v.name, kind: v.kind,
         find: [v.name, v.contact, v.phone, v.phone.replace(/\D/g, ''), v.email, v.kind, v.market, v.city ?? ''].join(' '),
@@ -9553,7 +10564,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         case 'task': {
           // Tasks on the list the task is due in, with nothing filtering it out.
           const t = tasks.find((x) => x.id === a.id);
-          const view = t?.bucket === 'overdue' ? 'Overdue' : t?.bucket === 'today' ? 'Today' : t?.bucket === 'upcoming' ? 'Upcoming' : 'Team';
+          const view = t?.bucket === 'overdue' ? 'Overdue' : t?.bucket === 'today' ? 'Today' : t?.bucket === 'upcoming' ? 'Upcoming' : taskManager ? 'Team' : 'Today';
           return go('tasks', { tasksView: view, taskFocus: a.id, gf: { ...s.gf, taskType: 'Any', taskAssigned: 'Any' } });
         }
         case 'thread':
@@ -9616,6 +10627,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     ]).map((qq) => ({ q: qq, go: () => askAi(qq) }));
 
     // ---- LEADERBOARD (TV) ----
+    perfLap('cmd');
     const lb = leaderboardVals(reportRaw, !!live, s, { go, toast, set }, { badgesOpen: !!s.lbBadgesOpen, board, crmOk });
 
     const stageQuick = (() => {
@@ -9641,7 +10653,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           // outcome. Say so rather than letting it vanish.
           if (callState === 'wrap') toast('Your last call’s notes are saved, but it has no outcome set.');
           set((prev) => ({
-            dialerOpen: true, phoneMin: false, dialerTab: 'Dial', callState: 'live', callSec: 0, callSeq: prev.callSeq + 1,
+            dialerOpen: true, phoneMin: false, dialerTab: 'Dial', callState: 'live', callSeq: prev.callSeq + 1,
             callTarget: { name: match?.name ?? formatPhone(sp.incoming!.from), phone: formatPhone(sp.incoming!.from), personId: match?.id ?? null },
           }));
           sp.acceptIncoming();
@@ -9658,7 +10670,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
             if (callState === 'wrap') toast('Your last call’s notes are saved, but it has no outcome set.');
             // The demo's scripted call, started the way the keypad starts it, on the caller.
             set((prev) => ({
-              demoIncoming: null, dialerOpen: true, phoneMin: false, dialerTab: 'Dial', callState: 'live', callSec: 0, transcriptN: 1,
+              demoIncoming: null, dialerOpen: true, phoneMin: false, dialerTab: 'Dial', callState: 'live', callStartedAt: Date.now(), callEndedAt: null, transcriptN: 1,
               callSeq: prev.callSeq + 1,
               callTarget: { name: d.name, phone: formatPhone(d.from), personId: null },
               dialNumber: formatPhone(d.from),
@@ -9767,7 +10779,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           const r2 = sellerToo && ask.seller ? await archiveSellers([ask.seller.id]) : null;
           if (ask.kind === 'vendor') set((st) => ({ peopleSel: Object.fromEntries(Object.entries(st.peopleSel).filter(([id]) => !ask.ids.includes(id))), bulkMenu: null }));
           moveOn();
-          reload?.();
+          // The deals and their sellers re-read; vendors have no row re-read, so they reload.
+          if (ask.kind === 'deal') rereadDeals(ask.ids.map(dbId)); else reload?.();
           if (r2 && !r2.ok) return toast(`Archived ${who}, but not its seller ${ask.seller?.name}: ${r2.message || 'that did not save.'}`, 'error');
           toast(`Archived ${who}${r2 ? ' and its seller' : ''}`, 'success');
         })();
@@ -9776,21 +10789,24 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       void (async () => {
         const r = ask.kind === 'seller' ? await archiveSellers(ask.ids) : await archiveBuyers(ask.ids);
         if (!r.ok) return toast(r.message || 'Nothing was archived.', 'error');
+        // The archived rows re-read: a seller with their deals, or the buyers.
+        const reread = () => (ask.kind === 'seller' ? rereadSellers(ask.ids.map(dbId)) : rereadBuyers(ask.ids.map(dbId)));
         if (dealsToo) {
           const r2 = await archiveDeals(ask.deals.map((d) => dbId(d.id)), true, 'Seller archived');
-          if (!r2.ok) { reload?.(); return toast(`${who} archived, but their deals were not: ${r2.message || 'that did not save.'}`, 'error'); }
+          if (!r2.ok) { reread(); return toast(`${who} archived, but their deals were not: ${r2.message || 'that did not save.'}`, 'error'); }
         }
         if (ask.kind === 'seller') set((st) => ({ peopleSel: Object.fromEntries(Object.entries(st.peopleSel).filter(([id]) => !ask.ids.includes(id))) }));
         else setRealtorPage((pg) => ({ ...pg, rows: pg.rows.filter((b) => !ask.ids.includes(b.id)) }));
         moveOn();
-        reload?.();
+        reread();
         toast(`Archived ${who}${dealsToo ? ` and ${ask.deals.length === 1 ? 'their deal' : `${ask.deals.length} deals`}` : ''}`, 'success');
       })();
     };
     const phoneUp = s.isMobile && (!!incomingV || (s.dialerOpen && !s.phoneMin));
     const phoneCallMin = s.isMobile && s.phoneMin && s.dialerOpen && callState !== 'idle' && !incomingV;
 
-    return {
+    perfLap('leaderboard');
+    const vm = {
       ready: true,
       // Self-contained screens (the plan builder, the calendar) reach a
       // workspace re-read and record click-through here; the toast is `showToast`.
@@ -9855,7 +10871,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       isHome: s.screen === 'home', isPeople: s.screen === 'people', isPerson: s.screen === 'person',
       isToday: s.screen === 'today',
       // Today: the list, the seller in view, the rail's picker, and the one outcome save.
-      today, outcomeTarget,
+      today, todayBand, outcomeTarget,
       /** Today is the dialer on a desk: the slide-out stands down there unless the call is one Today cannot wrap up. */
       todayHidesDialer: s.screen === 'today' && !s.isMobile && today.ownsCall,
       isDeals: s.screen === 'deals', isDispo: s.screen === 'dispo', isContracts: s.screen === 'contracts',
@@ -9996,13 +11012,17 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
 
       // people
       smartLists, operationalLists, submissionNav, customLists, peopleList: s.peopleList,
+      /** Leads or Submissions on the rail; Partnerships sees Submissions only and gets no switch. */
+      peopleSide, setPeopleSide, peopleSideSwitch: sellerSide, peopleListSide: listSide,
+      peopleSideCounts: { leads: people.length, submissions: countFor('Total Submissions') },
       dropSmartList, pinSmartList,
       recordListPos: (() => {
         const at = peopleFiltered.findIndex((p) => p.id === openRow);
         return at >= 0 ? `${at + 1} of ${peopleFiltered.length}` : '';
       })(),
-      peopleCount: peopleFiltered.length, peopleQ: s.peopleQ,
-      listNoun: showingSubmissions ? 'submissions' : 'people',
+      // The server's count when the list is paged (one page is drawn), else the rows.
+      peopleCount: paged ? peoplePage.total : peopleFiltered.length, peopleQ: s.peopleQ,
+      listNoun: submissionLabels.has(s.peopleList) ? 'submissions' : 'people',
       /** Podio items on this list with no CLOZR deal to show: counted in Podio's number, not listed. */
       podioOnlyNote: [
         podioOutside ? `· ${podioOutside} in Podio only (test entries, no address, or matching more than one house)` : '',
@@ -10050,13 +11070,36 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       saveSmartList, closeSmartList, commitSmartList, smartListOpen: s.smartListOpen,
       suggestedListName,
       smartListTeam: Object.values(D.team).map((r) => ({ id: r.id, name: r.name, me: r.id === ME })),
+      /** The signed-in rep's name, as the Owner filter spells it (the People header's Everyone / Me switch). */
+      ownerMeName: repName(ME),
       peopleCursor, moveInList, moveOpenRecord, moveSmartList, shiftStage,
       /** Enter on the People list: open the row the arrows are on. */
       openPeopleCursor: () => { const p = peopleFiltered[peopleCursor]; if (p && !isVendorList) openListed(p); },
-      /** Ctrl+A on the People list: check every row in it, the way select-all works in any table. */
+      /** Ctrl+A on the People list: check every row in it (one page when the list is server-paged), the way select-all works in any table. */
       selectAllPeople: () => {
         if (!selectable.length) return;
         set({ peopleSel: Object.fromEntries(selectable.map((p) => [p.id, true])) });
+      },
+      /**
+       * Server-side paging (lib/people-page.ts). `on` false: the whole list is
+       * in memory and drawn as before, so a pager can hide. `total` is the
+       * server's count when on, else the rows' length.
+       */
+      peoplePage: {
+        on: paged, page: peoplePageNo, pageSize: PEOPLE_PAGE_SIZE,
+        total: paged ? peoplePage.total : listLen,
+        pages: paged ? Math.max(1, Math.ceil(peoplePage.total / PEOPLE_PAGE_SIZE)) : 1,
+        loading: paged && peoplePage.loading, error: pageSpec ? peoplePage.error : null,
+        setPage: (n: number) => { setPeoplePageNo(Math.max(0, Math.floor(n))); set({ peopleCursor: 0, cursorList: s.peopleList, peopleSel: {} }); },
+        next: () => { if (paged && (peoplePageNo + 1) * PEOPLE_PAGE_SIZE < peoplePage.total) { setPeoplePageNo(peoplePageNo + 1); set({ peopleCursor: 0, cursorList: s.peopleList }); } },
+        prev: () => { if (peoplePageNo > 0) { setPeoplePageNo(peoplePageNo - 1); set({ peopleCursor: 0, cursorList: s.peopleList }); } },
+        refetch: peoplePage.refetch,
+        /** "Select all N matching": every id the filters match, checked, so the bulk bar acts on the whole list, not the page. */
+        selectAllMatching: async () => {
+          const ids = paged ? await peoplePage.matchingIds() : selectable.map((p) => p.id);
+          set({ peopleSel: Object.fromEntries(ids.map((id) => [id, true])) });
+          return ids.length;
+        },
       },
       /** A list People can be put back on after a reload: it still exists and this role may open it (lib/people-memory). */
       peopleListKnown: (l: string) => {
@@ -10076,6 +11119,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       /** The record's breadcrumb: back to the list the rep was on (a prospect list, the last import), not always the main one. */
       backToBuyers: () => backFor('buyers').go(),
       setBuyerList, buyerCursor, moveBuyerInList, moveOpenBuyer, moveBuyerList,
+      /** A clicked row becomes the cursor, so Back from the buyer lands on it instead of the top. */
+      setBuyerCursor: (i: number) => set({ buyerCursor: i, buyerCursorList: buyerList }),
       buyerQ: s.buyerQ, setBuyerQ: (q: string) => { setRealtorOffset(0); set({ buyerQ: q, buyerCursor: 0, buyerCursorList: s.buyerList }); },
       realtorCorpusTotal, realtorMatchTotal: realtorPage.total, realtorOffset, realtorPageSize: REALTOR_PAGE, realtorMarkets,
       realtorLoading: realtorPage.loading,
@@ -10084,7 +11129,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       buyerGeniusOnly: s.buyerGeniusOnly, setBuyerGeniusOnly: (on: boolean) => set({ buyerGeniusOnly: on, buyerCursor: 0, buyerCursorList: s.buyerList }),
       buyerNavRows,
       /** How well each buyer matched the search (lib/list-search), lower first; null with no search. */
-      buyerSearchRanks: buyerSearch && !onRealtors ? buyerRanks : null,
+      buyerSearchRanks: buyerSearch && !onRealtors ? buyerSearchView.ranks : null,
       peopleRows, hasSelection: selectionCount > 0, selectionCount, massActions, peopleBulk,
       blacklistSelection: {
         count: isVendorList ? 0 : selectedIds.length,
@@ -10109,7 +11154,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         asking: P.asking,
         // No score and no Talkr temperature shows a dash, not "0 COLD".
         score: P.score ?? (leadTemp(P) ? '' : '—'), scoreLabel: leadTemp(P),
-        scoreColor: P.score != null ? scoreColor(P.score) : leadTemp(P) ? tempColor(leadTemp(P)) : '#a1a1aa',
+        scoreColor: P.score != null ? scoreColor(P.score) : leadTemp(P) ? tempColor(leadTemp(P)) : 'var(--subtle, #a1a1aa)',
         scoreLine: [P.score ?? '', leadTemp(P)].filter((x) => x !== '').join(' '),
         assigned: repName(P.assigned), assignedInit: repInit(P.assigned),
         assignedId: P.assigned || '',
@@ -10144,7 +11189,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         })),
         addr: P.property.addr, cityLine: P.property.city + ', ' + P.property.st + ' ' + P.property.zip,
         /** Where a skip trace looks the owner up: the property, when it has a street and ZIP. */
-        traceAddress: P.property.addr && P.property.addr !== '—' && /^\d{5}/.test(P.property.zip || '') ? { address: P.property.addr, city: P.property.city, state: P.property.st, zip: P.property.zip.slice(0, 5) } : null,
+        traceAddress: P.property.addr && P.property.addr !== '—' && (P.property.zip?.replace(/\D/g, '').length >= 5 || (P.property.city && P.property.st))
+          ? { address: P.property.addr, city: P.property.city, state: P.property.st, zip: (P.property.zip ?? '').replace(/\D/g, '').slice(0, 5) }
+          : null,
         img: P.property.img, apn: P.property.apn,
         imgSafe: houseOf(P, (focusDeal || photoDealOf(P))).img,
         streetSafe: houseOf(P, (focusDeal || photoDealOf(P))).street,
@@ -10156,7 +11203,25 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         offer: P.offer || 'No offer yet', offerStatus: live ? (P.offer ? 'On the deal' : 'Log one from the underwriting') : P.offer ? 'Sent · viewed 3×' : 'Build from COMPR',
         contract: contractStatus,
         nextTask: P.nextTask, market: P.market,
+        // The deal page's Property details card reads these beside the house facts.
+        motivation: P.motivation, condition: P.condition, occupancy: P.occupancy, timeline: P.timeline,
       },
+      propertyUwTriage: (() => {
+        const d = focusDeal ?? recDealOf(P.id);
+        if (!d) return null;
+        const bucket = uwTriageOfDeal(d, P);
+        if (!bucket) return null;
+        const who = personForUwTriage(P, d);
+        const noPhotos = !hasSubmitterPhotos(
+          { sourcePhotos: d.sourcePhotos, photosUrl: d.photosUrl, photos: d.photos },
+          who,
+        );
+        return {
+          bucket,
+          label: UW_TRIAGE_LABEL[bucket],
+          hint: uwTriageHint(bucket, askShortfallPct(d.asking, d.institutional), noPhotos),
+        };
+      })(),
       /** The workspace's members, for RepPicker. */
       team: D.team,
       /** Why this record reads as text: a live workspace this user can't write to. Null when they can edit. */
@@ -10189,20 +11254,21 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       outcomeDrips: plansForRecord(plans, 'seller').filter((pl) => pl.active).map((pl) => ({ id: pl.id, name: pl.name })),
       personFields, propFacts, personTabs, isCommsTab, isTcTab, isFilesTab, isFeedTab, composerTabs, composerTab: s.composerTab,
       // An email thread is one card: the newest message, the rest folded behind it.
-      timelineItems: foldEmailThreads(timelineItems.filter((t) => s.recordUser === 'Any' || t.actor === s.recordUser)),
+      timelineItems: foldEmailThreads(filterActivityByUser(timelineItems, s.recordUser)),
       reachFeed,
-      pinnedItems: timelineItems.filter((t) => t.pinned).map((t) => ({ ...t, earlier: [] as typeof timelineItems })),
+      pinnedItems: filterActivityByUser(timelineItems, s.recordUser).filter((t) => t.pinned).map((t) => ({ ...t, earlier: [] as typeof timelineItems })),
       pinsOpen: s.pinsOpen, togglePins: () => set((st) => ({ pinsOpen: !st.pinsOpen })),
       mentionTeam: Object.values(D.team).filter((r) => r.id !== ME).map((r) => ({ id: r.id, name: r.name })),
-      setComposerText: (v: string) => set({ composerText: v }),
+      setComposerText,
       timelineUserMenu: mkMenu('recordUser', 'User',
-        ['Any', ...Array.from(new Set(timelineItems.map((t) => t.actor))).filter((a) => a !== 'System'), 'System'],
+        ['Any', ...Array.from(new Set(timelineItems.flatMap((t) => [t.actor, t.toRep].filter((x): x is string => !!x)))).filter((a) => a !== 'System'), 'System'],
         s.recordUser, (v) => set({ recordUser: v })),
       composerPlaceholder: s.composerTab === 'Note'
         ? 'Add a note about ' + P.name.split(' ')[0] + '…'
         : s.composerTab === 'Email' ? 'Email ' + P.name.split(' ')[0] + '…' : 'Send ' + P.name.split(' ')[0] + ' a message…',
-      composerText: s.composerText,
-      setComposer: (e: React.ChangeEvent<HTMLTextAreaElement>) => set({ composerText: e.target.value }),
+      // The text itself is read with useComposerText (composerStore), not from here:
+      // a keystroke re-renders the input, not the view model.
+      setComposer: (e: React.ChangeEvent<HTMLTextAreaElement>) => setComposerText(e.target.value),
       // `opts.subject`: the record composer's Subject line for an email. Called
       // straight from onClick too, so anything that is not { subject } is ignored.
       // The docked quick box (QuickReach) hands over its own `body`, `personId`
@@ -10212,10 +11278,11 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       // person, so a box left open on Ann sent Bob's record composer to Ann.
       // Resolves true once the send or save has landed.
       send: (opts?: unknown): Promise<boolean> => {
-        const o = (opts && typeof opts === 'object' ? opts : {}) as { subject?: unknown; body?: unknown; personId?: unknown; channel?: unknown };
+        const o = (opts && typeof opts === 'object' ? opts : {}) as { subject?: unknown; body?: unknown; personId?: unknown; channel?: unknown; text?: unknown };
         const subjectIn = typeof o.subject === 'string' ? o.subject.trim() : '';
         const quickPid = typeof o.body === 'string' && typeof o.personId === 'string' ? o.personId : null;
-        const body = (quickPid ? o.body as string : s.composerText).trim();
+        // `text`: the record composer's box as it stands, which reaches composerText a beat late.
+        const body = (quickPid ? o.body as string : typeof o.text === 'string' ? o.text : getComposerText()).trim();
         const fail = (msg: string, tone?: ToastTone) => { toast(msg, tone); return Promise.resolve(false); };
         if (!body) return fail('Type a message first');
         const tab = quickPid ? (o.channel === 'email' ? 'Email' : 'Text') : s.composerTab;
@@ -10245,7 +11312,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         };
         // The record composer empties at once, ready for the next message; the
         // quick box keeps its text until the send lands, and closes itself then.
-        set((prev) => (quickPid ? { newComms: [...prev.newComms, nc] } : { composerText: '', newComms: [...prev.newComms, nc] }));
+        set((prev) => ({ newComms: [...prev.newComms, nc] }));
+        if (!quickPid) setComposerText('');
         if (!canWrite) {
           toast(tab === 'Note' ? 'Note added to ' + target.name : tab + ' sent to ' + target.name + ' (demo)');
           return Promise.resolve(true);
@@ -10258,20 +11326,29 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           set((prev) => ({ newComms: prev.newComms.filter((c) => c.id !== nc.id) }));
           if (quickPid) return;
           restoreDraft('record:' + target.id, body);
-          set((prev) => (prev.personId === target.id ? { composerText: withRestored(prev.composerText, body) } : {}));
+          if (sRef.current.personId === target.id) setComposerText(withRestored(getComposerText(), body));
         };
         const failed = (msg: string) => { dropEntry(); toast(msg, 'error'); return false; };
+        // Sent or saved: the re-read brings the real row (its own id), so the
+        // optimistic one goes once that lands. Kept, every send showed twice
+        // on the timeline, and a note's @mentions with it. The feed is read
+        // first and handed over together with the seller refresh and the
+        // optimistic row's removal, so the row never vanishes and comes back,
+        // and the view rebuilds once for the lot rather than three times.
+        const settle = () => loadFeed().then((feed) => refreshPerson(target.id).then(() => {
+          if (feed && feed.pid === target.id) applyFeedRows(feed.pid, feed.rows);
+          set((prev) => ({ newComms: prev.newComms.filter((c) => c.id !== nc.id) }));
+        }));
         // A text and an email leave the building; a note does not. Only the
         // answer from whatever carried it (Talkr for a text, the rep's own
         // Gmail for an email) decides what the toast says — this used to
         // announce "Text sent" and "Email sent" whether or not anything was.
         if (tab === 'Text') {
           toast('Sending to ' + target.name.split(' ')[0] + '…');
-          return textMany(workspaceId, [recipientOf(target.id)].filter((r) => r !== null), body, textCtx)
+          return textMany(workspaceId, [recipientOf(target.id)].filter((r) => r !== null), body, { ...textCtx, carrier: 'reply' })
             .then((rs) => {
               const none = rs.every((x) => x.status === 'failed' || x.status === 'skipped');
-              if (none) dropEntry();
-              refreshPerson(target.id);
+              if (none) { dropEntry(); refreshPerson(target.id); } else void settle();
               toast(sendSummary(rs), none ? 'error' : 'success');
               return !none;
             }, (e: unknown) => failed(e instanceof Error ? e.message : 'Could not send that text.'));
@@ -10287,7 +11364,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
               if (!r.ok || !r.data.connected || !r.data.ok) {
                 return failed(!r.ok ? r.message : !r.data.connected ? 'Connect Gmail in Settings to send email.' : r.data.message ?? 'Gmail refused that send.');
               }
-              refreshPerson(target.id);
+              void settle();
               toast('Email sent to ' + target.name + (r.data.tracked ? ' · read receipt on' : ''), 'success');
               return true;
             }, (e: unknown) => failed(e instanceof Error ? e.message : 'Could not send that email.'));
@@ -10300,7 +11377,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           direction: 'outbound', body,
         }).then((r) => {
           if (!r.ok) return failed(r.message || 'Could not save that message.');
-          refreshPerson(target.id);
+          void settle();
           toast('Note added to ' + target.name, 'success');
           return true;
         }, (e: unknown) => failed(e instanceof Error ? e.message : 'Could not save that note.'));
@@ -10308,10 +11385,10 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       aiRewriteAvailable: !live,
       saveSellerField,
       // A scripted rewrite about a sample seller's close date; not something to put in a real text.
-      aiRewrite: () => (live ? toast('AI rewrite is not connected on this workspace yet.') : set({
-        composerText: 'Hi ' + P.name.split(' ')[0] + ', following up on our call — I can guarantee your Sept 30 close date '
+      aiRewrite: () => (live ? toast('AI rewrite is not connected on this workspace yet.') : setComposerText(
+        'Hi ' + P.name.split(' ')[0] + ', following up on our call — I can guarantee your Sept 30 close date '
           + 'and cover moving costs. Revised written offer is on its way before 2 PM. Any questions in the meantime, text me here.',
-      })),
+      )),
       personTasks, personQuickAdds, stageOptions, aiStage,
       // Open in COMPR: the deal's report in the COMPR window beside CLOZR
       // (lib/compr-window.ts), underwritten first when COMPR has never run it.
@@ -10362,6 +11439,10 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         pullBack: () => {
           const w = comprWindowDeal();
           if (w) pullComprDeal(w.dealId);
+          // The open record's own report too, at most every 30s: a COMPR tab
+          // opened by hand, or a teammate's edit, used to wait for a reload.
+          const open = live && canWrite && comprDeal && comprLeadIdOfDeal(comprDeal) ? comprDeal.id : null;
+          if (open && open !== w?.dealId) pullComprDeal(open, 30_000, comprCheckOnly(P.stage));
         },
         pull: pullComprDeal,
         /**
@@ -10370,7 +11451,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
          * checks the report has the record's photos.
          */
         pullOnOpen: live && canWrite && comprDeal && comprLeadIdOfDeal(comprDeal) ? comprDeal.id : null,
-        pullCheckOnly: !UNDERWRITING_STAGES.has(P.stage),
+        pullCheckOnly: comprCheckOnly(P.stage),
       },
       /** The record is one of a partner's submissions (opened from a submission row); null on a plain record. */
       submissionFocus: focusDeal ? {
@@ -10381,6 +11462,40 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         showAll: () => go('people', { peopleList: 'Total Submissions', subPartner: { id: P0.id, name: P0.name }, peopleQ: '', personDealId: null, peopleSel: {} }),
         openDealSheet: () => go('dealSheet', { personId: P0.id, dealSheetDealId: focusDeal.id }),
       } : null,
+      /**
+       * What the record came in with, for its Submission tab: a partner's
+       * submission (opened from a submission row), a deal an intake made
+       * (deals.submitted_at), or a disposition form's answers (sellers.intake,
+       * migration 93). Null on a lead that came in any other way.
+       */
+      recordSubmission: (() => {
+        const d = focusDeal ?? recDealOf(P.id) ?? null;
+        const bag = P0.intake && typeof P0.intake === 'object' && !Array.isArray(P0.intake) ? P0.intake : null;
+        const said = (v: unknown) => v != null && typeof v !== 'object' && String(v).trim() !== '' && String(v).trim() !== '—';
+        const hasForm = !!bag && Object.values(bag).some(said);
+        if (!focusDeal && !d?.submittedAt && !hasForm) return null;
+        const iso = d?.submittedAt ?? (focusDeal ? focusDeal.createdAt : null) ?? P0.createdAt ?? null;
+        const t = iso ? Date.parse(iso) : NaN;
+        return {
+          /** Who sent it in: the partner contact on a submission, else the seller. */
+          from: P0.name,
+          fromPartner: !!focusDeal,
+          vendors: (d?.vendorSellers ?? []).map((v) => (v.company && v.company !== v.name ? `${v.name} · ${v.company}` : v.name)).filter(Boolean),
+          submitted: Number.isFinite(t)
+            ? new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            : P0.created && P0.created !== '—' ? P0.created : null,
+          leadStage: d?.leadStage ?? null,
+          source: d?.tracker?.leadSource || P0.source || null,
+          asking: d?.asking ?? null,
+          offer: d?.contract ?? null,
+          targetAssignment: d?.targetAssignment ?? null,
+          owner: d?.owner ? repName(d.owner) : null,
+          underwriter: d?.underwriter ? repName(d.underwriter) : null,
+          comprReportUrl: d?.comprReportUrl ?? null,
+          notes: bag && said(bag.notes) ? String(bag.notes).trim() : null,
+          hasForm,
+        };
+      })(),
       quickReach: s.quickReach,
       reachPerson: (() => {
         const id = s.quickReach?.personId;
@@ -10488,6 +11603,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       // ---- The rebuilt record (release 4) ----
       personTab: s.personTab, setPersonTab: (t: string) => set({ personTab: t }),
       recordChips,
+      /** Settings › Try new design: the deal page and the new desk Dialer. Off by default. */
+      newDesign,
+      setNewDesign: (on: boolean) => writeNewDesign(me, on),
       /** "SMS · 42 minutes ago": the last call, text or email either way. */
       lastTouch: P.lastComm,
       /** The deal has a TC file (a transactions row); More › Closing file shows it. */
@@ -10511,7 +11629,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         });
       },
       offerCard: (() => {
-        const d = live ? recDealOf(P.id) : undefined;
+        // The deal COMPR writes to, when it has a report: reading another of
+        // the seller's deals left the card on numbers COMPR never touched.
+        const d = live ? (comprDeal && comprLeadIdOfDeal(comprDeal) ? comprDeal : recDealOf(P.id)) : undefined;
         const m = live ? d?.mao ?? null : mao;
         const band = live
           ? offerBand({ mao: m, low: d?.wholesale, high: d?.institutional, lowSet: d?.lowSet, highSet: d?.highSet })
@@ -10620,12 +11740,16 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       openTalkrRecord: () => (!TC.who.id ? toast('No CRM record for this number yet') : TC.isBuyer ? openBuyer(TC.who.id) : openPerson(TC.who.id)),
       sendTalkr: () => {
         if (!talkrLive) return sendToThread('talkr:' + TC.id, 'SMS sent to ' + TC.name);
-        const text = s.composerText.trim();
+        const text = getComposerText().trim();
         if (!text) return toast('Type a message first');
         // The thread carries only a conversation id; the CRM record behind it is the one to check.
         if (isBlacklisted(TC.who as Contactable | undefined)) return toast(BLACKLIST_MESSAGE, 'error');
-        void phone.sendSms({ conversation_id: TC.id, body: text }).then((ok) => {
-          if (ok) set({ composerText: '' });
+        // The record behind the thread, so the text is filed on it with who sent it and from which line.
+        const record = TC.who.id && /^[sb]\d+$/.test(TC.who.id)
+          ? (TC.isBuyer ? { buyerId: dbId(TC.who.id) } : { sellerId: dbId(TC.who.id) })
+          : undefined;
+        void phone.sendSms({ conversation_id: TC.id, body: text, record }).then((ok) => {
+          if (ok) clearComposerIf(text);
           toast(ok ? 'SMS sent to ' + TC.name : phone.data.error ?? 'Could not send', ok ? 'success' : 'error');
         });
       },
@@ -10643,7 +11767,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       inventoryCols: ['Property', 'Market', 'Contract', 'ARV', 'Spread', 'On market', 'Buyer matches', 'Campaign', 'Offers', 'Best offer', 'Option', 'Dispo rep', 'Status'],
       talkrFolders, talkrFolder: s.talkrFolder, talkrConvs, TC, talkrMsgs,
       callState, isIdle: callState === 'idle', isLive: callState === 'live', isWrap: callState === 'wrap',
-      callClock, transcript, dialerOpen: s.dialerOpen, dialerTabs, dialerTab: s.dialerTab,
+      callTimer, callDuration, transcript, dialerOpen: s.dialerOpen, dialerTabs, dialerTab: s.dialerTab,
       isDial: s.dialerTab === 'Dial', isQueue: s.dialerTab === 'Queue',
       isRecent: s.dialerTab === 'Recent', isVoicemail: s.dialerTab === 'Voicemail',
       dialNumber: s.dialNumber,
@@ -10654,12 +11778,100 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       talkrAuthed: talkrLive,
       // A number from the Talkr dialer or the inbox: the call carries the CLOZR
       // record behind it, so the context panel and wrap-up land on that record.
-      dialE164: (e164: string) => startCall(dialerRecordFor(e164)?.target ?? { name: formatPhone(e164), phone: e164 }),
+      // `name`: who the dial box's lookup found (a vendor, or someone not loaded), so the call still carries it.
+      // `who`: the seller or buyer it picked (lib/dial-lookup dialTarget), kept for one of their other numbers too.
+      dialE164: (e164: string, name?: string, who?: Pick<CallTarget, 'personId' | 'buyerId' | 'phoneId'> | null) =>
+        startCall(who?.personId || who?.buyerId
+          ? { name: name || formatPhone(e164), phone: e164, personId: who.personId ?? null, buyerId: who.buyerId ?? null, phoneId: who.phoneId ?? null }
+          : dialerRecordFor(e164)?.target ?? { name: name || formatPhone(e164), phone: e164 }),
       // A phone number shown in a list (People, Deals, Buyers). It used to be a
       // plain tel: link, which on a desktop rang through whatever the OS had
       // — no do-not-call check, and nothing logged. This is click-to-call.
       callPhone: (number: string) => startCall(dialerRecordFor(number)?.target ?? { name: number, phone: number }),
-      dialerRecordFor, callRecord,
+      dialerRecordFor, dialerContacts, dialerSees, callRecord, dialerTextsFor, dialerEmailFor,
+      callProfile, createFromCallProfile, addCallProfileToBuyBox,
+      // The dialer's Create profile card: the number on screen becomes a seller,
+      // buyer, agent, wholesaler or vendor, with the phone already filled in.
+      addProfile: (kind: 'seller' | 'buyer' | 'agent' | 'wholesaler' | 'vendor', phone: string) => {
+        const ph = phone ? formatPhone(phone) : '';
+        if (kind === 'seller' || kind === 'buyer') openAdd(kind, ph ? { phone: ph } : {});
+        else openAdd('vendor', { ...(ph ? { phone: ph } : {}), ...(kind === 'agent' ? { kind: 'Realtor' } : kind === 'wholesaler' ? { kind: 'Wholesaler' } : {}) });
+      },
+      /**
+       * Request contract (lib/contract-request): the seller or buyer on the
+       * call, or behind `phone` before one, with the money and the call so far.
+       * Built when the popup opens, not on every render.
+       */
+      contractRequestFor: (phoneNumber?: string | null): RequestContext => {
+        const byPhone = phoneNumber ? dialerRecordFor(phoneNumber)?.target ?? null : null;
+        const t = byPhone ?? s.callTarget;
+        const p = t?.personId ? person(t.personId) : undefined;
+        const b = !p && t?.buyerId ? buyer(t.buyerId) : undefined;
+        const numeric = (id: string | undefined | null) => (id && /^\D*\d+$/.test(id) ? dbId(id) : null);
+        const dollars = (v: string | number | null | undefined) => (typeof v === 'number' ? v : parseDollars(v ?? '').value);
+        let record: RequestContext['record'] = null;
+        if (p) {
+          const d = dealOf(p.id);
+          const pr = p.property;
+          record = {
+            side: 'seller', sellerId: numeric(p.id), buyerId: null, dealId: numeric(d?.id),
+            name: p.name, phone: p.phone, email: p.email || '',
+            address: [pr.addr, pr.city, [pr.st, pr.zip].filter(Boolean).join(' ')].filter((x) => x && x !== '—').join(', '),
+            offer: d?.contract ?? dollars(p.offer),
+            // The Acme Homes rule on the sample deal (70% of ARV, less rehab and the fee) when no MAO is saved.
+            mao: d?.mao ?? (!live && d?.arv ? Math.round(d.arv * 0.7 - (d.rehab ?? 0) - 22000) : null),
+            asking: dollars(p.asking), desiredClose: p.desiredClose || '',
+          };
+        } else if (b) {
+          // The deal the call is about when it is this buyer's, else their best live one; more than one live deal gets a picker.
+          const { deal: d, live: liveDeals } = pickBuyerDeal(deals, b.id, t?.dealId, rankOf);
+          const dealFor = (x: Deal): RequestDeal => {
+            const seller = x.personId ? person(x.personId) : undefined;
+            return {
+              key: x.id, dealId: numeric(x.id),
+              address: addressLine(x.addr || seller?.property.addr, x.city || seller?.property.city, x.st || seller?.property.st, x.zip || seller?.property.zip),
+              offer: x.contract != null ? x.contract + (x.assignment ?? 0) : null, desiredClose: x.close ?? '',
+            };
+          };
+          const chosen = d ? dealFor(d) : null;
+          record = {
+            side: 'buyer', sellerId: null, buyerId: numeric(b.id), dealId: chosen?.dealId ?? null,
+            name: b.company && b.company !== '—' ? `${b.name} (${b.company})` : b.name, phone: b.phone, email: b.email && b.email !== '—' ? b.email : '',
+            address: chosen?.address ?? '', offer: chosen?.offer ?? null, mao: null, asking: null, desiredClose: chosen?.desiredClose ?? '',
+            ...(liveDeals.length > 1 && d ? { deals: [d, ...liveDeals.filter((x) => x !== d)].map(dealFor) } : {}),
+          };
+        }
+        const call = phone.sp.call;
+        return {
+          record,
+          // A number with no seller or buyer record: the dialog still fills its phone (and name, when the dialer has one).
+          caller: !record && t?.phone ? { name: t.name ?? '', phone: t.phone } : null,
+          callId: phoneEnabled && call && call.id !== 'unknown' && callState !== 'idle' ? call.id : null,
+          requesterId: live ? me : ME,
+          requesterName: rep(ME)?.name ?? 'You',
+          transcript: transcript.map((l) => ({ who: l.who, text: l.text })),
+          summary: phoneEnabled ? phone.summary?.summary ?? null
+            : callState === 'wrap' ? 'Seller values speed and certainty over maximum price. Has a competing verbal at $235K with a 60-day close and inspection. Needs moving costs covered; must be out before Sept 30.' : null,
+          demo: !live,
+        };
+      },
+      /** The teammates a contract request can go to (lib/contract-request tcRecipients). */
+      requestTeam: Object.values(D.team).map((r) => ({ id: r.id, name: r.name, memberRole: r.memberRole ?? null, role: r.role, dept: r.dept ?? null })),
+      /** Who is asking: the signed-in member, or the sample data's rep. */
+      requestMe: (live ? me : ME) ?? null,
+      /** Contracts, from a contract request: the screen where the role has it, else the popup. */
+      goContracts: () => {
+        const nav = () => (canSee(role, 'contracts') ? go('contracts') : set({ contractsOpen: true, notifOpen: false }));
+        if (!(s.isMobile && phoneUp)) return nav();
+        // The full-screen phone would cover it: tuck the call into its pill
+        // first. It leaves with a history.back(), so move once that has landed.
+        minimisePhone();
+        let done = false;
+        const run = () => { if (done) return; done = true; window.removeEventListener('popstate', onPop); nav(); };
+        const onPop = () => window.setTimeout(run, 0);
+        window.addEventListener('popstate', onPop);
+        window.setTimeout(run, 600);
+      },
       talkrPhone: phone, phoneEnabled,
       // A phone has no dialer screen to go to: the full-screen phone is it.
       goDialer: () => (s.isMobile ? openPhone('Dial') : go('dialer', { dialerOpen: false })),
@@ -10708,7 +11920,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       // The same, by E.164 or email, with the database id and the merge-field
       // values the inbox composers and templates fill in. A seller wins over a buyer.
       recordForContact: (() => {
-        type Rec = { kind: 'seller' | 'buyer'; id: number; name: string; address: string; stage: string; open: () => void; recipient: Recipient };
+        type Rec = { kind: 'seller' | 'buyer'; id: number; name: string; address: string; stage: string; open: () => void; recipient: Recipient; score: number | null; rep: string | null };
         // Built on first lookup, not on every render: it walks every contact.
         let idx: Map<string, Rec> | null = null;
         const byId = new Map<string, Rec>();
@@ -10717,7 +11929,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           const put = (keys: string[], r: Rec) => { byId.set(r.kind + ':' + r.id, r); for (const k of keys) if (k) m.set(k, r); };
           for (const b of buyers) {
             put([toE164(b.phone) ?? '', (b.email ?? '').trim().toLowerCase()], {
-              kind: 'buyer', id: dbId(b.id), name: b.name, address: '', stage: b.status, open: () => openBuyer(b.id),
+              kind: 'buyer', id: dbId(b.id), name: b.name, address: '', stage: b.status, open: () => openBuyer(b.id), score: null, rep: null,
               recipient: { sellerId: null, buyerId: dbId(b.id), name: b.name, phone: b.phone || null, email: b.email },
             });
           }
@@ -10727,6 +11939,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
             put([toE164(p.phone) ?? '', (p.email ?? '').trim().toLowerCase()], {
               kind: 'seller', id: dbId(p.id), name: p.name, stage: p.stage, open: () => openPerson(p.id),
               address: [p.property.addr, p.property.city, p.property.st].filter(Boolean).join(', '),
+              // The Inbox's Info tab and heat chip (screens/Inbox.tsx).
+              score: p.score, rep: p.assigned ? repName(p.assigned) : null,
               recipient: {
                 sellerId: dbId(p.id), name: p.name, phone: p.phone || null, email: p.email,
                 address: p.property.addr, city: p.property.city, state: p.property.st, zip: p.property.zip,
@@ -10803,7 +12017,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
             }
             reload?.();
           } else if (canWrite && task && workspaceId) {
-            const t = await createTask(workspaceId, { title: `${task} — ${target?.name ?? 'call'}`, type: 'Call', due: followUp ?? 'today' }, me);
+            // A buyer call (Compr) files the follow-up on the buyer, so it opens the record.
+            const buyerId = target?.buyerId ?? '';
+            const t = await createTask(workspaceId, { title: `${task} — ${target?.name ?? 'call'}`, type: 'Call', due: followUp ?? 'today', ...(buyerId ? { buyerId } : {}) }, me);
             if (t.ok) done.push('task created');
             reload?.();
           }
@@ -10815,13 +12031,13 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       toggleMute: () => (phoneEnabled ? sp.toggleMute() : set({ muted: !s.muted })),
       toggleHold: () => (phoneEnabled ? void sp.toggleHold() : set({ hold: !s.hold })),
       muted, hold,
-      muteBg: muted ? '#18181b' : '#fff', muteColor: muted ? '#fff' : '#18181b',
-      holdBg: hold ? '#18181b' : '#fff', holdColor: hold ? '#fff' : '#18181b',
+      muteBg: muted ? 'var(--ink, #18181b)' : 'var(--surface, #fff)', muteColor: muted ? 'var(--surface, #fff)' : 'var(--ink, #18181b)',
+      holdBg: hold ? 'var(--ink, #18181b)' : 'var(--surface, #fff)', holdColor: hold ? 'var(--surface, #fff)' : 'var(--ink, #18181b)',
       rec: s.rec, ai: s.ai,
       recLocked: phoneEnabled,
       toggleRec: () => (phoneEnabled ? toast('Talkr records every call, dual-channel, with consent handled by the carrier flow') : set({ rec: !s.rec })),
       toggleAiRec: () => set({ ai: !s.ai }),
-      recBg: s.rec ? '#0A8560' : '#e4e4e7', aiBg: s.ai ? '#0A8560' : '#e4e4e7',
+      recBg: s.rec ? '#0A8560' : 'var(--divider, #e4e4e7)', aiBg: s.ai ? '#0A8560' : 'var(--divider, #e4e4e7)',
       recX: s.rec ? '14px' : '2px', aiX: s.ai ? '14px' : '2px',
       callTargetLine: callTarget.phone,
       callerIds: ['(210) 555-0100 · San Antonio', '(214) 555-0100 · Dallas', '(713) 555-0100 · Houston'],
@@ -10855,25 +12071,30 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       ],
       talkrStatus: phoneEnabled ? phone.data.status : 'demo',
       talkrError: phone.data.error ?? sp.deviceError ?? sp.controlError,
-      liveStatusLine: phoneEnabled
-        ? (sp.phase === 'in_call' ? `Live · ${callClock} · recording` : sp.phase === 'ringing' ? 'Ringing…' : sp.phase === 'connecting' ? 'Connecting…' : `Live · ${callClock}`)
-        : `Live · ${callClock} · recording`,
       listeningLabel: !phoneEnabled ? '● listening'
         : !s.ai ? 'transcription off'
           : phone.tx.status === 'listening' ? '● listening'
             : phone.tx.status === 'armed' ? 'waiting for a conversation'
             : phone.tx.status === 'error' ? (phone.tx.error ?? 'transcript unavailable')
               : sp.phase === 'in_call' ? '● connecting' : 'waiting for answer',
-      suggestedResponse: !phoneEnabled
+      suggestedResponse: demoBuyerCall
+        ? '"Pecan Street fits that range. I can email you the photos and numbers now."'
+        : !phoneEnabled
         ? '"Totally fair. Besides price, what would make one offer easier for you to move forward with today?"'
         : phone.intel ? `"${phone.intel.suggested_response}"` : (s.ai ? (phone.intelBusy ? 'Listening…' : 'Suggestions appear after the seller’s first few sentences.') : 'Turn on AI transcription to get suggestions.'),
-      nextBestQuestion: !phoneEnabled
+      nextBestQuestion: demoBuyerCall
+        ? '"Do you buy off photos, or do you need a walkthrough first?"'
+        : !phoneEnabled
         ? '"If we cover moving costs and guarantee Sept 30, is the $235K the only gap?"'
         : phone.intel ? `"${phone.intel.next_best_question}"` : '—',
-      aiCoaching: !phoneEnabled
+      aiCoaching: demoBuyerCall
+        ? 'He gave markets, price, rehab and funding without being asked twice. Read the email back to him before you hang up.'
+        : !phoneEnabled
         ? 'Talk ratio 38 / 62 — good. Seller repeated "certainty" twice: anchor the close date before discussing price. Don\'t mention the $181K MAO on this call.'
         : phone.intel ? `${phone.intel.talk_ratio ? `Talk ratio ${phone.intel.talk_ratio.rep} / ${phone.intel.talk_ratio.seller}. ` : ''}${phone.intel.coaching}` : '—',
-      summaryText: !phoneEnabled
+      summaryText: demoBuyerCall
+        ? 'Cash flipper buying single family and townhomes in San Antonio and New Braunfels, $120K to $180K. Takes heavy rehab but no foundation work, closes in 10 days.'
+        : !phoneEnabled
         ? 'Seller values speed and certainty over maximum price. Has a competing verbal at $235K with a 60-day close and inspection. Needs moving costs covered; must be out before Sept 30.'
         : phone.summary ? phone.summary.summary
           : phone.summaryStatus === 'no_answer' ? (sp.ringOut?.message ?? 'Nobody picked up — the call ended on the greeting, so there is nothing to transcribe or summarise.')
@@ -10882,11 +12103,11 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
                 : '—',
       sentimentLabel: !phoneEnabled ? 'Positive' : phone.summary?.sentiment ? phone.summary.sentiment.replace(/^./, (c) => c.toUpperCase()) : '—',
       sentimentColor: !phoneEnabled ? '#15803d'
-        : phone.summary?.sentiment === 'positive' ? '#15803d' : phone.summary?.sentiment === 'negative' ? '#dc2626' : '#71717a',
+        : phone.summary?.sentiment === 'positive' ? '#15803d' : phone.summary?.sentiment === 'negative' ? '#dc2626' : 'var(--meta, #71717a)',
       talkRatioLabel: !phoneEnabled ? '38 / 62' : phone.summary?.talk_ratio ? `${phone.summary.talk_ratio.rep} / ${phone.summary.talk_ratio.seller}` : '—',
-      wrapStatusLine: !phoneEnabled ? `${callClock} · recorded · transcribed`
-        : phone.summaryStatus === 'no_answer' ? `${callClock} · no answer`
-          : `${callClock} · recorded${phone.summaryStatus === 'ready' ? ' · transcribed' : phone.summaryStatus === 'working' ? ' · transcribing…' : ''}`,
+      wrapStatusLine: !phoneEnabled ? `${callDuration} · recorded · transcribed`
+        : phone.summaryStatus === 'no_answer' ? `${callDuration} · no answer`
+          : `${callDuration} · recorded${phone.summaryStatus === 'ready' ? ' · transcribed' : phone.summaryStatus === 'working' ? ' · transcribing…' : ''}`,
       hasWrapFields: !phoneEnabled || !!phone.summary,
       canAccept: !phoneEnabled || !!phone.summary,
       /**
@@ -11105,7 +12326,10 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           });
         },
       },
-      buyBoxRows, buyerAvoid, buyerActivity, buyerSummary, stars, buyerTimeline: foldEmailThreads(buyerTimeline), buyerMarkets, buyerDeals,
+      buyBoxRows, buyerAvoid, buyerActivity, buyerSummary, stars, buyerTimeline, buyerMarkets, buyerDeals,
+      buyerTimelineUserMenu: mkMenu('recordUser', 'User',
+        ['Any', ...Array.from(new Set(buyerTimelineAll.flatMap((t) => [t.actor, t.toRep].filter((x): x is string => !!x)))).filter((a) => a !== 'System'), 'System'],
+        s.recordUser, (v) => set({ recordUser: v })),
       buyerOfferRows, buyerPurchaseRows, buyerNoteRows, buyerDealChoices,
       buyerContractDealId, buyerContractSellerId, buyerContractSeller,
       addBuyerToCampaign, openBuyerCampaign,
@@ -11282,15 +12506,17 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       buyerPlan, hasBuyerPlan, startBuyerPlanFor,
       isPlans: s.screen === 'plans',
       goPlans: () => go('plans'),
+      openPlan,
       isMobile, moreOpen, mobileTabs, moreItems, mobilePeopleCards,
       get mobileDealCards() { return mobileDealCards(); },
       // Phone list picker: smart lists + the vendor-backed custom lists as chips.
-      mobileLists: [...smartLists, ...customLists.filter((l) => !l.disabled)].map((l) => ({
-        label: l.label, count: l.count, go: l.go,
+      // Only the half the switch is on (lib/people-side), then the lists under both.
+      mobileLists: [...smartLists.filter((l) => smartListNames.includes(l.label)), ...customLists.filter((l) => !l.disabled)].map((l) => ({
+        label: l.label, get count() { return l.count; }, go: l.go,
         on: l.label === s.peopleList,
-        bg: l.label === s.peopleList ? '#18181b' : '#fff',
-        color: l.label === s.peopleList ? '#fff' : '#27272a',
-        border: l.label === s.peopleList ? '#18181b' : '#e4e4e7',
+        bg: l.label === s.peopleList ? 'var(--ink, #18181b)' : 'var(--surface, #fff)',
+        color: l.label === s.peopleList ? 'var(--surface, #fff)' : 'var(--ink-2, #27272a)',
+        border: l.label === s.peopleList ? 'var(--ink, #18181b)' : 'var(--divider, #e4e4e7)',
       })),
       toggleMore: () => set({ moreOpen: !s.moreOpen }),
       closeMore: () => set({ moreOpen: false }),
@@ -11311,9 +12537,9 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       // A TC note is about this deal, not every deal on the seller (a wholesaler
       // carries dozens): it carries deal_id, and the text stays in the box until it saves.
       sendTcMsg: () => {
-        const body = s.composerText.trim();
+        const body = getComposerText().trim();
         if (!body) return toast('Type a note first');
-        if (workspaceId === null && !live) { set({ composerText: '' }); return toast('Sample data: the note is not saved'); }
+        if (workspaceId === null && !live) { setComposerText(''); return toast('Sample data: the note is not saved'); }
         if (!canWrite || workspaceId === null) return toast('Read-only · notes are not saved from this seat');
         const tcDealDb = TD.id ? dbId(TD.id) : null;
         // One save at a time: Enter twice, or Enter then the button, posts once.
@@ -11325,7 +12551,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         }).then((r) => {
           tcNoteBusy.current = false;
           if (!r.ok) return toast(r.message || 'Could not save that note.', 'error');
-          set((st) => (st.composerText.trim() === body ? { composerText: '' } : {}));
+          clearComposerIf(body);
           refreshPerson(TP.id);
           toast('Noted on the file', 'success');
         }).catch(() => { tcNoteBusy.current = false; toast('Could not save that note.', 'error'); });
@@ -11376,11 +12602,11 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       // Both the seller record and Talkr have a Template button. The seller
       // record Composer mounts TemplatePicker itself; this stub remains for
       // Talkr's thread composer when no picker is mounted yet.
-      useTemplate: () => set({
-        composerText: s.screen === 'talkr'
+      useTemplate: () => setComposerText(
+        s.screen === 'talkr'
           ? 'Hi ' + TC.name.split(' ')[0] + ', following up — do you have 5 minutes today?'
           : 'Hi ' + P.name.split(' ')[0] + ', following up on ' + P.property.addr + '. Do you have 5 minutes today?',
-      }),
+      ),
       /** Workspace id the people-record Template picker loads CLOZR templates with. */
       templatesWorkspaceId: workspaceId,
       /** The RVM tab's Pool health card: owners and admins on a live workspace. */
@@ -11392,28 +12618,29 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       openBuyerById: (id: number) => openBuyer('b' + id),
       assignInbox: () => toast('Assigned to ' + repName(ME)),
       markInboxRead: () => set((st) => ({ notifRead: { ...st.notifRead, [st.inboxConv]: true } })),
-      aiReplyInbox: () => set({ composerText: 'Thanks for getting back to me — I can work around your timeline. When is a good time to talk today?' }),
+      aiReplyInbox: () => setComposerText('Thanks for getting back to me — I can work around your timeline. When is a good time to talk today?'),
       // One string, rendered on the card and inserted by the button under it.
       // They were two different sentences before, so "Use reply" pasted
       // something other than the reply you were looking at.
       inboxSuggestion: INBOX_SUGGESTION,
-      useInboxReply: () => { set({ composerText: INBOX_SUGGESTION }); toast('Reply loaded into the composer'); },
+      useInboxReply: () => { setComposerText(INBOX_SUGGESTION); toast('Reply loaded into the composer'); },
       buyerTab: s.buyerTab,
       buyerTabLabel: s.buyerTab.toLowerCase(),
-      setBuyerMsg: (e: React.ChangeEvent<HTMLInputElement>) => set({ composerText: e.target.value }),
+      setBuyerMsg: (e: React.ChangeEvent<HTMLInputElement>) => setComposerText(e.target.value),
       sendBuyerMsg: () => {
-        const body = s.composerText.trim();
+        const body = getComposerText().trim();
         if (!body) return toast('Type a message first');
         if (!canWrite) return sendToThread('buyer:' + B.id, 'Sent to ' + B.name + ' (demo)');
         const phone = B.phone && B.phone !== '—' ? B.phone : '';
         if (!phone) return toast(B.name + ' has no phone on file');
-        set({ composerText: '' });
+        setComposerText('');
         toast('Sending to ' + B.name.split(' ')[0] + '…');
-        void textMany(workspaceId, [{ sellerId: null, buyerId: dbId(B.id), name: B.name, phone }], body, textCtx)
-          .then((rs) => { reload?.(); toast(sendSummary(rs), rs.some((x) => !x.error) ? 'success' : 'error'); });
+        void textMany(workspaceId, [{ sellerId: null, buyerId: dbId(B.id), name: B.name, phone }], body, { ...textCtx, carrier: 'reply' })
+          // The buyer re-reads; the record's feed follows the message on its own (useRecordFeedLive).
+          .then((rs) => { if (refreshBuyer) void refreshBuyer(dbId(B.id)); else reload?.(); toast(sendSummary(rs), rs.some((x) => !x.error) ? 'success' : 'error'); });
       },
       /** "Send a deal" on the buyer record: this buyer into one active deal's campaign builder. */
-      sendDealOptions: buyerBulk.deals.map((d) => ({ id: d.id, label: d.label, go: () => buyerBulk.openCampaign(d.id, [dbId(B.id)]) })),
+      get sendDealOptions() { return buyerBulk.deals.map((d) => ({ id: d.id, label: d.label, go: () => buyerBulk.openCampaign(d.id, [dbId(B.id)]) })); },
       showKeypad: () => set({ dialerTab: 'Dial' }),
       callBack: () => (s.callTarget ? startCall(s.callTarget) : toast('No number to call back')),
       exportPeople, exportReport, copyReportLink, copySellerPitch, addTag,
@@ -11434,14 +12661,14 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       setCalMonth: () => set({ calView: 'Month' }),
       tcItems: tcScreenItems, tcDoneCount: tcScreenDone, tcTotal: tcScreenItems.length, tcPct: tcScreenPct + '%', tcPctN: tcScreenPct,
       tcBlockers, tcFeed, tcFeedFilters, tcParties, tcFile, tcTasks, addTcTask, personTcFile,
-      tcRing: 'conic-gradient(#16a34a ' + tcScreenPct * 3.6 + 'deg, #e4e4e7 0)',
+      tcRing: 'conic-gradient(#16a34a ' + tcScreenPct * 3.6 + 'deg, var(--divider, #e4e4e7) 0)',
 
       // inbox
       inboxChannels, inboxFilters, inboxConvs, IC, inboxMsgs, inboxCtx, openInboxRecord,
       inboxCount: inboxConvs.length,
 
       // tasks
-      tasksViews, tasksView: s.tasksView, taskRows, taskCount: taskRows.length,
+      tasksViews, tasksView, taskRows, taskCount: taskRows.length, taskOpenShown: shownOpen.length, completeShown,
 
       // calendar
       calDays,
@@ -11455,9 +12682,12 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       // notifications
       notifOpen: s.notifOpen, notifs, notifCats, sectionGapPops, sectionGapMore,
       dismissSectionGaps: () => dismissNotifIds(gapUnread.map((g) => g.id)),
-      markAllRead: () => dismissNotifIds(
-        visibleNotifs(myNotifications, sRef.current.notifRead, 'All', notifMuted).map((n) => n.id),
-      ),
+      // Every unread one, not only the hundred loaded: the rest are marked read
+      // in the database too, so the next load does not bring a fresh page.
+      markAllRead: () => {
+        dismissNotifIds(visibleNotifs(myNotifications, sRef.current.notifRead, 'All', notifMuted).map((n) => n.id));
+        if (canWrite && workspaceId !== null && me) void markAllNotificationsRead(workspaceId, me);
+      },
       dismissNotifs: dismissNotifIds,
       bellReadNumber, notifMutes,
 
@@ -11505,10 +12735,13 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
           ['Price expectation', phone.intel?.price_expectation ?? '—'], ['Objection', phone.intel?.objection ?? '—'],
           ...(phone.intel?.condition ? [['Condition', phone.intel.condition]] : []),
         ] as [string, string][])
-        : ([
-          ['Motivation', 'Inherited property · relocating'], ['Timeline', '30 days · before Sept 30'],
-          ['Price expectation', '$235,000'], ['Objection', 'Wants to compare another offer'],
-        ] as [string, string][])).map(([k, v]) => ({ k, v })),
+        : demoBuyerCall
+          // A buyer has no house to sell: seller intelligence has nothing to say.
+          ? ([['Motivation', '—'], ['Timeline', '—'], ['Price expectation', '—'], ['Objection', '—']] as [string, string][])
+          : ([
+            ['Motivation', 'Inherited property · relocating'], ['Timeline', '30 days · before Sept 30'],
+            ['Price expectation', '$235,000'], ['Objection', 'Wants to compare another offer'],
+          ] as [string, string][])).map(([k, v]) => ({ k, v })),
       stop: (e: React.MouseEvent) => e.stopPropagation(),
       // Enter / Space on a card list row, which is a div carrying role="button".
       cardKey: (e: React.KeyboardEvent<HTMLElement>) => {
@@ -11516,11 +12749,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
         e.preventDefault();
         e.currentTarget.click();
       },
-      // `toast` is the message the shell renders; `showToast` fires a new one.
-      toast: s.toast, hasToast: !!s.toast, showToast: toast, toastTone,
-      /** The toast's button, if it has one: pressing it runs the action and takes the toast down. */
-      toastAction: s.toastAction && s.toastAction.seq === s.toastSeq
-        ? { label: s.toastAction.label, run: () => { set({ toast: null }); s.toastAction?.run(); } } : null,
+      // The toast itself is drawn from toastStore (useToast); `showToast` fires a new one.
+      showToast: toast,
 
       // Home's date and greeting were fixed strings from the design prototype,
       // so every signed-in user was greeted as Sam on a Thursday in
@@ -11567,6 +12797,8 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       // workspace, so the demo never claims to be one. (`isLive`, above, is a
       // call that is currently connected — different thing, older name.)
       isLiveData: !!live,
+      /** The sample graph (/demo): no workspace is coming. */
+      isDemo: !live,
       // Database ids for the cards that talk to the server directly
       // (contracts, Genius Mode). Null on the sample graph.
       liveIds: live ? {
@@ -11665,10 +12897,23 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       refreshDealCrm: (dealDbId: number) => refreshDealOf(dealDbId),
       /** After a save on one seller's record: re-read that seller and their deals. */
       refreshSellerCrm: (sellerDbId: number) => refreshPerson('s' + sellerDbId),
+      /** After a save on one buyer: re-read that buyer, not the workspace. */
+      refreshBuyerCrm: (buyerDbId: number) => (refreshBuyer ? void refreshBuyer(buyerDbId) : reload?.()),
+      /**
+       * After a deal team edit on the open seller record. A seat (our reps,
+       * title) is the deal's own columns, so the seller and their deals
+       * re-read. A buyer or a seller-side party also reaches the TC file, the
+       * buyer and the deal's vendor sellers, so that re-reads the workspace.
+       */
+      dealTeamSaved: (role?: string) => (role === 'buyer' || role === 'seller' ? reload?.() : void refreshPerson(P.id)),
       /** Every photo on these deals, for a gallery that opens (the workspace load has one cover each). */
       loadDealGallery: (dealDbIds: number[]) => { void loadGallery?.(dealDbIds); },
     };
-  }, [s, confirm, confirmReason, graph, buyerView, buyerSearchView, secretHidden, myNotifications, sectionGapList, phoneTexts, buyerIndex, peopleSearchKeys, showAiCards, askAi, endCall, finishCall, go, openBuyer, openDispo, openPerson, openTc, set, startCall, toast, toastTone, toastAction, muteCat, unmuteCat, copyText, openAdd, closeAdd, clearAdd, setAddField, submitAdd, resolveAddAsk, runLane, openLane, openLaneRef, openLaneChat, newLaneChat, removeLaneChat, openGenius, nextId, sendToThread, D, ME, rep, repName, repInit, live, crmOk, reload, refreshPerson, refreshDealOf, loadGallery, persistStage, persistDealStage, persistTask, persistTaskDue, canWrite, workspaceId, me, workspaceName, now, role, placesKey, phone, phoneEnabled, sp, talkrLive, callState, muted, hold, keypadOpen, transferOpen, recordComms, recordTimeline, buyerRecordTimeline, recordStages, historyHits, peopleHistoryKey, buyerHistoryKey, cq, offerSend, readOnly, crmPartial, doNotCall, can, landing, todayBase, todayVocab, noteRecent, realtorPage, realtorPin, realtorCorpusTotal, realtorMarkets, floorNotify, alternates, patchLocal]);
+    perfLap('return-object');
+    perfLapEnd();
+    return vm;
+  }, [s, confirm, confirmReason, graph, dealIndex, facets, buyerList, buyerListRows, peopleCore, peopleListView, peopleColumnsView, isVendorList, listLen, peopleCursor, openListed, openListedAt, peopleRows, sellerStages, comms, buyerView, buyerPipelineMenu, buyerSearchView, secretHidden, myNotifications, sectionGapList, phoneTexts, buyerIndex, peopleSearchKeys, showAiCards, askAi, endCall, finishCall, go, openBuyer, openDispo, openPerson, openTc, set, startCall, toast, muteCat, unmuteCat, copyText, openAdd, closeAdd, clearAdd, setAddField, submitAdd, resolveAddAsk, runLane, openLane, openLaneRef, openLaneChat, newLaneChat, removeLaneChat, openGenius, nextId, sendToThread, D, ME, rep, repName, repInit, live, crmOk, reload, refreshPerson, refreshDealOf, refreshBuyer, refreshBuyers, rereadSellers, rereadDeals, rereadBuyers, loadGallery, persistStage, persistDealStage, persistTask, persistTasks, persistTaskDue, canWrite, workspaceId, me, workspaceName, now, role, placesKey, phone, phoneEnabled, sp, talkrLive, callState, callTimer, muted, hold, keypadOpen, transferOpen, recordComms, recordFeed, buyerRecordTimeline, recordStages, historyHits, peopleHistoryKey, buyerHistoryKey, cq, offerSend, readOnly, crmPartial, doNotCall, can, landing, todayBase, todayVocab, noteRecent, realtorPage, realtorPin, realtorCorpusTotal, realtorMarkets, floorNotify, alternates, patchLocal, newDesign]);
+  usePerfTrack('V', V, vT0);
   // onCallOpened (above the view-model) finds the person by the view-model's phone lookup.
   useEffect(() => { dialerRecordForRef.current = V.dialerRecordFor; }, [V.dialerRecordFor]);
 
@@ -11699,6 +12944,24 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
     if (!list) return;
     queueMicrotask(() => setS((st) => ({ ...st, peopleList: list, cursorList: list, peopleCursor: 0, pf: { ...INITIAL.pf, ...((m?.pf ?? {}) as Partial<PeopleFilters>) }, peopleQ: m?.q ?? '' })));
   }, [ready, smartListsReady, me, V, live, role]);
+  // The half the open list is on, and that list, kept for the next switch
+  // (lib/people-side). Not before the stored half and the remembered list are
+  // in, or the default My Leads would overwrite them.
+  const peopleListSide = V.peopleListSide;
+  useEffect(() => {
+    if (!peopleListSide || !peopleSideLoaded.current || peopleMemoryFor.current !== (me ?? 'demo')) return;
+    let cancel = false;
+    queueMicrotask(() => {
+      if (cancel) return;
+      setS((st) => {
+        const next = noteSide(st.peopleSide, peopleListSide, st.peopleList);
+        if (next === st.peopleSide) return st;
+        savePeopleSide(next);
+        return { ...st, peopleSide: next };
+      });
+    });
+    return () => { cancel = true; };
+  }, [peopleListSide, s.peopleList, me]);
   useEffect(() => {
     if (peopleMemoryFor.current !== (me ?? 'demo')) return;
     const view = { list: s.peopleList, pf: { ...s.pf }, q: s.peopleQ };
@@ -11720,8 +12983,7 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
       smartListOrder: prev.smartListOrder,
       pinnedSmartLists: prev.pinnedSmartLists,
     }));
-    setRecordComms(null);
-    setRecordTimeline(null);
+    setRecordFeedRows(null);
     setRealtorPin(null);
     setRealtorOffset(0);
     setRealtorCorpusTotal(0);
@@ -11770,12 +13032,12 @@ export function useClozr({ showAiCards = true, live = null, me = null, workspace
   // A record with a COMPR report, opened: a house being underwritten takes
   // what COMPR has saved for it now (an AM may have worked it in COMPR on its
   // own); any other only learns whether the report is missing the record's
-  // photos. At most every two minutes per deal.
+  // photos. At most every 30 seconds per deal.
   const comprPullDeal = V.comprBridge.pullOnOpen;
   const comprPullCheck = V.comprBridge.pullCheckOnly;
   useEffect(() => {
     if (!comprPullDeal) return;
-    const t = window.setTimeout(() => comprBridgeRef.current.pull(comprPullDeal, 120_000, comprPullCheck), 400);
+    const t = window.setTimeout(() => comprBridgeRef.current.pull(comprPullDeal, 30_000, comprPullCheck), 400);
     return () => window.clearTimeout(t);
   }, [comprPullDeal, comprPullCheck]);
 
@@ -12007,7 +13269,7 @@ function leaderboardVals(
     label,
     go: () => set({ [key]: value, lbMenu: {} } as Partial<ClozrState>),
     bg: value === cur ? '#e3f0e9' : 'transparent',
-    color: value === cur ? '#0e7a57' : '#1c1d1f',
+    color: value === cur ? '#0e7a57' : 'var(--ink-deep, #1c1d1f)',
   }));
 
   const x = payload.executiveSummary;

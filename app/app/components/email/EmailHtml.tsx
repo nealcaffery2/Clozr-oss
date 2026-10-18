@@ -69,9 +69,9 @@ export function EmailHtml({
       style={{
         width: '100%',
         height: clip ? 148 : scrollHeight ?? height,
-        border: '1px solid #e4e4e7',
+        border: '1px solid var(--divider, #e4e4e7)',
         borderRadius: 10,
-        background: '#fff',
+        background: 'var(--surface, #fff)',
         display: 'block',
       }}
     />

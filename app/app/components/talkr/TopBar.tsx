@@ -11,6 +11,7 @@
 
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { Mark } from '@/components/ds/mark';
 import { Button } from './ui';
 import { localZone, tzAbbr, tzTime } from '@/lib/talkr-web/time';
@@ -20,12 +21,18 @@ export function TopBar({
   title,
   subtitle,
   onNewCall,
+  extra,
   children,
+  titleSlot,
 }: {
   title: string;
   subtitle: string;
+  /** CLOZR seam: beside the title, the Inbox's "whose inbox" picker. */
+  titleSlot?: ReactNode;
   /** CLOZR seam: Talkr pushes to /dialer; CLOZR opens its floating dialer. */
   onNewCall?: () => void;
+  /** Extra controls beside presence (the dialer's team menu). */
+  extra?: ReactNode;
   /** CLOZR seam: the inbox's channel tabs, between the title and the controls (a second row on a phone). */
   children?: ReactNode;
 }) {
@@ -35,8 +42,7 @@ export function TopBar({
   // and a mismatched first paint is a hydration error.
   useEffect(() => {
     setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(t);
+    return everyWhileVisible(() => setNow(Date.now()), 30_000);
   }, []);
 
   const zone = localZone();
@@ -47,7 +53,14 @@ export function TopBar({
       style={{ borderBottom: '1px solid var(--line)' }}
     >
       <div className="flex min-w-0 flex-col gap-0.5 md:min-w-[190px]">
-        <h1 className="truncate" style={{ font: '700 15px/1 var(--sans)', letterSpacing: '-0.015em' }}>{title}</h1>
+        {titleSlot ? (
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="truncate" style={{ font: '700 15px/1 var(--sans)', letterSpacing: '-0.015em' }}>{title}</h1>
+            {titleSlot}
+          </div>
+        ) : (
+          <h1 className="truncate" style={{ font: '700 15px/1 var(--sans)', letterSpacing: '-0.015em' }}>{title}</h1>
+        )}
         <p className="truncate" style={{ font: '500 11px/1 var(--sans)', color: 'var(--muted)' }}>{subtitle}</p>
       </div>
 
@@ -56,6 +69,7 @@ export function TopBar({
       ) : null}
 
       <div className="ml-auto flex items-center gap-2">
+        {extra}
         <PresenceMenu />
 
         <div
@@ -68,10 +82,12 @@ export function TopBar({
           </span>
         </div>
 
-        <Button tone="accent" onClick={onNewCall} style={{ boxShadow: '0 6px 16px rgba(10, 133, 96,.28)' }}>
-          <Icon name="phone" size={14} />
-          <span className="hidden sm:inline">New call</span>
-        </Button>
+        {onNewCall ? (
+          <Button tone="accent" onClick={onNewCall}>
+            <Icon name="phone" size={14} />
+            <span className="hidden sm:inline">New call</span>
+          </Button>
+        ) : null}
       </div>
     </header>
   );

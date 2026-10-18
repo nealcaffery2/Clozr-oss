@@ -28,6 +28,9 @@
  */
 
 import { lineText, useLineNames } from '@/lib/line-names';
+import { fromLine, recordSentText, sentTextRow } from '@/lib/sms-record';
+import { UserAvatar } from '@/components/UserAvatar';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { useSession } from '@/lib/session';
 import { replyLine, textsAsSelf } from '@/lib/thread-line';
 import { type InboxState, isCleared, pinnedFirst, smsKey } from '@/lib/inbox-state';
@@ -57,9 +60,11 @@ import {
 } from '@/lib/talkr-web/api';
 import { TopBar } from './TopBar';
 import { Icon } from './Icon';
-import { Avatar, Button, Eyebrow, FIELD, Select } from './ui';
+import { Button, Eyebrow, FIELD, Select } from './ui';
 import { AddContactButton, useIsKnownNumber } from './AddContact';
 import { Bubble, TimeSeparator, TypingBubble, needsStamp } from './Bubble';
+import { MmsImage, type PendingAttachment, PendingAttachments, blobToBase64, shrinkImage } from './MmsAttachments';
+import { MMS_ACCEPT, MMS_MAX_BYTES, MMS_MAX_FILES, kindFromType } from '@/lib/mms';
 import { SmsSuggestions } from '@/app/components/record/SmsSuggestions';
 import type { Recipient } from '@/lib/sms';
 import {
@@ -88,27 +93,15 @@ import {
 import { MergeFieldHelp, MergeTextArea } from './MergeField';
 import { EmojiButton, insertAtCaret } from './EmojiPicker';
 import { formatPhone, toE164, tzTime, zoneForNumber } from '@/lib/talkr-web/time';
-import { UserAvatar } from '@/components/UserAvatar';
-import { type TalkrEvent, eventFacts, useTalkrEvents } from '@/lib/talkr-events';
-import { loadTeamPhotos } from '@/lib/avatar';
+import { type TalkrEvent, eventFacts, messageFromEvent, onTalkrEvent, useTalkrEvents, withEventMessage } from '@/lib/talkr-events';
+import { type InboxScope, loadOwnerConversations, scopeKey, viewingOther } from '@/app/components/inbox/ownerInbox';
+import { useLinkViews } from '@/app/components/inbox/receipts';
+import { UNASSIGNED, eventTouches, linesFor } from '@/lib/inbox-owner';
 import { TalkrMark } from '@/app/components/brand/TalkrMark';
+import { smsPending, smsReceiptLabel } from '@/lib/sms-receipt';
+import { carrierCheck, carrierReport } from '@/lib/carrier-safe';
 
-/** The assigned teammate's photo (initials when they have none), inline beside their name. */
-function RepFace({ name }: { name: string }) {
-  const [photos, setPhotos] = useState<Map<string, string> | null>(null);
-  useEffect(() => { let on = true; void loadTeamPhotos().then((m) => { if (on) setPhotos(m); }); return () => { on = false; }; }, []);
-  return <span style={{ display: 'inline-flex', verticalAlign: 'middle' }}><UserAvatar name={name} src={photos?.get(name.trim().toLowerCase()) ?? null} size={14} /></span>;
-}
-
-/** What the carrier actually reported. SMS has no read receipts, so there is no "Read". */
-const RECEIPT: Record<string, string> = {
-  queued: 'Sending…',
-  sending: 'Sending…',
-  sent: 'Sent',
-  delivered: 'Delivered',
-  undelivered: 'Not delivered',
-  failed: 'Not delivered',
-};
+// What the carrier reported (lib/sms-receipt). SMS has no read receipts, so there is no "Read".
 
 /** Still on its way: the bubble is drawn faded until the carrier takes it. */
 const PENDING_STATUSES = new Set(['queued', 'sending']);
@@ -133,135 +126,8 @@ function preview(last: ConversationDto['last_message']): string {
   return '';
 }
 
-/**
- * An MMS attachment. The design shows the photo, so we show the photo — but a
- * carrier media URL can be short-lived or need credentials we deliberately do
- * not put in the browser, and a broken image icon in a seller thread is worse
- * than no image. So it falls back to the labelled placeholder the moment the
- * load fails, and the thread never renders as damaged.
- */
-type AttachmentKind = 'image' | 'video' | 'file';
-
-/** A file the rep picked, already uploaded and waiting on the composer. */
-interface PendingAttachment {
-  url: string;
-  previewUrl: string | null;
-  name: string;
-  kind: AttachmentKind;
-}
-
-/** Carrier MMS ceiling is ~5 MB per message; 3 MB per file matches the API. */
-const ATTACHMENT_MAX_BYTES = 3 * 1024 * 1024;
-/** Phone photos are 3–12 MB; carriers downscale anyway, so shrink client-side. */
-const IMAGE_MAX_EDGE = 1600;
-
-function kindFromType(contentType: string): AttachmentKind {
-  if (contentType.startsWith('image/')) return 'image';
-  if (contentType.startsWith('video/')) return 'video';
-  return 'file';
-}
-
-/**
- * Inbound carrier URLs carry no extension and are always images in practice,
- * so only a telling extension moves a URL off the image path.
- */
-function kindFromUrl(url: string): AttachmentKind {
-  const path = url.split('?')[0]!.toLowerCase();
-  if (/\.(mp4|3gp|3gpp|mov|m4v)$/.test(path)) return 'video';
-  if (/\.(pdf|vcf|txt|csv|docx?|xlsx?)$/.test(path)) return 'file';
-  return 'image';
-}
-
-async function shrinkImage(file: File): Promise<Blob> {
-  if (file.type === 'image/gif') return file;
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, IMAGE_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
-  if (scale === 1 && file.size <= 800 * 1024) {
-    bitmap.close();
-    return file;
-  }
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    bitmap.close();
-    return file;
-  }
-  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
-  return blob ?? file;
-}
-
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error('could not read file'));
-    reader.onload = () => {
-      const result = String(reader.result ?? '');
-      resolve(result.slice(result.indexOf(',') + 1));
-    };
-    reader.readAsDataURL(blob);
-  });
-}
-
-function MmsImage({ url, mine }: { url: string; mine: boolean }) {
-  const [failed, setFailed] = useState(false);
-  const kind = kindFromUrl(url);
-  const box = {
-    width: 230,
-    maxWidth: '100%',
-    borderRadius: 14,
-    background: mine ? 'rgba(255,255,255,.16)' : 'rgba(0,0,0,.06)',
-  } as const;
-
-  if (kind === 'video') {
-    return (
-      <video controls preload="metadata" src={url} style={{ ...box, display: 'block', maxHeight: 260 }} />
-    );
-  }
-  if (kind === 'file') {
-    const name = decodeURIComponent(url.split('?')[0]!.split('/').pop() ?? 'file');
-    return (
-      <a
-        href={url}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-2"
-        style={{ ...box, width: 'auto', padding: '8px 12px', font: '600 11px/1 var(--sans)', color: 'inherit', textDecoration: 'none' }}
-      >
-        <Icon name="image" size={14} />
-        {name}
-      </a>
-    );
-  }
-
-  if (failed) {
-    return (
-      <span
-        className="flex items-center justify-center gap-2"
-        style={{
-          ...box,
-          height: 138,
-          font: '600 10px/1 var(--sans)',
-        }}
-      >
-        <Icon name="image" size={18} />
-        Image
-      </span>
-    );
-  }
-  return (
-    // eslint-disable-next-line @next/next/no-img-element -- carrier-hosted, not ours to optimize
-    <img
-      src={url}
-      alt="Attachment"
-      onError={() => setFailed(true)}
-      style={{ ...box, display: 'block', maxHeight: 260, objectFit: 'cover' }}
-    />
-  );
-}
+// MMS attachments (limits, shrink, upload, the preview row and the photo in a
+// bubble) are shared with the dialer's text card: lib/mms and ./MmsAttachments.
 
 /** Same number, one key: "+15125550134", "15125550134" and "(512) 555-0134" all match. */
 function numberKey(n: string): string {
@@ -338,6 +204,8 @@ interface Filters {
   from: string;
   to: string;
   sort: ConversationSort;
+  /** Org line (Talkr number_id): only threads on that sending number. */
+  line: string;
 }
 
 function pick<T extends string>(list: readonly T[], value: string | null): T | null {
@@ -357,6 +225,7 @@ function readFilters(p: URLSearchParams): Filters {
     from: p.get('from')?.trim() ?? '',
     to: p.get('until')?.trim() ?? '',
     sort: pick(CONVERSATION_SORTS, p.get('sort')) ?? 'recent',
+    line: p.get('line')?.trim() ?? '',
   };
 }
 
@@ -371,13 +240,14 @@ function toQuery(f: Filters): ConversationListQuery {
     unread: f.unread || undefined,
     from: f.from || undefined,
     to: f.to || undefined,
+    number_id: f.line || undefined,
     sort: f.sort,
   };
 }
 
 /** How many filters are on — the count on the "Filters" toggle. Sort is not one. */
 function filterCount(f: Filters): number {
-  return [f.q, f.type, f.temp, f.status, f.tag, f.address, f.user, f.unread || null, f.from || f.to ? 'range' : null].filter(
+  return [f.q, f.type, f.temp, f.status, f.tag, f.address, f.user, f.line || null, f.unread || null, f.from || f.to ? 'range' : null].filter(
     Boolean,
   ).length;
 }
@@ -437,10 +307,23 @@ export interface MessagesScreenProps {
    * reading it, so it stays unread here, on Talkr and in the bell.
    */
   onRead?: (theirNumber: string) => void;
+  /**
+   * CLOZR: whose inbox the list is (app/components/inbox/ownerInbox): the
+   * rep's own threads by default, or one teammate's. Null: Talkr's own list.
+   */
+  scope?: InboxScope | null;
+  /** CLOZR: the workspace, for "Viewed" on a text whose CLOZR link was opened. Null on sample data. */
+  receiptsWorkspace?: number | null;
+  /** CLOZR: beside the header's title: whose inbox this is. */
+  titleSlot?: ReactNode;
   /** CLOZR: rendered in the header bar — the inbox's channel tabs and buttons. */
   headerSlot?: ReactNode;
   /** CLOZR: a signed-in workspace, for the record suggestions under a seller's thread. Null in the demo. */
   live?: { workspaceId: number; canWrite: boolean; me: string | null; toast: (msg: string) => void; reload: () => void } | null;
+  /** CLOZR: a teammate's name and photo by their Talkr user id, for the sender line over each outbound run. */
+  senders?: (talkrUserId: string) => { name: string; avatar: string | null } | null;
+  /** CLOZR: the organization a text goes out as ("Acme Homes"), on the sender line. */
+  orgName?: string | null;
   /** CLOZR: its own template picker, opened from the composer's tray; `insert` replaces the draft with the rendered text. */
   /**
    * The other party is typing: the left-side dots. Nothing sets it today —
@@ -461,9 +344,13 @@ export interface ClozrRecord {
   id?: number;
   /** Merge-field values for this person (lib/sms fieldsFor). */
   recipient?: Recipient;
+  /** Lead score 0–100 (lib/heat.ts bands), null when nothing has scored them. */
+  score?: number | null;
+  /** The assigned rep's name. */
+  rep?: string | null;
 }
 
-export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = null, recordFor, headerSlot, live = null, typing = false, clozrTemplates, inbox, startNew = 0, conversation: initialConversation = null, onOpen, onRead }: MessagesScreenProps) {
+export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = null, recordFor, headerSlot, live = null, typing = false, clozrTemplates, inbox, startNew = 0, conversation: initialConversation = null, onOpen, onRead, scope = null, receiptsWorkspace = null, titleSlot, senders, orgName = null }: MessagesScreenProps) {
   // On talkr.example.com the filters and the open thread ride in the URL so a
   // view survives a refresh and can be handed to a teammate. CLOZR is one
   // shell that does not route per screen, so the same query string lives in
@@ -543,13 +430,18 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
 
   const queryRef = useRef(query);
   queryRef.current = query;
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  const conversationsRef = useRef(conversations);
+  conversationsRef.current = conversations;
+  const scopeId = scopeKey(scope);
+  const otherInbox = viewingOther(scope);
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
 
   useEffect(() => {
     setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(t);
+    return everyWhileVisible(() => setNow(Date.now()), 30_000);
   }, []);
 
   // ── URL state ───────────────────────────────────────────────────────────
@@ -611,9 +503,13 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
   const loadConversations = useCallback((silent = false) => {
     const el = listRef.current;
     const scroll = el?.scrollTop ?? 0;
+    // CLOZR: one inbox at a time. Until Talkr says who the rep is, nothing is
+    // listed rather than the whole office's threads.
+    const owned = scopeRef.current;
+    if (owned && owned.owner === 'me' && !owned.me) return Promise.resolve();
     if (!silent) setLoading(true);
-    return api
-      .listConversations({ ...queryRef.current, limit: PAGE_SIZE * pagesRef.current })
+    const limit = PAGE_SIZE * pagesRef.current;
+    return (owned ? loadOwnerConversations(owned, queryRef.current, limit) : api.listConversations({ ...queryRef.current, limit }))
       .then((r) => {
         setConversations(r.conversations);
         setTotal(r.total);
@@ -664,7 +560,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
   useEffect(() => {
     if (!authed) return;
     void loadConversations(false);
-  }, [authed, query, pages, loadConversations]);
+  }, [authed, query, pages, loadConversations, scopeId]);
 
   useEffect(() => {
     if (!authed) return;
@@ -683,17 +579,61 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
   // Live updates: the softphone's one stream (lib/talkr-events, docs/sms.md
   // §7), not a socket of this page's own. A burst is one silent re-read.
   const onMessageEvents = useCallback((events: TalkrEvent[]) => {
-    void loadConversations(true);
+    // CLOZR: a teammate's text does not re-read this inbox; one that names
+    // its owner, one of their lines or a thread on screen does.
+    const owned = scopeRef.current;
+    const onScreen = new Set(conversationsRef.current.map((c) => c.id));
+    const touches = !owned || events.some((e) => eventTouches(eventFacts(e), owned.owner, owned.me, linesFor(owned.owner, owned.me, owned.lines), onScreen, e.type));
+    if (touches) void loadConversations(true);
     const current = selectedIdRef.current;
-    if (current && events.some((e) => eventFacts(e).conversationId === current)) refreshThread(current);
+    // A delivery receipt (message.updated) can name only the message, not the
+    // thread: one that names no other thread re-reads the open one, so
+    // "Sending…" moves on to Sent or Delivered.
+    if (current && events.some((e) => {
+      const id = eventFacts(e).conversationId;
+      return id ? id === current : e.type === 'message.updated';
+    })) refreshThread(current);
   }, [loadConversations, refreshThread]);
   useTalkrEvents(authed, ['message.received', 'message.updated', 'conversation.updated'], onMessageEvents);
+
+  // CLOZR: a reply on the open thread draws the moment the stream carries it,
+  // without waiting for the re-read above (which then replaces it).
+  useEffect(() => {
+    if (!authed) return;
+    return onTalkrEvent((e) => {
+      if (e.type !== 'message.received') return;
+      const m = messageFromEvent(e);
+      const open = selectedIdRef.current;
+      if (!m || m.conversation_id !== open) return;
+      setMessages((list) => withEventMessage(list, m, open, (x): MessageDto => ({
+        ...x, error_code: null, failure_class: 'none', is_auto_reply: false, delivered_at: null, failed_at: null,
+      })) as MessageDto[]);
+    });
+  }, [authed]);
+
+  // A text still on its way is re-read a few times on its own, so its receipt
+  // lands even when the stream drops or the event never names the thread.
+  // Backs off (4s, 8s, 16s…) and stops after about two minutes.
+  const pendingTries = useRef({ id: '', n: 0, len: 0 });
+  const awaitingReceipt = !!selectedId && messages.some((m) => m.direction === 'outbound' && PENDING_STATUSES.has(m.status));
+  useEffect(() => {
+    if (!awaitingReceipt || !selectedId) return;
+    const tries = pendingTries.current;
+    // A new thread, or a new text in this one, starts the count again.
+    if (tries.id !== selectedId || tries.len !== messages.length) { tries.id = selectedId; tries.n = 0; tries.len = messages.length; }
+    if (tries.n >= 5) return;
+    const t = window.setTimeout(() => { tries.n += 1; refreshThread(selectedId); }, 4000 * 2 ** tries.n);
+    return () => window.clearTimeout(t);
+  }, [awaitingReceipt, selectedId, messages, refreshThread]);
 
   // Read means the rep opened it on purpose. Clears Talkr's count, this
   // list's dot and (through onRead) the bell.
   const onReadRef = useRef(onRead);
   onReadRef.current = onRead;
   const readThread = useCallback((c: ConversationDto) => {
+    // CLOZR: looking through a teammate's inbox leaves their unread as it is,
+    // on Talkr and in their bell.
+    if (viewingOther(scopeRef.current)) return;
     onReadRef.current?.(c.their_number);
     if (!c.unread_count) return;
     setConversations((cs) => cs.map((x) => (x.id === c.id ? { ...x, unread_count: 0 } : x)));
@@ -734,6 +674,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
     openConversation(null);
     setMessages([]);
     setDraft('', 'sms:new');
+    setTemplateId('');
     setListOpen(false);
   }, [startNew, openConversation, setDraft]);
 
@@ -839,6 +780,23 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
 
   const fromNumber = me?.org_numbers.find((n) => n.id === fromId) ?? null;
 
+  // The sender line over an outbound run: the teammate Talkr says sent it
+  // (created_by), named from CLOZR's roster when the Inbox hands one over,
+  // else Talkr's team list; a text nobody typed is the auto-reply's or Talkr's.
+  const senderOf = useCallback((m: MessageDto): { name: string; avatar: string | null } | null => {
+    if (m.direction !== 'outbound') return null;
+    const id = m.created_by ?? null;
+    const face = id ? senders?.(id) ?? null : null;
+    const member = id ? team.find((t) => t.id === id) ?? null : null;
+    const name = face?.name ?? member?.display_name ?? (id ? 'Teammate' : m.is_auto_reply ? 'Auto-reply' : 'Talkr');
+    return { name, avatar: face?.avatar ?? null };
+  }, [senders, team]);
+  const lineLabel = useCallback((e164: string | null): string | null => {
+    if (!e164) return null;
+    const line = me?.org_numbers.find((n) => n.phone_e164 === e164) ?? null;
+    return line?.label ? `${formatPhone(e164)} ${line.label}` : formatPhone(e164);
+  }, [me]);
+
   // ── Composer ────────────────────────────────────────────────────────────
   // A template chosen and left untouched goes by id, so its use count moves;
   // edit a character and it becomes an ordinary body.
@@ -899,6 +857,27 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
     if (selectedTemplate && next !== selectedTemplate.body) setTemplateId('');
   };
 
+  /**
+   * CLOZR: the text just sent, on the seller's or buyer's record, with who
+   * sent it and the line it left from (lib/sms-record). The browser mirror
+   * (lib/talkr-sync) used to be the only way an Inbox send reached the
+   * record: it credited the line's owner, not the person who typed, and never
+   * matched a buyer at all.
+   */
+  function recordOnClozr(m: MessageDto, theirNumber: string | null) {
+    if (!live?.workspaceId || !live.me) return;
+    const to = m.to_number ?? (theirNumber ? toE164(theirNumber) : null);
+    if (!to) return;
+    const rec = recordFor?.(to) ?? null;
+    void recordSentText(sentTextRow({
+      workspaceId: live.workspaceId,
+      sellerId: rec?.kind === 'seller' ? rec.id ?? null : null,
+      buyerId: rec?.kind === 'buyer' ? rec.id ?? null : null,
+      to, body: m.body, mediaUrls: m.media_urls, msg: m, repId: live.me,
+      fromPhone: fromLine(m, fromId || null, me?.org_numbers, selected?.our_number ?? null),
+    }));
+  }
+
   async function send() {
     if (sending) return;
     setError(null);
@@ -906,6 +885,11 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
     const sentFrom = draftKeyRef.current;
     try {
       const input = selectedId ? { conversation_id: selectedId } : { to_number: newNumber.trim() };
+      // A rep's own words go as typed; only what a carrier would block is stopped (lib/carrier-safe).
+      if (!(templateIntact && selectedTemplate)) {
+        const carrier = carrierCheck(draft, { mode: 'reply' });
+        if (carrier.blocked) { setError(`Not sent: a carrier would block it. ${carrierReport(carrier)}.`); return; }
+      }
       const mediaUrls = attachments.map((a) => a.url);
       const result = await api.sendMessage({
         ...input,
@@ -915,6 +899,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
         ...(mediaUrls.length > 0 ? { media_urls: mediaUrls } : {}),
         ...(fromId ? { from_phone_number_id: fromId } : {}),
       });
+      recordOnClozr(result.message, selected?.their_number ?? newNumber.trim());
       setDraft('', sentFrom);
       setTemplateId('');
       setNewNumber('');
@@ -943,12 +928,13 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
     setError(null);
     setSending(true);
     try {
-      await api.sendMessage({
+      const again = await api.sendMessage({
         conversation_id: selectedId,
         body: m.body,
         ...(m.media_urls.length > 0 ? { media_urls: m.media_urls } : {}),
         ...(fromId ? { from_phone_number_id: fromId } : {}),
       });
+      recordOnClozr(again.message, selected?.their_number ?? null);
       refreshThread(selectedId);
       void loadConversations(true);
     } catch (err) {
@@ -962,7 +948,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
     setError(null);
     setUploading(true);
     try {
-      for (const file of Array.from(files).slice(0, Math.max(0, 10 - attachments.length))) {
+      for (const file of Array.from(files).slice(0, Math.max(0, MMS_MAX_FILES - attachments.length))) {
         const kind = kindFromType(file.type);
         let blob: Blob = file;
         if (kind === 'image') {
@@ -972,7 +958,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
             throw new Error(`Couldn't read ${file.name}. Use a JPEG or PNG (HEIC is not supported here).`);
           }
         }
-        if (blob.size > ATTACHMENT_MAX_BYTES) {
+        if (blob.size > MMS_MAX_BYTES) {
           throw new Error(`${file.name} is over 3 MB. Carriers reject larger MMS attachments.`);
         }
         const uploaded = await api.uploadMedia({
@@ -1012,6 +998,10 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
     });
   }
 
+  // CLOZR: "Viewed 2:14 PM" on a text whose CLOZR link was opened (SMS has no read receipts).
+  const outBodies = useMemo(() => messages.filter((m) => m.direction === 'outbound').map((m) => m.body), [messages]);
+  const linkViews = useLinkViews(outBodies, receiptsWorkspace);
+
   if (!authed) {
     // Talkr's page says "Not signed in — open Account"; in CLOZR the sign-in
     // is the rep's own, and what can be missing is Talkr recognising it.
@@ -1048,7 +1038,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
   const clearFilters = () => {
     setQInput('');
     pushedQ.current = '';
-    setParams({ q: null, type: null, temp: null, status: null, tag: null, address: null, user: null, unread: null, from: null, until: null, sort: null });
+    setParams({ q: null, type: null, temp: null, status: null, tag: null, address: null, user: null, line: null, unread: null, from: null, until: null, sort: null });
   };
 
   const templatePanel = (
@@ -1072,8 +1062,9 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
     <>
       <TopBar
         title="Messages"
-        subtitle={`${total.toLocaleString()} conversation${total === 1 ? '' : 's'}${active ? ' matching' : ''}${unreadTotal ? ` · ${unreadTotal} unread` : ''}`}
+        subtitle={`${scope ? `${scope.title} · ` : ''}${total.toLocaleString()} conversation${total === 1 ? '' : 's'}${active ? ' matching' : ''}${unreadTotal ? ` · ${unreadTotal} unread` : ''}`}
         onNewCall={onNewCall}
+        titleSlot={titleSlot}
       >
         {headerSlot}
       </TopBar>
@@ -1087,7 +1078,8 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
           <div className="flex flex-col gap-2 px-3 py-3" style={{ borderBottom: '1px solid var(--line)' }}>
             <div className="flex items-center gap-2">
               <Eyebrow className="mr-auto">Conversations</Eyebrow>
-              <Button
+              {/* In CLOZR the header's New text is the one way to start a text. */}
+              {!headerSlot && <Button
                 tone="ghost"
                 style={{ padding: '6px 10px', font: '600 11px/1 var(--sans)' }}
                 onClick={() => {
@@ -1098,8 +1090,17 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                 }}
               >
                 New
-              </Button>
+              </Button>}
             </div>
+
+            {otherInbox && scope && (
+              <p className="inbox-owner-note" role="note">
+                <Icon name="user" size={13} />
+                <span>{scope.owner === UNASSIGNED
+                  ? 'Texts on shared lines nobody owns. A reply goes out on the thread’s line.'
+                  : `${scope.title}. Opening a thread leaves it unread for them; a reply goes out on the thread’s line.`}</span>
+              </p>
+            )}
 
             {/* Search + the filter toggle: everything else folds away, because
                 this column is 340px on a desk and the whole screen on a phone. */}
@@ -1200,7 +1201,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                   <TagFilter value={filters.tag} onChange={(tag) => setParams({ tag: tag || null })} />
                   <TagFilter label="Address" value={filters.address} onChange={(address) => setParams({ address: address || null })} />
 
-                  {team.length > 0 && (
+                  {team.length > 0 && !scope && (
                     <Select
                       value={filters.user}
                       onChange={(e) => setParams({ user: e.target.value || null })}
@@ -1211,6 +1212,22 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                       {team.map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.display_name}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+
+                  {me && me.org_numbers.length > 0 && (
+                    <Select
+                      value={filters.line}
+                      onChange={(e) => setParams({ line: e.target.value || null })}
+                      aria-label="Sending line"
+                      style={{ padding: '8px 10px', font: '500 12px/1 var(--sans)' }}
+                    >
+                      <option value="">All lines</option>
+                      {me.org_numbers.map((n) => (
+                        <option key={n.id} value={n.id}>
+                          {lineText(n, me.id)}
                         </option>
                       ))}
                     </Select>
@@ -1356,7 +1373,6 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                 <>
                   <span className="hidden h-9 w-9 shrink-0 md:block" aria-hidden />
                   <div className="flex min-w-0 flex-1 flex-col items-center gap-0.5">
-                    <Avatar name={selectedName ?? selected.their_number} size={40} />
                     <button
                       type="button"
                       onClick={selectedRecord?.open}
@@ -1365,7 +1381,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                       className="inline-flex max-w-full items-center gap-0.5"
                       style={{ font: '500 12.5px/1.2 var(--sans)', color: 'var(--text)', cursor: selectedRecord ? 'pointer' : 'default' }}
                     >
-                      <span className="truncate">{selectedName ?? formatPhone(selected.their_number)}</span>
+                      <span className="truncate">{selectedName ?? selectedRecord?.name ?? formatPhone(selected.their_number)}</span>
                       {selectedRecord && <Icon name="chevron-right" size={11} style={{ color: 'var(--muted-2)' }} />}
                     </button>
                     <div className="flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-0.5">
@@ -1376,7 +1392,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                       <span className="truncate" style={{ font: '400 11px/1.2 var(--sans)', color: 'var(--muted-2)' }}>
                         {formatPhone(selected.their_number)}
                         {theirZone && now !== null ? ` · ${tzTime(theirZone, now)} local` : ''}
-                        {selected.assigned_user_name ? <> · <RepFace name={selected.assigned_user_name} /> {selected.assigned_user_name}</> : ''}
+                        {selected.assigned_user_name ? <> · {selected.assigned_user_name}</> : ''}
                         {!selectedRecord && recordFor ? ' · Not in CLOZR' : ''}
                       </span>
                     </div>
@@ -1484,11 +1500,25 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
               // A run ends where the side changes or a stamp would break it; only its last bubble has a tail.
               const tail = !next || next.direction !== m.direction || needsStamp(at, next.sent_at ?? next.created_at);
               const last = mine && i === lastOutbound;
-              const pending = mine && PENDING_STATUSES.has(m.status);
+              const pending = mine && smsPending(m.status, at);
               const failed = mine && FAILED_STATUSES.has(m.status);
+              const stamp = needsStamp(prev ? prev.sent_at ?? prev.created_at : null, at);
+              // Who sent this run and from which line: over the first bubble of
+              // every outbound run, and again when the sender or the line changes
+              // inside one, so a thread two reps worked reads as two voices.
+              const sender = mine ? senderOf(m) : null;
+              const senderLine = mine ? m.from_number ?? selected?.our_number ?? null : null;
+              const showSender = !!sender && (stamp || !prev || prev.direction !== 'outbound'
+                || (prev.created_by ?? null) !== (m.created_by ?? null) || (prev.from_number ?? null) !== (m.from_number ?? null));
               return (
                 <Fragment key={m.id}>
-                  {needsStamp(prev ? prev.sent_at ?? prev.created_at : null, at) && <TimeSeparator at={at} />}
+                  {stamp && <TimeSeparator at={at} />}
+                  {showSender && sender && (
+                    <div className="flex items-center gap-1.5 self-end" style={{ margin: '2px 2px 4px 0', font: '500 10.5px/1 var(--sans)', color: 'var(--muted-2)' }} title={`Sent by ${sender.name}`}>
+                      <span>{[sender.name, lineLabel(senderLine), orgName].filter(Boolean).join(' · ')}</span>
+                      <UserAvatar name={sender.name} src={sender.avatar} size={18} />
+                    </div>
+                  )}
                   <Bubble
                     mine={mine}
                     tail={tail}
@@ -1500,9 +1530,9 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                             Not delivered · Tap to retry
                           </button>
                         ) : (
-                          RECEIPT[m.status] ?? m.status
+                          [smsReceiptLabel(m.status, at), linkViews.label(m.body)].filter(Boolean).join(' · ')
                         )
-                      ) : undefined
+                      ) : (mine ? linkViews.label(m.body) ?? undefined : undefined)
                     }
                   >
                     {m.media_urls.length > 0 && (
@@ -1575,49 +1605,12 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
           )}
 
           <div>
-            {(attachments.length > 0 || uploading) && (
-              <div className="flex flex-wrap items-center gap-2.5 px-3 pt-3 md:px-6">
-                {attachments.map((a) => (
-                  <span
-                    key={a.url}
-                    className="relative inline-flex items-center gap-2"
-                    style={{
-                      border: '1px solid var(--line)',
-                      borderRadius: 10,
-                      background: 'var(--panel)',
-                      padding: a.previewUrl ? 3 : '7px 10px',
-                      font: '500 11px/1 var(--sans)',
-                    }}
-                  >
-                    {a.previewUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- local object URL
-                      <img
-                        src={a.previewUrl}
-                        alt={a.name}
-                        style={{ width: 52, height: 52, objectFit: 'cover', borderRadius: 8, display: 'block' }}
-                      />
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5">
-                        <Icon name={a.kind === 'video' ? 'play' : 'image'} size={13} />
-                        {a.name}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      aria-label={`Remove ${a.name}`}
-                      onClick={() => removeAttachment(a.url)}
-                      className="inline-flex h-5 w-5 items-center justify-center rounded-full"
-                      style={{ position: 'absolute', top: -6, right: -6, background: '#1c1c1e', color: '#fff', cursor: 'pointer' }}
-                    >
-                      <Icon name="x" size={11} strokeWidth={2.5} />
-                    </button>
-                  </span>
-                ))}
-                {uploading && (
-                  <span style={{ font: '500 11px/1 var(--sans)', color: 'var(--muted-2)' }}>Uploading…</span>
-                )}
-              </div>
-            )}
+            <PendingAttachments
+              attachments={attachments}
+              uploading={uploading}
+              onRemove={removeAttachment}
+              className="flex flex-wrap items-center gap-2.5 px-3 pt-3 md:px-6"
+            />
 
             {/* What the seller will read, when it differs from what is typed. */}
             {(hasMergeFields(draft) || (previewState.preview?.unknown_fields.length ?? 0) > 0) && (
@@ -1652,7 +1645,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,video/mp4,video/3gpp,application/pdf,text/vcard"
+              accept={MMS_ACCEPT}
               multiple
               hidden
               onChange={(e) => {
@@ -1668,7 +1661,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                   type="button"
                   aria-label="Attach photo or file"
                   title="Attach photo, video or file (MMS)"
-                  disabled={uploading || attachments.length >= 10}
+                  disabled={uploading || attachments.length >= MMS_MAX_FILES}
                   onClick={() => fileInputRef.current?.click()}
                   className="tray-btn"
                   aria-pressed={attachments.length > 0}
@@ -1783,10 +1776,10 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
 /* ── Row ──────────────────────────────────────────────────────────────────── */
 
 /**
- * An iOS Messages row: the unread dot left of a 44px avatar, the name bold
- * with the time and a chevron at the right, two lines of preview, and a
- * hairline that starts past the avatar. Talkr's vocabulary (type, heat,
- * status, tags, rep) and the CLOZR record ride underneath in small type.
+ * An iOS Messages row: the unread dot, the name bold with the time and a
+ * chevron at the right, two lines of preview, and a hairline under the text.
+ * Talkr's vocabulary (type, heat, status, tags, rep) and the CLOZR record
+ * ride underneath in small type.
  */
 function ConversationRow({
   c,
@@ -1826,11 +1819,11 @@ function ConversationRow({
           aria-label={unread ? `${c.unread_count} unread` : undefined}
           style={{ width: 10, height: 10, borderRadius: '50%', background: unread ? 'var(--accent)' : 'transparent', flexShrink: 0, alignSelf: 'center' }}
         />
-        <Avatar name={name ?? c.their_number} size={44} />
         <span className="ios-row-body flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex items-center gap-1.5">
             <span className="mr-auto truncate" style={{ font: '600 15px/1.25 var(--sans)', color: 'var(--text)' }}>
-              {name ?? formatPhone(c.their_number)}
+              {/* Talkr's contact name, else the CLOZR record's: most threads have no Talkr contact. */}
+              {name ?? record?.name ?? formatPhone(c.their_number)}
             </span>
             <span style={{ font: '400 13px/1 var(--sans)', color: 'var(--muted-2)', whiteSpace: 'nowrap' }}>{timeShort(c.last_message_at)}</span>
             <Icon name="chevron-right" size={13} style={{ color: '#c7c7cc' }} />
@@ -1876,7 +1869,6 @@ function ConversationRow({
                 <TagChip key={t}>{t}</TagChip>
               ))}
               {c.tags.length > 2 && <span>+{c.tags.length - 2}</span>}
-              {c.assigned_user_name ? <RepFace name={c.assigned_user_name} /> : null}
               <span className="truncate">
                 {[c.assigned_user_name, place, zone && now !== null ? `${tzTime(zone, now)} local` : c.lead_status].filter(Boolean).join(' · ')}
               </span>

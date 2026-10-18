@@ -14,11 +14,39 @@ import {
   listSellerPicks, listTeammates, loadPlan, pauseEnrollment, rememberPlan, resumeEnrollment, sameDraft, savePlanDraft, setPlanActive, stopEnrollment, triggerLabel,
 } from '@/lib/plans';
 import { askPlanAi } from '@/lib/plans-ai';
+import { buildPlanProgress, fetchPlanProgress, type PlanProgress, type ResultsKind } from '@/lib/plan-progress';
 
 export type AiReview = { kind: 'goal' | 'edit'; changes: string[]; before: PlanDraft | null };
 
+const PROGRESS_POLL_MS = 15_000;
+
 /** Sample people on the first catalog plan, so play and pause can be tried with no workspace. */
 const PREVIEW_PLAN_ID = 1;
+
+function previewProgress(): PlanProgress[] {
+  return buildPlanProgress({
+    enrollments: [
+      { id: 101, planId: PREVIEW_PLAN_ID, sellerId: 2, buyerId: null, name: 'Ronald Moore', status: 'active', enrolledAt: '2026-09-20T15:00:00.000Z', stoppedReason: null },
+      { id: 102, planId: PREVIEW_PLAN_ID, sellerId: 1, buyerId: null, name: 'Kara Mitchell', status: 'paused', enrolledAt: '2026-08-22T14:00:00.000Z', stoppedReason: 'manual' },
+    ],
+    steps: [{ id: 1, channel: 'email' }, { id: 2, channel: 'sms' }, { id: 3, channel: 'rvm' }],
+    tasks: [
+      { id: 1, enrollmentId: 101, planStepId: 1, done: true, taskType: 'email', completedAt: '2026-09-20T16:00:00.000Z', dueAt: null, title: 'Intro email', notes: 'Hello Ronald' },
+      { id: 2, enrollmentId: 101, planStepId: 2, done: false, taskType: 'text', completedAt: null, dueAt: '2026-09-22T15:00:00.000Z', title: 'Follow-up text', notes: null },
+      { id: 3, enrollmentId: 101, planStepId: 3, done: true, taskType: 'rvm', completedAt: '2026-09-21T15:00:00.000Z', dueAt: null, title: 'Voicemail', notes: null },
+      { id: 4, enrollmentId: 102, planStepId: 1, done: true, taskType: 'email', completedAt: '2026-08-22T15:00:00.000Z', dueAt: null, title: 'Intro email', notes: 'Hello Kara\nThis address already left the warmed sequence.' },
+    ],
+    comms: [
+      { id: 9, buyerId: null, sellerId: 2, direction: 'outbound', channel: 'email', status: 'sent', sourceId: 'plan:1', occurredAt: '2026-09-20T16:00:00.000Z', subject: 'Quick note', body: 'Hello Ronald' },
+      { id: 10, buyerId: null, sellerId: 2, direction: 'inbound', channel: 'email', status: 'received', sourceId: 'gmail:1', occurredAt: '2026-09-21T12:00:00.000Z', subject: 'Re: Quick note', body: 'Yes, send the details.', fromEmail: 'ronald@example.com' },
+    ],
+    drops: [
+      { id: 5, enrollmentId: 101, planStepId: 3, status: 'failed', skipReason: null, lastError: 'Carrier refused the drop', sentAt: null, buyerId: null, sellerId: 2 },
+    ],
+    coldReplies: [],
+  });
+}
+
 const PREVIEW_ENROLLED: EnrolledRow[] = [
   { id: 101, seller_id: 2, name: 'Ronald Moore', addr: '1803 Cypress Lane', status: 'active', step: 2, total: 4, enrolled_at: '2026-09-20T15:00:00.000Z', stopped_reason: null },
   { id: 102, seller_id: 1, name: 'Kara Mitchell', addr: '123 Oakview Drive', status: 'paused', step: 6, total: 8, enrolled_at: '2026-08-22T14:00:00.000Z', stopped_reason: 'manual' },
@@ -44,6 +72,11 @@ export function usePlans(opts: { onSaved?: () => void; notify?: (msg: string) =>
   const [aiBusy, setAiBusy] = useState(false);
   const [aiReview, setAiReview] = useState<AiReview | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [progressPlans, setProgressPlans] = useState<PlanProgress[]>([]);
+  const [progressState, setProgressState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [progressError, setProgressError] = useState<string | null>(null);
+  const [resultsKind, setResultsKind] = useState<ResultsKind | null>(null);
+  const progressByPlan = useMemo(() => new Map(progressPlans.map((p) => [p.planId, p])), [progressPlans]);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const notifyRef = useRef(opts.notify);
@@ -60,6 +93,24 @@ export function usePlans(opts: { onSaved?: () => void; notify?: (msg: string) =>
   const dirty = useMemo(() => !!draft && (!saved || !sameDraft(draft, saved)), [draft, saved]);
 
   // ---- loading --------------------------------------------------------------------
+
+  const refreshProgress = useCallback(async () => {
+    if (workspaceId === null) {
+      setProgressPlans(previewProgress());
+      setProgressState('ready');
+      setProgressError(null);
+      return;
+    }
+    const r = await fetchPlanProgress(workspaceId);
+    if (!r.ok) {
+      setProgressState('error');
+      setProgressError(r.message);
+      return;
+    }
+    setProgressPlans(r.plans);
+    setProgressState('ready');
+    setProgressError(null);
+  }, [workspaceId]);
 
   const refreshList = useCallback(async () => {
     if (workspaceId === null) {
@@ -81,19 +132,36 @@ export function usePlans(opts: { onSaved?: () => void; notify?: (msg: string) =>
       return;
     }
     setEnrolled(planId ? await listEnrolled(planId) : []);
-  }, [workspaceId, previewPeople]);
+    void refreshProgress();
+  }, [workspaceId, previewPeople, refreshProgress]);
 
   useEffect(() => {
     if (!session.ready) return;
     let alive = true;
     // Everything lands in .then callbacks: the effect itself sets no state.
-    void Promise.resolve().then(() => refreshList());
+    void Promise.resolve().then(() => { void refreshList(); void refreshProgress(); });
     if (workspaceId !== null) {
       void listSellerPicks(workspaceId).then((rows) => { if (alive) setSellers(rows); });
       void listTeammates(workspaceId).then((rows) => { if (alive) setTeam(rows); });
     }
     return () => { alive = false; };
-  }, [session.ready, workspaceId, refreshList]);
+  }, [session.ready, workspaceId, refreshList, refreshProgress]);
+
+  // Sends happen on the server every minute; re-read the counts while the tab
+  // is in view so the meter moves without pressing Refresh.
+  const progressBusy = useRef(false);
+  useEffect(() => {
+    if (!session.ready || workspaceId === null) return;
+    const tick = async () => {
+      if (progressBusy.current || document.visibilityState !== 'visible') return;
+      progressBusy.current = true;
+      try { await refreshProgress(); } finally { progressBusy.current = false; }
+    };
+    const timer = setInterval(() => { void tick(); }, PROGRESS_POLL_MS);
+    const onVisible = () => { if (document.visibilityState === 'visible') void tick(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
+  }, [session.ready, workspaceId, refreshProgress]);
 
   const open = useCallback(async (planId: number) => {
     if (workspaceId === null) {
@@ -137,6 +205,16 @@ export function usePlans(opts: { onSaved?: () => void; notify?: (msg: string) =>
     !dirty || window.confirm('This plan has unsaved changes. Leave without saving?'), [dirty]);
 
   // ---- the list --------------------------------------------------------------------------
+
+  const openResults = useCallback((planId: number, kind: ResultsKind) => {
+    if (draft?.id !== planId) {
+      if (!confirmDiscard()) return;
+      void open(planId);
+      setResultsKind(kind);
+      return;
+    }
+    setResultsKind((cur) => (cur === kind ? null : kind));
+  }, [draft, confirmDiscard, open]);
 
   const select = useCallback((planId: number) => {
     if (draft?.id === planId) return;
@@ -403,7 +481,8 @@ export function usePlans(opts: { onSaved?: () => void; notify?: (msg: string) =>
     workspaceId, userId, canWrite, preview, loading, loadError,
     plans, draft, saved, dirty, saving, enrolled, sellers, team, tags,
     aiBusy, aiReview, toastMsg,
-    select, open, newPlan, duplicate, remove, toggleActive,
+    progressByPlan, progressState, progressError, resultsKind,
+    select, open, openResults, refreshProgress, newPlan, duplicate, remove, toggleActive,
     patch, patchSettings, patchStep, addStep, removeStep, duplicateStep, moveStep,
     save, cancel, close, enroll, pauseOne, resumeOne, stop,
     aiGenerate, aiEdit, aiUndo, dismissReview, refreshList,

@@ -18,6 +18,8 @@ export type Rep = {
   /** The workspace role (lib/team Role: owner, admin, acquisitions, dispositions, tc, member, notary). */
   memberRole?: string;
   avatar?: string;
+  /** Their sign-in address: how a Talkr seat is matched to this teammate (lib/sms-record talkrUserMap). */
+  email?: string;
   lb?: { calls: number; sms: number; emails: number; conversations: number };
 };
 
@@ -176,6 +178,10 @@ export type TimelineEntry = {
   /** Live rows only: when it happened (ISO), so rows loaded apart (stage history) sort in among the rest. */
   at?: string;
   title: string; body?: string; recording?: boolean;
+  /** An inbound text or call: the teammate whose line it reached ("to Diego Ortiz"). */
+  toRep?: string;
+  /** A text or call: our line it went out on or came in to ("(210) 555-0125 · Morgan"), so the feed says the number as well as the person. */
+  line?: string;
   /** A call: the rep's call notes, shown under its recording. A call note: set when it is shown there instead. */
   callNote?: string; underCall?: boolean;
   /** Live rows only: the record this happened on ("s8", "b3"), so a record shows its own history. */
@@ -185,11 +191,15 @@ export type TimelineEntry = {
   /** Pinned to the top of the record's feed (migration 43): when, and by whom. */
   pinnedAt?: string; pinnedBy?: string | null;
   ai?: { summary: string; objections: string[]; next: string };
+  /** The AI agent that did it (migration 269): the feed shows its name and picture instead of a rep's. */
+  agent?: { key: string; name: string; avatar: string | null };
   /** An email: what the record's feed draws as a message (components/record/EmailEntry.tsx) rather than a text blob. */
   email?: {
     subject: string; from: string; fromName: string; to: string[]; inbound: boolean; body: string;
     /** The RFC Message-ID Gmail filed it under ("<…>"), so a reply from the feed lands in the same Gmail thread. */
     sourceId?: string | null;
+    /** Sample data only: the read receipt a live row reads from email_tracking. */
+    receipt?: { opens: number; clicks: number; first_opened_at: string | null };
   };
 };
 
@@ -232,6 +242,8 @@ export type Notification = {
   body?: string;
   /** A missed call or text (lib/bell-events): the other side's number, so reading the thread in the Inbox clears it. */
   phone?: string;
+  /** A reply's tone (lib/reply-tone): the Important view shows only good replies. */
+  tone?: 'good' | 'bad' | 'auto' | null;
 };
 
 export type Offer = {

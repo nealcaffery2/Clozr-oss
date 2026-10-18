@@ -23,8 +23,8 @@ export function PropertyRecords({ sellerId, dealId, reloadKey }: { sellerId?: nu
 
   const cur = state?.key === key ? state : null;
   const r = cur?.row ?? null;
-  if (!cur) return <div style={{ fontSize: '12.5px', color: '#71717a', padding: '8px 0' }}>Loading property records…</div>;
-  if (!r) return <div style={{ fontSize: '12.5px', color: '#71717a', padding: '8px 0' }}>Run COMPR to pull property records.</div>;
+  if (!cur) return <div style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)', padding: '8px 0' }}>Loading property records…</div>;
+  if (!r) return <div style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)', padding: '8px 0' }}>Run COMPR to pull property records.</div>;
 
   const mail = r.owner_mailing;
   const sale = r.last_sale;
@@ -44,7 +44,7 @@ export function PropertyRecords({ sellerId, dealId, reloadKey }: { sellerId?: nu
     ['Prior sale', sale ? join(money(sale.prior_price), day(sale.prior_date)) : null],
     ...(r.events ?? []).map((e): [string, React.ReactNode] => [
       EVENT[e.type] ?? e.type,
-      <span key={e.type} style={{ color: '#b91c1c' }}>
+      <span key={e.type} style={{ color: 'var(--tx-red, #b91c1c)' }}>
         {join(e.detail.stage as string | null, day(e.date),
           e.detail.auction_date ? `auction ${day(e.detail.auction_date as string)}` : null,
           e.detail.unpaid_balance != null ? `${money(e.detail.unpaid_balance as number)} unpaid` : null,
@@ -58,12 +58,12 @@ export function PropertyRecords({ sellerId, dealId, reloadKey }: { sellerId?: nu
   return (
     <div>
       {rows.filter(([, v]) => v != null && v !== '').map(([k, v], i) => (
-        <div key={i} style={{ display: 'grid', gridTemplateColumns: '86px 1fr', gap: '8px', padding: '6px 0', borderBottom: '1px solid #f0f0f1', fontSize: '12px' }}>
-          <span style={{ color: '#71717a' }}>{k}</span>
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: '86px 1fr', gap: '8px', padding: '6px 0', borderBottom: '1px solid var(--divider-2, #f0f0f1)', fontSize: '12px' }}>
+          <span style={{ color: 'var(--meta, #71717a)' }}>{k}</span>
           <span style={{ fontWeight: 500, overflowWrap: 'anywhere' }}>{v}</span>
         </div>
       ))}
-      <div style={{ fontSize: '11px', color: '#a1a1aa', marginTop: '6px' }}>from COMPR · {day(r.fetched_at)}</div>
+      <div style={{ fontSize: '11px', color: 'var(--subtle, #a1a1aa)', marginTop: '6px' }}>from COMPR · {day(r.fetched_at)}</div>
     </div>
   );
 }

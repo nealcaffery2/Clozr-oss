@@ -207,6 +207,18 @@ export async function logActivity(
   });
 }
 
+/** logActivity's row for each of several records, in one insert. */
+export async function logActivities(
+  workspaceId: number, entityType: string, entityIds: number[],
+  kind: string, title: string, body?: string, actorId?: string | null,
+): Promise<void> {
+  if (!supabase || !entityIds.length) return;
+  await supabase.from('activity').insert(entityIds.map((entityId) => ({
+    workspace_id: workspaceId, entity_type: entityType, entity_id: entityId,
+    kind, title, body: body ?? null, actor_id: actorId ?? null,
+  })));
+}
+
 // ---- creates ----------------------------------------------------------------
 
 /**
@@ -416,7 +428,7 @@ export function buyerRow(p: BuyerProfileInput, before?: BuyerBefore | null, now:
   return row;
 }
 
-/** Quick Add's compact form ("$100K – $350K", "DFW, Houston") as a profile. */
+/** Quick Add's compact form ("$100K – $350K", "DFW, Houston", a note) as a profile. */
 export function quickBuyerProfile(f: Record<string, string>): BuyerProfileInput {
   const nums = (f.price || '').match(/[\d.,]+\s*[kKmM]?/g) ?? [];
   const vals = nums.map((n) => {
@@ -436,6 +448,8 @@ export function quickBuyerProfile(f: Record<string, string>): BuyerProfileInput 
   return {
     name: f.name, company: f.company, phone: f.phone, email: f.email, buyer_type: buyerTypeCode(f.type),
     criteria: { location_prefs: markets.map(pref), price: vals.length ? { min: vals.length > 1 ? Math.min(...vals) : null, max: Math.max(...vals) } : {} },
+    // The form's Note (filled from a call when the dialer opened it): what has no field of its own here.
+    ...(f.note?.trim() ? { notes: f.note.trim() } : {}),
     source: 'Manual',
   };
 }
@@ -617,14 +631,20 @@ export async function createDeal(
   return { ok: true, id: data.id, dealId: data.id };
 }
 
+/** An open TC file. The triggers write 'open'; a row that took the column default may read 'Open'. */
+const TX_OPEN = ['open', 'Open'];
+
 export async function createTask(
   workspaceId: number, f: Record<string, string>, userId: string | null,
 ): Promise<WriteResult> {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
   const sellerId = f.personId ? dbId(f.personId) : null;
+  // A buyer's task ('b' + buyers.id), when there is no seller: a Compr call's follow-up.
+  const buyerId = !f.personId && f.buyerId ? dbId(f.buyerId) : null;
   const { data, error } = await supabase.from('tasks').insert({
     workspace_id: workspaceId,
     seller_id: Number.isFinite(sellerId) ? sellerId : null,
+    ...(buyerId != null && Number.isFinite(buyerId) ? { buyer_id: buyerId } : {}),
     title: f.title.trim(),
     task_type: f.type || 'Call',
     priority: f.priority || 'Medium',
@@ -643,8 +663,10 @@ export async function createTask(
   const sid = sellerId != null && Number.isFinite(sellerId) ? sellerId : null;
   const itemId = sid != null ? checklistIdForTitle(f.title.trim()) : null;
   if (itemId && sid != null) {
+    // A seller can have more than one TC file: the newest open one (maybeSingle on several errored, and the tick was lost).
     const { data: tx } = await supabase.from('transactions')
-      .select('id, checklist').eq('workspace_id', workspaceId).eq('seller_id', sid).maybeSingle();
+      .select('id, checklist').eq('workspace_id', workspaceId).eq('seller_id', sid).in('status', TX_OPEN)
+      .order('id', { ascending: false }).limit(1).maybeSingle();
     if (tx) {
       const cur = ((tx as { checklist?: Record<string, boolean> }).checklist ?? {});
       if (!cur[itemId]) {
@@ -799,6 +821,8 @@ export async function setStageMany(
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
   let moved = 0;
   const movedIds: number[] = [];
+  // The TC roster, read once for the whole move instead of once per seller.
+  let tcs: Promise<string[]> | null = null;
   for (const b of batches(personIds)) {
     const { data, error } = await supabase.from('sellers').update({ lead_stage: stage })
       .eq('workspace_id', workspaceId).in('id', b).select('id');
@@ -806,11 +830,10 @@ export async function setStageMany(
     const done = (data ?? []).map((r) => r.id);
     moved += done.length;
     movedIds.push(...done);
-    // As setStage: Make Offer asks the TC to send each offer.
-    if (stage === 'Make Offer') {
-      for (const sellerId of done) {
-        void notifyTc(workspaceId, { title: 'Offer requested', body: 'Stage moved to Make Offer — the TC needs to send the offer.', sellerId, category: 'TC' }).catch(() => {});
-      }
+    // As setStage: Make Offer asks the TC to send each offer, one insert per batch.
+    if (stage === 'Make Offer' && done.length) {
+      tcs ??= tcUserIds(workspaceId);
+      void notifyTc(workspaceId, done.map((sellerId) => ({ title: 'Offer requested', body: 'Stage moved to Make Offer — the TC needs to send the offer.', sellerId, category: 'TC' })), tcs).catch(() => {});
     }
     if (done.length) {
       void supabase.from('activity').insert(done.map((id) => ({
@@ -845,19 +868,7 @@ export async function openDealOnProperty(
   return error ? fail(error) : { ok: true, id: data.id };
 }
 
-/** Run `job` over `items`, `limit` at a time: a bulk enroll without a serial wait or a burst of hundreds. */
-export async function eachLimited<T, R>(items: readonly T[], limit: number, job: (item: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) {
-      const i = next++;
-      out[i] = await job(items[i]!);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return out;
-}
+export { eachLimited } from './each-limited';
 
 /** Move a deal on the pipeline. The seller's stage follows in the database. */
 /**
@@ -1030,23 +1041,27 @@ export async function tcUserIds(workspaceId: number): Promise<string[]> {
   return (data ?? []).map((r) => r.user_id);
 }
 
-/** Ping every TC on the roster. Used for offer requests and docs the TC just sent. */
-export async function notifyTc(
-  workspaceId: number,
-  opts: { title: string; body?: string; sellerId?: number | null; dealId?: number | null; category?: string },
-): Promise<void> {
+type TcPing = { title: string; body?: string; sellerId?: number | null; dealId?: number | null; category?: string };
+
+/**
+ * Ping every TC on the roster. Used for offer requests and docs the TC just
+ * sent. Several pings go in one insert; `tcIds` is a roster read already made
+ * (a bulk stage move reads it once for all its batches).
+ */
+export async function notifyTc(workspaceId: number, opts: TcPing | TcPing[], tcIds?: Promise<string[]>): Promise<void> {
   if (!supabase) return;
-  const ids = await tcUserIds(workspaceId);
-  if (!ids.length) return;
-  await supabase.from('notifications').insert(ids.map((user_id) => ({
+  const ids = await (tcIds ?? tcUserIds(workspaceId));
+  const pings = Array.isArray(opts) ? opts : [opts];
+  if (!ids.length || !pings.length) return;
+  await supabase.from('notifications').insert(pings.flatMap((p) => ids.map((user_id) => ({
     workspace_id: workspaceId,
     user_id,
-    category: opts.category ?? 'TC',
-    title: opts.title,
-    body: opts.body ?? null,
-    seller_id: opts.sellerId ?? null,
-    deal_id: opts.dealId ?? null,
-  })));
+    category: p.category ?? 'TC',
+    title: p.title,
+    body: p.body ?? null,
+    seller_id: p.sellerId ?? null,
+    deal_id: p.dealId ?? null,
+  }))));
 }
 
 async function logTc(
@@ -1196,7 +1211,7 @@ export async function setSubmissionStage(
   for (const b of batches(dealIds)) {
     const { error } = await supabase.from('deals').update({ lead_stage: stage, updated_at: new Date().toISOString() }).in('id', b).eq('workspace_id', workspaceId);
     if (error) return fail(error);
-    for (const id of b) void logActivity(workspaceId, 'deal', id, 'stage', 'Stage → ' + stage, undefined, userId).catch(() => {});
+    void logActivities(workspaceId, 'deal', b, 'stage', 'Stage → ' + stage, undefined, userId).catch(() => {});
   }
   return { ok: true };
 }
@@ -1235,16 +1250,29 @@ export async function setTaskDone(taskId: string, done: boolean, actorId?: strin
   const id = dbId(taskId);
   if (!Number.isFinite(id)) return { ok: false, message: 'Unknown task.' };
   const { data: task, error: readErr } = await supabase.from('tasks')
-    .select('id, title, seller_id, workspace_id').eq('id', id).maybeSingle();
+    .select('id, title, seller_id, deal_id, workspace_id').eq('id', id).maybeSingle();
   if (readErr) return fail(readErr);
   const { error } = await supabase.from('tasks')
     .update({ done, completed_at: done ? new Date().toISOString() : null }).eq('id', id);
   if (error) return fail(error);
+  await tickTcLine(task, done, actorId);
+  return { ok: true };
+}
+
+type TcTaskRow = { title: string; seller_id: number | null; deal_id: number | null; workspace_id: number | null };
+
+/** A TC checklist task, closed or re-opened, ticks its line on the file it belongs to. */
+async function tickTcLine(task: TcTaskRow | null, done: boolean, actorId?: string | null): Promise<void> {
+  if (!supabase) return;
   const sellerId = task?.seller_id ?? null;
   const itemId = task?.title ? checklistIdForTitle(task.title) : null;
-  if (sellerId && itemId && task?.workspace_id) {
-    const { data: tx } = await supabase.from('transactions')
-      .select('id, checklist').eq('workspace_id', task.workspace_id).eq('seller_id', sellerId).maybeSingle();
+  if ((sellerId || task?.deal_id) && itemId && task?.workspace_id) {
+    // The task's own deal's file when it names one (a deal task may have no seller),
+    // else the seller's newest open file: with two files maybeSingle errored and
+    // finishing the task never ticked the line.
+    let q = supabase.from('transactions').select('id, checklist').eq('workspace_id', task.workspace_id).in('status', TX_OPEN);
+    q = task.deal_id ? q.eq('deal_id', task.deal_id) : q.eq('seller_id', sellerId as number);
+    const { data: tx } = await q.order('id', { ascending: false }).limit(1).maybeSingle();
     if (tx) {
       const cur = ((tx as { checklist?: Record<string, boolean> }).checklist ?? {});
       if (!!cur[itemId] !== done) {
@@ -1258,7 +1286,31 @@ export async function setTaskDone(taskId: string, done: boolean, actorId?: strin
       }
     }
   }
-  return { ok: true };
+}
+
+/**
+ * setTaskDone for many tasks at once (the Tasks screen's "Complete all
+ * shown"): one update per 500 ids, one after another, writing the same
+ * columns, and a TC checklist task still ticks its line. `failed` is every id
+ * that did not save: an unknown id, a batch the database refused, or a row the
+ * update did not come back with (gone, or not this user's to change).
+ */
+export async function setTasksDone(taskIds: string[], done: boolean, actorId?: string | null): Promise<{ failed: string[]; message?: string }> {
+  if (!supabase) return { failed: [...taskIds], message: 'Supabase is not configured.' };
+  const byNum = new Map(taskIds.map((id) => [dbId(id), id] as const));
+  const failed = taskIds.filter((id) => !Number.isFinite(dbId(id)));
+  let message: string | undefined;
+  const completedAt = done ? new Date().toISOString() : null;
+  for (const b of batches(taskIds, 500)) {
+    const { data, error } = await supabase.from('tasks').update({ done, completed_at: completedAt })
+      .in('id', b).select('id, title, seller_id, deal_id, workspace_id');
+    if (error) message ??= error.message;
+    const back = new Set((error ? [] : data ?? []).map((r) => r.id));
+    for (const n of b) if (!back.has(n)) failed.push(byNum.get(n)!);
+    // ponytail: one checklist read per TC task; batch by file if bulk TC closes get common.
+    for (const t of error ? [] : data ?? []) await tickTcLine(t, done, actorId);
+  }
+  return { failed, message };
 }
 
 /** Pin or unpin a timeline entry: 'ct12' (a communication, ':b' copy included) or 'a34' (an activity row). */
@@ -1281,19 +1333,175 @@ export async function markNotificationsRead(ids: string[]): Promise<WriteResult>
   return fail(error);
 }
 
+/** Every unread notification of this member in this workspace, read. */
+export async function markAllNotificationsRead(workspaceId: number, userId: string): Promise<WriteResult> {
+  if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
+  const { error } = await supabase.from('notifications')
+    .update({ read_at: new Date().toISOString() })
+    .eq('workspace_id', workspaceId).eq('user_id', userId).is('read_at', null);
+  return fail(error);
+}
+
 export async function markNotificationRead(notificationId: string): Promise<WriteResult> {
   return markNotificationsRead([notificationId]);
 }
 
+const STEP_COLS = 'id, position, channel, delay_minutes, title, body, config';
+type Row = Record<string, unknown>;
+
+/** A step's config as an object (jsonb, so anything can be stored there). */
+const stepCfg = (st: { config: unknown }) =>
+  (st.config && typeof st.config === 'object' && !Array.isArray(st.config) ? st.config : {}) as Record<string, unknown>;
+
+/** One record for enrollMany: its id, extra enrolment columns, and its task and drop rows for an enrolment id and a clock. */
+export type EnrollJob = {
+  key: number;
+  extra?: Row;
+  tasks: (enrollmentId: number, now: number) => Row[];
+  drops: (enrollmentId: number, now: number) => Row[];
+};
+/** One record's outcome: already on the plan, refused (`error`), or enrolled with `queued` tasks (0 with `tasksError` when the tasks were refused). */
+export type EnrollOutcome = { id?: number; already?: boolean; queued: number; error?: { message: string }; tasksError?: { message: string } };
+
+/**
+ * Enrol many records in one plan. Per 200 records: one read of who is already
+ * on it, one enrolment insert, one task upsert and one ringless drop insert,
+ * where a record at a time made those four requests (and its reads) for each.
+ * The rows are the ones the one-at-a-time path wrote. When the database
+ * refuses a batch, who is on the plan is read again and the rest are tried
+ * one record at a time, so one bad record fails alone; with `stopAtError`,
+ * nothing after the first failure is tried, as a loop that returns on its
+ * first error does. A key listed twice is enrolled once; the second is
+ * `already`.
+ *
+ * Nothing is written for a record unless the already-on read for it
+ * succeeded: there is no unique guard on running enrolments, so a failed
+ * read taken as "nobody is on it" would enrol everyone again, with a second
+ * set of texts and drops. A failed read fails its batch with that error.
+ */
+export async function enrollMany(
+  workspaceId: number, plan: number, column: 'seller_id' | 'buyer_id', jobs: EnrollJob[], userId: string | null,
+  stopAtError = false, db = supabase,
+): Promise<EnrollOutcome[]> {
+  if (!db) return jobs.map(() => ({ queued: 0, error: { message: 'Supabase is not configured.' } }));
+  const out: EnrollOutcome[] = jobs.map(() => ({ queued: 0 }));
+  const first = new Map<number, number>();
+  const todo: number[] = [];
+  jobs.forEach((j, i) => {
+    if (!Number.isFinite(j.key)) out[i] = { queued: 0, error: { message: 'Unknown record.' } };
+    else if (!first.has(j.key)) { first.set(j.key, i); todo.push(i); }
+  });
+  const keyOf = (r: { seller_id: number | null; buyer_id?: number | null }) => (column === 'seller_id' ? r.seller_id : r.buyer_id) ?? null;
+  /** Who of `idx` is on this plan now (enrolment id by key), or the read's error. */
+  const runningOf = async (idx: number[]) => {
+    const { data, error } = await db.from('enrollments').select('id, seller_id, buyer_id')
+      .eq('workspace_id', workspaceId).eq('plan_id', plan).in(column, idx.map((i) => jobs[i]!.key))
+      .neq('status', 'done').order('id');
+    const on = new Map<number, number>();
+    for (const r of data ?? []) { const k = keyOf(r); if (k != null && !on.has(k)) on.set(k, r.id); }
+    return { on, error };
+  };
+  let stopped: { message: string } | null = null;
+  for (let at = 0; at < todo.length; at += 200) {
+    const chunk = todo.slice(at, at + 200);
+    if (stopped) { for (const i of chunk) out[i] = { queued: 0, error: stopped }; continue; }
+    // Already on this plan? Say so and change nothing: enrolling twice made a
+    // second enrolment with its own tasks, and every touch went out twice.
+    const check = await runningOf(chunk);
+    if (check.error) {
+      for (const i of chunk) out[i] = { queued: 0, error: check.error };
+      if (stopAtError) stopped = check.error;
+      continue;
+    }
+    const fresh: number[] = [];
+    for (const i of chunk) {
+      const id = check.on.get(jobs[i]!.key);
+      if (id != null) out[i] = { id, already: true, queued: 0 };
+      else fresh.push(i);
+    }
+    if (!fresh.length) continue;
+
+    const row = (i: number) => ({ workspace_id: workspaceId, plan_id: plan, [column]: jobs[i]!.key, ...jobs[i]!.extra, created_by: userId });
+    const made = new Map<number, number>();
+    const ins = await db.from('enrollments').insert(fresh.map(row) as never).select('id, seller_id, buyer_id');
+    if (!ins.error) {
+      const byKey = new Map<number | null, number>((ins.data ?? []).map((r) => [keyOf(r), r.id]));
+      for (const i of fresh) {
+        const id = byKey.get(jobs[i]!.key);
+        if (id != null) made.set(i, id); else out[i] = { queued: 0, error: { message: 'The enrolment was not saved.' } };
+      }
+    } else {
+      // Read again before going one by one: an answer lost on the way back may
+      // have left the batch saved. Anyone on the plan now is left alone.
+      const again = await runningOf(fresh);
+      for (const i of fresh) {
+        const id = again.on.get(jobs[i]!.key);
+        if (stopped || again.error) { out[i] = { queued: 0, error: stopped ?? again.error! }; continue; }
+        if (id != null) { out[i] = { id, already: true, queued: 0 }; continue; }
+        const one = await db.from('enrollments').insert(row(i) as never).select('id').single();
+        if (one.error) { out[i] = { queued: 0, error: one.error }; if (stopAtError) stopped = one.error; }
+        else made.set(i, (one.data as { id: number }).id);
+      }
+      if (again.error && stopAtError) stopped = again.error;
+    }
+
+    // Ignore duplicate tasks rather than failing: a second enrolment should be
+    // a no-op on the queue (tasks are keyed to the enrolment and the step).
+    const now = Date.now();
+    const rows = new Map<number, Row[]>();
+    for (const [i, id] of made) { out[i] = { id, queued: 0 }; rows.set(i, jobs[i]!.tasks(id, now)); }
+    const upsert = (r: Row[]) => db.from('tasks').upsert(r as never, { onConflict: 'enrollment_id,plan_step_id', ignoreDuplicates: true });
+    const all = [...rows.values()].flat();
+    const { error: batchError } = all.length ? await upsert(all) : { error: null };
+    for (const [i, r] of rows) {
+      if (!r.length) continue;
+      const error = batchError ? (await upsert(r)).error : null;
+      if (error) out[i]!.tasksError = error; else out[i]!.queued = r.length;
+    }
+    const drops = [...made].flatMap(([i, id]) => (out[i]!.queued ? jobs[i]!.drops(id, now) : []));
+    if (drops.length) await db.from('rvm_drops').insert(drops as never);
+  }
+  jobs.forEach((j, i) => {
+    const f = first.get(j.key);
+    if (f != null && f !== i) out[i] = out[f]!.error ? { ...out[f]! } : { id: out[f]!.id, already: true, queued: 0 };
+  });
+  return out;
+}
+
+/**
+ * Rows of `table` by id, 200 ids a read, the reads at once, or the first
+ * read's error. The caller enrols nobody on an error: a record read as blank
+ * loses its blacklist and do-not-call flags and its owner.
+ */
+async function rowsById<T extends { id: number }>(
+  table: 'sellers' | 'buyers', cols: string, ids: number[],
+): Promise<{ rows: Map<number, T>; error: { message: string } | null }> {
+  const sb = supabase;
+  const all = [...new Set(ids.filter((n) => Number.isFinite(n)))];
+  if (!sb || !all.length) return { rows: new Map(), error: null };
+  const parts: number[][] = [];
+  for (let i = 0; i < all.length; i += 200) parts.push(all.slice(i, i + 200));
+  const reads = await Promise.all(parts.map((p) => sb.from(table).select(cols).in('id', p)));
+  const error = reads.find((r) => r.error)?.error ?? null;
+  return { rows: new Map(reads.flatMap((r) => (r.data ?? []) as unknown as T[]).map((r) => [r.id, r])), error };
+}
+
+type SellerForPlan = {
+  id: number; name: string | null; phone: string | null; tags: string[] | null; assigned_to: string | null; property_address: string | null;
+  properties: { line1: string; city: string | null; state: string | null; zip: string | null } | null;
+};
+
 /**
  * Enrol someone in an action plan, and put its steps on the calendar.
  *
- * The enrolment row on its own did nothing — the plan was a promise the app
+ * The enrolment row on its own did nothing. The plan was a promise the app
  * never kept. Each step now becomes a task dated from its delay, carrying the
  * message with the seller's own details filled in, assigned to whoever owns
- * the lead. A text still goes out as a person pressing send, which is what
- * Talkr and the carrier expect, but nothing is forgotten and the sequence
- * shows up in Tasks and on the calendar like the rest of the work.
+ * the lead. In a Compr workspace, and on any plan with auto_send turned on,
+ * a due email or text goes out on its own (plan-tick, migration 284). A call
+ * or a manual task stays for a person. On every other plan a text waits until
+ * someone presses send, which is what Talkr and the carrier expect. The
+ * sequence shows up in Tasks and on the calendar like the rest of the work.
  *
  * Enrolling the same person in the same plan twice does not double the
  * touches: the tasks are keyed to the enrolment and the step (migration 31).
@@ -1301,168 +1509,210 @@ export async function markNotificationRead(notificationId: string): Promise<Writ
 export async function enrollInPlan(
   workspaceId: number, planId: string, personId: string, userId: string | null,
 ): Promise<WriteResult & { queued?: number; already?: boolean }> {
-  if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
-  const sellerId = dbId(personId);
+  return (await enrollSellersInPlan(workspaceId, planId, [personId], userId))[0]!;
+}
 
-  // Already on this plan? Say so and change nothing. Without this, enrolling
-  // twice made a second enrolment with its own tasks, and the seller got every
-  // touch of the sequence twice.
-  const { data: running } = await supabase.from('enrollments')
-    .select('id').eq('workspace_id', workspaceId).eq('plan_id', dbId(planId))
-    .eq('seller_id', sellerId).neq('status', 'done').limit(1);
-  if (running?.length) return { ok: true, id: running[0].id, queued: 0, already: true };
-
-  const { data: enrolment, error } = await supabase.from('enrollments').insert({
-    workspace_id: workspaceId,
-    plan_id: dbId(planId),
-    seller_id: sellerId,
-    created_by: userId,
-  }).select('id').single();
-  if (error) return fail(error);
-
-  const [{ data: steps }, { data: seller }] = await Promise.all([
-    supabase.from('action_plan_steps')
-      .select('id, position, channel, delay_hours, delay_minutes, title, body, config')
-      .eq('plan_id', dbId(planId)).order('position'),
-    supabase.from('sellers')
-      .select('name, phone, tags, assigned_to, property_address, properties(line1, city, state, zip)')
-      .eq('id', sellerId).maybeSingle(),
+/**
+ * enrollInPlan for many sellers (People's bulk bar, an import): the steps and
+ * the sellers read once, then enrollMany. One result per id, in order. A
+ * failed read enrols nobody: no steps would enrol them with nothing queued,
+ * and a blank seller loses their do-not-call flags and owner.
+ */
+export async function enrollSellersInPlan(
+  workspaceId: number, planId: string, personIds: string[], userId: string | null,
+): Promise<(WriteResult & { queued?: number; already?: boolean })[]> {
+  if (!supabase) return personIds.map(() => ({ ok: false, message: 'Supabase is not configured.' }));
+  const plan = dbId(planId);
+  const sellerIds = personIds.map(dbId);
+  const [{ data: steps, error: stepsError }, { rows: sellers, error: sellersError }] = await Promise.all([
+    supabase.from('action_plan_steps').select(STEP_COLS).eq('plan_id', plan).order('position'),
+    rowsById<SellerForPlan>('sellers', 'id, name, phone, tags, assigned_to, property_address, properties(line1, city, state, zip)', sellerIds),
   ]);
-  if (!steps?.length) return { ok: true, id: enrolment.id, queued: 0 };
-
-  const who = (seller?.name ?? '').trim();
-  const first = who.split(/\s+/)[0] || who;
-  const prop = (seller as unknown as { properties: { line1: string; city: string | null; state: string | null; zip: string | null } | null } | null)?.properties;
-  const fields: Record<string, string> = {
-    first_name: first,
-    name: who,
-    contact_name: who,
-    address: prop?.line1 ?? seller?.property_address ?? '',
-    city: prop?.city ?? '',
-    state: prop?.state ?? '',
-    zip: prop?.zip ?? '',
-    postal_code: prop?.zip ?? '',
-  };
-
-  // Delays are minutes after the previous step (migration 34), so the due
-  // time is the running total; a `wait` step adds to it and queues nothing.
-  const now = Date.now();
-  let offset = 0;
-  const rows = steps.flatMap((st) => {
-    offset += st.delay_minutes ?? 0;
-    if (st.channel === 'wait') return [];
-    const cfg = (st.config && typeof st.config === 'object' && !Array.isArray(st.config) ? st.config : {}) as Record<string, unknown>;
-    const assignee = typeof cfg.assignee === 'string' && cfg.assignee ? cfg.assignee : null;
-    const priority = cfg.priority === 'low' || cfg.priority === 'high' ? cfg.priority : 'normal';
-    return [{
-      workspace_id: workspaceId,
-      seller_id: sellerId,
-      title: taskTitle(st.channel, st.title, first, cfg),
-      task_type: taskTypeFor(st.channel),
-      priority,
-      due_at: new Date(now + offset * 60_000).toISOString(),
-      assigned_to: assignee ?? seller?.assigned_to ?? userId,
-      notes: st.body ? renderMerge(st.body, fields) : null,
-      enrollment_id: enrolment.id,
-      plan_step_id: st.id,
-      created_by: userId,
-    }];
+  const readError = stepsError ?? sellersError;
+  if (readError) return personIds.map(() => fail(readError));
+  const jobs = sellerIds.map((sellerId): EnrollJob => {
+    const seller = sellers.get(sellerId);
+    const who = (seller?.name ?? '').trim();
+    const first = who.split(/\s+/)[0] || who;
+    const prop = seller?.properties;
+    const fields: Record<string, string> = {
+      first_name: first,
+      name: who,
+      contact_name: who,
+      address: prop?.line1 ?? seller?.property_address ?? '',
+      city: prop?.city ?? '',
+      state: prop?.state ?? '',
+      zip: prop?.zip ?? '',
+      postal_code: prop?.zip ?? '',
+    };
+    return {
+      key: sellerId,
+      // Delays are minutes after the previous step (migration 34), so the due
+      // time is the running total; a `wait` step adds to it and queues nothing.
+      tasks: (enrollmentId, now) => {
+        let offset = 0;
+        return (steps ?? []).flatMap((st) => {
+          offset += st.delay_minutes ?? 0;
+          if (st.channel === 'wait') return [];
+          const cfg = stepCfg(st);
+          const assignee = typeof cfg.assignee === 'string' && cfg.assignee ? cfg.assignee : null;
+          const priority = cfg.priority === 'low' || cfg.priority === 'high' ? cfg.priority : 'normal';
+          return [{
+            workspace_id: workspaceId,
+            seller_id: sellerId,
+            title: taskTitle(st.channel, st.title, first, cfg),
+            task_type: taskTypeFor(st.channel),
+            priority,
+            due_at: new Date(now + offset * 60_000).toISOString(),
+            assigned_to: assignee ?? seller?.assigned_to ?? userId,
+            notes: st.body ? renderMerge(st.body, fields) : null,
+            enrollment_id: enrollmentId,
+            plan_step_id: st.id,
+            created_by: userId,
+          }];
+        });
+      },
+      drops: (enrollmentId, now) => planRvmRows(workspaceId, steps ?? [], { seller_id: sellerId }, e164ish(seller?.phone), blockReason(seller), fields, enrollmentId, userId, now),
+    };
   });
-  if (!rows.length) return { ok: true, id: enrolment.id, queued: 0 };
-
-  // Ignore duplicates rather than failing: a second enrolment should be a
-  // no-op on the queue, not an error in the rep's face.
-  const { error: taskError } = await supabase.from('tasks')
-    .upsert(rows, { onConflict: 'enrollment_id,plan_step_id', ignoreDuplicates: true });
-  if (taskError) {
-    console.error('enrolled, but the steps were not queued', taskError.message);
-    return { ok: true, id: enrolment.id, queued: 0 };
-  }
-  await queuePlanRvm(workspaceId, steps, { seller_id: sellerId }, e164ish(seller?.phone), blockReason(seller), fields, enrolment.id, userId, now);
+  const res = await enrollMany(workspaceId, plan, 'seller_id', jobs, userId);
   // A whole sequence of dated work just appeared; put it on the calendar of
   // whoever connected Google, same as a task typed by hand.
-  nudgeGoogle(workspaceId);
-  return { ok: true, id: enrolment.id, queued: rows.length };
+  if (res.some((r) => r.queued)) nudgeGoogle(workspaceId);
+  return res.map((r) => {
+    if (r.error) return fail(r.error);
+    if (r.already) return { ok: true, id: r.id, queued: 0, already: true };
+    if (r.tasksError) console.error('enrolled, but the steps were not queued', r.tasksError.message);
+    return { ok: true, id: r.id, queued: r.queued };
+  });
 }
+
+/**
+ * The Compr rep replies come back to: the named lifecycle rep, else the SDR.
+ * Null outside a Compr workspace.
+ */
+async function comprRep(workspaceId: number): Promise<{ id: string; first: string } | null> {
+  return (await comprRepRead(workspaceId)).rep;
+}
+
+/** comprRep, with the error of a failed read (bulk enrol assigns nobody on a guess). */
+async function comprRepRead(workspaceId: number): Promise<{ rep: { id: string; first: string } | null; error: { message: string } | null }> {
+  if (!supabase) return { rep: null, error: null };
+  const { data: ws, error } = await supabase.from('workspaces').select('settings').eq('id', workspaceId).maybeSingle();
+  if (error) return { rep: null, error };
+  const settings = (ws?.settings ?? {}) as { buyer_profile?: string; compr_lifecycle?: { rep_user_id?: string } };
+  if (settings.buyer_profile !== 'compr') return { rep: null, error: null };
+  const { data: roster, error: rosterError } = await supabase.from('workspace_roster').select('user_id, full_name, role').eq('workspace_id', workspaceId);
+  if (rosterError) return { rep: null, error: rosterError };
+  const rows = (roster ?? []) as { user_id: string; full_name: string | null; role: string | null }[];
+  const named = settings.compr_lifecycle?.rep_user_id;
+  const hit = (named ? rows.find((r) => r.user_id === named) : undefined) ?? rows.find((r) => r.role === 'sdr');
+  if (!hit) return { rep: null, error: null };
+  return { rep: { id: hit.user_id, first: (hit.full_name ?? '').trim().split(/\s+/)[0] || '' }, error: null };
+}
+
+type BuyerForPlan = {
+  id: number; name: string | null; company: string | null; phone: string | null; email: string | null;
+  tags: string[] | null; blacklisted_at: string | null; wants_calls: boolean | null; assigned_to: string | null;
+};
 
 /**
  * Put one buyer on an action plan (no deal required). Same queueing as
  * enrollInPlan / enrollBuyersInPlan: each step becomes a dated task on the
- * buyer. Already-on-plan is a no-op.
+ * buyer. Already-on-plan is a no-op. In Compr the steps belong to the rep,
+ * so a reply comes back to them.
  */
 export async function enrollBuyerInPlan(
   workspaceId: number, planId: string, buyerId: string, userId: string | null,
   fields: Record<string, string> = {},
 ): Promise<WriteResult & { queued?: number; already?: boolean }> {
-  if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
-  const bid = dbId(buyerId);
+  return (await enrollManyBuyers(workspaceId, planId, [{ id: buyerId, fields }], userId))[0]!;
+}
+
+/**
+ * enrollBuyerInPlan for many buyers (Buyers' bulk bar): the steps, the buyers
+ * and the Compr rep read once, then enrollMany. One result per buyer, in
+ * order; `stopAtError` tries nothing after the first refused enrolment. A
+ * failed read enrols nobody (no steps, a blank buyer, or no rep to own them).
+ */
+export async function enrollManyBuyers(
+  workspaceId: number, planId: string, buyers: { id: string; fields?: Record<string, string> }[], userId: string | null,
+  stopAtError = false,
+): Promise<(WriteResult & { queued?: number; already?: boolean })[]> {
+  if (!supabase) return buyers.map(() => ({ ok: false, message: 'Supabase is not configured.' }));
+  const sb = supabase;
   const plan = dbId(planId);
-
-  const { data: running } = await supabase.from('enrollments')
-    .select('id').eq('workspace_id', workspaceId).eq('plan_id', plan)
-    .eq('buyer_id' as never, bid as never).neq('status', 'done').limit(1);
-  if (running?.length) return { ok: true, id: running[0].id, queued: 0, already: true };
-
-  const { data: enrolment, error } = await supabase.from('enrollments').insert({
-    workspace_id: workspaceId, plan_id: plan, buyer_id: bid, created_by: userId,
-  } as never).select('id').single();
-  if (error) return fail(error);
-
-  const [{ data: steps }, { data: buyer }] = await Promise.all([
-    supabase.from('action_plan_steps')
-      .select('id, position, channel, delay_minutes, title, body, config')
-      .eq('plan_id', plan).order('position'),
-    supabase.from('buyers').select('name, company, phone, email, tags, blacklisted_at, wants_calls').eq('id', bid).maybeSingle(),
+  const ids = buyers.map((b) => dbId(b.id));
+  const [{ data: steps, error: stepsError }, { rows, error: buyersError }, { rep, error: repError }] = await Promise.all([
+    sb.from('action_plan_steps').select(STEP_COLS).eq('plan_id', plan).order('position'),
+    rowsById<BuyerForPlan>('buyers', 'id, name, company, phone, email, tags, blacklisted_at, wants_calls, assigned_to', ids),
+    comprRepRead(workspaceId),
   ]);
-  if (!steps?.length) return { ok: true, id: (enrolment as { id: number }).id, queued: 0 };
-
-  const who = (buyer?.name ?? fields.name ?? '').trim();
-  const first = who.split(/\s+/)[0] || who;
-  const merge = {
-    first_name: first,
-    name: who,
-    contact_name: who,
-    company: buyer?.company ?? fields.company ?? '',
-    phone: buyer?.phone ?? fields.phone ?? '',
-    email: buyer?.email ?? fields.email ?? '',
-    ...fields,
-  };
-
-  const now = Date.now();
-  let offset = 0;
-  const rows = steps.flatMap((st) => {
-    offset += st.delay_minutes ?? 0;
-    if (st.channel === 'wait') return [];
-    const cfg = (st.config && typeof st.config === 'object' && !Array.isArray(st.config) ? st.config : {}) as Record<string, unknown>;
-    return [{
-      workspace_id: workspaceId,
-      buyer_id: bid,
-      title: taskTitle(st.channel, st.title, first, cfg),
-      task_type: taskTypeFor(st.channel),
-      priority: cfg.priority === 'low' || cfg.priority === 'high' ? cfg.priority : 'normal',
-      due_at: new Date(now + offset * 60_000).toISOString(),
-      assigned_to: typeof cfg.assignee === 'string' && cfg.assignee ? cfg.assignee : userId,
-      notes: st.body ? renderMerge(st.body, merge) : null,
-      enrollment_id: (enrolment as { id: number }).id,
-      plan_step_id: st.id,
-      created_by: userId,
-    }];
+  const readError = stepsError ?? buyersError ?? repError;
+  if (readError) return buyers.map(() => fail(readError));
+  const jobs = buyers.map(({ fields = {} }, n): EnrollJob => {
+    const bid = ids[n]!;
+    const buyer = rows.get(bid);
+    const who = (buyer?.name ?? fields.name ?? '').trim();
+    const first = who.split(/\s+/)[0] || who;
+    const merge = {
+      first_name: first,
+      name: who,
+      contact_name: who,
+      company: buyer?.company ?? fields.company ?? '',
+      phone: buyer?.phone ?? fields.phone ?? '',
+      email: buyer?.email ?? fields.email ?? '',
+      ...fields,
+      ...(rep?.first ? { rep_name: rep.first } : {}),
+    };
+    const ownerId = buyer?.assigned_to || rep?.id || userId;
+    return {
+      key: bid,
+      tasks: (enrollmentId, now) => {
+        let offset = 0;
+        return (steps ?? []).flatMap((st) => {
+          offset += st.delay_minutes ?? 0;
+          if (st.channel === 'wait') return [];
+          const cfg = stepCfg(st);
+          return [{
+            workspace_id: workspaceId,
+            buyer_id: bid,
+            title: taskTitle(st.channel, st.title, first, cfg),
+            task_type: taskTypeFor(st.channel),
+            priority: cfg.priority === 'low' || cfg.priority === 'high' ? cfg.priority : 'normal',
+            due_at: new Date(now + offset * 60_000).toISOString(),
+            assigned_to: typeof cfg.assignee === 'string' && cfg.assignee ? cfg.assignee : ownerId,
+            notes: st.body ? renderMerge(st.body, merge) : null,
+            enrollment_id: enrollmentId,
+            plan_step_id: st.id,
+            created_by: userId,
+          }];
+        });
+      },
+      drops: (enrollmentId, now) => planRvmRows(
+        workspaceId, steps ?? [], { buyer_id: bid }, e164ish(buyer?.phone),
+        blockReason(buyer) ?? (buyer?.wants_calls === false ? 'do_not_call' : null),
+        merge, enrollmentId, rep?.id ?? userId, now,
+      ),
+    };
   });
-  if (!rows.length) return { ok: true, id: (enrolment as { id: number }).id, queued: 0 };
-
-  const { error: taskError } = await supabase.from('tasks')
-    .upsert(rows as never, { onConflict: 'enrollment_id,plan_step_id', ignoreDuplicates: true });
-  if (taskError) {
-    console.error('buyer enrolled, but the steps were not queued', taskError.message);
-    return { ok: true, id: (enrolment as { id: number }).id, queued: 0 };
+  const res = await enrollMany(workspaceId, plan, 'buyer_id', jobs, userId, stopAtError);
+  // In Compr an unassigned buyer whose steps were queued becomes the rep's,
+  // so replies come back to them.
+  if (rep) {
+    const unowned = [...new Set(res.flatMap((r, n) => (r.queued && !rows.get(ids[n]!)?.assigned_to ? [ids[n]!] : [])))];
+    for (let i = 0; i < unowned.length; i += 200) {
+      const { data: given } = await sb.from('buyers').update({ assigned_to: rep.id }).in('id', unowned.slice(i, i + 200)).is('assigned_to', null).select('id');
+      await logActivities(workspaceId, 'buyer', (given ?? []).map((g) => g.id), 'plan', `Assigned to ${rep.first || 'the Compr rep'}`, 'Enrolled in an action plan, so replies come back to them.', userId);
+    }
   }
-  await queuePlanRvm(
-    workspaceId, steps, { buyer_id: bid }, e164ish(buyer?.phone),
-    blockReason(buyer) ?? (buyer?.wants_calls === false ? 'do_not_call' : null),
-    merge, (enrolment as { id: number }).id, userId, now,
-  );
-  nudgeGoogle(workspaceId);
-  return { ok: true, id: (enrolment as { id: number }).id, queued: rows.length };
+  if (res.some((r) => r.queued)) nudgeGoogle(workspaceId);
+  return res.map((r) => {
+    if (r.error) return fail(r.error);
+    if (r.already) return { ok: true, id: r.id, queued: 0, already: true };
+    if (r.tasksError) console.error('buyer enrolled, but the steps were not queued', r.tasksError.message);
+    return { ok: true, id: r.id, queued: r.queued };
+  });
 }
 
 /**
@@ -1481,19 +1731,45 @@ export async function pauseEnrollment(enrollmentId: number, reason = 'manual'): 
   return { ok: true };
 }
 
+/**
+ * pauseEnrollment for many (the bulk bars): one update and one task delete
+ * per 200 ids instead of two requests each. `done` counts the enrolments that
+ * were running and are paused now; a refused batch leaves its ids out and
+ * its message in `message`, and the others still go.
+ */
+export async function pauseEnrollments(enrollmentIds: number[], reason = 'manual'): Promise<{ done: number; message?: string }> {
+  if (!supabase) return { done: 0, message: 'Supabase is not configured.' };
+  let done = 0;
+  let message: string | undefined;
+  for (let i = 0; i < enrollmentIds.length; i += 200) {
+    const { data, error } = await supabase.from('enrollments')
+      .update({ status: 'paused', stopped_reason: reason })
+      .in('id', enrollmentIds.slice(i, i + 200)).eq('status', 'active')
+      .select('id');
+    if (error) { message ??= error.message; continue; }
+    const held = (data ?? []).map((r) => r.id);
+    if (held.length) await supabase.from('tasks').delete().in('enrollment_id', held).eq('done', false);
+    done += held.length;
+  }
+  return { done, message: message ?? (done ? undefined : 'That plan is not running.') };
+}
+
 /** Put a paused enrolment back on, and queue only the steps that are not done yet. */
 export async function resumeEnrollment(enrollmentId: number): Promise<WriteResult & { queued?: number }> {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
   const { data: en, error } = await supabase.from('enrollments')
-    .select('id, workspace_id, plan_id, seller_id, status, created_by')
+    .select('id, workspace_id, plan_id, seller_id, buyer_id, status, created_by')
     .eq('id', enrollmentId).maybeSingle();
   if (error) return fail(error);
   if (!en || en.status !== 'paused') return { ok: false, message: 'That plan is not paused.' };
   const { error: upErr } = await supabase.from('enrollments')
     .update({ status: 'active', stopped_reason: null }).eq('id', enrollmentId);
   if (upErr) return fail(upErr);
-  if (!en.seller_id) return { ok: true, queued: 0 };
-  const queued = await queueRemainingSteps(en.workspace_id, en.plan_id, en.seller_id, en.id, en.created_by);
+  const queued = en.seller_id
+    ? await queueRemainingSteps(en.workspace_id, en.plan_id, en.seller_id, en.id, en.created_by)
+    : en.buyer_id
+      ? await queueRemainingBuyerSteps(en.workspace_id, en.plan_id, en.buyer_id, en.id, en.created_by)
+      : 0;
   if (queued > 0) nudgeGoogle(en.workspace_id);
   return { ok: true, queued };
 }
@@ -1558,6 +1834,66 @@ async function queueRemainingSteps(
   return rows.length;
 }
 
+/** The buyer version of queueRemainingSteps. Pause deletes open tasks; play puts the rest back on the Compr rep. */
+async function queueRemainingBuyerSteps(
+  workspaceId: number, planId: number, buyerId: number, enrollmentId: number, actor: string | null,
+): Promise<number> {
+  if (!supabase) return 0;
+  const [{ data: steps }, { data: buyer }, { data: existing }, rep] = await Promise.all([
+    supabase.from('action_plan_steps')
+      .select('id, position, channel, delay_minutes, title, body, config')
+      .eq('plan_id', planId).order('position'),
+    supabase.from('buyers').select('name, company, phone, email, tags, blacklisted_at, wants_calls, assigned_to').eq('id', buyerId).maybeSingle(),
+    supabase.from('tasks').select('plan_step_id').eq('enrollment_id', enrollmentId),
+    comprRep(workspaceId),
+  ]);
+  if (!steps?.length || !buyer) return 0;
+  const have = new Set((existing ?? []).map((t) => t.plan_step_id).filter((id): id is number => id != null));
+  const who = (buyer.name ?? '').trim();
+  const first = who.split(/\s+/)[0] || who;
+  const fields: Record<string, string> = {
+    first_name: first, name: who, contact_name: who,
+    company: buyer.company ?? '', phone: buyer.phone ?? '', email: buyer.email ?? '',
+    ...(rep?.first ? { rep_name: rep.first } : {}),
+  };
+  const ownerId = buyer.assigned_to || rep?.id || actor;
+  const now = Date.now();
+  const due = new Map(remainingStepSchedule(steps, have).map((s) => [s.id, s.offsetMinutes]));
+  const rows = steps.flatMap((st) => {
+    if (!due.has(st.id)) return [];
+    const offset = due.get(st.id) ?? 0;
+    const cfg = (st.config && typeof st.config === 'object' && !Array.isArray(st.config) ? st.config : {}) as Record<string, unknown>;
+    const assignee = typeof cfg.assignee === 'string' && cfg.assignee ? cfg.assignee : null;
+    const priority = cfg.priority === 'low' || cfg.priority === 'high' ? cfg.priority : 'normal';
+    return [{
+      workspace_id: workspaceId,
+      buyer_id: buyerId,
+      title: taskTitle(st.channel, st.title, first, cfg),
+      task_type: taskTypeFor(st.channel),
+      priority,
+      due_at: new Date(now + offset * 60_000).toISOString(),
+      assigned_to: assignee ?? ownerId,
+      notes: st.body ? renderMerge(st.body, fields) : null,
+      enrollment_id: enrollmentId,
+      plan_step_id: st.id,
+      created_by: actor,
+    }];
+  });
+  if (!rows.length) return 0;
+  const { error } = await supabase.from('tasks')
+    .upsert(rows as never, { onConflict: 'enrollment_id,plan_step_id', ignoreDuplicates: true });
+  if (error) {
+    console.error('resumed, but the remaining buyer steps were not queued', error.message);
+    return 0;
+  }
+  await queuePlanRvm(
+    workspaceId, steps, { buyer_id: buyerId }, e164ish(buyer.phone),
+    blockReason(buyer) ?? (buyer.wants_calls === false ? 'do_not_call' : null),
+    fields, enrollmentId, rep?.id ?? actor, now, due,
+  );
+  return rows.length;
+}
+
 function taskTypeFor(channel: string): string {
   if (channel === 'sms') return 'text';
   if (channel === 'call' || channel === 'email' || channel === 'compr_report' || channel === 'rvm') return channel;
@@ -1571,8 +1907,15 @@ function e164ish(raw: string | null | undefined): string | null {
   return null;
 }
 
+/** Write planRvmRows' drops. */
+async function queuePlanRvm(...args: Parameters<typeof planRvmRows>): Promise<void> {
+  if (!supabase) return;
+  const rows = planRvmRows(...args);
+  if (rows.length) await supabase.from('rvm_drops').insert(rows as never);
+}
+
 /** One rvm_drops row per RVM step, on the same clock as the task it queues. */
-async function queuePlanRvm(
+function planRvmRows(
   workspaceId: number,
   steps: { id: number; channel: string; delay_minutes: number | null; body: string | null; config: unknown }[],
   who: { seller_id?: number; buyer_id?: number },
@@ -1584,8 +1927,7 @@ async function queuePlanRvm(
   userId: string | null,
   now: number,
   only?: Map<number, number>,
-): Promise<void> {
-  if (!supabase) return;
+): Record<string, unknown>[] {
   let offset = 0;
   const rows = [];
   for (const st of steps) {
@@ -1610,7 +1952,7 @@ async function queuePlanRvm(
       created_by: userId,
     });
   }
-  if (rows.length) await supabase.from('rvm_drops').insert(rows as never);
+  return rows;
 }
 
 /** A queued drop row without the columns a database before migrations 135 / 194 lacks. */
@@ -1788,10 +2130,10 @@ export async function setSellerAddress(
   const deals = await moveOpenDeals(workspaceId, scope === 'everyone' && old ? null : ids, old, propertyId);
   if (!deals.ok) return { ok: false, message: 'The address is saved, but the open deals did not move with it: ' + deals.message };
 
-  await Promise.all(ids.map((id) => logActivity(
-    workspaceId, 'seller', id, 'lead', from ? 'Address changed' : 'Address set',
+  await logActivities(
+    workspaceId, 'seller', ids, 'lead', from ? 'Address changed' : 'Address set',
     from ? `Address changed from ${from} to ${to}` : to, userId,
-  )));
+  );
   const n = deals.moved;
   return {
     ok: true, id: propertyId, moved: ids.length,
@@ -2049,20 +2391,40 @@ export async function setSellerUnderwriter(personIds: string[], userId: string |
 }
 
 /**
- * Add or remove one tag on sellers or buyers. Read then write, touching only
- * rows that change: a tag update fires webhooks and plan triggers.
+ * A row's tags after adding or removing one, or null when they would not
+ * change: exact match, an add goes on the end once, a remove takes every
+ * copy, null tags read as none. crm_edit_tags (migration 302) applies the
+ * same rules in the database.
+ */
+export function nextTags(tags: string[] | null, tag: string, add: boolean): string[] | null {
+  const have = tags ?? [];
+  if (have.includes(tag) === add) return null;
+  return add ? [...have, tag] : have.filter((t) => t !== tag);
+}
+
+const missingFn = (e: { message: string; code?: string }) => /PGRST202|could not find the function/i.test(`${e.code ?? ''} ${e.message}`);
+
+/**
+ * Add or remove one tag on sellers or buyers: one crm_edit_tags call per 500
+ * rows, which touches only rows that change (a tag update fires webhooks and
+ * plan triggers). A database without migration 302 gets the old way: read,
+ * then one update per row that changes.
  */
 async function editTags(table: 'sellers' | 'buyers', rowIds: string[], tag: string, add: boolean): Promise<WriteResult> {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
   const clean = tag.trim();
   if (!clean) return { ok: false, message: 'A tag needs a name.' };
-  for (const b of batches(rowIds)) {
+  for (const b of batches(rowIds, 500)) {
+    const { error: rpcError } = await supabase.rpc('crm_edit_tags' as never, {
+      p_ws: null, p_table: table, p_ids: b, p_add: add ? [clean] : [], p_remove: add ? [] : [clean],
+    } as never);
+    if (!rpcError) continue;
+    if (!missingFn(rpcError)) return fail(rpcError);
     const r = await supabase.from(table).select('id, tags').in('id', b);
     if (r.error) return fail(r.error);
     for (const row of (r.data ?? []) as { id: number; tags: string[] | null }[]) {
-      const tags = row.tags ?? [];
-      if (tags.includes(clean) === add) continue;
-      const next = add ? [...tags, clean] : tags.filter((t) => t !== clean);
+      const next = nextTags(row.tags, clean, add);
+      if (!next) continue;
       const { error } = await supabase.from(table).update({ tags: next } as never).eq('id', row.id);
       if (error) return fail(error);
     }
@@ -2377,56 +2739,58 @@ export async function enrollBuyersInPlan(
 ): Promise<WriteResult & { enrolled?: number; already?: number; queued?: number }> {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
   const plan = dbId(planId);
-  const { data: steps, error: stepsError } = await supabase.from('action_plan_steps')
-    .select('id, position, channel, delay_minutes, title, body, config').eq('plan_id', plan).order('position');
-  if (stepsError) return fail(stepsError);
-  const { data: buyerRows } = await supabase.from('buyers')
-    .select('id, phone, tags, blacklisted_at, wants_calls').in('id', buyers.map((b) => b.id));
-  const buyerById = new Map((buyerRows ?? []).map((b) => [b.id, b]));
-  let enrolled = 0; let already = 0; let queued = 0;
-  for (const b of buyers) {
-    const { data: running } = await supabase.from('enrollments')
-      .select('id').eq('workspace_id', workspaceId).eq('plan_id', plan)
-      .eq('buyer_id' as never, b.id as never).neq('status', 'done').limit(1);
-    if (running?.length) { already++; continue; }
-    const { data: en, error } = await supabase.from('enrollments').insert({
-      workspace_id: workspaceId, plan_id: plan, buyer_id: b.id, deal_id: dealId, created_by: userId,
-    } as never).select('id').single();
-    if (error) return { ...fail(error), enrolled, already, queued };
-    enrolled++;
+  const [{ data: steps, error: stepsError }, { rows: buyerById, error: buyersError }] = await Promise.all([
+    supabase.from('action_plan_steps').select(STEP_COLS).eq('plan_id', plan).order('position'),
+    rowsById<{ id: number; phone: string | null; tags: string[] | null; blacklisted_at: string | null; wants_calls: boolean | null }>(
+      'buyers', 'id, phone, tags, blacklisted_at, wants_calls', buyers.map((b) => b.id)),
+  ]);
+  // Unread blacklist and do-not-call flags would queue drops for those buyers: enrol nobody.
+  const readError = stepsError ?? buyersError;
+  if (readError) return fail(readError);
+  const jobs = buyers.map((b): EnrollJob => {
     const who = b.name.trim();
     const first = who.split(/\s+/)[0] || who;
     const fields = { ...dealFields, first_name: first, name: who, contact_name: who };
-    const now = Date.now();
-    let offset = 0;
-    const rows = (steps ?? []).flatMap((st) => {
-      offset += st.delay_minutes ?? 0;
-      if (st.channel === 'wait') return [];
-      const cfg = (st.config && typeof st.config === 'object' && !Array.isArray(st.config) ? st.config : {}) as Record<string, unknown>;
-      return [{
-        workspace_id: workspaceId, buyer_id: b.id, deal_id: dealId,
-        title: taskTitle(st.channel, st.title, first, cfg),
-        task_type: taskTypeFor(st.channel),
-        priority: cfg.priority === 'low' || cfg.priority === 'high' ? cfg.priority : 'normal',
-        due_at: new Date(now + offset * 60_000).toISOString(),
-        assigned_to: typeof cfg.assignee === 'string' && cfg.assignee ? cfg.assignee : userId,
-        notes: st.body ? renderMerge(st.body, fields) : null,
-        enrollment_id: (en as { id: number }).id, plan_step_id: st.id, created_by: userId,
-      }];
-    });
-    if (!rows.length) continue;
-    const { error: taskError } = await supabase.from('tasks')
-      .upsert(rows as never, { onConflict: 'enrollment_id,plan_step_id', ignoreDuplicates: true });
-    if (taskError) return { ...fail(taskError), enrolled, already, queued };
     const info = buyerById.get(b.id);
-    await queuePlanRvm(
-      workspaceId, steps ?? [], { buyer_id: b.id }, e164ish(info?.phone),
-      blockReason(info) ?? (info?.wants_calls === false ? 'do_not_call' : null),
-      fields, (en as { id: number }).id, userId, now,
-    );
-    queued += rows.length;
+    return {
+      key: b.id,
+      extra: { deal_id: dealId },
+      tasks: (enrollmentId, now) => {
+        let offset = 0;
+        return (steps ?? []).flatMap((st) => {
+          offset += st.delay_minutes ?? 0;
+          if (st.channel === 'wait') return [];
+          const cfg = stepCfg(st);
+          return [{
+            workspace_id: workspaceId, buyer_id: b.id, deal_id: dealId,
+            title: taskTitle(st.channel, st.title, first, cfg),
+            task_type: taskTypeFor(st.channel),
+            priority: cfg.priority === 'low' || cfg.priority === 'high' ? cfg.priority : 'normal',
+            due_at: new Date(now + offset * 60_000).toISOString(),
+            assigned_to: typeof cfg.assignee === 'string' && cfg.assignee ? cfg.assignee : userId,
+            notes: st.body ? renderMerge(st.body, fields) : null,
+            enrollment_id: enrollmentId, plan_step_id: st.id, created_by: userId,
+          }];
+        });
+      },
+      drops: (enrollmentId, now) => planRvmRows(
+        workspaceId, steps ?? [], { buyer_id: b.id }, e164ish(info?.phone),
+        blockReason(info) ?? (info?.wants_calls === false ? 'do_not_call' : null),
+        fields, enrollmentId, userId, now,
+      ),
+    };
+  });
+  const res = await enrollMany(workspaceId, plan, 'buyer_id', jobs, userId, true);
+  if (res.some((r) => r.queued)) nudgeGoogle(workspaceId);
+  // Counted as the one-at-a-time loop counted them, up to the first refusal.
+  let enrolled = 0; let already = 0; let queued = 0;
+  for (const r of res) {
+    if (r.error) return { ...fail(r.error), enrolled, already, queued };
+    if (r.already) { already++; continue; }
+    enrolled++;
+    if (r.tasksError) return { ...fail(r.tasksError), enrolled, already, queued };
+    queued += r.queued;
   }
-  if (queued) nudgeGoogle(workspaceId);
   return { ok: true, enrolled, already, queued };
 }
 

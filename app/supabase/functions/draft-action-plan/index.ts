@@ -26,7 +26,7 @@
  * Needs the ANTHROPIC_API_KEY secret (supabase secrets set ANTHROPIC_API_KEY=…);
  * answers 503 with a plain message until it is set.
  */
-import { WRITING_RULE } from '../_shared/no-ai-slop.ts';
+import { WRITING_RULE, slopFindings, slopReport } from '../_shared/no-ai-slop.ts';
 import { seatBrief } from '../_shared/seat-brief.ts';
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import Anthropic from 'npm:@anthropic-ai/sdk';
@@ -256,7 +256,13 @@ Deno.serve(async (req) => {
     if (!call) return json({ error: 'the model returned no plan' }, 502);
     const out = call.input as AiPlan & { changes?: string[] };
     const { changes, ...plan } = out;
-    return json({ ok: true, plan, changes: Array.isArray(changes) ? changes : [], usage: res.usage });
+    // Texts and emails to a person pass the slop check before anyone can save them.
+    const slop = (plan.steps ?? []).flatMap((st, i) => {
+      if (st.channel !== 'sms' && st.channel !== 'email') return [];
+      const f = slopFindings(`${st.subject ?? ''}\n${st.content ?? ''}`);
+      return f.length ? [`Step ${i + 1}: ${slopReport(f)}`] : [];
+    });
+    return json({ ok: true, plan, changes: Array.isArray(changes) ? changes : [], slop, usage: res.usage });
   } catch (e) {
     if (e instanceof Anthropic.AuthenticationError) return json({ error: 'the ANTHROPIC_API_KEY secret is invalid' }, 503);
     if (e instanceof Anthropic.RateLimitError) return json({ error: 'rate limited — try again in a moment' }, 429);

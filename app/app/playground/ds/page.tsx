@@ -11,7 +11,6 @@ import { useConfirm } from '@/components/ds/Confirm';
 import { btn, INK, MUTED } from '@/components/genius/parts';
 import { D as SAMPLE } from '@/lib/clozr-types';
 import { leadStagePicks } from '@/lib/stages';
-import '../../clozr/tokens.css';
 import '../../clozr/chrome.css';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -37,7 +36,7 @@ export default function DsPlayground() {
       <div style={{ maxWidth: '720px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <BackLink to={{ label: 'Deals', go: () => setSaid('Back to Deals') }} />
         <h1 style={{ margin: 0, fontSize: '15px', fontWeight: 700, letterSpacing: '-0.015em' }}>Building blocks</h1>
-        <section style={{ background: '#fff', border: '1px solid var(--edge, #dde2ea)', borderRadius: '12px', padding: '16px' }}>
+        <section style={{ background: 'var(--surface, #fff)', border: '1px solid var(--edge, #dde2ea)', borderRadius: '12px', padding: '16px' }}>
           <h2 style={{ margin: '0 0 12px', fontSize: '13.5px', fontWeight: 650 }}>Click to edit</h2>
           <div style={{ ...row, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
             <InlineField showLabel recordId="s1" field="name" label="Name" type="text" value={vals.name} onSave={save('name')} />
@@ -53,7 +52,7 @@ export default function DsPlayground() {
             <InlineField showLabel recordId="s1" field="notes" label="Notes" type="textarea" value={vals.notes} onSave={save('notes')} width="100%" />
           </div>
         </section>
-        <section style={{ background: '#fff', border: '1px solid var(--edge, #dde2ea)', borderRadius: '12px', padding: '16px' }}>
+        <section style={{ background: 'var(--surface, #fff)', border: '1px solid var(--edge, #dde2ea)', borderRadius: '12px', padding: '16px' }}>
           <h2 style={{ margin: '0 0 12px', fontSize: '13.5px', fontWeight: 650 }}>Rep picker and confirm</h2>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <RepPicker label="TC" team={SAMPLE.team} roles={['tc']} value={rep} onChange={setRep} />

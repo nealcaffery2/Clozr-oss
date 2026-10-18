@@ -192,14 +192,14 @@ export function Row({ item, busy, onFix }: { item: ReadinessItem; busy: boolean;
   const tone = item.state === 'missing' ? '#b91c1c' : item.state === 'warn' ? '#b45309' : '#0e7a57';
   const mark = item.state === 'ok' ? '✓' : '!';
   return (
-    <li style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', border: '1px solid #e6e3da', borderRadius: '12px', padding: '10px 12px', background: '#fff' }}>
-      <span aria-hidden style={{ flex: 'none', width: '20px', height: '20px', borderRadius: '999px', display: 'grid', placeItems: 'center', background: tone, color: '#fff', fontSize: '12px', fontWeight: 800, marginTop: '1px' }}>{mark}</span>
+    <li style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', border: '1px solid #e6e3da', borderRadius: '12px', padding: '10px 12px', background: 'var(--surface, #fff)' }}>
+      <span aria-hidden style={{ flex: 'none', width: '20px', height: '20px', borderRadius: '999px', display: 'grid', placeItems: 'center', background: tone, color: 'var(--on-dark, #fff)', fontSize: '12px', fontWeight: 800, marginTop: '1px' }}>{mark}</span>
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: 'block', fontSize: '13.5px', fontWeight: 700 }}>
           {item.title}
           <span className="sr-only">{item.state === 'ok' ? ' (done)' : item.state === 'warn' ? ' (recommended)' : ' (missing)'}</span>
         </span>
-        <span style={{ display: 'block', fontSize: '12.5px', lineHeight: 1.45, color: '#52525b', marginTop: '2px' }}>{item.detail}</span>
+        <span style={{ display: 'block', fontSize: '12.5px', lineHeight: 1.45, color: 'var(--muted, #52525b)', marginTop: '2px' }}>{item.detail}</span>
       </span>
       {item.state !== 'ok' && item.fix ? (
         <button type="button" disabled={busy} onClick={() => onFix(item.fix!.action)} style={{ ...ghost, flex: 'none', height: '30px', fontSize: '12px', opacity: busy ? 0.6 : 1 }}>
@@ -218,7 +218,7 @@ export function DialerSetupFlag({ style }: { style?: React.CSSProperties }) {
   const open = needsAttention(dialerReadiness(facts));
   if (!open.length) return null;
   const missing = open.some((i) => i.state === 'missing');
-  const color = missing ? '#b91c1c' : '#b45309';
+  const color = missing ? 'var(--tx-red, #b91c1c)' : '#b45309';
   return (
     <button
       type="button"
@@ -226,7 +226,7 @@ export function DialerSetupFlag({ style }: { style?: React.CSSProperties }) {
       title={open.map((i) => i.title).join(' · ')}
       style={{
         display: 'flex', alignItems: 'center', gap: '6px', width: '100%', textAlign: 'left', cursor: 'pointer',
-        border: `1px solid ${missing ? '#fecaca' : '#fde68a'}`, background: missing ? '#fef2f2' : '#fffbeb', color,
+        border: `1px solid ${missing ? 'var(--tint-red-2, #fecaca)' : 'var(--tint-amber-2, #fde68a)'}`, background: missing ? 'var(--tint-red, #fef2f2)' : 'var(--tint-amber, #fffbeb)', color,
         borderRadius: '8px', padding: '7px 10px', font: '600 11.5px/1.3 var(--sans, system-ui)', ...style,
       }}
     >
@@ -239,5 +239,5 @@ export function DialerSetupFlag({ style }: { style?: React.CSSProperties }) {
   );
 }
 
-const primary: React.CSSProperties = { height: '36px', padding: '0 14px', borderRadius: '10px', border: '1px solid #1c1d1f', background: '#1c1d1f', color: '#fff', fontWeight: 700, cursor: 'pointer' };
-const ghost: React.CSSProperties = { height: '36px', padding: '0 12px', borderRadius: '10px', border: '1px solid #ddd9ce', background: '#fff', color: '#1c1d1f', fontWeight: 650, cursor: 'pointer' };
+const primary: React.CSSProperties = { height: '36px', padding: '0 14px', borderRadius: '10px', border: '1px solid var(--ink-deep, #1c1d1f)', background: 'var(--ink-deep, #1c1d1f)', color: 'var(--surface, #fff)', fontWeight: 700, cursor: 'pointer' };
+const ghost: React.CSSProperties = { height: '36px', padding: '0 12px', borderRadius: '10px', border: '1px solid #ddd9ce', background: 'var(--surface, #fff)', color: 'var(--ink-deep, #1c1d1f)', fontWeight: 650, cursor: 'pointer' };

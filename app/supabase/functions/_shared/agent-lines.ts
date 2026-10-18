@@ -133,8 +133,25 @@ export function fqdnConnectionBody() {
     active: true,
     transport_protocol: 'TCP',
     tags: ['clozr', 'elevenlabs'],
-    inbound: { ani_number_format: '+E.164', dnis_number_format: '+e164' },
+    ...connectionMedia(),
   };
+}
+
+/** The audio settings on the connection, sent when it is made and again on one made before they changed. */
+export function connectionMedia() {
+  return {
+    // ElevenLabs takes G.722 (wideband) or G.711; G.729 is left off. The jitter buffer smooths choppy audio.
+    inbound: { ani_number_format: '+E.164', dnis_number_format: '+e164', codecs: ['G722', 'G711U', 'G711A'] },
+    jitter_buffer: { enable_jitter_buffer: true, jitterbuffer_msec_min: 60, jitterbuffer_msec_max: 200 },
+  };
+}
+
+/** True when a connection Telnyx returned already has connectionMedia's codecs and jitter buffer. */
+export function mediaCurrent(conn: { inbound?: { codecs?: unknown } | null; jitter_buffer?: Record<string, unknown> | null } | null | undefined): boolean {
+  const want = connectionMedia();
+  const jb = conn?.jitter_buffer ?? {};
+  return JSON.stringify(conn?.inbound?.codecs ?? []) === JSON.stringify(want.inbound.codecs)
+    && Object.entries(want.jitter_buffer).every(([k, v]) => jb[k] === v);
 }
 
 /** The ElevenLabs body that imports a Telnyx number as a SIP trunk number. */
@@ -181,13 +198,16 @@ export async function tx<T = Record<string, unknown>>(cfg: TelnyxCfg, method: st
 
 type Data<T> = { data?: T };
 
-type Conn = { id?: string; user_name?: string | null; connection_name?: string; outbound?: { outbound_voice_profile_id?: string | null } };
+type Conn = {
+  id?: string; user_name?: string | null; connection_name?: string; outbound?: { outbound_voice_profile_id?: string | null };
+  inbound?: { codecs?: unknown } | null; jitter_buffer?: Record<string, unknown> | null;
+};
 
 /**
  * The agents' SIP connection, ready for ElevenLabs: the stored one if Telnyx
  * still has it, else one already named for CLOZR (made by hand or by an
  * earlier run that stopped halfway), else a new one. In that order it gets
- * the ElevenLabs FQDN, CLOZR's own credentials (new ones whenever we do not
+ * the current audio settings, the ElevenLabs FQDN, CLOZR's own credentials (new ones whenever we do not
  * hold its password) and an outbound voice profile. Returns the state to
  * store; the caller persists it.
  */
@@ -208,6 +228,9 @@ export async function ensureSipConnection(cfg: TelnyxCfg, ws: number, have: SipS
   if (!conn?.id) conn = (await tx<Data<Conn>>(cfg, 'POST', '/fqdn_connections', fqdnConnectionBody())).data ?? null;
   const id = String(conn?.id ?? '');
   if (!id) throw new TelnyxError(502, 'Telnyx did not return the SIP connection id');
+
+  // A connection made before the current codecs and jitter buffer gets them now.
+  if (!mediaCurrent(conn)) conn = (await tx<Data<Conn>>(cfg, 'PATCH', `/fqdn_connections/${enc(id)}`, connectionMedia())).data ?? conn;
 
   // The ElevenLabs address, once.
   const fqdns = await tx<Data<{ fqdn?: string }[]>>(cfg, 'GET', `/fqdns?filter[connection_id]=${enc(id)}&page[size]=20`);

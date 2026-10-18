@@ -30,12 +30,14 @@ export type SmartList<F extends object = Record<string, string>> = {
   mine?: boolean;
   /** Buyers only: the system list the filters narrow (lib/buyer-list-profile.ts). */
   base?: string;
+  /** People: the collection heading the rail files it under. Empty means ungrouped. */
+  group?: string;
 };
 
 /** The screens that keep smart lists: People, and Buyers (the rail's own lists). */
 export type SmartListScreen = 'people' | 'buyers';
 
-type SmartListConfig = { kind: typeof SMART_LIST_KIND; filters: Record<string, string>; cols: string[]; access: string[]; base?: string };
+type SmartListConfig = { kind: typeof SMART_LIST_KIND; filters: Record<string, string>; cols: string[]; access: string[]; base?: string; group?: string };
 
 /** A `saved_views.config` that holds a smart list rather than a view. */
 export function isSmartListConfig(c: unknown): c is SmartListConfig {
@@ -63,12 +65,14 @@ export function smartListFromRow<F extends object = Record<string, string>>(
   const filters = c.filters && typeof c.filters === 'object' ? c.filters : {};
   const out: SmartList<F> = { id: String(r.id), name: r.name, filters: filters as F, cols: strings(c.cols), access: strings(c.access), mine: !r.user_id || r.user_id === me };
   if (typeof c.base === 'string' && c.base) out.base = c.base;
+  if (typeof c.group === 'string' && c.group) out.group = c.group;
   return out;
 }
 
-export function smartListConfig(l: { filters: object; cols: string[]; access?: string[]; base?: string }): SmartListConfig {
+export function smartListConfig(l: { filters: object; cols: string[]; access?: string[]; base?: string; group?: string }): SmartListConfig {
   const c: SmartListConfig = { kind: SMART_LIST_KIND, filters: { ...(l.filters as Record<string, string>) }, cols: [...l.cols], access: [...(l.access ?? [])] };
   if (l.base) c.base = l.base;
+  if (l.group) c.group = l.group;
   return c;
 }
 

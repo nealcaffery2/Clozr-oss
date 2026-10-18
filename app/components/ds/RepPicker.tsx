@@ -67,7 +67,7 @@ export function RepPicker({
       {labelEl}
       <select id={id} aria-label={showLabel ? undefined : label} value={value ?? ''} disabled={disabled}
         onChange={(e) => onChange(e.target.value || null)}
-        style={{ font: 'inherit', height: '32px', padding: '0 8px', borderRadius: '8px', border: 0, boxShadow: SHADOW.ring, fontSize: 'var(--ds-input-size, 13px)', color: INK, background: '#fff', minWidth: 0 }}>
+        style={{ font: 'inherit', height: '32px', padding: '0 8px', borderRadius: '8px', border: 0, boxShadow: SHADOW.ring, fontSize: 'var(--ds-input-size, 13px)', color: INK, background: 'var(--surface, #fff)', minWidth: 0 }}>
         {allowNone || !value ? <option value="">{noneLabel}</option> : null}
         {list.map((r) => <option key={r.id} value={r.id}>{r.name}{r.role ? ` · ${r.role}` : ''}</option>)}
       </select>

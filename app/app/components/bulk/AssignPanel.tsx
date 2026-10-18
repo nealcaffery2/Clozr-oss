@@ -15,14 +15,14 @@ import { blockRanges, countOf, inRole, splitBlocks, wanted, type AssignBlock } f
 export type AssignMate = { id: string; name: string; initials?: string; memberRole?: string };
 
 const GREEN = '#0A8560';
-const INK = '#18181b';
-const MUTED = '#71717a';
-const LINE = '#e4e4e7';
+const INK = 'var(--ink, #18181b)';
+const MUTED = 'var(--meta, #71717a)';
+const LINE = 'var(--divider, #e4e4e7)';
 const label: React.CSSProperties = { fontSize: '11.5px', color: MUTED, fontWeight: 600 };
 const chip = (on: boolean): React.CSSProperties => ({
   height: 30, padding: '0 10px 0 4px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit',
   fontSize: 12.5, fontWeight: on ? 650 : 500, color: on ? GREEN : INK,
-  border: `1px solid ${on ? 'rgba(10,133,96,.45)' : LINE}`, background: on ? '#E7F8F1' : '#fff',
+  border: `1px solid ${on ? 'rgba(10,133,96,.45)' : LINE}`, background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)',
 });
 const ROLE_PICKS: { role: string; label: string }[] = [
   { role: 'acquisitions', label: 'All acquisitions' },
@@ -32,7 +32,7 @@ const ROLE_PICKS: { role: string; label: string }[] = [
 function Dot({ mate, n }: { mate: AssignMate | null; n?: number }) {
   return (
     <span aria-hidden style={{ width: 22, height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 700, flex: 'none',
-      background: n ? GREEN : '#f4f4f5', color: n ? '#fff' : '#52525b' }}>
+      background: n ? GREEN : 'var(--surface-2, #f4f4f5)', color: n ? 'var(--surface, #fff)' : 'var(--muted, #52525b)' }}>
       {n ?? (mate ? (mate.initials || mate.name.slice(0, 1)).slice(0, 2) : '–')}
     </span>
   );
@@ -81,14 +81,14 @@ export function AssignPanel({ noun, team, selectedIds, listCount, canWrite, onSe
   };
 
   return (
-    <div role="region" aria-label="Assign" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 16px', background: '#fff', borderBottom: `1px solid ${LINE}` }}>
+    <div role="region" aria-label="Assign" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 16px', background: 'var(--surface, #fff)', borderBottom: `1px solid ${LINE}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={label}>Assign {words(n)}</span>
-        <div role="tablist" aria-label="How to assign" style={{ display: 'inline-flex', padding: 2, borderRadius: 9, background: '#f4f4f5' }}>
+        <div role="tablist" aria-label="How to assign" style={{ display: 'inline-flex', padding: 2, borderRadius: 9, background: 'var(--surface-2, #f4f4f5)' }}>
           {([['one', 'One person', Users], ['split', 'Split between people', Shuffle]] as const).map(([id, text, Icon]) => (
             <button key={id} type="button" role="tab" aria-selected={mode === id} onClick={() => setMode(id)}
               style={{ height: 28, padding: '0 10px', borderRadius: 7, border: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: mode === id ? 650 : 500,
-                display: 'inline-flex', alignItems: 'center', gap: 6, background: mode === id ? '#fff' : 'transparent', color: mode === id ? INK : MUTED, boxShadow: mode === id ? '0 1px 2px rgba(0,0,0,.08)' : 'none' }}>
+                display: 'inline-flex', alignItems: 'center', gap: 6, background: mode === id ? 'var(--surface, #fff)' : 'transparent', color: mode === id ? INK : MUTED, boxShadow: mode === id ? '0 1px 2px rgba(0,0,0,.08)' : 'none' }}>
               <Icon size={13} aria-hidden /> {text}
             </button>
           ))}
@@ -150,11 +150,11 @@ export function AssignPanel({ noun, team, selectedIds, listCount, canWrite, onSe
           </div>
 
           {picked.length && howMany === 'each' && each && want > n ? (
-            <div style={{ fontSize: 12.5, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '8px 11px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 12.5, color: 'var(--tx-amber-deep, #92400e)', background: 'var(--tint-amber, #fffbeb)', border: '1px solid var(--tint-amber-2, #fde68a)', borderRadius: 10, padding: '8px 11px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span>{each.toLocaleString('en-US')} each for {picked.length} {picked.length === 1 ? 'person' : 'people'} takes {words(want)}; {n.toLocaleString('en-US')} are selected.</span>
               {listCount > n ? (
                 <button type="button" onClick={() => onSelectFirst(Math.min(want, listCount))}
-                  style={{ height: 28, padding: '0 10px', borderRadius: 8, border: '1px solid #f59e0b', background: '#fff', color: '#92400e', fontWeight: 650, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  style={{ height: 28, padding: '0 10px', borderRadius: 8, border: '1px solid #f59e0b', background: 'var(--surface, #fff)', color: 'var(--tx-amber-deep, #92400e)', fontWeight: 650, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
                   Select the first {Math.min(want, listCount).toLocaleString('en-US')} in the list
                 </button>
               ) : null}
@@ -167,7 +167,7 @@ export function AssignPanel({ noun, team, selectedIds, listCount, canWrite, onSe
               {ranges.map((r, i) => {
                 const m = r.userId ? byId.get(r.userId) ?? null : null;
                 return (
-                  <li key={r.userId ?? 'none'} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 10, border: `1px solid ${LINE}`, background: '#fafafa' }}>
+                  <li key={r.userId ?? 'none'} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 10, border: `1px solid ${LINE}`, background: 'var(--canvas, #fafafa)' }}>
                     <Dot mate={m} n={i + 1} />
                     <span style={{ minWidth: 0 }}>
                       <span style={{ display: 'block', fontSize: 12.5, fontWeight: 650, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m?.name ?? 'Unassigned'}</span>
@@ -183,7 +183,7 @@ export function AssignPanel({ noun, team, selectedIds, listCount, canWrite, onSe
           {total && total < n ? <div style={{ fontSize: 12, color: MUTED }}>{words(n - total)} past the last block stay as they are.</div> : null}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button type="button" disabled={busy || !blocks.length} onClick={() => void run(blocks)}
-              style={{ height: 34, padding: '0 14px', borderRadius: 10, border: 0, background: GREEN, color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: blocks.length ? 'pointer' : 'not-allowed', opacity: blocks.length ? 1 : 0.5, fontFamily: 'inherit' }}>
+              style={{ height: 34, padding: '0 14px', borderRadius: 10, border: 0, background: GREEN, color: 'var(--on-dark, #fff)', fontWeight: 700, fontSize: 12.5, cursor: blocks.length ? 'pointer' : 'not-allowed', opacity: blocks.length ? 1 : 0.5, fontFamily: 'inherit' }}>
               {busy ? 'Assigning…' : blocks.length ? `Assign ${words(total)} to ${blocks.length} ${blocks.length === 1 ? 'person' : 'people'}` : 'Assign'}
             </button>
             {!canWrite ? <span style={{ fontSize: 11.5, color: MUTED }}>Preview only: nothing is saved.</span> : null}
@@ -211,14 +211,14 @@ export function SelectCount({ listCount, onSelect, ownerAware }: {
       <input aria-label="How many to select" inputMode="numeric" placeholder="200" value={text}
         onChange={(e) => setText(e.target.value.replace(/[^\d,]/g, '').slice(0, 7))}
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } }}
-        style={{ width: 60, height: 28, borderRadius: 7, border: '1px solid rgba(10,133,96,.3)', padding: '0 8px', fontSize: 12, textAlign: 'right', fontFamily: 'inherit', background: '#fff' }} />
+        style={{ width: 60, height: 28, borderRadius: 7, border: '1px solid rgba(10,133,96,.3)', padding: '0 8px', fontSize: 12, textAlign: 'right', fontFamily: 'inherit', background: 'var(--surface, #fff)' }} />
       {ownerAware ? (
         <label title="Skip rows that already have an owner" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', whiteSpace: 'nowrap', color: MUTED }}>
           <input type="checkbox" checked={unassigned} onChange={(e) => setUnassigned(e.target.checked)} /> unassigned
         </label>
       ) : null}
       <button type="button" disabled={!n} onClick={go} title={`Select the first ${n ?? 'N'} of ${listCount.toLocaleString('en-US')} in the list`}
-        style={{ height: 28, padding: '0 9px', borderRadius: 7, border: '1px solid rgba(10,133,96,.25)', background: '#fff', fontSize: 12, fontWeight: 600, color: n ? GREEN : '#a1a1aa', cursor: n ? 'pointer' : 'not-allowed', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+        style={{ height: 28, padding: '0 9px', borderRadius: 7, border: '1px solid rgba(10,133,96,.25)', background: 'var(--surface, #fff)', fontSize: 12, fontWeight: 600, color: n ? GREEN : 'var(--subtle, #a1a1aa)', cursor: n ? 'pointer' : 'not-allowed', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
         first {n ? Math.min(n, listCount).toLocaleString('en-US') : 'N'}
       </button>
     </span>

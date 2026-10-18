@@ -3,7 +3,7 @@
 // with their grading. Run:  npx tsx supabase/functions/_shared/voice-agent-calls.test.ts
 //   or: deno run supabase/functions/_shared/voice-agent-calls.test.ts
 import { classifyCall } from './voice-agent-classify.ts';
-import { agentSwitchedOff, aggregateStats, enabledAfterPublish, leadSourceLabel, money, offerRange, outboundAllowedNow, parseSetEnabled, pickAgent, withinHours } from './voice-agent-calls.ts';
+import { DIAL_FAILURE_LIMIT, agentSwitchedOff, aggregateStats, dialFailure, dialFailureStreak, dialedTag, enabledAfterPublish, leadSourceLabel, money, offerRange, outboundAllowedNow, parseSetEnabled, pickAgent, withinHours } from './voice-agent-calls.ts';
 import { defaultSettings, normalizeSettings } from './voice-agent-settings.ts';
 import { SCENARIOS, SCORING_SYSTEM, SCORING_TOOL, parseGrades, scenarioById, scoringUserMessage } from './voice-agent-scenarios.ts';
 import { parsePostCall } from './voice-agent.ts';
@@ -143,6 +143,31 @@ eq('quotes match through punctuation and case', parseGrades({ items: [{ id: 'ack
 eq('a pass with no quote at all is allowed (a "does not" item)', parseGrades({ items: [{ id: 'no_last_pitch', pass: true, quote: '', note: 'never pitched' }] }, sc, transcript).items[1].pass, true);
 eq('junk from the model grades everything as a fail', [parseGrades(null, sc, transcript).passed, parseGrades({ items: 'x' }, sc, transcript).score], [0, 0]);
 eq('a perfect call scores 100', parseGrades({ items: sc.checklist.map((i) => ({ id: i.id, pass: true, quote: '', note: 'ok' })) }, sc, transcript).score, 100);
+
+// ---- numbers that never connect ----
+// The errors ElevenLabs gives back on live calls, word for word.
+const BUSY = 'Call not placed: ElevenLabs: INVITE failed: sip status: 486: User Busy (SIP 486).';
+const TIMEOUT = 'Call not placed: ElevenLabs: sip request timed out.';
+eq('SIP 486 is busy', dialFailure(BUSY), 'busy');
+eq('a SIP timeout is unreachable', dialFailure(TIMEOUT), 'unreachable');
+eq('603 declined is busy', dialFailure('ElevenLabs: INVITE failed: sip status: 603: Decline'), 'busy');
+eq('404 not found is unreachable', dialFailure('ElevenLabs: INVITE failed: sip status: 404: Not Found'), 'unreachable');
+eq('outside call hours is not the number', dialFailure("Call not placed: outside the agent's call hours."), null);
+eq('ElevenLabs down is not the number', dialFailure('Call not placed: could not reach ElevenLabs.'), null);
+eq('a 503 on our side is not the number', dialFailure('ElevenLabs: sip status: 503: Service Unavailable'), null);
+eq('the tagged number is not read as a SIP code', dialFailure('Call not placed: outside hours [to 4864041234].'), null);
+
+const KEY = '4075550216';
+const fail = (summary: string) => ({ status: 'failed', summary });
+eq('three untagged dial failures count (rows written before the tag)', dialFailureStreak([fail(TIMEOUT), fail(TIMEOUT), fail(TIMEOUT)], KEY), 3);
+eq('outside-hours failures in between are passed over', dialFailureStreak([fail(TIMEOUT), fail("Call not placed: outside the agent's call hours."), fail(TIMEOUT)], KEY), 2);
+eq('a placed call ends the run', dialFailureStreak([fail(BUSY), { status: 'done', summary: 'Calling 4075550216: book a call' }, fail(BUSY), fail(BUSY)], KEY), 1);
+eq('failures on an old number do not count against a new one', dialFailureStreak([fail(`${BUSY} ${dialedTag('8135550302')}`), fail(`${BUSY} ${dialedTag('8135550302')}`)], KEY), 0);
+eq('failures tagged with this number count', dialFailureStreak([fail(`${BUSY} ${dialedTag(KEY)}`), fail(`${BUSY} ${dialedTag(KEY)}`)], KEY), 2);
+eq('a skipped refusal (the number was already done) does not count', dialFailureStreak([{ status: 'skipped', summary: BUSY }, fail(BUSY)], KEY), 1);
+// A sample seller: busy every time from Oct 9, with one outside-hours look on Oct 11. Newest first.
+const busySeller = [BUSY, BUSY, BUSY, BUSY, BUSY, "Call not placed: outside the agent's call hours.", BUSY, 'Speed call not placed: ElevenLabs: INVITE failed: sip status: 486: User Busy (SIP 486). Texting instead.'].map(fail);
+ok('the sample seller is past the limit, so the next look does not dial', dialFailureStreak(busySeller, '8135550302') >= DIAL_FAILURE_LIMIT, dialFailureStreak(busySeller, '8135550302'));
 
 // ---- enable / disable ----
 eq('a live agent the owner switched off is off', agentSwitchedOff({ enabled: false, live_version: 3 }), true);

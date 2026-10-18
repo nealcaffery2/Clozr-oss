@@ -61,6 +61,16 @@ eq('offer talk leans yes', recommendStage({
   ],
 }).stage, 'Offer Accepted');
 eq('under contract follows the deal', recommendStage({ stage: 'Under Contract - Seller', dealStage: 'Ready To Market', activity: [] }).stage, 'Buyer Under Contract');
+// Read entry by entry: a phrase deep in one long email among many still counts,
+// and a no in one entry reads as a no.
+const filler = Array.from({ length: 200 }, (_, i) => ({ type: 'email', body: '<div>' + 'x'.repeat(2000) + i + '</div>' }));
+eq('a yes deep in a long feed', recommendStage({
+  stage: 'Offer Made', activity: [...filler, { type: 'email', body: '<p>We’ll take it. Send the paperwork.</p>' }],
+}).stage, 'Offer Accepted');
+eq('a no deep in a long feed', recommendStage({
+  stage: 'Offer Made', activity: [...filler, { type: 'sms_in', body: 'Not interested, thanks' }],
+}).stage, 'Offer Declined');
+eq('no underwrite in a long feed', recommendStage({ stage: 'Contacted', activity: filler }).stage, 'Underwriting');
 
 // ---- the offer sheet's promises ---------------------------------------------
 const logs = offerCopy({ live: true });

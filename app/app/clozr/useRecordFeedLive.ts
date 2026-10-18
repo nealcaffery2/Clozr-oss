@@ -7,8 +7,12 @@
 // - Opening a record asks Google for new mail straight away, at most every
 //   two minutes per workspace, so a reply the seller sent a minute ago is
 //   there without waiting for the five-minute pg_cron sweep.
-// - A one-minute poll and a refresh on returning to the tab, in case the
-//   socket dropped.
+// - A refresh on returning to the tab, in case the socket dropped. The
+//   one-minute poll is gone: realtime and the visibility change cover it.
+//   Returning to the tab also asks Google for new mail (useMailOnFocus,
+//   once a minute per workspace), so a reply that came in meanwhile lands.
+// - A refresh when the channel rejoins after a drop, for the rows sent while
+//   it was down with the tab in view.
 //
 // Returns a counter: put it in the deps of the effect that loads the feed.
 'use client';
@@ -16,9 +20,9 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { syncGoogle } from '@/lib/google';
+import { useMailOnFocus } from './useMailOnFocus';
 
 const PULL_EVERY_MS = 2 * 60_000;
-const POLL_MS = 60_000;
 /** When each workspace last asked Google for mail from a record. Module scope: screens remount. */
 const pulledAt = new Map<number, number>();
 
@@ -27,6 +31,7 @@ export function useRecordFeedLive(workspaceId: number | null, record: { sellerId
   const { sellerId = null, buyerId = null } = record;
   const column = sellerId ? 'seller_id' : buyerId ? 'buyer_id' : null;
   const id = sellerId ?? buyerId;
+  useMailOnFocus(column && id != null ? workspaceId : null);
 
   useEffect(() => {
     if (workspaceId == null || !column || id == null) return;
@@ -45,18 +50,21 @@ export function useRecordFeedLive(workspaceId: number | null, record: { sellerId
     }
 
     const sb = supabase;
+    let joined = false;
     const ch = sb
       ? sb.channel(`record-feed-${workspaceId}-${column}-${id}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'communications', filter: `${column}=eq.${id}` }, bump)
-        .subscribe()
+        .subscribe((status) => {
+          if (status !== 'SUBSCRIBED') return;
+          if (joined) bump();
+          joined = true;
+        })
       : null;
     const onVisible = () => { if (document.visibilityState === 'visible') bump(); };
     document.addEventListener('visibilitychange', onVisible);
-    const every = setInterval(() => { if (document.visibilityState === 'visible') bump(); }, POLL_MS);
     return () => {
       alive = false;
       if (timer) clearTimeout(timer);
-      clearInterval(every);
       document.removeEventListener('visibilitychange', onVisible);
       if (sb && ch) void sb.removeChannel(ch);
     };

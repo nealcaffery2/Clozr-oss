@@ -47,6 +47,7 @@ export type LogicField = {
   role?: string | null;
   required?: boolean | null;
   read_only?: boolean | null;
+  variable_key?: string | null;
   label?: string | null;
   value?: string | null;
   options?: string[] | null;
@@ -57,6 +58,14 @@ export type LogicField = {
 };
 
 const blank = (v: unknown) => v == null || String(v).trim() === '';
+
+/** Matches pdf-fields effectiveReadOnly (keep in sync). */
+function signerMayEdit(f: LogicField): boolean {
+  if (f.type === 'date_signed' || f.type === 'formula') return false;
+  if (!f.read_only) return true;
+  if (f.variable_key && (f.type === 'text' || f.type === 'date' || f.type === 'email' || f.type === 'phone')) return true;
+  return false;
+}
 const keyOf = (f: LogicField) => String(f.field_key || f.id);
 
 /** Value lookup by field_key (radio groups resolve to the chosen option). */
@@ -277,7 +286,7 @@ export function blockers(all: LogicField[], signerId: number): Array<{ id: Logic
   const out: Array<{ id: LogicField['id']; page?: number; label: string; reason: string }> = [];
   const groupsSeen = new Set<string>();
   for (const f of mine) {
-    if (f.type === 'date_signed' || f.type === 'formula' || f.read_only) continue;
+    if (!signerMayEdit(f)) continue;
     if (!isVisible(f, vals)) continue;
     if (f.group_key && (f.type === 'radio' || f.type === 'checkbox')) {
       if (groupsSeen.has(f.group_key)) continue;

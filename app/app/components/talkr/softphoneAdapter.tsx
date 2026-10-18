@@ -18,7 +18,8 @@
  */
 
 import { eventFacts, useTalkrEvents } from '@/lib/talkr-events';
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { everyWhileVisible } from '@/lib/visible-timer';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { ClozrView } from '@/app/clozr/view';
 import type { CallTarget } from '@/app/clozr/useClozr';
 import {
@@ -33,7 +34,6 @@ import {
 } from '@/lib/talkr-web/api';
 import { toE164 } from '@/lib/talkr-web/time';
 import type { ClozrRecord } from './CallContext';
-import { mergeLineProviders } from '@/lib/caller-spin';
 import { useSession } from '@/lib/session';
 import { setAudioPrefs, useAudioPrefs } from '@/lib/phone-audio';
 import { applyCallRoute, getCallRoute, subscribeCallRoute, type CallRoute } from '@/lib/call-route';
@@ -41,7 +41,36 @@ import { requestSettingsTab, type TalkrSettingsTab } from '@/app/clozr/screens/s
 import { useCrmSounds } from './useCrmSounds';
 
 /** How often teammates' live calls are read while the tab is visible. */
-const LIVE_POLL_MS = 5000;
+const LIVE_POLL_MS = 10_000;
+/**
+ * With no live-calls list on screen the poll only keeps the "may this rep
+ * monitor?" answer fresh, so it asks rarely. It used to ask every 5 s on
+ * every screen of every rep's tab, which is most of what loaded the server.
+ */
+const LIVE_POLL_IDLE_MS = 120_000;
+
+/** How many live-calls lists are mounted. The poll runs at full speed only while one is. */
+let liveWanted = 0;
+const liveWantedListeners = new Set<() => void>();
+const liveWantedStore = {
+  subscribe: (fn: () => void) => { liveWantedListeners.add(fn); return () => { liveWantedListeners.delete(fn); }; },
+  get: () => liveWanted > 0,
+  getServer: () => false,
+};
+/** A live-calls list (the sales floor) calls this while mounted. */
+export function useWantLiveCalls() {
+  useEffect(() => {
+    liveWanted += 1;
+    liveWantedListeners.forEach((fn) => fn());
+    return () => {
+      liveWanted -= 1;
+      liveWantedListeners.forEach((fn) => fn());
+    };
+  }, []);
+}
+
+const NO_TEAM: TeamMemberDto[] = [];
+
 /** The longest a failing live-calls read waits before asking again. */
 const LIVE_POLL_MAX_MS = 60_000;
 
@@ -177,13 +206,6 @@ export function TalkrSoftphoneProvider({ V, children }: { V: ClozrView; children
           : 'in_call';
   const inCall = callState === 'in_call';
 
-  // The demo's scripted call has a second counter, not a start time.
-  const demoLive = !live && callState === 'in_call';
-  const [demoStart, setDemoStart] = useState<number | null>(null);
-  useEffect(() => {
-    setDemoStart(demoLive ? Date.now() : null);
-  }, [demoLive]);
-
   const target = V.callTarget;
   const named = target.name && target.name !== target.phone && target.name !== '—' ? target.name : null;
   const active: ActiveCall | null =
@@ -196,7 +218,8 @@ export function TalkrSoftphoneProvider({ V, children }: { V: ClozrView; children
                 id: 'demo', direction: 'outbound', to_number: toE164(target.phone) || target.phone,
                 from_number: '+12105550100', contact_name: named,
               }),
-          startedAt: live ? sp.startedAt : demoStart,
+          // The softphone's answer time, or the demo's scripted start.
+          startedAt: V.callTimer.startedAt,
           muted: V.muted,
         };
 
@@ -228,7 +251,7 @@ export function TalkrSoftphoneProvider({ V, children }: { V: ClozrView; children
   }, []);
 
   // The room re-reads when Talkr says this call changed (the shared stream,
-  // lib/talkr-events), and every 8 s while the tab is in view in case an
+  // lib/talkr-events), and every 30 s while the tab is in view in case an
   // event is missed. Not while hidden: nobody is looking at the roster.
   useTalkrEvents(!!callId, ['call.updated'], (events) => {
     if (callId && events.some((e) => { const id = eventFacts(e).callId; return !id || id === callId; })) void refreshParticipants(callId);
@@ -239,10 +262,7 @@ export function TalkrSoftphoneProvider({ V, children }: { V: ClozrView; children
       return;
     }
     void refreshParticipants(callId);
-    const t = setInterval(() => {
-      if (document.visibilityState === 'visible') void refreshParticipants(callId);
-    }, 8000);
-    return () => clearInterval(t);
+    return everyWhileVisible(() => { void refreshParticipants(callId); }, 30_000);
   }, [callId, refreshParticipants]);
 
   const control = useCallback(
@@ -298,35 +318,17 @@ export function TalkrSoftphoneProvider({ V, children }: { V: ClozrView; children
     void applyCallRoute(next, devices).then((sink) => audio?.speakerDevices.set(sink).catch(() => undefined));
   }, [audio]);
 
-  // ── the lists the dialer reads (Talkr's page loads the same three) ─────
-  const [recent, setRecent] = useState<CallDto[]>([]);
-  const [team, setTeam] = useState<TeamMemberDto[]>([]);
-  const [me, setMe] = useState<MeDto | null>(null);
+  // ── the lists the dialer reads ─────────────────────────────────────────
+  // useTalkrPhone already reads the rep, their numbers (with each line's
+  // carrier), the team and recent calls, and re-reads Recent when a call
+  // ends. This used to ask Talkr for all of it a second time. Both clients
+  // call the same endpoints, so the rows are the same JSON under two names.
+  const phoneData = phone.data;
+  const recent = useMemo(() => (authed ? (phoneData.recent.slice(0, 8) as unknown as CallDto[]) : []), [authed, phoneData.recent]);
+  const team = authed ? (phoneData.team as unknown as TeamMemberDto[]) : NO_TEAM;
+  const me = authed ? (phoneData.me as unknown as MeDto | null) : null;
+  const setPhoneMe = phone.setMe;
   const [notes, setNotes] = useState('');
-  const loadRecent = useCallback(() => {
-    if (!authed) return;
-    api.listCalls().then((r) => setRecent(r.calls.slice(0, 8))).catch(() => setRecent([]));
-  }, [authed]);
-  const load = useCallback(() => {
-    if (!authed) return;
-    loadRecent();
-    api.listTeam().then((r) => setTeam(r.members)).catch(() => setTeam([]));
-    Promise.all([
-      api.getMe(),
-      api.listNumbers().catch(() => ({ numbers: [] as { id: string; provider?: string | null }[] })),
-    ]).then(([meRow, listed]) => {
-      setMe({ ...meRow, org_numbers: mergeLineProviders(meRow.org_numbers ?? [], listed.numbers) });
-    }).catch(() => undefined);
-  }, [authed, loadRecent]);
-  useEffect(load, [load]);
-  // A finished call belongs in Recent straight away. Only Recent: the team,
-  // the rep and their numbers do not change because a call ended.
-  const wasIdle = useRef(true);
-  useEffect(() => {
-    const idle = callState === 'idle';
-    if (idle && !wasIdle.current) loadRecent();
-    wasIdle.current = idle;
-  }, [callState, loadRecent]);
   // A call's notes go onto its record once the call is over, then the draft
   // clears for the next one. The target is kept from while the call was up;
   // by idle the view may already have let go of it.
@@ -371,14 +373,17 @@ export function TalkrSoftphoneProvider({ V, children }: { V: ClozrView; children
   /** The call being joined. Only a ring carrying its id is the monitor leg. */
   const monitorCallId = useRef<string | null>(null);
   const canPollLive = authed && (callState === 'idle' || monitor !== null);
+  const liveOnScreen = useSyncExternalStore(liveWantedStore.subscribe, liveWantedStore.get, liveWantedStore.getServer);
+  const livePollMs = liveOnScreen || monitor !== null ? LIVE_POLL_MS : LIVE_POLL_IDLE_MS;
   // Every 5 s while the tab is visible; a hidden tab does not ask at all
   // (every screen in every tab used to, 12 requests a minute each) and asks
-  // once as soon as it is shown again. A failure waits twice as long each
-  // time, up to a minute, and a success goes back to 5 s.
+  // once as soon as it is shown again. A failure retries after 10 s, then
+  // twice as long each time up to a minute; a success goes back to the cadence.
   useEffect(() => {
     if (!canPollLive) return;
     let stop = false;
-    let wait = LIVE_POLL_MS;
+    let wait = livePollMs;
+    let fails = 0;
     let t: ReturnType<typeof setTimeout> | null = null;
     const visible = () => typeof document === 'undefined' || document.visibilityState === 'visible';
     const schedule = () => {
@@ -389,17 +394,18 @@ export function TalkrSoftphoneProvider({ V, children }: { V: ClozrView; children
       t = null;
       if (stop || !visible()) return;
       void api.listLiveCalls().then(
-        (r) => { if (stop) return; wait = LIVE_POLL_MS; setLiveCalls(r.calls); schedule(); },
+        (r) => { if (stop) return; fails = 0; wait = livePollMs; setLiveCalls(r.calls); schedule(); },
         (err) => {
           // No calls.monitor: the Live section stays hidden for good.
-          if (err instanceof ApiError && err.status === 403) stop = true;
-          setLiveCalls(null);
-          wait = Math.min(LIVE_POLL_MAX_MS, wait * 2);
+          // Anything else is a blip: the last list stays, and the next try comes soon.
+          if (err instanceof ApiError && err.status === 403) { stop = true; setLiveCalls(null); }
+          fails += 1;
+          wait = Math.min(LIVE_POLL_MAX_MS, LIVE_POLL_MS * 2 ** (fails - 1));
           schedule();
         },
       );
     }
-    const onVisibility = () => { if (visible()) { wait = LIVE_POLL_MS; tick(); } else if (t) { clearTimeout(t); t = null; } };
+    const onVisibility = () => { if (visible()) { wait = livePollMs; tick(); } else if (t) { clearTimeout(t); t = null; } };
     document.addEventListener('visibilitychange', onVisibility);
     tick();
     return () => {
@@ -407,7 +413,7 @@ export function TalkrSoftphoneProvider({ V, children }: { V: ClozrView; children
       if (t) clearTimeout(t);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [canPollLive]);
+  }, [canPollLive, livePollMs]);
   const acceptRing = V.incoming?.accept;
   useEffect(() => {
     if (!sp.incoming || !acceptRing || Date.now() - monitorRingAt.current > 45_000) return;
@@ -440,9 +446,6 @@ export function TalkrSoftphoneProvider({ V, children }: { V: ClozrView; children
     }
   };
 
-  // The rep's profile changed (caller ID, default line): the phone reads who
-  // they are again, not just its lists.
-  const refreshPhone = phone.retry;
   const deviceState: DeviceState = !live
     ? 'ready'
     : sp.deviceState === 'ready' ? 'ready'
@@ -519,10 +522,9 @@ export function TalkrSoftphoneProvider({ V, children }: { V: ClozrView; children
     record: V.callState === 'idle' ? null : V.callRecord,
     team,
     me,
-    setMe: (next) => {
-      setMe(next);
-      refreshPhone();
-    },
+    // The caller ID picker saved the rep's profile itself; the phone takes it
+    // as is instead of reading who they are again (seven requests).
+    setMe: (next) => setPhoneMe(next as unknown as Parameters<typeof setPhoneMe>[0]),
     recent,
     notes,
     setNotes,

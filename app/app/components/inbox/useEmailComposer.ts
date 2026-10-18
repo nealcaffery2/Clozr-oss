@@ -33,7 +33,7 @@ export type PendingFile =
 
 const splitAddrs = (s: string | null | undefined) => (s ?? '').split(',').map((a) => a.trim().toLowerCase()).filter((a) => a.includes('@'));
 
-export function useEmailComposer({ thread, workspaceId, recordFor, mergeFor, toast, onSent, mine, dealId }: {
+export function useEmailComposer({ thread, workspaceId, recordFor, mergeFor, toast, onSent, mine, dealId, initialTo }: {
   thread: EmailThread | null;
   workspaceId: number;
   recordFor?: RecordFor;
@@ -44,8 +44,10 @@ export function useEmailComposer({ thread, workspaceId, recordFor, mergeFor, toa
   mine?: string | null;
   /** File the send on this deal (a deal folder, or the thread's deal). */
   dealId?: number | null;
+  /** A new email's address when there is no thread to reply to (the dialer's Email tab). */
+  initialTo?: string;
 }) {
-  const [to, setTo] = useState(thread?.counterpart ?? '');
+  const [to, setTo] = useState(thread?.counterpart ?? initialTo ?? '');
   const [cc, setCc] = useState('');
   const [bcc, setBcc] = useState('');
   const [showCopies, setShowCopies] = useState(false);

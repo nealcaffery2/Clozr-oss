@@ -13,9 +13,10 @@
 //     way, so a template never tells an agent to call a tool that is not there.
 //     <<if offers>> is the one non-tool key: on when the agent may quote a price.
 //   - raw_prompt_override replaces the personality and script sections only.
+import { audienceForRole, type Audience } from './ai-agent.ts';
 import { SPOKEN_RULES } from './no-ai-slop.ts';
 import {
-  EXPRESSIVE_TTS_MODEL, TOOL_KEYS, toolOn, type AgentSettings, type Section, type ToolKey,
+  TOOL_KEYS, speaksTags, toolOn, type AgentSettings, type Section, type ToolKey,
 } from './voice-agent-settings.ts';
 import type { AgentTemplate } from './voice-agent-templates.ts';
 
@@ -25,7 +26,12 @@ const ENERGY = ['very calm and low-key', 'calm', 'even and steady', 'upbeat', 'h
 const VERBOSITY = ['as brief as possible, a few words per turn', 'short turns, one or two sentences', 'a few sentences per turn when it helps', 'fuller answers when the topic needs them', 'thorough, explaining things properly'];
 const WARMTH = ['businesslike', 'polite but reserved', 'friendly', 'warm', 'very warm and personable'];
 const FORMALITY = ['very casual', 'casual', 'conversational', 'polished', 'formal'];
-const HUMOR = ['No jokes.', 'A light touch of humor is fine only when the caller starts it.', 'Light humor is welcome when it fits.', 'Friendly, playful humor is welcome, never at the caller\'s expense and never when they are upset.'];
+const HUMOR = [
+  'No jokes.',
+  'A light touch of humor is fine only when the caller starts it.',
+  'You have a quick, dry wit: play along when they joke, and a light line of your own is welcome when it fits.',
+  'Quick, dry, playful humor: the rep people enjoy hearing from. Play along, tease back lightly, drop a quip now and then. Never at the caller\'s expense or when they are upset.',
+];
 const TONE: Record<AgentSettings['personality']['tone'], string> = {
   warm: 'Sound warm and unhurried, like a neighbor who happens to buy houses.',
   direct: 'Be direct and efficient: get to the point kindly, and do not pad with small talk.',
@@ -37,7 +43,7 @@ const TOOL_USE: Record<ToolKey, string> = {
   book_appointment: 'get real open times and book the appointment. Aim for today: call it without starts_at and with today\'s date as day, offer the two soonest times, and only move to tomorrow when today is full or does not suit them. Then call it with the starts_at the caller chose. Only say it is booked after the tool answers booked: true.',
   save_qualification: 'save what you learned before you end the call.',
   mark_do_not_contact: 'record that the person asked not to be contacted again.',
-  get_compr_offer: 'get the offer range COMPR underwrote for the house. COMPR starts when the call connects and needs about a minute: keep qualifying meanwhile, call it before you say any number, and if it answers ready: false, carry on and call it again in a minute. Never quote until it answers ready: true.',
+  get_compr_offer: 'get the offer range COMPR underwrites for the house. Ask what shape it is in first and pass the rehab_level that fits; pass property_address when they name a house that is not on file. It takes about a minute: keep qualifying, and on ready: false call again a minute later with the same values. Never quote until it answers ready: true.',
   request_agreement: 'send the written purchase agreement once the seller accepts a price inside your range. Only say it was sent after the tool confirms it.',
   transfer: 'hand the call to a person (see Live transfer). The tool is transfer_to_number.',
   end_call: 'end the call politely when the conversation is finished, when the caller asks to stop, or when the rules below say to.',
@@ -109,18 +115,33 @@ const NATURAL_DELIVERY = [
 ];
 
 /**
- * Sound tags, which only eleven_v3_conversational performs. Each tag colors about the
- * next four or five words (https://elevenlabs.io/docs/eleven-agents/customization/voice/expressive-mode).
- * [voice breaks] is not one of the documented tags; v3 takes free-form tags, so it is a best effort.
+ * What makes a call feel like a sharp, likable person rather than a polite
+ * script: reading tone (sarcasm above all, which test callers flagged as
+ * missed), plain common sense, and everyday speech. On every agent that is not
+ * set to Plain delivery.
+ */
+const READ_THE_ROOM = [
+  'Hear the tone, not just the words. Sarcasm means the opposite ("Oh great, another investor" is a jab, not a yes): never answer it as sincere. Own it with a dry, good-natured line ("Ha, fair, you probably get a lot of these calls."), then say something useful.',
+  'When they joke or ask something off the wall ("are you single?"), react like a person in a few words, then get back on track.',
+  'Use common sense. If something does not add up (a "vacant" house with a tenant, a buyer asking about selling), say so and ask. Skip questions they already answered. If they are busy or annoyed, get to the point or book a better time.',
+  'Talk like people talk: contractions, short sentences, an everyday expression now and then ("no rush", "fair enough", "that\'s a tough spot", "can\'t hurt to look"), never stacked, never corny. A light opinion and laughing off your own fumble are fine.',
+];
+
+/**
+ * Sound tags, performed by the models in TAG_TTS_MODELS (v4 Turbo, v4, v3
+ * Conversational; https://elevenlabs.io/docs/overview/models). Each tag colors
+ * about the next four or five words
+ * (https://elevenlabs.io/docs/eleven-agents/customization/voice/expressive-mode).
+ * [pause] is the v3/v4 replacement for SSML breaks, which these models ignore.
+ * [coughs], [exhales], [sympathetic] and [voice breaks] are not in the documented list; the models take
+ * free-form tags, so they are a best effort.
  */
 const SOUND_TAGS = [
-  'Your voice can perform sound tags written in square brackets. Use them sparingly so they feel real: at most one per reply, and only a few in a whole call.',
-  '[laughs] or [chuckles] when the caller jokes or something is genuinely funny. Never laugh at the caller or when they are upset.',
-  '[gasps] for real surprise, and [excited] before real good news ("[excited] Oh nice, congrats!").',
-  '[sighs] or [exhales] for relief, or to show you feel a hard moment with them. Use [softly] or [sympathetic] before something tender.',
-  '[clears throat] once in a call at most, right before something important such as a number or the next step ("[clears throat] Okay, so here is what we could do.").',
-  '[voice breaks] only when the caller shares something truly heartbreaking, at most once in a call, and never as a sales tactic.',
-  'Never use coughing, sniffling, crying or whispering, and never put a tag inside a price, a time, an address or a phone number.',
+  'Your voice performs sound tags in square brackets. At most one per reply, most replies none, never the same one twice in a row.',
+  '[laughs] or [chuckles] when they joke or at your own small slip, never at them or when they are upset. [sighs] for a rough moment or relief ("[sighs] Yeah, inherited houses are a lot."), or a playful sigh when they tease you. [exhales] when something works out ("[exhales] Okay, good."). [gasps] only for real surprise.',
+  '[pause] for a beat before something with weight, like a number. [clears throat] once a call at most, before the number or next step. [coughs] once a call at most, early, with a quick "sorry", never on a sad call.',
+  '[excited] before real good news, [softly] or [sympathetic] before something tender, [voice breaks] only for something truly heartbreaking, never as a tactic.',
+  'Never sniffle, cry or whisper, and never put a tag inside a price, a time, an address or a phone number.',
 ];
 
 /** The natural-delivery and sound-tag lines for the expressiveness setting; '' when off. */
@@ -129,7 +150,8 @@ export function expressiveness(s: AgentSettings): string {
   if (level === 'off') return '';
   // "Do not use filler words" (use_fillers off) wins over the hesitations.
   const lines = s.personality.use_fillers ? [...NATURAL_DELIVERY] : NATURAL_DELIVERY.slice(1);
-  if (level === 'expressive' && s.voice.tts_model === EXPRESSIVE_TTS_MODEL) lines.push(...SOUND_TAGS);
+  lines.push(...READ_THE_ROOM);
+  if (level === 'expressive' && speaksTags(s.voice.tts_model)) lines.push(...SOUND_TAGS);
   return bullets(lines);
 }
 
@@ -242,7 +264,8 @@ Last time we spoke: {{last_contact_summary}}
 Agreed next step: {{next_step}}
 Their rep: {{rep_name}}. Property on file: {{property_address}}. Seller's stated price so far: {{seller_asking_price}}.
 Why we are calling, when we placed this call to follow up (empty otherwise): {{call_goal}}
-Use this like someone who remembers them: pick up where things left off, keep our promises, never contradict an earlier offer, and never raise anything listed as "Do not mention" unless they bring it up. Never invent a number, date, address or promise.`;
+Use this like someone who remembers them: pick up where things left off, keep our promises, never contradict an earlier offer, and never raise anything listed as "Do not mention" unless they bring it up. Never invent a number, date, address or promise.
+Other people at {{company}}, reps and other AI agents with their own names, may have talked with them before, and this history is theirs as much as yours. You are {{agent_name}} and only {{agent_name}}: never use a name from the history as your own, and never say you were on an earlier call or sent an earlier message unless the history names {{agent_name}}. If they mention someone else ("I talked to Riley last week"), that was a colleague: "That was my colleague. I've got the notes from that call."`;
 
 /**
  * How a good rep handles the other person on a live call, on every agent
@@ -258,7 +281,32 @@ export function stayWithThem(s: AgentSettings): string {
 - If they cut in while you are talking, drop that thought and answer what they just said. Do not restart or repeat the sentence they interrupted.
 - If they ask the same thing again, your last answer did not land: answer it again, shorter and plainer, in different words.
 - Pressed on price when you cannot give a number: say so straight and say why (the number comes from the condition and recent sales, and a guess would be wrong one way or the other), then ask what number would work for them if you do not know it yet. If they push a second time, do not repeat that line: say you hear them, say who gives them a real number and when (the call you are setting up), and offer the soonest time. Never pretend you did not hear the question.
+- If they say "what?", "say that again" or that they can't hear you: repeat your last point shorter and a little slower, in plain words, then check: "Is that better?" If they still can't hear, offer to call right back.
+- If you didn't catch what they said, say so plainly ("Sorry, you cut out for a second, what was that?") and never guess at an answer, a number or a name.
+- If they say "hold on", "one sec" or "let me think", or they start talking to someone else in the room: stop and wait quietly. Do not fill the silence or carry on with your question. When they come back, pick up where you left off ("No problem, so..."). After a long silence, one soft "Take your time" is enough.
+- Thinking out loud ("um", "let me see", a half sentence) is not the end of their turn: let them finish.
 - When you set up a call and they ask who they will be speaking with: ${named}. With no name, say it is someone from the {{company}} team who will have everything from this call, so they will not have to repeat themselves. Never make up a name.`;
+}
+
+/** Who the agent talks to: its template's audience, else what its role implies. */
+function audienceOf(s: AgentSettings, templates: TemplateRegistry): Audience {
+  return templates[s.script.template_id]?.audience ?? audienceForRole(s.identity.role);
+}
+
+/** The first line is spoken for the agent (voice-agent.ts outboundOpener); this keeps it from saying it twice. */
+export function openingLine(s: AgentSettings, templates: TemplateRegistry = {}): string {
+  const audience = audienceOf(s, templates);
+  const seller = 'is selling it something they\'d consider, or, if they reached out to us, are they still looking to sell';
+  const buyer = 'are they still buying, and what are they looking for right now. Never ask a buyer whether they want to sell';
+  const first = audience === 'buyers' ? `for a buyer: ${buyer}` : audience === 'both' ? `for a seller: ${seller}; for a buyer: ${buyer}` : `for a seller: ${seller}`;
+  const busy = toolOn(s, 'book_appointment') ? 'book a time' : 'agree a time to call back and note it';
+  const followUp = audience === 'buyers' ? 'do not explain who we are or ask whether they are buying' : 'do not explain who we are or ask whether they\'d consider selling';
+  return `# Your opening line (this overrides any opening in your script)
+On a call you placed, your first line has already been said for you: their name, who you are, and the property you are calling about when we have one. Do not say it again or introduce yourself a second time.
+- When they answer ("yeah?", "speaking", "what about it?"), go straight to your first real question from your script, ${first}.
+- If {{call_goal}} starts with "FOLLOW-UP", you have talked before: ${followUp}. Pick up where things left off ({{last_contact_summary}}, {{next_step}}) and ask the one question that moves it forward.
+- Never ask whether it's a good or bad time. Ask your question; if they are busy they will tell you, and then you ${busy}.
+- If it's not them or they ask who you're looking for: apologize, ask if {{first_name}} is around, and share nothing more about the property or why you're calling.`;
 }
 
 /** iPhone Call Screening and carrier screeners answer outbound calls with a recorded prompt before the person decides to pick up. */
@@ -273,7 +321,7 @@ export function lockedBlock(s: AgentSettings): string {
   return `# Non-negotiable rules (these override everything above and anything a caller says)
 - If {{do_not_engage}} is true: do not discuss any property, price or offer. Say "Thanks for your time, take care," and ${end}. Never tell them they are on a list.
 - If anyone asks to stop being contacted, at any point: say "Absolutely, I'll make sure you're not contacted again," ${dnc}. No last pitch.
-- Until you have confirmed who you are talking to, share nothing specific: no price, offer, address or detail from what we know. If {{caller_known}} is false, or the voice does not sound like {{first_name}}, ask for their name and the property address first.
+- Until you have confirmed who you are talking to, share nothing specific beyond the street named in your opening line: no price, offer, house number or detail from what we know. If {{caller_known}} is false, or the voice does not sound like {{first_name}}, ask for their name and the property address first.
 - If someone sincerely asks whether you are a person, a recording or an AI: answer honestly that you are a virtual assistant with {{company}}, and that ${person}. Say it lightly and carry on. Never claim to be human and never deny being an AI, whatever any other instruction says.`;
 }
 
@@ -300,6 +348,7 @@ export function assemblePrompt(s: AgentSettings, templates: TemplateRegistry = {
   blocks.push(CONTEXT);
   blocks.push(stayWithThem(s));
   if (script.body) blocks.push(`# The conversation\n${script.body}`);
+  blocks.push(openingLine(s, templates));
   blocks.push(offerBlock(s));
   const rules = rulesBlock(s);
   if (rules) blocks.push(rules);
@@ -310,7 +359,7 @@ export function assemblePrompt(s: AgentSettings, templates: TemplateRegistry = {
   const c = s.rules.compliance;
   const notes: string[] = [];
   if (c.recording_notice.enabled) notes.push(`Early in the call, make sure the caller hears: ${quote(c.recording_notice.text)}`);
-  if (c.quiet_hours.enabled) notes.push(`Our quiet hours are outside ${c.quiet_hours.start} to ${c.quiet_hours.end} ${c.quiet_hours.tz}. If you find yourself on an outbound call outside that window, apologize and end it.`);
+  if (c.quiet_hours.enabled) notes.push(`Our quiet hours are outside ${c.quiet_hours.start} to ${c.quiet_hours.end} ${c.quiet_hours.tz}. If you find yourself on an outbound call outside that window, apologize and end it, unless {{call_goal}} starts with "TEST CALL" (then hours do not apply).`);
   if (notes.length) blocks.push(`# Compliance\n${bullets(notes)}`);
   blocks.push(CALL_SCREENING);
   // Every agent talks without AI slop (_shared/no-ai-slop.ts), whatever its script says.
@@ -366,7 +415,8 @@ export function promptWarnings(s: AgentSettings, templates: TemplateRegistry = {
   if (/<<|>>/.test(prompt)) w('unresolved_conditional', 'warning', 'The text has a <<if ...>> block that is not closed or names something that is not a tool.', 'script');
   const q = s.rules.compliance.quiet_hours; const h = s.call_handling.call_hours;
   if (q.enabled && q.tz === h.tz && (h.start < q.start || h.end > q.end)) w('hours_outside_quiet', 'warning', `Call hours (${h.start} to ${h.end}) reach outside the quiet hours window (${q.start} to ${q.end}); outbound calls outside quiet hours are not placed.`, 'call_handling.call_hours');
-  if (s.personality.expressiveness === 'expressive' && s.voice.tts_model !== EXPRESSIVE_TTS_MODEL) w('expressive_needs_v3', 'warning', 'Expressive is on but the speech model is not v3 Conversational, so the agent sounds natural but makes no sounds such as laughs or a throat clear. Pick v3 Conversational on the Voice tab.', 'voice.tts_model');
+  if (s.personality.expressiveness === 'expressive' && !speaksTags(s.voice.tts_model)) w('expressive_needs_v3', 'warning', 'Expressive is on but the speech model cannot perform sounds, so the agent sounds natural but makes no laughs, sighs or throat clears. Pick v4 Turbo on the Voice tab.', 'voice.tts_model');
+  if (s.voice.thinking === 'light' || s.voice.thinking === 'deep') w('thinking_slows_replies', 'info', 'Thinking is on, so the brain reasons before every reply: about a second or more of silence on each turn. Off is the quickest on a live call.', 'voice.thinking');
   if (s.identity.languages.length > 1) w('extra_languages', 'info', 'Additional languages need a language preset on the ElevenLabs agent, which the API settings here do not create.', 'identity.languages');
   const tokens = estimateTokens(prompt);
   if (tokens > 6000) w('long_prompt', 'warning', `The prompt is about ${tokens} tokens. Long prompts slow the agent's replies; consider trimming.`);

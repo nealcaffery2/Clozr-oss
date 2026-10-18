@@ -62,7 +62,7 @@ const EMPTY: Record<ListSection, Record<string, string>> = {
 };
 
 const STAGE_COLORS: Record<string, string> = {
-  active: '#16a34a', vip: '#ff7a45', preferred: '#0A8560', inactive: '#71717a',
+  active: '#16a34a', vip: '#ff7a45', preferred: '#0A8560', inactive: 'var(--meta, #71717a)',
 };
 
 function isListSection(value: string): value is ListSection {
@@ -85,25 +85,25 @@ const headings: Record<ListSection, string[]> = {
 // ---- shared inline styles, matching the CLOZR People screen -----------------
 
 const th: React.CSSProperties = {
-  position: 'sticky', top: 0, background: '#fafafa', borderBottom: '1px solid #e4e4e7',
-  padding: '0 12px', height: 36, textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#71717a', whiteSpace: 'nowrap',
+  position: 'sticky', top: 0, background: 'var(--canvas, #fafafa)', borderBottom: '1px solid var(--divider, #e4e4e7)',
+  padding: '0 12px', height: 36, textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--meta, #71717a)', whiteSpace: 'nowrap',
 };
-const td: React.CSSProperties = { padding: '0 12px', height: 44, borderBottom: '1px solid #f0f0f1', whiteSpace: 'nowrap' };
+const td: React.CSSProperties = { padding: '0 12px', height: 44, borderBottom: '1px solid var(--divider-2, #f0f0f1)', whiteSpace: 'nowrap' };
 const btn: React.CSSProperties = {
-  height: 30, padding: '0 11px', borderRadius: 8, border: '1px solid #e4e4e7', background: '#fff',
-  fontSize: 12.5, fontWeight: 500, cursor: 'pointer', color: '#18181b',
+  height: 30, padding: '0 11px', borderRadius: 8, border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)',
+  fontSize: 12.5, fontWeight: 500, cursor: 'pointer', color: 'var(--ink, #18181b)',
 };
 const btnDark: React.CSSProperties = {
-  height: 32, padding: '0 12px', borderRadius: 8, border: '1px solid #18181b', background: '#18181b',
-  color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+  height: 32, padding: '0 12px', borderRadius: 8, border: '1px solid var(--ink, #18181b)', background: 'var(--ink, #18181b)',
+  color: 'var(--surface, #fff)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
 };
 const field: React.CSSProperties = {
-  width: '100%', height: 34, padding: '0 10px', border: '1px solid #e4e4e7', borderRadius: 8,
-  fontSize: 13, outline: 0, background: '#fafafa', color: '#18181b', fontFamily: 'inherit',
+  width: '100%', height: 34, padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: 8,
+  fontSize: 13, outline: 0, background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)', fontFamily: 'inherit',
 };
 
 function StatusMarker({ value }: { value: string }) {
-  const color = STAGE_COLORS[value] || '#71717a';
+  const color = STAGE_COLORS[value] || 'var(--meta, #71717a)';
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11.5, fontWeight: 600, color }}>
       <Mark label={titleCase(value)} />
@@ -317,10 +317,10 @@ export function LiveLists({
   return (
     <section
       data-screen-label="Live database"
-      style={{ flex: 1, minWidth: 0, display: 'flex', background: '#fafafa' }}
+      style={{ flex: 1, minWidth: 0, display: 'flex', background: 'var(--canvas, #fafafa)' }}
     >
-      <aside style={{ width: 228, flex: 'none', borderRight: '1px solid #e4e4e7', background: '#fff', overflow: 'auto', padding: '14px 10px' }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#71717a', padding: '0 8px 8px' }}>
+      <aside style={{ width: 228, flex: 'none', borderRight: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', overflow: 'auto', padding: '14px 10px' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--meta, #71717a)', padding: '0 8px 8px' }}>
           Live database
         </div>
         {sections.map((item) => (
@@ -330,27 +330,27 @@ export function LiveLists({
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', height: 30,
               padding: '0 8px', border: 0, borderRadius: 7, cursor: 'pointer', fontSize: 13, textAlign: 'left',
-              background: current === item ? '#E7F8F1' : 'transparent',
-              color: current === item ? '#0A8560' : '#27272a',
+              background: current === item ? 'var(--mint-dim, #e7f8f1)' : 'transparent',
+              color: current === item ? '#0A8560' : 'var(--ink-2, #27272a)',
               fontWeight: current === item ? 600 : 500,
             }}
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-              <span style={{ color: '#0A8560', display: 'inline-flex' }}><Mark label={item} size={12} /></span>
+              <span style={{ color: 'var(--tx-mint, #0a8560)', display: 'inline-flex' }}><Mark label={item} size={12} /></span>
               {item}
             </span>
-            {current === item && total != null && <span style={{ fontSize: 11.5, color: '#71717a', fontVariantNumeric: 'tabular-nums' }}>{total.toLocaleString('en-US')}</span>}
+            {current === item && total != null && <span style={{ fontSize: 11.5, color: 'var(--meta, #71717a)', fontVariantNumeric: 'tabular-nums' }}>{total.toLocaleString('en-US')}</span>}
           </button>
         ))}
-        <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid #f0f0f1', fontSize: 11.5, color: '#a1a1aa', lineHeight: 1.5 }}>
+        <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid var(--divider-2, #f0f0f1)', fontSize: 11.5, color: 'var(--subtle, #a1a1aa)', lineHeight: 1.5 }}>
           {supabase ? 'Secured by Supabase · scoped to your workspace' : 'Supabase is not configured — set NEXT_PUBLIC_SUPABASE_URL to enable.'}
         </div>
       </aside>
 
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        <div data-head style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderBottom: '1px solid #e4e4e7', background: '#fff' }}>
+        <div data-head style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderBottom: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)' }}>
           <h1 style={{ margin: '0 8px 0 0', fontSize: 16, fontWeight: 700, letterSpacing: '-0.02em' }}>{current}</h1>
-          <span role="status" style={{ fontSize: 12, color: '#71717a', fontVariantNumeric: 'tabular-nums' }}>{(total ?? visible.length).toLocaleString('en-US')} records</span>
+          <span role="status" style={{ fontSize: 12, color: 'var(--meta, #71717a)', fontVariantNumeric: 'tabular-nums' }}>{(total ?? visible.length).toLocaleString('en-US')} records</span>
           {session && (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: '#16a34a' }}>
               <Mark label="Live" />
@@ -358,8 +358,8 @@ export function LiveLists({
             </span>
           )}
           <div style={{ flex: 1 }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 32, padding: '0 10px', border: '1px solid #e4e4e7', borderRadius: 8, background: '#fafafa', width: 220 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 32, padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: 8, background: 'var(--canvas, #fafafa)', width: 220 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--meta, #71717a)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
@@ -368,17 +368,17 @@ export function LiveLists({
               aria-label={`Search ${current.toLowerCase()}`}
               onChange={(e) => { setPage(0); onSearchText(e.target.value); }}
               placeholder={`Search ${current.toLowerCase()}`}
-              style={{ border: 0, background: 'none', outline: 0, fontSize: 13, width: '100%', minWidth: 0, color: '#18181b' }}
+              style={{ border: 0, background: 'none', outline: 0, fontSize: 13, width: '100%', minWidth: 0, color: 'var(--ink, #18181b)' }}
             />
           </div>
           <button onClick={openNew} style={btnDark}>+ Add {current.slice(0, -1).toLowerCase()}</button>
         </div>
 
         {error && (
-          <div style={{ padding: '8px 16px', background: '#fee2e2', color: '#991b1b', fontSize: 12.5, borderBottom: '1px solid #fecaca' }}>{error}</div>
+          <div style={{ padding: '8px 16px', background: 'var(--negative-soft, #fee2e2)', color: 'var(--tx-red-deep, #991b1b)', fontSize: 12.5, borderBottom: '1px solid var(--tint-red-2, #fecaca)' }}>{error}</div>
         )}
 
-        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', background: '#fff' }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', background: 'var(--surface, #fff)' }}>
           {!authReady ? (
             <Empty title="Connecting securely…" body="Checking your Supabase session." />
           ) : !session ? (
@@ -411,7 +411,7 @@ export function LiveLists({
             </table>
           )}
           {session && pages > 1 ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, padding: '10px 16px', fontSize: 12.5, color: '#71717a' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, padding: '10px 16px', fontSize: 12.5, color: 'var(--meta, #71717a)' }}>
               <span style={{ fontVariantNumeric: 'tabular-nums' }}>Page {page + 1} of {pages.toLocaleString('en-US')}</span>
               <button type="button" style={btn} disabled={page === 0 || loading} onClick={() => setPage((n) => Math.max(0, n - 1))}>Previous</button>
               <button type="button" style={btn} disabled={page + 1 >= pages || loading} onClick={() => setPage((n) => n + 1)}>Next</button>
@@ -422,26 +422,26 @@ export function LiveLists({
 
       {authOpen && (
         <Modal onClose={() => setAuthOpen(false)} label="CLOZR account">
-          <div style={{ fontSize: 11.5, color: '#71717a', fontWeight: 600 }}>Secure workspace</div>
+          <div style={{ fontSize: 11.5, color: 'var(--meta, #71717a)', fontWeight: 600 }}>Secure workspace</div>
           <h2 style={{ margin: '6px 0 4px', fontSize: 20, fontWeight: 700, letterSpacing: '-0.03em' }}>
             {authMode === 'signin' ? 'Sign in to CLOZR' : 'Create your CLOZR account'}
           </h2>
-          <p style={{ margin: 0, fontSize: 12.5, color: '#71717a' }}>Your buyers and vendors stay private to your workspace.</p>
+          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--meta, #71717a)' }}>Your buyers and vendors stay private to your workspace.</p>
           <form onSubmit={(e) => void handleAuth(e)} style={{ marginTop: 16, display: 'grid', gap: 10 }}>
             <label style={{ display: 'grid', gap: 5 }}>
-              <span style={{ fontSize: 11.5, color: '#71717a', fontWeight: 500 }}>Email</span>
+              <span style={{ fontSize: 11.5, color: 'var(--meta, #71717a)', fontWeight: 500 }}>Email</span>
               <input type="email" required value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="you@company.com" style={field} />
             </label>
             <label style={{ display: 'grid', gap: 5 }}>
-              <span style={{ fontSize: 11.5, color: '#71717a', fontWeight: 500 }}>Password</span>
+              <span style={{ fontSize: 11.5, color: 'var(--meta, #71717a)', fontWeight: 500 }}>Password</span>
               <input type="password" required minLength={6} value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="At least 6 characters" style={field} />
             </label>
-            {authMessage && <p style={{ margin: 0, fontSize: 12.5, color: '#dc2626' }}>{authMessage}</p>}
+            {authMessage && <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx-hot, #dc2626)' }}>{authMessage}</p>}
             <button style={{ ...btnDark, height: 36 }} disabled={authBusy}>{authBusy ? 'Please wait…' : authMode === 'signin' ? 'Sign in' : 'Create account'}</button>
           </form>
           <button
             onClick={() => { setAuthMode((m) => (m === 'signin' ? 'signup' : 'signin')); setAuthMessage(''); }}
-            style={{ marginTop: 12, background: 'none', border: 0, color: '#0A8560', fontSize: 12.5, cursor: 'pointer', padding: 0, fontWeight: 500 }}
+            style={{ marginTop: 12, background: 'none', border: 0, color: 'var(--tx-mint, #0a8560)', fontSize: 12.5, cursor: 'pointer', padding: 0, fontWeight: 500 }}
           >
             {authMode === 'signin' ? 'New to CLOZR? Create an account' : 'Already have an account? Sign in'}
           </button>
@@ -450,7 +450,7 @@ export function LiveLists({
 
       {modalOpen && (
         <Modal onClose={() => setModalOpen(false)} label={`${editingId ? 'Edit' : 'Add'} ${current.slice(0, -1)}`} wide>
-          <div style={{ fontSize: 11.5, color: '#71717a', fontWeight: 600 }}>{current} database</div>
+          <div style={{ fontSize: 11.5, color: 'var(--meta, #71717a)', fontWeight: 600 }}>{current} database</div>
           <h2 style={{ margin: '6px 0 16px', fontSize: 20, fontWeight: 700, letterSpacing: '-0.03em' }}>
             {editingId ? 'Edit record' : `Add ${current.slice(0, -1).toLowerCase()}`}
           </h2>
@@ -458,7 +458,7 @@ export function LiveLists({
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               {fieldConfig[current].map((f) => (
                 <label key={f.key} style={{ display: 'grid', gap: 5, gridColumn: f.wide ? '1 / -1' : undefined }}>
-                  <span style={{ fontSize: 11.5, color: '#71717a', fontWeight: 500 }}>{f.label}</span>
+                  <span style={{ fontSize: 11.5, color: 'var(--meta, #71717a)', fontWeight: 500 }}>{f.label}</span>
                   {f.options ? (
                     <select value={form[f.key]} onChange={(e) => setForm((x) => ({ ...x, [f.key]: e.target.value }))} style={field}>
                       {f.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -485,7 +485,7 @@ export function LiveLists({
                 </label>
               ))}
             </div>
-            {error && <p style={{ margin: '10px 0 0', fontSize: 12.5, color: '#dc2626' }}>{error}</p>}
+            {error && <p style={{ margin: '10px 0 0', fontSize: 12.5, color: 'var(--tx-hot, #dc2626)' }}>{error}</p>}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
               <button type="button" onClick={() => setModalOpen(false)} style={{ ...btn, height: 32 }}>Cancel</button>
               <button style={btnDark} disabled={saving}>{saving ? 'Saving…' : 'Save record'}</button>
@@ -502,7 +502,7 @@ function Empty({ title, body, action }: { title: string; body: string; action?: 
     <div style={{ display: 'grid', placeItems: 'center', padding: '80px 20px', textAlign: 'center' }}>
       <div style={{ maxWidth: 420 }}>
         <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em' }}>{title}</div>
-        <p style={{ margin: '6px 0 0', fontSize: 12.5, color: '#71717a', lineHeight: 1.5 }}>{body}</p>
+        <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>{body}</p>
         {action && <div style={{ marginTop: 14 }}>{action}</div>}
       </div>
     </div>
@@ -523,7 +523,7 @@ function Modal({ children, onClose, label, wide }: { children: React.ReactNode; 
         onMouseDown={(e) => e.stopPropagation()}
         style={{
           width: wide ? 640 : 400, maxWidth: 'calc(100vw - 40px)', maxHeight: 'calc(100vh - 80px)', overflow: 'auto',
-          background: '#fff', border: '1px solid #e4e4e7', borderRadius: 14, padding: 22,
+          background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: 14, padding: 22,
           boxShadow: '0 2px 6px rgba(18,20,28,0.06), 0 28px 60px -24px rgba(18,22,45,0.26)',
         }}
       >
@@ -537,7 +537,7 @@ function Row({ section, record, onEdit, onDelete }: { section: ListSection; reco
   const actions = (
     <td style={{ ...td, textAlign: 'right' }}>
       <button onClick={onEdit} style={{ ...btn, height: 26, padding: '0 9px', fontSize: 12 }}>Edit</button>
-      <button onClick={onDelete} style={{ ...btn, height: 26, padding: '0 9px', marginLeft: 4, fontSize: 12, color: '#b91c1c' }}>Archive</button>
+      <button onClick={onDelete} style={{ ...btn, height: 26, padding: '0 9px', marginLeft: 4, fontSize: 12, color: 'var(--tx-red, #b91c1c)' }}>Archive</button>
     </td>
   );
 
@@ -545,8 +545,8 @@ function Row({ section, record, onEdit, onDelete }: { section: ListSection; reco
     const b = record as Buyer;
     return (
       <tr>
-        <td style={td}><strong style={{ fontWeight: 600 }}>{b.name}</strong><div style={{ fontSize: 11, color: '#a1a1aa' }}>{b.company || 'Independent buyer'}</div></td>
-        <td style={td}><div>{b.email || 'No email'}</div><div style={{ fontSize: 11, color: '#a1a1aa' }}>{b.phone || 'No phone'}</div></td>
+        <td style={td}><strong style={{ fontWeight: 600 }}>{b.name}</strong><div style={{ fontSize: 11, color: 'var(--subtle, #a1a1aa)' }}>{b.company || 'Independent buyer'}</div></td>
+        <td style={td}><div>{b.email || 'No email'}</div><div style={{ fontSize: 11, color: 'var(--subtle, #a1a1aa)' }}>{b.phone || 'No phone'}</div></td>
         <td style={td}>{b.markets.join(', ') || '—'}</td>
         <td style={{ ...td, whiteSpace: 'normal', maxWidth: 240 }}>{b.buy_box || '—'}</td>
         <td style={td}>{money(b.max_purchase_price)}</td>
@@ -558,8 +558,8 @@ function Row({ section, record, onEdit, onDelete }: { section: ListSection; reco
   const v = record as Vendor;
   return (
     <tr>
-      <td style={td}><strong style={{ fontWeight: 600 }}>{v.business_name}</strong><div style={{ fontSize: 11, color: '#a1a1aa' }}>{v.contact_name || 'No contact named'}</div></td>
-      <td style={td}><div>{v.email || 'No email'}</div><div style={{ fontSize: 11, color: '#a1a1aa' }}>{v.phone || 'No phone'}</div></td>
+      <td style={td}><strong style={{ fontWeight: 600 }}>{v.business_name}</strong><div style={{ fontSize: 11, color: 'var(--subtle, #a1a1aa)' }}>{v.contact_name || 'No contact named'}</div></td>
+      <td style={td}><div>{v.email || 'No email'}</div><div style={{ fontSize: 11, color: 'var(--subtle, #a1a1aa)' }}>{v.phone || 'No phone'}</div></td>
       <td style={td}>{v.service_type || '—'}</td>
       <td style={td}>{v.markets.join(', ') || '—'}</td>
       <td style={td}><StatusMarker value={v.status} /></td>

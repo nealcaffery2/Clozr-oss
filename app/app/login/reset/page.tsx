@@ -7,12 +7,11 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { ClozrMark } from '@/components/ds/ClozrMark';
 import { useSession } from '@/lib/session';
-import '../../clozr/tokens.css';
 
 const label: React.CSSProperties = {
   display: 'block',
   fontSize: '11.5px',
-  color: '#71717a',
+  color: 'var(--meta, #71717a)',
   fontWeight: 600,
   marginBottom: '6px',
 };
@@ -21,12 +20,12 @@ const field: React.CSSProperties = {
   width: '100%',
   height: '38px',
   padding: '0 11px',
-  border: '1px solid #e4e4e7',
+  border: '1px solid var(--divider, #e4e4e7)',
   borderRadius: '9px',
   fontSize: '13.5px',
   outline: 0,
-  background: '#fafafa',
-  color: '#18181b',
+  background: 'var(--canvas, #fafafa)',
+  color: 'var(--ink, #18181b)',
 };
 
 export default function ResetPasswordPage() {
@@ -70,16 +69,16 @@ export default function ResetPasswordPage() {
   const waiting = !s.ready || (!s.session && !expired);
 
   return (
-    <main style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: '#fafafa', padding: '24px 16px' }}>
+    <main style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: 'var(--canvas, #fafafa)', padding: '24px 16px' }}>
       <div style={{ width: '100%', maxWidth: '400px' }}>
         <a href="/" style={{ display: 'inline-flex', marginBottom: '22px', textDecoration: 'none' }}>
           <ClozrMark size={22} />
         </a>
-        <div style={{ background: '#fff', border: '1px solid #e4e4e7', borderRadius: '14px', padding: '24px', boxShadow: '0 1px 2px rgba(18,20,28,.05), 0 10px 28px -10px rgba(18,22,40,.13)' }}>
+        <div style={{ background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '14px', padding: '24px', boxShadow: '0 1px 2px rgba(18,20,28,.05), 0 10px 28px -10px rgba(18,22,40,.13)' }}>
           <h1 style={{ margin: 0, fontSize: '19px', fontWeight: 700, letterSpacing: '-0.02em' }}>
             {expired ? 'This link expired' : 'Choose a new password'}
           </h1>
-          <p style={{ margin: '5px 0 20px', fontSize: '13px', color: '#71717a' }}>
+          <p style={{ margin: '5px 0 20px', fontSize: '13px', color: 'var(--meta, #71717a)' }}>
             {waiting
               ? 'Opening your reset link…'
               : expired
@@ -88,9 +87,9 @@ export default function ResetPasswordPage() {
           </p>
 
           {waiting ? (
-            <p style={{ margin: 0, fontSize: '13px', color: '#71717a' }}>Signing you in…</p>
+            <p style={{ margin: 0, fontSize: '13px', color: 'var(--meta, #71717a)' }}>Signing you in…</p>
           ) : expired ? (
-            <a href="/login?reset=1" style={{ fontSize: '13.5px', fontWeight: 600, color: '#0A8560' }}>Send a new reset link</a>
+            <a href="/login?reset=1" style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--tx-mint, #0a8560)' }}>Send a new reset link</a>
           ) : (
             <form onSubmit={submit}>
               <div style={{ marginBottom: '13px' }}>
@@ -102,7 +101,7 @@ export default function ResetPasswordPage() {
                 <input id="pw2" type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="Same password again" autoComplete="new-password" required minLength={8} style={field} />
               </div>
               {note ? (
-                <div role="status" style={{ margin: '4px 0 13px', padding: '10px 11px', borderRadius: '9px', fontSize: '12.5px', lineHeight: 1.5, background: '#fee2e2', border: '1px solid #fecaca', color: '#b91c1c' }}>
+                <div role="status" style={{ margin: '4px 0 13px', padding: '10px 11px', borderRadius: '9px', fontSize: '12.5px', lineHeight: 1.5, background: 'var(--negative-soft, #fee2e2)', border: '1px solid var(--tint-red-2, #fecaca)', color: 'var(--tx-red, #b91c1c)' }}>
                   {note.text}
                 </div>
               ) : null}
@@ -112,8 +111,8 @@ export default function ResetPasswordPage() {
             </form>
           )}
         </div>
-        <p style={{ margin: '16px 2px 0', fontSize: '12px', color: '#a1a1aa' }}>
-          <a href="/login" style={{ color: '#71717a' }}>← Back to sign in</a>
+        <p style={{ margin: '16px 2px 0', fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>
+          <a href="/login" style={{ color: 'var(--meta, #71717a)' }}>← Back to sign in</a>
         </p>
       </div>
     </main>

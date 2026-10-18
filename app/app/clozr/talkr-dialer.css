@@ -12,23 +12,23 @@
 .talkr-dialer {
   /* Grouped background: the shared cool page, so white panels read as raised. */
   --bg: var(--page, #f2f4f8);
-  --panel: #ffffff;
+  --panel: var(--surface, #ffffff);
   --panel-2: #e8ecf3;
   --line: var(--edge, #dde2ea);
   --line-soft: var(--band-line, #e3e8ef);
   --line-hover: var(--edge-hover, #c9d1dd);
 
-  --text: #18181b;
+  --text: var(--ink, #18181b);
   /* Both muted steps hold 4.5:1 on white and on the rail, band and inset tints. */
-  --muted: #52525b;
-  --muted-2: #62626c;
+  --muted: var(--text-muted, #52525b);
+  --muted-2: var(--text-subtle, #62626c);
   --ink: #111111;
 
-  /* Talkr red: calling, the dialer and texts are Talkr's (tokens.css --c-talkr). */
-  --accent: #e6142e;
-  --accent-hover: #c20f26;
-  --accent-soft: #ffe9ec;
-  --accent-light: #fda4af;
+  /* CLOZR green, the one accent (DESIGN.md §2). Red is only for hanging up. */
+  --accent: #0a8560;
+  --accent-hover: #08694c;
+  --accent-soft: #e7f8f1;
+  --accent-light: #a7dcc5;
   --orange: #ff7a45;
 
   /* Status colours stepped down to 4.5:1 as text on white (#16a34a and
@@ -52,7 +52,7 @@
   --shadow-lift: var(--elev-2);
   --shadow-pop: 0 0 0 3px rgba(10, 133, 96, 0.12);
 
-  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --sans: var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
   color: var(--text);
   font-family: var(--sans);
   font-variant-numeric: tabular-nums;
@@ -148,7 +148,7 @@
 }
 @media (prefers-reduced-transparency: reduce) {
   .talkr-dialer .glass-bar {
-    background: #fff;
+    background: var(--surface, #fff);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
@@ -191,7 +191,7 @@
   height: 76px;
   border-radius: 50%;
   border: none;
-  color: #fff;
+  color: var(--on-dark, #fff);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -339,14 +339,14 @@
 /* Light tokens again, for forms that read better on white (wrap-up, context). */
 .clozr-phone .phone-light {
   --bg: #f2f2f7;
-  --panel: #ffffff;
-  --panel-2: #f4f4f5;
-  --line: #e4e4e7;
-  --line-soft: #f0f0f1;
+  --panel: var(--surface, #ffffff);
+  --panel-2: var(--surface-2, #f4f4f5);
+  --line: var(--divider, #e4e4e7);
+  --line-soft: var(--divider-2, #f0f0f1);
   --line-hover: #d4d4d8;
-  --text: #18181b;
-  --muted: #52525b;
-  --muted-2: #62626c;
+  --text: var(--ink, #18181b);
+  --muted: var(--text-muted, #52525b);
+  --muted-2: var(--text-subtle, #62626c);
   --ink: #111111;
   --green: #15803d;
   --red: #dc2626;
@@ -389,7 +389,7 @@
   padding: 0 8px;
   border: 0;
   background: none;
-  color: #fff;
+  color: var(--on-dark, #fff);
   font: 400 17px/1 var(--sans);
   display: inline-flex;
   align-items: center;
@@ -408,7 +408,7 @@
   border: 0;
   border-radius: 50%;
   background: none;
-  color: #fff;
+  color: var(--on-dark, #fff);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -454,12 +454,12 @@
 }
 .clozr-phone .phone-key .phone-key-d {
   font: 400 calc(var(--key) * 0.46) / 1 var(--sans);
-  color: #fff;
+  color: var(--on-dark, #fff);
 }
 .clozr-phone .phone-key .phone-key-l {
   font: 700 10px/1 var(--sans);
   letter-spacing: 2px;
-  color: #fff;
+  color: var(--on-dark, #fff);
   margin-top: 2px;
   min-height: 10px;
   padding-left: 2px;
@@ -479,7 +479,7 @@
   border: 0;
   padding: 0;
   border-radius: 50%;
-  color: #fff;
+  color: var(--on-dark, #fff);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -503,7 +503,7 @@
   border: 0;
   padding: 0;
   background: none;
-  color: #fff;
+  color: var(--on-dark, #fff);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -555,7 +555,7 @@
   border: 0;
   padding: 0;
   background: none;
-  color: #fff;
+  color: var(--on-dark, #fff);
   font: 500 14px/1.1 var(--sans);
 }
 .clozr-phone .phone-ctl > span:first-child {
@@ -570,7 +570,7 @@
   transition: none;
 }
 .clozr-phone .phone-ctl[aria-pressed='true'] > span:first-child {
-  background: #fff;
+  background: var(--surface, #fff);
   color: #000;
 }
 .clozr-phone .phone-ctl:active > span:first-child {
@@ -789,8 +789,8 @@
   padding: 0 2px;
 }
 .clozr-phone .phone-seg > button[aria-selected='true'] {
-  background: #fff;
-  color: #18181b;
+  background: var(--surface, #fff);
+  color: var(--ink, #18181b);
   font-weight: 600;
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
 }
@@ -813,8 +813,8 @@
   align-items: center;
   gap: 10px;
   padding: 0 16px;
-  color: #fff;
-  font: 600 15px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  color: var(--on-dark, #fff);
+  font: 600 15px/1 var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
   box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.45);
   cursor: pointer;
 }
@@ -825,14 +825,6 @@
    Tokens are tokens.css (--rail, --band, --inset, --edge, --elev-*).
    ============================================================ */
 
-/* Dial and team columns are tinted rails; cards on them are white. */
-.talkr-dialer .dial-rail {
-  border-color: var(--rail-line) !important;
-  box-shadow: var(--elev-rail);
-}
-.talkr-dialer .dial-rail-r {
-  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.75);
-}
 .talkr-dialer .glass-bar {
   background: var(--band);
   border-bottom-color: var(--edge) !important;
@@ -858,11 +850,87 @@
 .talkr-dialer .dial-display input::placeholder {
   color: var(--muted-2);
 }
-.talkr-dialer .dial-note {
-  border-style: solid !important;
-  border-color: var(--inset-line) !important;
-  background: var(--inset);
-  box-shadow: var(--elev-inset);
+
+/* The dial box's name lookup: a popover under the display, and who the number is under it. */
+.talkr-dialer .dial-lookup {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 300px;
+  overflow: auto;
+  padding: 4px;
+  background: var(--panel);
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 1px 1px -0.5px rgba(0, 0, 0, 0.06), 0 3px 3px -1.5px rgba(0, 0, 0, 0.06),
+    0 6px 6px -3px rgba(0, 0, 0, 0.06), 0 12px 12px -6px rgba(0, 0, 0, 0.06);
+  text-align: left;
+}
+.talkr-dialer .dial-lookup-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.talkr-dialer .dial-lookup-row[aria-selected='true'] {
+  background: var(--panel-2);
+}
+.talkr-dialer .dial-lookup-name {
+  display: block;
+  font: 650 13px/1.3 var(--sans);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.talkr-dialer .dial-lookup-sub {
+  display: block;
+  font: 500 11.5px/1.35 var(--sans);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.talkr-dialer .dial-lookup-note {
+  padding: 10px 9px;
+  font: 500 12px/1.4 var(--sans);
+  color: var(--muted);
+}
+.talkr-dialer .dial-kind {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: 600 11px/1.3 var(--sans);
+}
+.talkr-dialer .dial-who {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: -8px;
+  font: 500 12px/1.3 var(--sans);
+}
+.talkr-dialer .dial-who-name {
+  font-weight: 650;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.talkr-dialer .dial-who-sub {
+  min-width: 0;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Segmented controls: a recessed track, the open segment a raised chip. */
@@ -907,8 +975,26 @@
   outline-offset: 1px;
 }
 
-/* The live call is a raised card on the rail, like the wrap-up beside it. */
-.talkr-dialer .dial-rail section[aria-label='Active call'] {
+/* The classic dialer (DialerScreenClassic.tsx, the default layout): the dial
+   and team columns are tinted rails with white cards on them, and the dial
+   hint sits in a recessed well. Its own class names, so the new desk
+   (.dial-desk) never picks these up and the classic never gets the desk's. */
+.talkr-dialer .dial-rail {
+  border-color: var(--rail-line) !important;
+  box-shadow: var(--elev-rail);
+}
+.talkr-dialer .dial-rail-r {
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.75);
+}
+.talkr-dialer .dial-note {
+  border-style: solid !important;
+  border-color: var(--inset-line) !important;
+  background: var(--inset);
+  box-shadow: var(--elev-inset);
+}
+
+/* The live call is a raised card on the rail (classic) or in the desk's left column. */
+.talkr-dialer :is(.dial-desk, .dial-rail) section[aria-label='Active call'] {
   background: var(--panel);
   border: 1px solid var(--edge);
   border-radius: 14px;
@@ -939,3 +1025,296 @@
 }
 .num-section { border-top: 1px solid var(--line-soft); }
 .num-section:first-child { border-top: 0; padding-top: 0; }
+
+/* ── The desk dialer's three columns (DialerScreen.tsx) ─────────────────── */
+.talkr-dialer .dial-chip {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 0;
+  background: var(--panel);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.08);
+  color: var(--text);
+  font: 500 13.5px/1 var(--sans);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.talkr-dialer .dial-chip[aria-checked='true'] {
+  background: var(--text);
+  color: #fff;
+  box-shadow: none;
+}
+.talkr-dialer .dial-mode {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 52px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.talkr-dialer .dial-mode:disabled { opacity: 0.5; cursor: not-allowed; }
+.talkr-dialer .dial-link {
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  min-height: 24px;
+  color: var(--accent);
+  font: 600 13.5px/1 var(--sans);
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .talkr-dialer .dial-chip:not([aria-checked='true']):hover { background: var(--panel-2); }
+  .talkr-dialer .dial-mode:not(:disabled):hover { border-color: var(--accent); background: var(--accent-soft); }
+  .talkr-dialer .dial-link:hover { color: var(--accent-hover); }
+}
+.talkr-dialer :is(.dial-chip, .dial-mode, .dial-link):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The desk keypad: smaller and flat, so the column holds the keypad, caller ID and the list modes without scrolling. */
+.talkr-dialer .dial-desk .dial-phone .ios-key {
+  width: 62px;
+  height: 62px;
+  background: var(--panel-2);
+  border-color: transparent;
+  box-shadow: none;
+}
+.talkr-dialer .dial-desk .dial-phone .ios-key > span:first-child { font-size: 26px !important; }
+.talkr-dialer .dial-desk .dial-phone .ios-round { width: 62px; height: 62px; }
+
+/* The dialer's messages card (DialerTexts.tsx, DialerEmail.tsx). Its chrome is
+   CLOZR green whatever accent the page around it uses; the thread is
+   iMessage (tokens.css --sms-*: ours blue, theirs grey, on white). */
+.talkr-dialer .dial-texts {
+  --dt-green: #0a8560; --dt-green-hover: #08694c; --dt-tint: #e7f5ef;
+  /* The template picker and the emoji panel inside read --accent. */
+  --accent: var(--dt-green); --accent-hover: var(--dt-green-hover); --accent-soft: var(--dt-tint);
+}
+.talkr-dialer .dial-texts-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  padding: 12px 16px 10px; border-bottom: 1px solid var(--line-soft);
+}
+.talkr-dialer .dial-texts-icon { color: var(--dt-green); flex: none; }
+.talkr-dialer .dial-texts-title {
+  margin: 0 auto 0 0; min-width: 0; flex: 1 1 120px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 650 15px/1.25 var(--sans); letter-spacing: -0.01em; color: var(--text);
+}
+.talkr-dialer .dial-texts .dial-link {
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  min-height: 24px;
+  color: var(--dt-green);
+  font: 600 13px/1 var(--sans);
+  cursor: pointer;
+}
+.talkr-dialer .dial-texts [role='tab'] { min-height: 28px; min-width: 64px; }
+.talkr-dialer .dial-texts [role='tab']:focus-visible { outline: 2px solid var(--dt-green); outline-offset: 2px; }
+
+/* The thread: white, as iMessage draws it. Bubble.tsx spaces the bubbles. */
+.talkr-dialer .dial-thread { background: var(--sms-thread, #fff); }
+.talkr-dialer .dial-note-text { margin: 0; font: 400 13px/1.45 var(--sans); color: var(--muted); }
+
+/* The composer: tools, the field, the round send. */
+.talkr-dialer .dial-composer {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 8px 12px 12px; border-top: 1px solid var(--line-soft);
+}
+.talkr-dialer .dial-compose {
+  min-height: 42px;
+  max-height: 140px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 21px;
+  background: var(--panel);
+  color: var(--text);
+  font: 400 14px/1.4 var(--sans);
+  resize: none;
+  field-sizing: content;
+}
+.talkr-dialer .dial-compose::placeholder { color: var(--muted-2); }
+.talkr-dialer .dial-send {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--sms-out, #0b6fe6);
+  color: #fff;
+  cursor: pointer;
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1), filter 120ms ease;
+}
+.talkr-dialer .dial-send:active:not(:disabled) { transform: scale(0.97); }
+.talkr-dialer .dial-send:disabled { background: #c7c7cc; cursor: not-allowed; }
+
+.talkr-dialer .dial-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.talkr-dialer .dial-tool {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 32px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 16px;
+  background: var(--panel); color: var(--text);
+  font: 500 12.5px/1 var(--sans); cursor: pointer;
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1), background-color 120ms ease;
+}
+.talkr-dialer .dial-tool svg { color: var(--muted); }
+.talkr-dialer .dial-tool[aria-expanded='true'] { background: var(--dt-tint); border-color: #a7dcc5; color: #065f46; }
+.talkr-dialer .dial-tool[aria-expanded='true'] svg { color: var(--dt-green); }
+.talkr-dialer .dial-tool:active:not(:disabled) { transform: scale(0.97); }
+.talkr-dialer .dial-tool:disabled { opacity: 0.5; cursor: not-allowed; }
+.talkr-dialer .dial-tools-from { margin-left: auto; display: inline-flex; min-width: 0; max-width: 100%; }
+/* The emoji control sits in the row at the tools' height. */
+.talkr-dialer .dial-tools > span > button[aria-label='Emoji'] { width: 32px; height: 32px; }
+
+.talkr-dialer .dial-tpl { margin: -8px -12px 0; }
+/* The composer's own top rule is the picker's edge: no second line under it. */
+.talkr-dialer .dial-texts .dial-tpl > div { border-top: 0 !important; border-bottom: 1px solid var(--line-soft); }
+/* The picker sits on white here, where the green links hold 4.6:1 (on the grey page tint they fell to 4.2:1). */
+.talkr-dialer .dial-texts .dial-tpl { --bg: var(--panel); }
+.talkr-dialer .dial-tpl > div { max-height: 260px; }
+.talkr-dialer .dial-save-tpl {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg);
+}
+.talkr-dialer .dial-label { font: 500 11.5px/1.2 var(--sans); color: var(--muted); }
+.talkr-dialer .dial-hint { margin: 0; font: 400 11.5px/1.4 var(--sans); color: var(--muted); }
+.talkr-dialer .dial-input {
+  min-height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); color: var(--text); font: 400 13px/1 var(--sans);
+}
+.talkr-dialer .dial-btn {
+  min-height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); color: var(--text); font: 600 12.5px/1 var(--sans); cursor: pointer;
+}
+.talkr-dialer .dial-btn.is-primary { background: var(--dt-green); border-color: var(--dt-green); color: #fff; }
+.talkr-dialer .dial-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.talkr-dialer .dial-texts .mms-remove:focus-visible { outline: 2px solid var(--dt-green); outline-offset: 2px; }
+
+.talkr-dialer .dial-texts :is(.dial-compose, .dial-send, .dial-link, .dial-tool, .dial-btn, .dial-input):focus-visible {
+  outline: 2px solid var(--dt-green); outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .talkr-dialer .dial-send:not(:disabled):hover { filter: brightness(0.92); }
+  .talkr-dialer .dial-texts .dial-link:hover { color: var(--dt-green-hover); }
+  .talkr-dialer .dial-tool:not(:disabled):not([aria-expanded='true']):hover,
+  .talkr-dialer .dial-btn:not(:disabled):not(.is-primary):hover { background: var(--panel-2); }
+  .talkr-dialer .dial-btn.is-primary:not(:disabled):hover { background: var(--dt-green-hover); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .talkr-dialer .dial-send, .talkr-dialer .dial-tool { transition: none; }
+  .talkr-dialer .dial-send:active:not(:disabled), .talkr-dialer .dial-tool:active:not(:disabled) { transform: none; }
+}
+
+/* The Email tab wears the Gmail-style inbox (gmail-inbox.css), fitted to a
+   card: no checkbox, star or hover actions (nothing to select here), and
+   narrower sender and date columns. */
+.talkr-dialer .dial-texts .dial-mail { background: var(--panel); }
+.talkr-dialer .dial-texts .dial-mail .email-tab { display: flex; flex-direction: column; max-height: 560px; overflow: auto; }
+.talkr-dialer .dial-texts .dial-mail :is(.em-cell-check, .em-cell-star, .em-actions) { display: none !important; }
+.talkr-dialer .dial-texts .dial-mail .em-row { padding-left: 12px; }
+.talkr-dialer .dial-texts .dial-mail .em-cell-sender { width: 150px; padding-left: 0; }
+.talkr-dialer .dial-texts .dial-mail .em-cell-date { width: 76px; }
+.talkr-dialer .dial-texts .dial-mail .em-row:hover .em-cell-date { visibility: visible; }
+.talkr-dialer .dial-texts .dial-mail .em-dot { display: none; }
+.talkr-dialer .dial-texts .dial-mail .em-toolbar { gap: 8px; padding: 4px 12px 4px 6px; }
+.talkr-dialer .dial-texts .dial-mail .dial-mail-bar { gap: 8px; padding: 6px 12px; }
+.talkr-dialer .dial-texts .dial-mail-who {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 400 12.5px/1.3 var(--sans); color: var(--muted);
+}
+.talkr-dialer .dial-texts .dial-mail-who b { font-weight: 600; color: var(--text); }
+.talkr-dialer .dial-texts .dial-mail-count {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 500 12.5px/1.3 var(--sans); color: var(--muted);
+}
+.talkr-dialer .dial-texts .dial-mail .em-read { overflow: visible; padding-bottom: 8px; }
+.talkr-dialer .dial-texts .dial-mail .em-read-head { padding: 12px 16px 8px; }
+.talkr-dialer .dial-texts .dial-mail .em-read-subject { font-size: 16px; }
+.talkr-dialer .dial-texts .dial-mail .em-msg { padding: 12px 16px; }
+.talkr-dialer .dial-texts .dial-mail .em-reply-row { padding: 8px 16px 12px 64px; }
+/* Inside the card the composer is a section, not a second card. */
+.talkr-dialer .dial-texts .dial-mail .dial-mail-composer { margin: 0; padding: 12px 16px 16px; border: 0; border-radius: 0; box-shadow: none; }
+.talkr-dialer .dial-texts .dial-mail .dial-mail-connect { padding: 16px; }
+.talkr-dialer .dial-texts .dial-mail-hint { font: 400 11.5px/1 var(--sans); color: var(--muted); }
+.talkr-dialer .dial-texts .dial-mail .dial-tpl { margin: 0; }
+.talkr-dialer .dial-texts .dial-mail .dial-tpl > div { border: 1px solid var(--line) !important; border-radius: 10px; }
+.talkr-dialer .dial-texts .dial-mail-err { margin: 0; color: var(--red); }
+.talkr-dialer .dial-texts .dial-mail-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center;
+  padding: 28px 24px; color: var(--muted);
+}
+.talkr-dialer .dial-texts .dial-mail-empty p { margin: 0; max-width: 46ch; font: 400 13px/1.5 var(--sans); }
+.talkr-dialer .dial-texts .dial-mail-empty .dial-mail-empty-title { font: 600 14px/1.3 var(--sans); color: var(--text); }
+.talkr-dialer .dial-texts .dial-mail-empty svg { color: var(--muted); }
+
+/* The desk dialer reads at the reference's sizes: section labels are dark
+   15px headings, not small grey captions. */
+.talkr-dialer .dial-desk .eyebrow {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+/* On a dark card (the suggested response) the label stays light. */
+.talkr-dialer .dial-desk :is([style*='background: var(--ink)'], [style*='background:var(--ink)']) .eyebrow {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+}
+
+/* "From this call" (components/talkr/CallProfileCard). Not scoped to
+   .talkr-dialer so the card works in any dialer layout. One primary action in
+   CLOZR green (the dialer's --accent is Talkr red); chips select in ink. */
+.call-profile .cp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font: 600 12.5px/1 var(--sans, system-ui);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1), background-color 130ms ease;
+}
+.call-profile .cp-primary { background: #0a8560; color: #fff; border: 1px solid transparent; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+.call-profile .cp-ghost { background: var(--surface, #fff); color: var(--ink, #18181b); border: 1px solid var(--divider, #e4e4e7); box-shadow: 0 1px 2px -1px rgba(0, 0, 0, 0.08); }
+.call-profile .cp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--divider, #e4e4e7);
+  background: var(--surface, #fff);
+  color: var(--ink-3, #3f3f46);
+  font: 600 12px/1 var(--sans, system-ui);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1), background-color 130ms ease;
+}
+.call-profile .cp-chip[aria-pressed='true'] { background: var(--ink, #18181b); border-color: var(--ink, #18181b); color: var(--surface, #fff); }
+.call-profile .cp-btn:active:not(:disabled),
+.call-profile .cp-chip:active { transform: scale(0.97); }
+.call-profile .cp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.call-profile .cp-btn:focus-visible,
+.call-profile .cp-chip:focus-visible { outline: 2px solid #0a8560; outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) {
+  .call-profile .cp-primary:hover:not(:disabled) { background: #08694c; }
+  .call-profile .cp-ghost:hover:not(:disabled),
+  .call-profile .cp-chip[aria-pressed='false']:hover { background: var(--surface-2, #f4f4f5); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .call-profile .cp-btn,
+  .call-profile .cp-chip { transition: background-color 130ms ease; }
+  .call-profile .cp-btn:active:not(:disabled),
+  .call-profile .cp-chip:active { transform: none; }
+}

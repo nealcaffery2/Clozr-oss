@@ -155,7 +155,7 @@ const CSS = `
 .gm-tiles{position:absolute;inset:0;${MAPBOX ? '' : 'filter:grayscale(1) contrast(.86) brightness(1.07);'}}
 .gm-tile{position:absolute;width:256px;height:256px;pointer-events:none;animation:gm-fade 180ms ease-out both}
 @keyframes gm-fade{from{opacity:0}to{opacity:1}}
-.gm-pin{position:absolute;padding:0;border-radius:50%;cursor:pointer;border:2px solid #fff;min-height:0;min-width:0;
+.gm-pin{position:absolute;padding:0;border-radius:50%;cursor:pointer;border:2px solid var(--surface, #fff);min-height:0;min-width:0;
   box-shadow:0 0 0 1px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.18),0 2px 6px rgba(0,0,0,.10);
   transition:transform 150ms cubic-bezier(.23,1,.32,1),box-shadow 150ms ease}
 .gm-pin.gm-on{transform:scale(1.45);box-shadow:0 0 0 1px rgba(0,0,0,.08),0 2px 4px rgba(0,0,0,.2),0 6px 16px rgba(0,0,0,.18)}
@@ -164,15 +164,15 @@ const CSS = `
 .gm-pin.gm-sel,.gm-pin.gm-sel.gm-smart{box-shadow:0 0 0 2.5px ${PURPLE},0 1px 2px rgba(0,0,0,.18),0 2px 8px rgba(10,133,96,.35)}
 .gm-cluster.gm-sel{box-shadow:0 0 0 2.5px ${PURPLE},0 1px 2px rgba(0,0,0,.14),0 4px 12px rgba(10,133,96,.28)}
 .gm-lasso .gm-pin,.gm-lasso .gm-cluster{pointer-events:none}
-.gm-btn.gm-btn-on{background:${PURPLE};color:#fff}
+.gm-btn.gm-btn-on{background:${PURPLE};color:var(--on-dark, #fff)}
 .gm-cluster{position:absolute;display:grid;place-items:center;border-radius:50%;padding:0;border:0;cursor:pointer;min-height:0;min-width:0;
   box-shadow:0 1px 2px rgba(0,0,0,.14),0 4px 12px rgba(0,0,0,.10);transition:transform 150ms cubic-bezier(.23,1,.32,1)}
-.gm-cluster>span{display:grid;place-items:center;border-radius:50%;background:#fff;color:#18181b;font:700 11.5px/1 system-ui,sans-serif;font-variant-numeric:tabular-nums}
-.gm-btn{display:grid;place-items:center;width:32px;height:32px;border:0;background:#fff;color:#27272a;cursor:pointer;transition:background 120ms ease,transform 120ms cubic-bezier(.23,1,.32,1)}
+.gm-cluster>span{display:grid;place-items:center;border-radius:50%;background:var(--surface, #fff);color:var(--ink, #18181b);font:700 11.5px/1 system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.gm-btn{display:grid;place-items:center;width:32px;height:32px;border:0;background:var(--surface, #fff);color:var(--ink-2, #27272a);cursor:pointer;transition:background 120ms ease,transform 120ms cubic-bezier(.23,1,.32,1)}
 .gm-btn:active{transform:scale(.94)}
-.gm-group{display:flex;flex-direction:column;background:#fff;border-radius:10px;overflow:hidden;
+.gm-group{display:flex;flex-direction:column;background:var(--surface, #fff);border-radius:10px;overflow:hidden;
   box-shadow:0 0 0 1px rgba(0,0,0,.07),0 1px 2px rgba(0,0,0,.06),0 4px 12px rgba(0,0,0,.07)}
-.gm-group>.gm-btn+.gm-btn{border-top:1px solid #f0f0f1}
+.gm-group>.gm-btn+.gm-btn{border-top:1px solid var(--divider-2, #f0f0f1)}
 .gm-pin:focus-visible,.gm-cluster:focus-visible,.gm-btn:focus-visible{outline:2px solid ${PURPLE};outline-offset:2px}
 /* A 12px dot is too small for a finger: the tap target reaches 10px past it. */
 @media (pointer:coarse){.gm-pin::before{content:'';position:absolute;inset:-10px;border-radius:50%}.gm-btn{width:40px;height:40px}}
@@ -180,14 +180,14 @@ const CSS = `
   .gm-pin:hover{transform:scale(1.3)}
   .gm-pin.gm-on:hover{transform:scale(1.45)}
   .gm-cluster:hover{transform:scale(1.07)}
-  .gm-btn:not(.gm-btn-on):hover{background:#f4f4f5}
+  .gm-btn:not(.gm-btn-on):hover{background:var(--surface-2, #f4f4f5)}
 }
-.gm-card{position:absolute;width:264px;z-index:9;background:#fff;border-radius:12px;padding:12px 13px;cursor:default;transform:var(--gm-from);
+.gm-card{position:absolute;width:264px;z-index:9;background:var(--surface, #fff);border-radius:12px;padding:12px 13px;cursor:default;transform:var(--gm-from);
   box-shadow:0 0 0 1px rgba(0,0,0,.06),0 2px 4px rgba(0,0,0,.05),0 12px 32px rgba(0,0,0,.14);
   animation:gm-pop 160ms cubic-bezier(.23,1,.32,1) both}
 @keyframes gm-pop{from{opacity:0;transform:var(--gm-from) scale(.96)}to{opacity:1;transform:var(--gm-from) scale(1)}}
 .gm-tip{position:absolute;z-index:7;pointer-events:none;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis;
-  background:#18181b;color:#fff;font:500 11.5px/1.35 system-ui,sans-serif;padding:5px 8px;border-radius:7px;box-shadow:0 4px 12px rgba(0,0,0,.18);transform:translate(-50%,calc(-100% - 10px))}
+  background:var(--ink, #18181b);color:var(--surface, #fff);font:500 11.5px/1.35 system-ui,sans-serif;padding:5px 8px;border-radius:7px;box-shadow:0 4px 12px rgba(0,0,0,.18);transform:translate(-50%,calc(-100% - 10px))}
 .gm-hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:8;pointer-events:none;background:rgba(24,24,27,.86);color:#fff;
   font:500 12.5px/1 system-ui,sans-serif;padding:10px 14px;border-radius:10px;animation:gm-fade 120ms ease-out both}
 @media (prefers-reduced-motion:reduce){.gm-tile,.gm-card,.gm-hint{animation:none}.gm-pin,.gm-cluster,.gm-btn{transition:none}}
@@ -461,7 +461,7 @@ export function GeniusMap({ center, radiusMi, pins, activeId, height, onPin, onH
             <div style={{ position: 'absolute', left: subj.x - rpx, top: subj.y - rpx, width: rpx * 2, height: rpx * 2, borderRadius: '50%', pointerEvents: 'none',
               border: `1.5px solid ${PURPLE}66`, background: `radial-gradient(circle, ${PURPLE}00 55%, ${PURPLE}12 100%)` }} />
             {rpx > 40 && subject ? (
-              <div style={{ position: 'absolute', left: subj.x, top: subj.y - rpx, transform: 'translate(-50%, -50%)', pointerEvents: 'none', background: '#fff', color: PURPLE,
+              <div style={{ position: 'absolute', left: subj.x, top: subj.y - rpx, transform: 'translate(-50%, -50%)', pointerEvents: 'none', background: 'var(--surface, #fff)', color: PURPLE,
                 font: '700 11px/1 system-ui, sans-serif', padding: '4px 7px', borderRadius: '999px', boxShadow: `0 0 0 1px ${PURPLE}33, 0 1px 3px rgba(0,0,0,.1)` }}>{radiusMi} mi</div>
             ) : null}
           </>
@@ -510,7 +510,7 @@ export function GeniusMap({ center, radiusMi, pins, activeId, height, onPin, onH
           <div aria-hidden="true" style={{ position: 'absolute', left: subj.x, top: subj.y, zIndex: 5, pointerEvents: 'none' }}>
             <div style={{ position: 'absolute', left: -22, top: -22, width: 44, height: 44, borderRadius: '50%', background: `${PURPLE}1f`, boxShadow: `0 0 0 1px ${PURPLE}26` }} />
             <div style={{ position: 'absolute', left: -15, top: -15, width: 30, height: 30, borderRadius: '10px', background: PURPLE, display: 'grid', placeItems: 'center',
-              boxShadow: '0 0 0 2.5px #fff, 0 2px 4px rgba(0,0,0,.18), 0 8px 18px rgba(8,105,76,.35)' }}>
+              boxShadow: '0 0 0 2.5px var(--surface, #fff), 0 2px 4px rgba(0,0,0,.18), 0 8px 18px rgba(8,105,76,.35)' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9v11h14V9" /><path d="M10 20v-6h4v6" /></svg>
             </div>
           </div>
@@ -533,8 +533,8 @@ export function GeniusMap({ center, radiusMi, pins, activeId, height, onPin, onH
             transformOrigin: `${Math.min(Math.max(12, popAt.x - Math.min(Math.max(8, popAt.x - 132), size.w - 272)), 252)}px ${above ? '100%' : '0'}`,
           } as React.CSSProperties}>
           <span aria-hidden="true" style={{ position: 'absolute', left: Math.min(Math.max(12, popAt.x - Math.min(Math.max(8, popAt.x - 132), size.w - 272)), 252) - 6, [above ? 'bottom' : 'top']: -6,
-            width: 12, height: 12, background: '#fff', transform: 'rotate(45deg)', boxShadow: above ? '2px 2px 0 0 rgba(0,0,0,.04)' : '-1px -1px 0 0 rgba(0,0,0,.06)' }} />
-          <button type="button" className="gm-btn" onClick={onClosePopup} aria-label="Close" style={{ position: 'absolute', right: 4, top: 4, width: 24, height: 24, borderRadius: 6, color: '#a1a1aa' }}>
+            width: 12, height: 12, background: 'var(--surface, #fff)', transform: 'rotate(45deg)', boxShadow: above ? '2px 2px 0 0 rgba(0,0,0,.04)' : '-1px -1px 0 0 rgba(0,0,0,.06)' }} />
+          <button type="button" className="gm-btn" onClick={onClosePopup} aria-label="Close" style={{ position: 'absolute', right: 4, top: 4, width: 24, height: 24, borderRadius: 6, color: 'var(--subtle, #a1a1aa)' }}>
             <Icon d="M6 6l12 12M18 6 6 18" size={13} />
           </button>
           <div style={{ position: 'relative' }}>{popup(pop.group ?? pop.id)}</div>

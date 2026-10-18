@@ -10,10 +10,10 @@ import { type Contact, KIND_LABEL } from '@/lib/contact-search';
 import { searchContacts } from '@/lib/contract-recipients';
 
 const KIND_COLOR: Record<Contact['kind'], { color: string; bg: string }> = {
-  seller: { color: '#0A8560', bg: '#E7F8F1' },
-  buyer: { color: '#6d28d9', bg: '#ede9fe' },
-  vendor: { color: '#b45309', bg: '#fef3c7' },
-  team: { color: '#1d4ed8', bg: '#dbeafe' },
+  seller: { color: 'var(--tx-mint, #0a8560)', bg: 'var(--mint-dim, #e7f8f1)' },
+  buyer: { color: 'var(--tx-violet, #6d28d9)', bg: 'var(--tint-violet, #ede9fe)' },
+  vendor: { color: 'var(--tx-amber, #b45309)', bg: 'var(--caution-soft, #fef3c7)' },
+  team: { color: 'var(--tx-blue, #1d4ed8)', bg: 'var(--tint-blue-2, #dbeafe)' },
 };
 
 export function KindBadge({ kind }: { kind: Contact['kind'] }) {
@@ -67,15 +67,15 @@ export function RecipientPicker({ workspaceId, value, onChange, onPick, linked, 
         aria-expanded={shown.length > 0}
         aria-controls={listId}
         aria-autocomplete="list"
-        style={{ width: '100%', height: '34px', padding: linked ? '0 78px 0 10px' : '0 10px', border: '1px solid #e4e4e7', borderRadius: '9px', fontSize: '13px', outline: 0, background: '#fafafa', color: '#18181b' }}
+        style={{ width: '100%', height: '34px', padding: linked ? '0 78px 0 10px' : '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', fontSize: '13px', outline: 0, background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)' }}
       />
       {linked ? (
-        <button type="button" onClick={onUnlink} title={`Linked to ${linked}. Click to unlink.`} style={{ position: 'absolute', right: '6px', top: '7px', height: '20px', padding: '0 7px', border: 0, borderRadius: '999px', background: '#E7F8F1', color: '#0A8560', fontSize: '10.5px', fontWeight: 700, cursor: 'pointer' }}>
+        <button type="button" onClick={onUnlink} title={`Linked to ${linked}. Click to unlink.`} style={{ position: 'absolute', right: '6px', top: '7px', height: '20px', padding: '0 7px', border: 0, borderRadius: '999px', background: 'var(--mint-dim, #e7f8f1)', color: 'var(--tx-mint, #0a8560)', fontSize: '10.5px', fontWeight: 700, cursor: 'pointer' }}>
           {linked} ×
         </button>
       ) : null}
       {shown.length ? (
-        <ul id={listId} role="listbox" style={{ position: 'absolute', left: 0, right: 0, top: '38px', zIndex: 30, margin: 0, padding: '4px', listStyle: 'none', background: '#fff', border: '1px solid #e4e4e7', borderRadius: '10px', boxShadow: '0 12px 32px rgba(0,0,0,.14)', maxHeight: '280px', overflow: 'auto', minWidth: '280px' }}>
+        <ul id={listId} role="listbox" style={{ position: 'absolute', left: 0, right: 0, top: '38px', zIndex: 30, margin: 0, padding: '4px', listStyle: 'none', background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px', boxShadow: '0 12px 32px rgba(0,0,0,.14)', maxHeight: '280px', overflow: 'auto', minWidth: '280px' }}>
           {shown.map((c, i) => (
             <li
               key={`${c.kind}:${c.id}`}
@@ -83,12 +83,12 @@ export function RecipientPicker({ workspaceId, value, onChange, onPick, linked, 
               aria-selected={i === active}
               onMouseDown={(e) => { e.preventDefault(); pick(c); }}
               onMouseEnter={() => setActive(i)}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 9px', borderRadius: '7px', cursor: 'pointer', background: i === active ? '#f4f4f5' : 'transparent', fontSize: '12.5px' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 9px', borderRadius: '7px', cursor: 'pointer', background: i === active ? 'var(--surface-2, #f4f4f5)' : 'transparent', fontSize: '12.5px' }}
             >
               <KindBadge kind={c.kind} />
               <span style={{ minWidth: 0, flex: 1 }}>
-                <span style={{ fontWeight: 600, color: '#18181b' }}>{c.name}</span>
-                <span style={{ display: 'block', color: '#71717a', fontSize: '11.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ fontWeight: 600, color: 'var(--ink, #18181b)' }}>{c.name}</span>
+                <span style={{ display: 'block', color: 'var(--meta, #71717a)', fontSize: '11.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {[c.email, c.phone, c.sub].filter(Boolean).join(' · ') || 'No email or phone on file'}
                 </span>
               </span>

@@ -10,9 +10,9 @@ import { archiveBuyers, archiveSellers } from '@/lib/crm-write';
 type Kind = 'seller' | 'buyer';
 type Row = { id: number; name: string | null; phone: string | null; email: string | null; where: string | null; archived_at: string };
 
-const MUTED = '#71717a';
-const LINE = '#e4e4e7';
-const card: React.CSSProperties = { background: '#fff', border: `1px solid ${LINE}`, borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
+const MUTED = 'var(--meta, #71717a)';
+const LINE = 'var(--divider, #e4e4e7)';
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
 const btn = (primary = false): React.CSSProperties => ({
   height: '30px', padding: '0 12px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
   border: `1px solid ${primary ? '#0A8560' : LINE}`, background: primary ? '#0A8560' : '#fff', color: primary ? '#fff' : '#18181b',
@@ -82,7 +82,7 @@ export function ArchiveSettings({ workspaceId, canWrite, onOpen, onRestored }: {
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '10px' }}>
         {(['seller', 'buyer'] as const).map((k) => (
           <button key={k} type="button" onClick={() => { setKind(k); setRows(null); }} aria-pressed={kind === k}
-            style={{ ...btn(), borderRadius: '999px', borderColor: kind === k ? '#0A8560' : LINE, background: kind === k ? '#E7F8F1' : '#fff', color: kind === k ? '#0A8560' : '#27272a' }}>
+            style={{ ...btn(), borderRadius: '999px', borderColor: kind === k ? '#0A8560' : LINE, background: kind === k ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: kind === k ? '#0A8560' : 'var(--ink-2, #27272a)' }}>
             {k === 'seller' ? 'Sellers' : 'Buyers'}
           </button>
         ))}
@@ -92,20 +92,20 @@ export function ArchiveSettings({ workspaceId, canWrite, onOpen, onRestored }: {
           <button type="button" style={btn(true)} disabled={busy} onClick={() => void restore([...picked])}>{busy ? 'Restoring…' : `Restore ${picked.size}`}</button>
         ) : null}
       </div>
-      {msg ? <div role="status" style={{ fontSize: '12.5px', color: '#0A8560', marginBottom: '8px' }}>{msg}</div> : null}
-      {error ? <div role="alert" style={{ fontSize: '12.5px', color: '#b91c1c', marginBottom: '8px' }}>{error}</div> : null}
+      {msg ? <div role="status" style={{ fontSize: '12.5px', color: 'var(--tx-mint, #0a8560)', marginBottom: '8px' }}>{msg}</div> : null}
+      {error ? <div role="alert" style={{ fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)', marginBottom: '8px' }}>{error}</div> : null}
       {rows === null ? <div style={{ fontSize: '12.5px', color: MUTED }}>Loading…</div>
         : !all.length ? <div style={{ fontSize: '12.5px', color: MUTED }}>{q ? 'Nobody archived matches that.' : `No archived ${kind}s.`}</div>
         : (
           <div style={{ border: `1px solid ${LINE}`, borderRadius: '10px', overflow: 'hidden' }}>
             {canWrite ? (
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: '#fafafa', borderBottom: `1px solid ${LINE}`, fontSize: '12px', color: MUTED }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'var(--canvas, #fafafa)', borderBottom: `1px solid ${LINE}`, fontSize: '12px', color: MUTED }}>
                 <input type="checkbox" checked={allOn} onChange={() => setPicked(allOn ? new Set() : new Set(all.map((r) => r.id)))} />
                 Select all {all.length}{all.length === PAGE ? ' shown (search to narrow)' : ''}
               </label>
             ) : null}
             {all.map((r) => (
-              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderTop: `1px solid #f0f0f1`, flexWrap: 'wrap' }}>
+              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderTop: `1px solid var(--divider-2, #f0f0f1)`, flexWrap: 'wrap' }}>
                 {canWrite ? (
                   <input type="checkbox" aria-label={`Select ${r.name ?? 'record'}`} checked={picked.has(r.id)}
                     onChange={() => setPicked((p) => { const n = new Set(p); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} />

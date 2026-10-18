@@ -21,16 +21,16 @@ import {
 } from '@/lib/round-robin';
 import { ROLE_LABEL, type Teammate, listTeam } from '@/lib/team';
 
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
-const muted: React.CSSProperties = { margin: '0 0 8px', fontSize: '12px', color: '#71717a', lineHeight: 1.55 };
-const sub: React.CSSProperties = { margin: '14px 0 6px', fontSize: '12.5px', fontWeight: 600, color: '#18181b' };
-const field: React.CSSProperties = { height: '32px', padding: '0 10px', border: '1px solid #e4e4e7', borderRadius: '8px', fontSize: '12.5px', background: '#fff', color: '#18181b', outline: 0, minWidth: 0, fontFamily: 'inherit' };
-const btn: React.CSSProperties = { height: '30px', padding: '0 11px', borderRadius: '8px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer', color: '#18181b', flex: 'none' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
+const muted: React.CSSProperties = { margin: '0 0 8px', fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.55 };
+const sub: React.CSSProperties = { margin: '14px 0 6px', fontSize: '12.5px', fontWeight: 600, color: 'var(--ink, #18181b)' };
+const field: React.CSSProperties = { height: '32px', padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', fontSize: '12.5px', background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)', outline: 0, minWidth: 0, fontFamily: 'inherit' };
+const btn: React.CSSProperties = { height: '30px', padding: '0 11px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', color: 'var(--ink, #18181b)', flex: 'none' };
 const primary: React.CSSProperties = { ...btn, border: '1px solid #0A8560', background: '#0A8560', color: '#fff' };
-const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', padding: '8px 0', borderTop: '1px solid #f0f0f1' };
+const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', padding: '8px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)' };
 const pill = (on: boolean): React.CSSProperties => ({
   padding: '2px 9px', borderRadius: '999px', fontSize: '11px', fontWeight: 700,
-  background: on ? '#dcfce7' : '#f4f4f5', color: on ? '#15803d' : '#71717a', flex: 'none',
+  background: on ? 'var(--positive-soft, #dcfce7)' : 'var(--surface-2, #f4f4f5)', color: on ? 'var(--tx-green, #15803d)' : 'var(--meta, #71717a)', flex: 'none',
 });
 
 type Run = (fn: () => Promise<{ ok: boolean; message?: string }>, done?: string) => Promise<boolean>;
@@ -102,7 +102,7 @@ export function RoundRobinSettings({ workspaceId, admin, demo, isMobile }: {
   return (
     <>
       {note ? (
-        <div role="status" style={{ ...card, padding: '11px 13px', background: note.ok ? '#dcfce7' : '#fee2e2', borderColor: note.ok ? '#bbf7d0' : '#fecaca', color: note.ok ? '#15803d' : '#b91c1c', fontSize: '12.5px' }}>
+        <div role="status" style={{ ...card, padding: '11px 13px', background: note.ok ? 'var(--positive-soft, #dcfce7)' : 'var(--negative-soft, #fee2e2)', borderColor: note.ok ? 'var(--tint-green-3, #bbf7d0)' : 'var(--tint-red-2, #fecaca)', color: note.ok ? 'var(--tx-green, #15803d)' : '#b91c1c', fontSize: '12.5px' }}>
           {note.text}
         </div>
       ) : null}
@@ -121,10 +121,10 @@ export function RoundRobinSettings({ workspaceId, admin, demo, isMobile }: {
             <div style={sub}>Lead sources</div>
             {keys.length ? keys.map((k) => (
               <div key={k.id} style={row}>
-                <span style={{ flex: '1 1 200px', fontSize: '12.5px', fontWeight: 600, color: k.active ? '#18181b' : '#a1a1aa' }}>
-                  {sourceLabel(k)} <span style={{ fontWeight: 400, color: '#a1a1aa', fontFamily: 'ui-monospace, monospace' }}>{k.key_prefix}…</span>
+                <span style={{ flex: '1 1 200px', fontSize: '12.5px', fontWeight: 600, color: k.active ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)' }}>
+                  {sourceLabel(k)} <span style={{ fontWeight: 400, color: 'var(--subtle, #a1a1aa)', fontFamily: 'ui-monospace, monospace' }}>{k.key_prefix}…</span>
                 </span>
-                <label style={{ fontSize: '12px', color: '#52525b' }}>
+                <label style={{ fontSize: '12px', color: 'var(--muted, #52525b)' }}>
                   New leads go to{' '}
                   <select value={k.round_robin} disabled={busy} style={field} aria-label={`Round robin for ${sourceLabel(k)}`}
                     onChange={(e) => void run(() => setKeySetting(k.id, 'round_robin', e.target.value),
@@ -167,7 +167,7 @@ function Rotation({ r, team, nameOf, admin, busy, run, isMobile, workspaceId }: 
     .sort((a, b) => Number(b.role === r.team) - Number(a.role === r.team));
 
   return (
-    <div style={{ margin: '8px 0', padding: '11px 13px', borderRadius: '10px', background: '#fafafa', border: '1px solid #e4e4e7' }}>
+    <div style={{ margin: '8px 0', padding: '11px 13px', borderRadius: '10px', background: 'var(--canvas, #fafafa)', border: '1px solid var(--divider, #e4e4e7)' }}>
       <div style={{ ...row, borderTop: 0, padding: 0 }}>
         {admin ? (
           <input value={name} onChange={(e) => setName(e.target.value)} disabled={busy} aria-label="Round robin name"
@@ -181,7 +181,7 @@ function Rotation({ r, team, nameOf, admin, busy, run, isMobile, workspaceId }: 
               onClick={() => void run(() => updateRoundRobin(r.id, { active: !r.active }), r.active ? 'Round robin turned off — new leads land unassigned.' : 'Round robin turned on.')}>
               {r.active ? 'Turn off' : 'Turn on'}
             </button>
-            <button type="button" className="dc2" style={{ ...btn, color: '#b91c1c' }} disabled={busy}
+            <button type="button" className="dc2" style={{ ...btn, color: 'var(--tx-red, #b91c1c)' }} disabled={busy}
               onClick={() => { if (window.confirm(`Delete the ${r.name} round robin? Sources that use it will assign nobody.`)) void run(() => deleteRoundRobin(r.id), 'Round robin deleted.'); }}>
               Delete
             </button>
@@ -189,7 +189,7 @@ function Rotation({ r, team, nameOf, admin, busy, run, isMobile, workspaceId }: 
         ) : null}
       </div>
 
-      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', marginTop: '8px', fontSize: '12px', color: '#52525b' }}>
+      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', marginTop: '8px', fontSize: '12px', color: 'var(--muted, #52525b)' }}>
         {r.team === 'dispositions' ? (
           <label>
             Deals out{' '}
@@ -200,24 +200,24 @@ function Rotation({ r, team, nameOf, admin, busy, run, isMobile, workspaceId }: 
           </label>
         ) : (
           <label style={{ display: 'flex', gap: '6px', alignItems: 'center', cursor: admin ? 'pointer' : 'default' }}>
-            <input type="checkbox" checked={r.underwriter === 'same'} disabled={!admin || busy} style={{ accentColor: '#0A8560' }}
+            <input type="checkbox" checked={r.underwriter === 'same'} disabled={!admin || busy} style={{ accentColor: 'var(--tx-mint, #0a8560)' }}
               onChange={(e) => void run(() => updateRoundRobin(r.id, { underwriter: e.target.checked ? 'same' : 'none' }), 'Saved.')} />
             The rep is also the lead&rsquo;s underwriter
           </label>
         )}
-        <span>Next up: <strong style={{ color: '#18181b' }}>{up ? nameOf(up.user_id) : 'nobody — add someone'}</strong></span>
+        <span>Next up: <strong style={{ color: 'var(--ink, #18181b)' }}>{up ? nameOf(up.user_id) : 'nobody — add someone'}</strong></span>
       </div>
 
       <div style={{ marginTop: '8px' }}>
         {r.members.map((m) => (
           <div key={m.user_id} style={{ ...row, padding: '6px 0' }}>
-            <span style={{ flex: '1 1 160px', fontSize: '12.5px', fontWeight: 600, color: m.active ? '#18181b' : '#a1a1aa' }}>
+            <span style={{ flex: '1 1 160px', fontSize: '12.5px', fontWeight: 600, color: m.active ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)' }}>
               {nameOf(m.user_id)}
-              <span style={{ fontWeight: 400, color: '#a1a1aa' }}>
+              <span style={{ fontWeight: 400, color: 'var(--subtle, #a1a1aa)' }}>
                 {' '}· {ROLE_LABEL[team.find((t) => t.user_id === m.user_id)?.role ?? 'member'] ?? ''}
               </span>
             </span>
-            <span style={{ fontSize: '11.5px', color: '#71717a', flex: isMobile ? '1 1 100%' : '0 1 220px' }}>
+            <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', flex: isMobile ? '1 1 100%' : '0 1 220px' }}>
               {m.assigned_count} dealt{m.last_assigned_at ? ` · last ${new Date(m.last_assigned_at).toLocaleString()}` : ''}
             </span>
             <span style={pill(m.active)}>{m.active ? 'In rotation' : 'Out'}</span>
@@ -228,7 +228,7 @@ function Rotation({ r, team, nameOf, admin, busy, run, isMobile, workspaceId }: 
                     m.active ? `${nameOf(m.user_id)} is out of the rotation.` : `${nameOf(m.user_id)} is back in the rotation.`)}>
                   {m.active ? 'Take out' : 'Put back in'}
                 </button>
-                <button type="button" className="dc2" style={{ ...btn, color: '#b91c1c' }} disabled={busy}
+                <button type="button" className="dc2" style={{ ...btn, color: 'var(--tx-red, #b91c1c)' }} disabled={busy}
                   onClick={() => void run(() => removeRoundRobinMember(r.id, m.user_id), `${nameOf(m.user_id)} removed.`)}>
                   Remove
                 </button>

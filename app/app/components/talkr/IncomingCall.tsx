@@ -15,10 +15,11 @@
 
 import { useEffect, useState } from 'react';
 import { api, type CallContextDto } from '@/lib/talkr-web/api';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { fetchCallContext } from '@/lib/talkr-web/callContext';
 import { useSoftphone } from './softphoneAdapter';
 import { Icon, HangupIcon } from './Icon';
-import { Avatar, Button } from './ui';
+import { Button } from './ui';
 import { BAND_COLOR, BAND_LABEL, TempDot, degrees, oneLineAddress, tempBand } from './contacts';
 import { ProspectTime } from './ProspectTime';
 import { formatPhone } from '@/lib/talkr-web/time';
@@ -54,8 +55,7 @@ export function IncomingCall({ record = null, callback = null }: { record?: Cloz
   useEffect(() => {
     if (!incoming) return;
     setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(t);
+    return everyWhileVisible(() => setNow(Date.now()), 30_000);
   }, [incoming]);
 
   useEffect(() => {
@@ -122,17 +122,9 @@ export function IncomingCall({ record = null, callback = null }: { record?: Cloz
         }}
       >
         <div className="flex items-center gap-3.5">
-          <span className="relative inline-flex h-14 w-14 items-center justify-center">
-            <span
-              className="absolute inset-0 rounded-full"
-              style={{ background: 'var(--accent)', animation: 'ringpulse 1.6s ease-out infinite' }}
-              aria-hidden
-            />
-            <Avatar name={name ?? formatPhone(incoming.from)} size={48} dark />
-          </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="truncate" style={{ font: '600 17px/1.2 var(--sans)', color: '#fff' }}>
+              <span className="truncate" style={{ font: '600 17px/1.2 var(--sans)', color: 'var(--on-dark, #fff)' }}>
                 {name ?? formatPhone(incoming.from)}
               </span>
               {contact && (
@@ -169,7 +161,7 @@ export function IncomingCall({ record = null, callback = null }: { record?: Cloz
               <div className="truncate" data-testid="callback-attribution" style={{ font: '600 11px/1.5 var(--sans)', color: 'var(--accent)' }}>
                 {callbackText}
                 {openAttributed ? (
-                  <button type="button" onClick={openAttributed} style={{ marginLeft: 6, padding: 0, border: 0, background: 'none', color: '#fff', textDecoration: 'underline', font: 'inherit', cursor: 'pointer' }}>
+                  <button type="button" onClick={openAttributed} style={{ marginLeft: 6, padding: 0, border: 0, background: 'none', color: 'var(--on-dark, #fff)', textDecoration: 'underline', font: 'inherit', cursor: 'pointer' }}>
                     Open record
                   </button>
                 ) : null}

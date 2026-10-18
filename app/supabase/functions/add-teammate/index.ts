@@ -28,7 +28,7 @@ import { sendTeammateInvite } from '../_shared/invite-send.ts';
 import { renderNotaryStamp, stampGaps } from '../_shared/notary-stamp.ts';
 import { corsFor, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 
-const ROLES = new Set(['admin', 'acquisitions', 'dispositions', 'tc', 'member', 'notary', 'partnerships']);
+const ROLES = new Set(['admin', 'acquisitions', 'dispositions', 'tc', 'member', 'notary', 'partnerships', 'sdr']);
 
 const ROLE_LABEL: Record<string, string> = {
   admin: 'Admin',

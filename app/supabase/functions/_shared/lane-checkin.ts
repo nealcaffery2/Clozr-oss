@@ -3,6 +3,13 @@
 // their day or due today, what got done since yesterday, and the note Lane
 // writes when the model is not available: same day rules as lib/lane.ts
 // laneDrive (D-marks count from the contract date, T-marks back from close).
+//
+// Lane assists the TC; it does not micromanage her. So:
+//  * only files on live deals count (LIVE_STAGES, not archived, not closed),
+//  * a late line someone else owns (title, seller, buyer, dispo,
+//    acquisitions) is "waiting on them", never her miss, and never pings her,
+//  * the 9am read of her emails, texts and calls marks a late line of hers
+//    as waiting on someone or already done, and those are not pinged either.
 
 export type CkTask = { id: string; t: string; day: string; owner: string; critical: boolean };
 export type CkTemplate = { phases: { tasks: CkTask[] }[] };
@@ -14,9 +21,24 @@ export type CkFile = {
 export type FileState = {
   id: number; address: string; seller: string;
   dayMarker: string; daysToClose: number | null;
-  overdue: CkTask[]; dueToday: CkTask[];
+  /** The TC's own lines past their day. */
+  overdue: CkTask[];
+  /** Lines past their day that someone else owns: waiting on them, not on her. */
+  waitingOn: CkTask[];
+  dueToday: CkTask[];
   doneIds: string[];
 };
+
+/** Deal stages a TC file is live in (the same set the team stoplight uses, migration 260). */
+export const LIVE_STAGES = ['Under Contract Seller', 'Ready To Market', 'Buyer Under Contract', 'In Escrow'] as const;
+
+/** A file counts only while its deal is in the pipeline: not archived, closed or terminated, in a live stage. */
+export function isLiveDeal(d: { stage?: string | null; archived_at?: string | null; closed_on?: string | null; terminated?: boolean | null } | null | undefined): boolean {
+  return !!d && !d.archived_at && !d.closed_on && !d.terminated && (LIVE_STAGES as readonly string[]).includes(String(d.stage ?? ''));
+}
+
+/** Lines the TC owns herself; the rest are other people's. */
+export const tcOwns = (t: CkTask) => !t.owner || t.owner === 'TC';
 
 const DAY = 86_400_000;
 const dateOnly = (s: string | null) => (s && /^\d{4}-\d{2}-\d{2}/.test(s) ? Date.UTC(Number(s.slice(0, 4)), Number(s.slice(5, 7)) - 1, Number(s.slice(8, 10))) : null);
@@ -48,10 +70,12 @@ export function fileState(f: CkFile, template: CkTemplate | null, today: string)
     if (m) { if (daysToClose === null) return false; const n = Number(m[1]); return when === 'today' ? -daysToClose === n : -daysToClose > n; }
     return false;
   };
+  const late = tasks.filter((t) => !done(t.id) && due(t, 'overdue'));
   return {
     id: f.id, address: f.address, seller: f.seller, dayMarker, daysToClose,
-    overdue: tasks.filter((t) => !done(t.id) && due(t, 'overdue')),
-    dueToday: tasks.filter((t) => !done(t.id) && due(t, 'today')),
+    overdue: late.filter(tcOwns),
+    waitingOn: late.filter((t) => !tcOwns(t)),
+    dueToday: tasks.filter((t) => !done(t.id) && tcOwns(t) && due(t, 'today')),
     doneIds: tasks.filter((t) => done(t.id)).map((t) => t.id),
   };
 }
@@ -71,8 +95,35 @@ export function winsSince(files: FileState[], before: Record<string, string[]> |
 
 export const snapshotOf = (files: FileState[]): Record<string, string[]> => Object.fromEntries(files.map((f) => [String(f.id), f.doneIds]));
 
-/** Critical lines past their day, as ping keys ("<file id>:<line id>"). */
-export const fireKeys = (files: FileState[]) => files.flatMap((f) => f.overdue.filter((t) => t.critical).map((t) => ({ key: `${f.id}:${t.id}`, file: f, task: t })));
+/** What the 9am read made of a late line: waiting on someone, looks done, or hers to do. */
+export type Verdict = { key: string; verdict: 'waiting' | 'looks_done' | 'needs_tc'; why: string };
+
+/**
+ * Her critical lines past their day, as ping keys ("<file id>:<line id>").
+ * `quiet` is the keys today's read found waiting on someone or already done.
+ */
+export const fireKeys = (files: FileState[], quiet: ReadonlySet<string> = new Set()) =>
+  files.flatMap((f) => f.overdue.filter((t) => t.critical).map((t) => ({ key: `${f.id}:${t.id}`, file: f, task: t })))
+    .filter((x) => !quiet.has(x.key));
+
+/** The keys a day's verdicts say not to ping. */
+export const quietKeys = (verdicts: readonly Verdict[] | null | undefined) =>
+  new Set((verdicts ?? []).filter((v) => v.verdict !== 'needs_tc').map((v) => v.key));
+
+/** The model's verdicts, kept only when they name a late line of a file it was shown. */
+export function cleanVerdicts(raw: unknown, files: FileState[]): Verdict[] {
+  const known = new Set(files.flatMap((f) => [...f.overdue, ...f.waitingOn].map((t) => `${f.id}:${t.id}`)));
+  const list = Array.isArray(raw) ? raw : [];
+  const out: Verdict[] = [];
+  for (const v of list) {
+    if (!v || typeof v !== 'object') continue;
+    const r = v as Record<string, unknown>;
+    const key = String(r.key ?? '');
+    const verdict = r.verdict === 'waiting' || r.verdict === 'looks_done' || r.verdict === 'needs_tc' ? r.verdict : null;
+    if (known.has(key) && verdict) out.push({ key, verdict, why: String(r.why ?? '').slice(0, 240) });
+  }
+  return out;
+}
 
 const short = (s: string, n = 70) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
@@ -85,18 +136,23 @@ export function fallbackCheckin(tc: string, files: FileState[], wins: { address:
   }
   const hot = files.filter((f) => f.overdue.length);
   const today = files.filter((f) => f.dueToday.length);
-  if (!hot.length && !today.length) {
+  const waiting = files.filter((f) => f.waitingOn.length);
+  if (!hot.length && !today.length && !waiting.length) {
     lines.push('', "✅ Every file's on track this mornin'. Nothin' past due and nothin' on fire. Enjoy your coffee ☕");
     return lines.join('\n');
   }
   if (hot.length) {
-    lines.push('', `🔥 Need a lasso on ${hot.length} ${hot.length === 1 ? 'file' : 'files'}:`);
+    lines.push('', `🔥 Yours to move on ${hot.length} ${hot.length === 1 ? 'file' : 'files'}:`);
     for (const f of hot.slice(0, 6)) {
       const crit = f.overdue.filter((t) => t.critical);
       const lead = (crit[0] ?? f.overdue[0])!;
       lines.push(`• ${f.address} (${f.dayMarker}): ${short(lead.t)}${f.overdue.length > 1 ? ` (+${f.overdue.length - 1} more)` : ''}${crit.length ? ' ⚠️' : ''}`);
     }
     if (hot.length > 6) lines.push(`• …and ${hot.length - 6} more on the TC board.`);
+  }
+  if (waiting.length) {
+    lines.push('', `⏳ Waiting on other folks (not on you):`);
+    for (const f of waiting.slice(0, 5)) lines.push(`• ${f.address}: ${short(f.waitingOn[0]!.t)} (${f.waitingOn[0]!.owner})${f.waitingOn.length > 1 ? ` (+${f.waitingOn.length - 1})` : ''}`);
   }
   if (today.length) {
     lines.push('', `📋 On today's docket:`);

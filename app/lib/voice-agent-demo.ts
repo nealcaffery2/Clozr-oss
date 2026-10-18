@@ -4,7 +4,7 @@
 // through with no backend. Nothing here talks to ElevenLabs, a model or Supabase.
 
 import {
-  defaultSettings, normalizeSettings, savePayload, TOOL_KEYS,
+  defaultSettings, normalizeSettings, savePayload, speaksTags, TOOL_KEYS,
   type AgentCall, type AgentDetail, type AgentSettings, type AgentStats, type AgentSummary, type ManualStep, type PromptWarning, type Result, type ScoreResult,
   type TemplateInfo, type TestSession, type ToolInfo, type ToolKey, type VersionRow, type Voice,
 } from './voice-agent';
@@ -19,7 +19,7 @@ const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
 
 /** Built by the server today; the rest read "Coming soon" in the console. */
 export const DEMO_TOOL_AVAILABLE: Record<ToolKey, boolean> = {
-  lead_context: true, end_call: true, transfer: true, book_appointment: true, save_qualification: true, mark_do_not_contact: true, get_compr_offer: false, request_agreement: false,
+  lead_context: true, end_call: true, transfer: true, book_appointment: true, save_qualification: true, mark_do_not_contact: true, get_compr_offer: true, request_agreement: false,
 };
 
 export const DEMO_TOOLS: ToolInfo[] = TOOL_KEYS.map((k) => ({ key: k, label: k, available: DEMO_TOOL_AVAILABLE[k] }));
@@ -40,7 +40,7 @@ export const DEMO_TEMPLATES: TemplateInfo[] = [
       'The relationship frame does not say "no fees", "we do not change the price after contract" or "we do not cancel last-minute". Add them back only if they are real company policy: the agent will say them to sellers.',
       'The offer range comes from the seller\'s latest deal MAO (ceiling) and the floor percentage in Offer authority. With no MAO on file the agent has no range and quotes nothing.',
       'Two steps of the master script were cut off or unlabeled; the template uses neutral wording there. Replace it with the intended lines.',
-      'get_compr_offer and request_agreement are not built yet: the prompt uses fallback wording until they exist.',
+      'request_agreement is not built yet: the prompt uses fallback wording until it exists.',
     ],
   },
 ];
@@ -106,7 +106,7 @@ export function demoPrompt(s: AgentSettings): string {
   const rulesBody = [rule('Always', s.rules.dos), rule('Never', s.rules.donts), s.rules.never_mention.length ? `Never bring up: ${s.rules.never_mention.join('; ')}.` : '', s.rules.forbidden_phrases.length ? `Never say: ${s.rules.forbidden_phrases.map((x) => `"${x}"`).join(', ')}.` : ''].filter(Boolean).join('\n\n');
   const out = [
     `# Who you are\nYou are ${s.identity.name || s.identity.company || 'the agent'}, a ${s.identity.role.replace(/_/g, ' ')} for ${s.identity.company || 'the company'}.${s.identity.introduce_as === 'virtual_assistant' ? ' If sincerely asked, say you are a virtual assistant.' : ''}`,
-    ...(s.script.raw_prompt_override ? [] : [`# How you sound\nTone: ${p.tone}. Energy ${p.energy}/5, warmth ${p.warmth}/5, formality ${p.formality}/5, length ${p.verbosity}/5. ${p.use_fillers ? 'Use natural acknowledgements.' : 'No filler words.'}${p.expressiveness === 'off' ? '' : ' Natural hesitations, pauses, mirroring and matching the caller\'s mood.'}${p.expressiveness === 'expressive' && s.voice.tts_model === 'eleven_v3_conversational' ? ' Sparing sound tags: [laughs], [gasps], [sighs], [clears throat].' : ''}`]),
+    ...(s.script.raw_prompt_override ? [] : [`# How you sound\nTone: ${p.tone}. Energy ${p.energy}/5, warmth ${p.warmth}/5, formality ${p.formality}/5, length ${p.verbosity}/5. ${p.use_fillers ? 'Use natural acknowledgements.' : 'No filler words.'}${p.expressiveness === 'off' ? '' : ' Natural hesitations, pauses, mirroring and matching the caller\'s mood.'}${p.expressiveness === 'expressive' && speaksTags(s.voice.tts_model) ? ' Sparing sound tags: [laughs], [sighs], [pause], [clears throat].' : ''}`]),
     '# What you know about the caller\nThe brief, last contact and next step arrive as variables on every call: {{lead_brief}}, {{last_contact_summary}}, {{next_step}}.',
     s.script.raw_prompt_override ? `# The conversation\n${s.script.raw_prompt_override}` : enabled.length ? `# The conversation\n${enabled.map((x) => `## ${x.title || x.id}\n${x.body}`).join('\n\n')}` : s.script.master_script_text ? `# The conversation\n${s.script.master_script_text}` : '',
     oa.mode === 'none' ? '# Offers\nYou do not make offers. Never state or hint at a price; the team prepares that.' : `# Offer authority (hard limits)\nYour approved range is {{offer_low}} to {{offer_high}}. Never quote outside it. Step size about ${oa.step_size_pct} percent${oa.allow_step_ups ? ', up only for a reason or a trade' : ', no movement'}.${oa.agreement_requires_rep_approval ? ' A person approves any agreement.' : ''}`,

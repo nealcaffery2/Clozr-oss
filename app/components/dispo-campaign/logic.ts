@@ -156,6 +156,44 @@ export function mergeCheck(body: string, known: Record<string, string>, dealFiel
   };
 }
 
+/** The merge field a typo most likely meant: two letters off at most, or the same word without its underscores. */
+export function closestField(name: string, known: string[]): string | null {
+  const flat = (s: string) => s.replace(/_/g, '');
+  const dist = (a: string, b: string) => {
+    let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const next = [i];
+      for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      row = next;
+    }
+    return row[b.length];
+  };
+  let best: [string, number] | null = null;
+  for (const k of known) {
+    const d = flat(k) === flat(name) ? 0 : dist(name, k);
+    if (d <= 2 && (!best || d < best[1])) best = [k, d];
+  }
+  return best?.[0] ?? null;
+}
+
+const tokenRe = (name: string, lead = '') => new RegExp(`${lead}\\{\\{?\\s*${name}\\s*\\}?\\}`, 'gi');
+/** A template with a merge field taken out, and the space in front of it. */
+export const dropToken = (text: string, name: string) => text.replace(tokenRe(name, '[ \\t]*'), '');
+/** An email's HTML with a merge field taken out, and any link that pointed at it, so no dead link goes out. */
+export function dropTokenHtml(html: string, name: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('a[href]').forEach((a) => { if (tokenRe(name).test(a.getAttribute('href') ?? '')) a.remove(); });
+  return dropToken(htmlLike(html, doc), name);
+}
+/** A parsed email written back in the shape it came in: a whole document with its doctype, or a fragment. */
+export function htmlLike(html: string, doc: Document): string {
+  if (!/<html[\s>]/i.test(html)) return doc.head.innerHTML + doc.body.innerHTML;
+  const doctype = /^\s*<!doctype[^>]*>/i.exec(html)?.[0].trim();
+  return (doctype ? `${doctype}\n` : '') + doc.documentElement.outerHTML;
+}
+/** A template with one merge field swapped for another. */
+export const swapToken = (text: string, from: string, to: string) => text.replace(tokenRe(from), `{{${to}}}`);
+
 // ------------------------------------------------------------------ results
 export type Funnel = { sent: number; delivered: number; viewed: number | null; replied: number; offers: number; interested: number; optedOut: number };
 export type ChannelRow = { ch: 'sms' | 'email' | 'rvm' | 'ai_call'; sent: number; delivered: number | null; replied: number; queued: number; failed: number };

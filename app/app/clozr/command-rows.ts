@@ -91,6 +91,7 @@ export type CmdAction =
   | { t: 'stage'; pid: string; stage: string }
   | { t: 'filter'; q: string }
   | { t: 'go'; screen: string }
+  | { t: 'theme' }
   | { t: 'lane'; pid: string | null }
   /** Stays in the bar: a second list (more actions, a rep, a stage). */
   | { t: 'step'; step: string }
@@ -109,6 +110,8 @@ export type CmdRow = {
   mark: Mark;
   /** A colour of its own (a record's stage) in place of the mark's. */
   dot?: string;
+  /** The word the row's icon is picked by, when it is not the label ("Call" for a call that matched). */
+  glyph?: string;
   action: CmdAction;
   /** ⌘⏎. */
   alt?: { label: string; action: CmdAction };
@@ -297,6 +300,7 @@ export function buildCommandRows(data: CmdData, raw: string, step: string | null
         allowed('dealMachine') ? { label: 'Deal Machine', sub: 'The scraper: run, pause, its log and finds', mark: 'dealMachine', action: { t: 'go', screen: 'dealMachine' } } : null,
         allowed('buyr') ? { label: 'Buyr', sub: 'Wholesale sniping and Facebook buyer groups', mark: 'buyr', action: { t: 'go', screen: 'buyr' } } : null,
         { label: 'Go to a screen…', sub: 'Type go and its name', mark: 'neutral', action: { t: 'type', text: 'go ' } },
+        { label: 'Toggle dark mode', sub: 'Light or dark for this browser · Settings › Account has System', mark: 'neutral', action: { t: 'theme' } },
       ]),
     ]);
   }
@@ -444,6 +448,7 @@ export function buildCommandRows(data: CmdData, raw: string, step: string | null
     g('Vendors', vendors),
     g('Tasks', tasks),
     g('Go to', screens),
+    g('Tools', /\b(dark|light|theme)\b/i.test(q) ? [{ label: 'Toggle dark mode', sub: 'Light or dark for this browser · Settings › Account has System', mark: 'neutral' as Mark, action: { t: 'theme' } as CmdAction }] : []),
   ];
   // Nothing found: offer to make it. (Filtering the People list for it is not a match.)
   if (!groups.some((x) => x.rows.length)) {

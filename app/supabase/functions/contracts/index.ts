@@ -46,8 +46,9 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { ALLOW_HEADERS } from '../_shared/security.ts';
-import { type Any, buildTokens, createContract, emailSigners, ensureTcCc, fill, loadCompany, loadParties, logEvent, parse, partySigner, queueNotary, signUrl, toHtml, tokensIn, varsFor, varsIn } from '../_shared/docs.ts';
+import { type Any, buildTokens, createContract, emailSigners, ensureTcCc, fill, loadCompany, loadParties, logEvent, parse, partySigner, queueNotary, signUrl, signingSender, toHtml, tokensIn, varsFor, varsIn } from '../_shared/docs.ts';
 import { needsApproval, pendingApprovals, sendTo, turn } from '../_shared/signing-order.ts';
+import { signingResendEnv } from '../_shared/workspace-email.ts';
 import { publishContract } from '../_shared/contract-webhooks.ts';
 import { withBlocks } from '../_shared/docs.ts';
 import { defaultFormat } from '../_shared/doc-vars.ts';
@@ -321,7 +322,9 @@ Deno.serve(async (req) => {
         const cc = await ensureTcCc(admin, row);
         const signers = await signerLinks(row.id);
         const { company } = await loadCompany(asCaller, ws);
-        const emailed = await emailSigners(company, row.name, b.message ?? row.message ?? null, sendTo(signers, row.signing_order_mode), { expiresAt: row.expires_at, cc, contractId: row.id });
+        const mailEnv = await signingResendEnv(admin, ws);
+        const sender = await signingSender(admin, who.user.id);
+        const emailed = await emailSigners(company, row.name, b.message ?? row.message ?? null, sendTo(signers, row.signing_order_mode), { expiresAt: row.expires_at, cc, contractId: row.id, env: mailEnv, sender });
         return json({ contract: { ...row, status: 'sent', sent_at: row.sent_at ?? now }, signers, emailed });
       }
       case 'links': {
@@ -348,13 +351,15 @@ Deno.serve(async (req) => {
         const signers = turn(links, row.signing_order_mode);
         const { company } = await loadCompany(asCaller, ws);
         const cc = await ensureTcCc(admin, row);
-        const emailed = await emailSigners(company, row.name, row.message ?? null, signers, { reminder: true, expiresAt: row.expires_at, cc, contractId: row.id });
+        const mailEnv = await signingResendEnv(admin, ws);
+        const sender = await signingSender(admin, who.user.id);
+        const emailed = await emailSigners(company, row.name, row.message ?? null, signers, { reminder: true, expiresAt: row.expires_at, cc, contractId: row.id, env: mailEnv, sender });
         const now = new Date().toISOString();
         if (signers.length) {
           const { data: counts } = await admin.from('contract_signers').select('id, reminder_count').in('id', signers.map((s) => s.id));
           for (const c of counts ?? []) await admin.from('contract_signers').update({ last_reminded_at: now, reminder_count: Number(c.reminder_count ?? 0) + 1 }).eq('id', c.id);
         }
-        await logEvent(admin, row, 'reminded', { to: signers.map((s) => s.label || s.role), manual: true }, { actor_type: 'user', actor_id: who.user.id });
+        await logEvent(admin, row, 'reminded', { to: signers.map((s) => s.label || s.role), manual: true, emailed }, { actor_type: 'user', actor_id: who.user.id });
         return json({ emailed, pending: signers.length });
       }
       case 'pdf': {

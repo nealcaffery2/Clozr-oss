@@ -59,9 +59,9 @@ export function BuyNumber({ assignTo, assignName, onNote, initialArea = '210' }:
         found.length === 0 ? (
           <div style={{ fontSize: '12px', color: MUTED, marginTop: '8px' }}>Nothing for sale in {area} right now. Try a neighbouring area code.</div>
         ) : (
-          <div style={{ marginTop: '8px', border: '1px solid #e4e4e7', borderRadius: '10px', overflow: 'hidden' }}>
+          <div style={{ marginTop: '8px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px', overflow: 'hidden' }}>
             {found.map((n, i) => (
-              <div key={n.phone_e164} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', borderTop: i ? '1px solid #f0f0f1' : 0 }}>
+              <div key={n.phone_e164} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', borderTop: i ? '1px solid var(--divider-2, #f0f0f1)' : 0 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: '13px', fontWeight: 600 }}>{formatPhone(n.phone_e164)}</div>
                   <div style={{ fontSize: '11.5px', color: MUTED }}>{[n.locality, n.region].filter(Boolean).join(', ')}{n.capabilities.sms ? ' · SMS' : ''}</div>

@@ -11,7 +11,6 @@
 
 import React from 'react';
 import { Icon } from '@/app/components/talkr/Icon';
-import { Avatar } from '@/app/components/talkr/ui';
 import type { ClozrRecord } from '@/app/components/talkr/MessagesScreen';
 
 export function InboxRow({ name, time, title, preview, record, active, unread, icon, onOpen, trailing }: {
@@ -24,7 +23,6 @@ export function InboxRow({ name, time, title, preview, record, active, unread, i
     <div className="ios-row group flex items-stretch" style={{ background: active ? 'var(--accent-soft)' : 'var(--panel)' }}>
       <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-2 py-2.5 pl-1.5 pr-2 text-left" style={{ cursor: 'pointer', background: 'transparent' }}>
         <span aria-label={unread ? 'Unread' : undefined} style={{ width: 10, height: 10, borderRadius: '50%', background: unread ? 'var(--accent)' : 'transparent', flexShrink: 0, alignSelf: 'center' }} />
-        <Avatar name={name} size={44} />
         <span className="ios-row-body flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex items-center gap-1.5">
             <span className="mr-auto truncate" style={{ font: '600 15px/1.25 var(--sans)', color: 'var(--text)' }}>{icon}{name}</span>

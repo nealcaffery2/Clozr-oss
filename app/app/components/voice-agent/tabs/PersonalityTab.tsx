@@ -4,7 +4,7 @@
 'use client';
 
 import React from 'react';
-import { EXPRESSIVENESS, EXPRESSIVE_TTS, TONES, type Expressiveness, type Tone } from '@/lib/voice-agent';
+import { EXPRESSIVENESS, EXPRESSIVE_TTS, TONES, speaksTags, ttsLabel, type Expressiveness, type Tone } from '@/lib/voice-agent';
 import { Banner, ChoiceCards, Scale, Section, SettingRow, Switch, ghost, grid, eyebrow } from '../kit';
 import type { TabCtx } from '../types';
 
@@ -45,8 +45,8 @@ export function PersonalityTab({ form, canEdit }: TabCtx) {
         <ChoiceCards<Expressiveness> label="Delivery" value={p.expressiveness} disabled={off}
           onChange={(v) => set(['personality', 'expressiveness'], v)}
           options={EXPRESSIVENESS.map((x) => ({ id: x.id, label: x.label, hint: x.hint }))} />
-        {p.expressiveness === 'expressive' && draft.voice.tts_model !== EXPRESSIVE_TTS
-          ? <div style={{ marginTop: 12 }}><Banner tone="warn" action={off ? undefined : <button type="button" className="va-btn va-ghost" style={ghost} onClick={() => set(['voice', 'tts_model'], EXPRESSIVE_TTS)}>Use v3 Conversational</button>}>Sounds like laughs and a throat clear need the v3 Conversational speech model. With the model picked on the Voice tab the agent stays natural but makes no sounds.</Banner></div>
+        {p.expressiveness === 'expressive' && !speaksTags(draft.voice.tts_model)
+          ? <div style={{ marginTop: 12 }}><Banner tone="warn" action={off ? undefined : <button type="button" className="va-btn va-ghost" style={ghost} onClick={() => set(['voice', 'tts_model'], EXPRESSIVE_TTS)}>Use {ttsLabel(EXPRESSIVE_TTS)}</button>}>Sounds like a laugh or a sigh need v4 Turbo, v4 or v3 Conversational. With {ttsLabel(draft.voice.tts_model)} the agent stays natural but makes no sounds.</Banner></div>
           : null}
       </Section>
     </>

@@ -2,50 +2,50 @@
 .dc1:hover{border-color:#c7c7cc !important}
 .dc2:hover{background:var(--c-btn-hover) !important}
 .dc3:hover{background:#08694C !important}
-.dc4:hover{background:#fafafa !important}
-.dc5:hover{color:#0A8560 !important}
+.dc4:hover{background:var(--canvas, #fafafa) !important}
+.dc5:hover{color:var(--tx-mint, #0a8560) !important}
 /* Hover-capable pointers only: a tap on iOS leaves :hover stuck on, which left the dialer launcher black. */
-@media (hover: hover){.dc6:hover{background:#18181b !important;color:#fff !important;border-color:#18181b !important}}
-.dc7:hover{background:#dcfce7 !important}
+@media (hover: hover){.dc6:hover{background:var(--ink, #18181b) !important;color:var(--surface, #fff) !important;border-color:var(--ink, #18181b) !important}}
+.dc7:hover{background:var(--positive-soft, #dcfce7) !important}
 .dc8:hover{background:rgba(255,255,255,.08) !important}
 .dc9:hover{border-color:var(--c-accent) !important;background:var(--c-btn-hover) !important}
 .dc10:hover{background:var(--c-primary-hover) !important;border-color:var(--c-primary-hover) !important}
 .dc11:hover{background:#0A8560 !important;color:#fff !important}
-.dc12:hover{color:#18181b !important}
-.dc13:hover{background:#f4f4f5 !important;color:#18181b !important}
-.dc14:hover{color:#0A8560 !important;border-color:#0A8560 !important}
-.dc15:hover{background:#f4f4f5 !important}
+.dc12:hover{color:var(--ink, #18181b) !important}
+.dc13:hover{background:var(--surface-2, #f4f4f5) !important;color:var(--ink, #18181b) !important}
+.dc14:hover{color:var(--tx-mint, #0a8560) !important;border-color:#0A8560 !important}
+.dc15:hover{background:var(--surface-2, #f4f4f5) !important}
 .dc15:focus-within{background:var(--c-accent-soft) !important;box-shadow:inset 0 0 0 1px var(--c-accent) !important}
 .dc15:focus{background:var(--c-accent-soft) !important;box-shadow:inset 0 0 0 1px var(--c-accent) !important}
 .dc16:hover{background:#0A8560 !important}
-.dc17:focus-within{border-color:var(--c-accent) !important;background:#fff !important;box-shadow:0 0 0 3px color-mix(in srgb, var(--c-accent) 12%, transparent) !important}
-.dc17:focus{border-color:var(--c-accent) !important;background:#fff !important;box-shadow:0 0 0 3px color-mix(in srgb, var(--c-accent) 12%, transparent) !important}
-.dc18:hover{background:#E7F8F1 !important}
+.dc17:focus-within{border-color:var(--c-accent) !important;background:var(--surface, #fff) !important;box-shadow:0 0 0 3px color-mix(in srgb, var(--c-accent) 12%, transparent) !important}
+.dc17:focus{border-color:var(--c-accent) !important;background:var(--surface, #fff) !important;box-shadow:0 0 0 3px color-mix(in srgb, var(--c-accent) 12%, transparent) !important}
+.dc18:hover{background:var(--mint-dim, #e7f8f1) !important}
 .dc19:hover{box-shadow:var(--elev-2) !important}
 .dc20:focus-within{background:var(--c-accent-soft) !important;box-shadow:inset 0 0 0 1px var(--c-accent) !important}
 .dc20:focus{background:var(--c-accent-soft) !important;box-shadow:inset 0 0 0 1px var(--c-accent) !important}
-.dc21:focus-within{border-color:var(--c-accent) !important;background:#fff !important}
-.dc21:focus{border-color:var(--c-accent) !important;background:#fff !important}
+.dc21:focus-within{border-color:var(--c-accent) !important;background:var(--surface, #fff) !important}
+.dc21:focus{border-color:var(--c-accent) !important;background:var(--surface, #fff) !important}
 .dc22:hover{box-shadow:var(--elev-2) !important}
 @media (prefers-reduced-motion:no-preference){.dc22:hover{transform:translateY(-1px) !important}}
-.dc23:hover{border-color:#0A8560 !important;color:#0A8560 !important;background:#E7F8F1 !important}
+.dc23:hover{border-color:#0A8560 !important;color:var(--tx-mint, #0a8560) !important;background:var(--mint-dim, #e7f8f1) !important}
 .dc24:focus-within{background:var(--c-accent-soft) !important;box-shadow:0 0 0 1px var(--c-accent) !important}
 .dc24:focus{background:var(--c-accent-soft) !important;box-shadow:0 0 0 1px var(--c-accent) !important}
 .dc25:hover{border-color:#0A8560 !important}
-.dc26:hover{border-color:#0A8560 !important;color:#0A8560 !important}
-.dc27:hover{border-color:#9b9e96 !important;color:#1c1d1f !important}
+.dc26:hover{border-color:#0A8560 !important;color:var(--tx-mint, #0a8560) !important}
+.dc27:hover{border-color:#9b9e96 !important;color:var(--ink-deep, #1c1d1f) !important}
 .dc28:hover{border-color:#9b9e96 !important}
 .dc29:hover{background:#efece4 !important}
 @media (prefers-reduced-motion:no-preference){.dc30:hover{transform:translateY(-2px) !important}}
 .dc31:hover{background:#f6f4ee !important}
-.dc32:hover{border-color:#c7c7cc !important;background:#fff !important}
+.dc32:hover{border-color:#c7c7cc !important;background:var(--surface, #fff) !important}
 .dc33:focus-within{border-color:var(--c-accent) !important;box-shadow:0 0 0 3px color-mix(in srgb, var(--c-accent) 12%, transparent) !important}
 .dc33:focus{border-color:var(--c-accent) !important;box-shadow:0 0 0 3px color-mix(in srgb, var(--c-accent) 12%, transparent) !important}
 .dc34:hover{background:#1f7a4d !important}
 .dc35:hover{background:#16a34a !important;color:#fff !important;border-color:#16a34a !important}
 .dc36:hover{background:#b91c1c !important}
 .dc37:hover{box-shadow:var(--elev-2) !important;border-color:#A8ECD2 !important}
-.dc38:hover{background:#E7F8F1 !important;border-color:#A8ECD2 !important;color:#0A8560 !important}
+.dc38:hover{background:var(--mint-dim, #e7f8f1) !important;border-color:#A8ECD2 !important;color:var(--tx-mint, #0a8560) !important}
 .clozr-tl-pin{opacity:0;transition:opacity .12s}.clozr-tl:hover .clozr-tl-pin,.clozr-tl-pin:focus-visible,.clozr-tl-pin[aria-pressed="true"]{opacity:1}
 @media (hover:none){.clozr-tl-pin{opacity:1}}
 
@@ -74,7 +74,7 @@ a.clozr-contact:hover{text-decoration:underline}
 .notif-row-clip{overflow:hidden;min-height:0}
 .notif-row-card{transition:background .2s ease}
 .notif-row-card.is-link{cursor:pointer}
-.notif-row-card.is-link:hover{background:#fafafa!important}
+.notif-row-card.is-link:hover{background:var(--canvas, #fafafa)!important}
 .notif-row-actions{transition:opacity .16s ease}
 .notif-check{width:8px;height:8px;margin-top:6px;border-radius:2px;display:grid;place-items:center;transition:width .2s ease,height .2s ease,border-radius .2s ease,margin .2s ease,background .2s ease}
 .notif-check.is-on{width:16px;height:16px;margin-top:1px;border-radius:50%;animation:notifCheck .34s cubic-bezier(.22,1,.36,1)}
@@ -88,8 +88,8 @@ a.clozr-contact:hover{text-decoration:underline}
 
 /* Workspace and list placeholders. The chrome is already there; the rows
    that have not arrived shimmer instead of holding a blank page. */
-.clozr-skel{min-height:100dvh;display:flex;flex-direction:column;background:#fafafa}
-.clozr-skel-head{height:56px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;background:#fff;border-bottom:1px solid #e4e4e7}
+.clozr-skel{min-height:100dvh;display:flex;flex-direction:column;background:var(--canvas, #fafafa)}
+.clozr-skel-head{height:56px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;background:var(--surface, #fff);border-bottom:1px solid var(--divider, #e4e4e7)}
 .clozr-skel-gap{flex:1}
 .clozr-skel-icon{width:34px;height:34px;border-radius:9px}
 .clozr-skel-icon-fill{background:#d7efe4}
@@ -102,7 +102,7 @@ a.clozr-contact:hover{text-decoration:underline}
 .clozr-skel-line{display:block;height:10px;border-radius:5px;width:72%}
 .clozr-skel-line-sm{width:46%;height:8px}
 .clozr-skel-line-lg{width:38%;height:16px;border-radius:6px}
-.clozr-skel-tabs{height:calc(58px + env(safe-area-inset-bottom, 0px));display:flex;align-items:center;border-top:1px solid #e4e4e7;background:#fff}
+.clozr-skel-tabs{height:calc(58px + env(safe-area-inset-bottom, 0px));display:flex;align-items:center;border-top:1px solid var(--divider, #e4e4e7);background:var(--surface, #fff)}
 .clozr-skel-tab{flex:1;height:28px;margin:0 14px;border-radius:8px}
 .clozr-skel-mark,.clozr-skel-icon:not(.clozr-skel-icon-fill),.clozr-skel-avatar,.clozr-skel-line,.clozr-skel-tab{
   background:linear-gradient(90deg,#ececee 0%,#f7f7f8 45%,#ececee 100%);
@@ -128,7 +128,7 @@ a.clozr-contact:hover{text-decoration:underline}
 /* Email threads on the Activity feed (EmailThread.tsx): Reply, the earlier-messages fold, and its reveal. */
 .clozr-reply,.clozr-thread-fold{transition:filter .12s ease,background-color .12s ease}
 .clozr-reply:focus-visible,.clozr-thread-fold:focus-visible{outline:2px solid #0A8560;outline-offset:2px}
-@media (hover:hover) and (pointer:fine){.clozr-reply:hover{filter:brightness(.97)}.clozr-thread-fold:hover{background:#f4f4f5 !important}}
+@media (hover:hover) and (pointer:fine){.clozr-reply:hover{filter:brightness(.97)}.clozr-thread-fold:hover{background:var(--surface-2, #f4f4f5) !important}}
 .clozr-thread-earlier{animation:clozrThreadIn .2s cubic-bezier(.23,1,.32,1)}
 @keyframes clozrThreadIn{from{opacity:0;translate:0 -4px}to{opacity:1;translate:0 0}}
 @media (prefers-reduced-motion:reduce){.clozr-thread-earlier{animation:none}}

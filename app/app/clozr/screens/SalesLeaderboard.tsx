@@ -7,14 +7,16 @@ import { BackLink } from '@/components/ds/BackLink';
 import { keepInView } from '@/components/ds/keepInView';
 import { UserAvatar } from '@/components/UserAvatar';
 import type { ClozrView } from '@/app/clozr/view';
+import { holdReporting } from '@/lib/use-crm';
 
 // A rep's face on the board: photo (Google photos need no-referrer, which a CSS
 // background can't send), else initials on the board's dark disc.
 function Face({ name, src, size, style }: { name: string; src?: string | null; size: string | number; style?: React.CSSProperties }) {
-  return <UserAvatar name={name} src={src || null} size={parseInt(String(size), 10) || 32} bg="#1c1d1f" color="#fdfcfa" style={style} />;
+  return <UserAvatar name={name} src={src || null} size={parseInt(String(size), 10) || 32} bg="var(--ink-deep, #1c1d1f)" color="#fdfcfa" style={style} />;
 }
 
 export function SalesLeaderboard({ V }: { V: ClozrView }) {
+  React.useEffect(() => holdReporting(), []);
   return (
     <section data-screen-label="Sales leaderboard" style={{flex: "1", minWidth: "0", display: "flex", flexDirection: "column", background: "#f4f2ec", color: "#1c1d1f", overflow: "hidden", position: "relative"}}>
       <header style={{display: "flex", alignItems: "center", flexWrap: V.isMobile ? "wrap" : "nowrap", rowGap: "8px", gap: V.isMobile ? "10px" : "16px", padding: V.isMobile ? "10px 14px" : "10px 22px", background: "#f4f2ec", borderBottom: "1px solid #e2dfd5", flex: "none"}}>
@@ -31,7 +33,7 @@ export function SalesLeaderboard({ V }: { V: ClozrView }) {
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
-          <input value={V.lbQ} onChange={V.setLbQ} placeholder="Search reps" style={{border: "0", outline: "0", background: "transparent", fontSize: "13px", fontWeight: "500", color: "#1c1d1f", width: "100%"}} />
+          <input value={V.lbQ} onChange={V.setLbQ} placeholder="Search reps" style={{border: "0", outline: "0", background: "transparent", fontSize: "13px", fontWeight: "500", color: "var(--ink-deep, #1c1d1f)", width: "100%"}} />
         </label>
         <button className="dc28" onClick={V.togglePoints} style={{display: "inline-flex", alignItems: "center", gap: "7px", padding: "8px 15px", borderRadius: "10px", border: "1px solid #ddd9ce", background: "#fdfcfa", color: "#1c1d1f", fontWeight: "600", fontSize: "13px", lineHeight: "1", cursor: "pointer", whiteSpace: "nowrap"}}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -68,7 +70,7 @@ export function SalesLeaderboard({ V }: { V: ClozrView }) {
         <main style={{flex: V.isMobile ? "none" : "1", minWidth: "0", display: "flex", flexDirection: "column", gap: "14px", minHeight: "0"}}>
           <div style={{display: "flex", alignItems: "center", flexWrap: "wrap", rowGap: "8px", gap: "8px", flexShrink: "0"}}>
             <div style={{position: "relative"}}>
-              <button onClick={V.lbToggle.period} style={{display: "inline-flex", alignItems: "center", gap: "7px", padding: "8px 15px", borderRadius: "10px", border: "1px solid #1c1d1f", background: "#1c1d1f", color: "#fff", fontWeight: "600", fontSize: "13px", lineHeight: "1", cursor: "pointer", whiteSpace: "nowrap"}}>
+              <button onClick={V.lbToggle.period} style={{display: "inline-flex", alignItems: "center", gap: "7px", padding: "8px 15px", borderRadius: "10px", border: "1px solid var(--ink-deep, #1c1d1f)", background: "var(--ink-deep, #1c1d1f)", color: "var(--surface, #fff)", fontWeight: "600", fontSize: "13px", lineHeight: "1", cursor: "pointer", whiteSpace: "nowrap"}}>
                 {V.lbPeriodLabel}
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="6 9 12 15 18 9" />
@@ -145,7 +147,7 @@ export function SalesLeaderboard({ V }: { V: ClozrView }) {
             ))}
           </div>
           {V.lbReadFailed ? (
-            <div role="status" style={{margin: "0 0 10px", padding: "8px 12px", borderRadius: "10px", background: "#fef2f2", color: "#b91c1c", fontSize: "12.5px", fontWeight: 600}}>
+            <div role="status" style={{margin: "0 0 10px", padding: "8px 12px", borderRadius: "10px", background: "var(--tint-red, #fef2f2)", color: "var(--tx-red, #b91c1c)", fontSize: "12.5px", fontWeight: 600}}>
               Part of the workspace did not load, so these numbers may read low. Reload to try again.
             </div>
           ) : null}
@@ -162,10 +164,10 @@ export function SalesLeaderboard({ V }: { V: ClozrView }) {
           <div style={{display: "flex", alignItems: "flex-end", justifyContent: "center", gap: V.isMobile ? "10px" : "56px", padding: "6px 0 12px", flexShrink: "0"}}>
             {(V.lbPodium || []).map((p, p__i) => (
               <React.Fragment key={p__i}>
-              <button className="dc30" onClick={p.open} style={{display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", minWidth: "0", border: "0", background: "none", padding: "0", cursor: "pointer", borderRadius: "12px", color: "#1c1d1f", width: p.slotW, transition: "transform .15s ease"}}>
+              <button className="dc30" onClick={p.open} style={{display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", minWidth: "0", border: "0", background: "none", padding: "0", cursor: "pointer", borderRadius: "12px", color: "var(--ink-deep, #1c1d1f)", width: p.slotW, transition: "transform .15s ease"}}>
                 <span style={{position: "relative", display: "inline-block"}}>
                   <Face name={p.name} src={p.avatar} size={p.size} style={{display: "grid", boxShadow: p.shadow}} />
-                  <span style={{position: "absolute", top: "-4px", left: "-4px", width: p.pip, height: p.pip, borderRadius: "50%", background: "#1c1d1f", border: "2px solid #f4f2ec", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "800", fontSize: p.pipFs, color: "#fff"}}>
+                  <span style={{position: "absolute", top: "-4px", left: "-4px", width: p.pip, height: p.pip, borderRadius: "50%", background: "var(--ink-deep, #1c1d1f)", border: "2px solid #f4f2ec", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "800", fontSize: p.pipFs, color: "var(--surface, #fff)"}}>
                     {p.rank}
                   </span>
                 </span>
@@ -180,7 +182,7 @@ export function SalesLeaderboard({ V }: { V: ClozrView }) {
                 </span>
                 {(p.isFirst) ? (
                   <>
-                  <span style={{display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "2px", padding: "4px 10px", borderRadius: "6px", background: "#1c1d1f", fontSize: "10px", fontWeight: "700", letterSpacing: "0.1em", color: "#fff"}}>
+                  <span style={{display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "2px", padding: "4px 10px", borderRadius: "6px", background: "var(--ink-deep, #1c1d1f)", fontSize: "10px", fontWeight: "700", letterSpacing: "0.1em", color: "var(--surface, #fff)"}}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14" />
                     </svg>
@@ -206,7 +208,7 @@ export function SalesLeaderboard({ V }: { V: ClozrView }) {
           <div style={{flex: V.isMobile ? "none" : "1", display: "flex", flexDirection: "column", overflowY: V.isMobile ? "visible" : "auto", minHeight: "0", background: "#fdfcfa", border: "1px solid #e6e3da", borderRadius: "16px", boxShadow: "0 1px 3px rgba(28,29,31,.06)"}}>
             {(V.lbRest || []).map((r, r__i) => (
               <React.Fragment key={r__i}>
-              <button className="dc31" onClick={r.open} style={{flex: "1", display: "flex", alignItems: "center", gap: V.isMobile ? "10px" : "14px", padding: V.isMobile ? "10px 12px" : "10px 18px", border: "0", borderBottom: "1px solid #efece4", minHeight: "56px", width: "100%", background: "none", color: "#1c1d1f", textAlign: "left", cursor: "pointer", transition: "background .15s"}}>
+              <button className="dc31" onClick={r.open} style={{flex: "1", display: "flex", alignItems: "center", gap: V.isMobile ? "10px" : "14px", padding: V.isMobile ? "10px 12px" : "10px 18px", border: "0", borderBottom: "1px solid #efece4", minHeight: "56px", width: "100%", background: "none", color: "var(--ink-deep, #1c1d1f)", textAlign: "left", cursor: "pointer", transition: "background .15s"}}>
                 <span style={{width: "22px", textAlign: "center", fontWeight: "700", fontSize: "14px", color: "#9b9e96", flexShrink: "0"}}>
                   {r.rank}
                 </span>
@@ -255,7 +257,7 @@ export function SalesLeaderboard({ V }: { V: ClozrView }) {
             </div>
             {V.lbPrize ? (
               <div data-testid="lb-monthly-prize" style={{marginTop: "10px"}}>
-                <div style={{fontSize: "20px", fontWeight: "800", letterSpacing: "-0.02em", lineHeight: 1.2, overflowWrap: "anywhere", color: V.lbPrize.set ? "#1c1d1f" : "#6f7377"}}>
+                <div style={{fontSize: "20px", fontWeight: "800", letterSpacing: "-0.02em", lineHeight: 1.2, overflowWrap: "anywhere", color: V.lbPrize.set ? "var(--ink-deep, #1c1d1f)" : "#6f7377"}}>
                   {V.lbPrize.name}
                 </div>
                 {V.lbPrize.detail ? (
@@ -320,9 +322,9 @@ export function SalesLeaderboard({ V }: { V: ClozrView }) {
                 <tbody>
                   {(V.lbH2hRows || []).map((r) => (
                     <tr key={r.k} style={{borderTop: "1px solid #efece4"}}>
-                      <td style={{padding: "6px 0", color: "#3f3f46"}}>{r.k}</td>
-                      <td style={{padding: "6px 0", textAlign: "right", fontWeight: r.aLead ? 800 : 500, color: r.aLead ? "#0e7a57" : "#1c1d1f"}}>{r.a}</td>
-                      <td style={{padding: "6px 0", textAlign: "right", fontWeight: r.bLead ? 800 : 500, color: r.bLead ? "#0e7a57" : "#1c1d1f"}}>{r.b}</td>
+                      <td style={{padding: "6px 0", color: "var(--ink-3, #3f3f46)"}}>{r.k}</td>
+                      <td style={{padding: "6px 0", textAlign: "right", fontWeight: r.aLead ? 800 : 500, color: r.aLead ? "var(--tx-green-2, #0e7a57)" : "var(--ink-deep, #1c1d1f)"}}>{r.a}</td>
+                      <td style={{padding: "6px 0", textAlign: "right", fontWeight: r.bLead ? 800 : 500, color: r.bLead ? "var(--tx-green-2, #0e7a57)" : "var(--ink-deep, #1c1d1f)"}}>{r.b}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -343,7 +345,7 @@ export function SalesLeaderboard({ V }: { V: ClozrView }) {
               {(V.lbTitles || []).map((t, t__i) => (
                 <React.Fragment key={t__i}>
                 <div style={{display: "flex", alignItems: "center", gap: "10px"}}>
-                  <span role="img" title={t.name} style={{width: "32px", height: "32px", borderRadius: "50%", flexShrink: "0", background: `#1c1d1f url(${t.img}) center/cover no-repeat`, boxShadow: "0 2px 6px rgba(28,29,31,.2)"}}></span>
+                  <span role="img" title={t.name} style={{width: "32px", height: "32px", borderRadius: "50%", flexShrink: "0", background: `var(--ink-deep, #1c1d1f) url(${t.img}) center/cover no-repeat`, boxShadow: "0 2px 6px rgba(28,29,31,.2)"}}></span>
                   <span style={{display: "flex", flexDirection: "column", minWidth: "0", flex: "1"}}>
                     <span style={{fontWeight: "700", fontSize: "13px"}}>
                       {t.name}

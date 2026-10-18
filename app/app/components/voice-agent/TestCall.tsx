@@ -1,7 +1,9 @@
 // AI Agent, Test call: talk to the agent from the browser, as if a seller or
 // buyer had rung: a made-up sample seller or cash buyer, a real record, or "Me" (the sample
-// seller under your own name, from the browser or rung on any phone you type). `test_session` returns a signed link plus the exact dynamic
-// variables the phone path would send; the SDK is loaded only on Start.
+// seller, or the sample buyer on a buyer-side agent, under your own name, from the browser or
+// rung on any phone you type). `test_session` returns a signed link plus the exact dynamic
+// variables the phone path would send (plus record_id and record_token for a real record, so lead_context finds it
+// without a caller ID); the SDK is loaded only on Start.
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -15,10 +17,14 @@ import { Banner, Empty, GREEN, INK, LINE, MUTED, Segmented, Spinner, card, eyebr
 type Phase = 'idle' | 'starting' | 'connecting' | 'live' | 'ended';
 type Kind = 'seller' | 'buyer';
 type Target = { kind: 'sample' } | ({ kind: Kind } & Pick<RecordHit, 'id' | 'name' | 'sub'>);
-const SAMPLE: Record<Kind | 'me', [string, string]> = {
-  me: ['You, as a test seller', 'Mock seller data under your name. Talk here or have the agent ring a phone.'],
+const SAMPLE: Record<Kind, [string, string]> = {
   seller: ['Sample seller', 'A made-up seller with a full brief'],
   buyer: ['Sample cash buyer', 'A made-up cash buyer with a buy box and a deal we sent'],
+};
+/** "Me" plays the side this agent talks to: a test seller, or a test cash buyer on a buyer-side agent. */
+const ME: Record<Kind, [string, string]> = {
+  seller: ['You, as a test seller', 'Mock seller data under your name. Talk here or have the agent ring a phone.'],
+  buyer: ['You, as a test cash buyer', 'Mock buyer data (buy box, a deal we sent) under your name. Talk here or have the agent ring a phone.'],
 };
 type ToolNote = { key: number; name: string; phase: 'start' | 'done' | 'error'; after: number };
 
@@ -123,7 +129,7 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
   const start = useCallback(async () => {
     setError(null); setNote(null); setLines([]); setTools([]); spoken.current = 0; setElapsed(0); setMuted(false); setSpeaking(false);
     setPhase('starting');
-    const tt = target.kind === 'sample' ? { sample: me ? 'me' as const : sampleAs } : { kind: target.kind, id: target.id };
+    const tt = target.kind === 'sample' ? (me ? { sample: 'me' as const, as: sampleAs } : { sample: sampleAs }) : { kind: target.kind, id: target.id };
     if (ringPhone) {
       const p = await api.phoneTest(agentKey, tt, phone.trim());
       setPhase('idle');
@@ -168,15 +174,15 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
   const canStart = admin && (demo || ready) && !inCall;
   const showResults = q.trim().length >= 2;
   const pickSample = (k: Kind | 'me') => {
-    const as = k === 'me' ? 'seller' : k;
+    const as = k === 'me' ? sampleAs : k;
     setTarget({ kind: 'sample' }); setQ(''); setHits(null); setMe(k === 'me'); setNote(null); setOwnAs(as); onCallerAs?.(as);
   };
   const pick = (t: Exclude<Target, { kind: 'sample' }>) => { setTarget(t); setQ(''); setHits(null); setMe(false); onCallerAs?.(t.kind); };
   const sampleKey = me ? 'me' : sampleAs;
-  const who = target.kind === 'sample' ? SAMPLE[sampleKey][0] : target.name;
+  const who = target.kind === 'sample' ? (me ? ME : SAMPLE)[sampleAs][0] : target.name;
   const toolsAfter = (n: number) => tools.filter((t) => t.after === n).map((t) => (
     <div key={t.key} className="va-in" role="status" style={{ alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 7, height: 26, padding: '0 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
-      background: t.phase === 'error' ? '#fef2f2' : '#fffbeb', color: t.phase === 'error' ? '#b91c1c' : '#92400e', border: `1px solid ${t.phase === 'error' ? '#fecaca' : '#fde68a'}` }}>
+      background: t.phase === 'error' ? 'var(--tint-red, #fef2f2)' : 'var(--tint-amber, #fffbeb)', color: t.phase === 'error' ? '#b91c1c' : '#92400e', border: `1px solid ${t.phase === 'error' ? 'var(--tint-red-2, #fecaca)' : 'var(--tint-amber-2, #fde68a)'}` }}>
       {t.phase === 'start' ? <Spinner size={12} /> : <Wrench size={12} aria-hidden="true" />}
       {toolText(t)}
     </div>
@@ -193,7 +199,9 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
           {!admin ? <div style={{ marginBottom: 12 }}><Banner tone="info">Only owners and admins can start a test call.</Banner></div> : null}
           {!demo && admin && !ready ? <div style={{ marginBottom: 12 }}><Banner tone="warn">Publish the agent first. The test call talks to the published agent, so there is nothing to call yet.</Banner></div> : null}
           <div style={{ marginBottom: 12 }}>
-            <Banner tone="info">A browser test has no caller ID, so the agent&apos;s <span style={mono}>lead_context</span> tool cannot look anything up here. It works from the brief below, which is what a real call starts with.</Banner>
+            <Banner tone="info">{target.kind === 'sample'
+              ? <>The sample callers are made up, so the agent&apos;s <span style={{ ...mono, whiteSpace: 'nowrap' }}>lead_context</span> tool finds no record. It works from the brief below.</>
+              : <>The agent&apos;s <span style={{ ...mono, whiteSpace: 'nowrap' }}>lead_context</span> tool looks up {target.name || 'this record'}, as it would on a real call from their number.</>}</Banner>
           </div>
 
           <span style={eyebrow}>Who is calling</span>
@@ -201,13 +209,13 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
             <Segmented<Kind | 'me'> label="Caller type" disabled={inCall} value={target.kind === 'sample' ? sampleKey : target.kind}
               onChange={pickSample}
               options={[{ id: 'seller', label: 'Seller', hint: 'A homeowner the agent is buying from.' }, { id: 'buyer', label: 'Cash buyer', hint: 'An investor the agent is selling deals to.' },
-                { id: 'me', label: 'Me (test)', hint: 'You, the CRM owner, with mock seller data. Optionally rings your phone.' }]} />
+                { id: 'me', label: 'Me (test)', hint: `You, the CRM owner, with mock ${sampleAs} data. Optionally rings your phone.` }]} />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px 8px 12px', borderRadius: 10, border: `1px solid ${LINE}`, background: '#fafafa' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px 8px 12px', borderRadius: 10, border: `1px solid ${LINE}`, background: 'var(--canvas, #fafafa)' }}>
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{who}</span>
               <span style={{ display: 'block', fontSize: 12, color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {target.kind === 'sample' ? SAMPLE[sampleKey][1] : target.sub}
+                {target.kind === 'sample' ? (me ? ME : SAMPLE)[sampleAs][1] : target.sub}
               </span>
             </span>
             {target.kind !== 'sample' && !inCall ? (
@@ -236,12 +244,12 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
                   onChange={(e) => { setQ(e.target.value); setSearching(e.target.value.trim().length >= 2); }} />
               </div>
               {showResults ? (
-                <div role="listbox" aria-label="Matching records" style={{ marginTop: 6, border: `1px solid ${LINE}`, borderRadius: 10, overflow: 'hidden', background: '#fff', maxHeight: 240, overflowY: 'auto' }}>
+                <div role="listbox" aria-label="Matching records" style={{ marginTop: 6, border: `1px solid ${LINE}`, borderRadius: 10, overflow: 'hidden', background: 'var(--surface, #fff)', maxHeight: 240, overflowY: 'auto' }}>
                   {searching && !hits ? (
                     <div style={{ padding: 12, fontSize: 12.5, color: MUTED, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Searching</div>
                   ) : hits && hits.length ? hits.map((h) => (
                     <button key={h.kind + h.id} type="button" role="option" aria-selected={false} className="va-row va-btn" onClick={() => pick({ kind: h.kind, id: h.id, name: h.name, sub: h.sub })}
-                      style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, padding: '9px 12px', border: 0, borderBottom: '1px solid #f0f0f1', background: 'transparent', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, padding: '9px 12px', border: 0, borderBottom: '1px solid var(--divider-2, #f0f0f1)', background: 'transparent', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}>
                       <span style={{ flex: 1, minWidth: 0 }}>
                         <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: INK }}>{h.name}</span>
                         <span style={{ display: 'block', fontSize: 12, color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.sub}</span>
@@ -300,7 +308,7 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
                 <span style={eyebrow}>Variables</span>
                 <dl style={{ margin: 0 }}>
                   {orderVariables(session.dynamic_variables).map((v) => (
-                    <div key={v.key} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 150px) minmax(0, 1fr)', gap: 10, padding: '6px 0', borderTop: '1px solid #f0f0f1', fontSize: 12.5 }}>
+                    <div key={v.key} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 150px) minmax(0, 1fr)', gap: 10, padding: '6px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)', fontSize: 12.5 }}>
                       <dt style={{ ...mono, color: MUTED }}>{v.key}</dt>
                       <dd style={{ margin: 0, minWidth: 0, color: INK, overflowWrap: 'anywhere' }}>{v.value === '' ? <span style={{ color: MUTED }}>empty</span> : v.value}</dd>
                     </div>
@@ -318,12 +326,12 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
           <span style={{ marginLeft: 'auto', fontSize: 12.5, fontVariantNumeric: 'tabular-nums', color: MUTED }}>{phase === 'idle' || phase === 'starting' ? '' : formatDuration(elapsed)}</span>
         </div>
         {phase === 'live' || phase === 'ended' ? (
-          <div style={{ display: 'grid', gap: 8, padding: '10px 16px', borderBottom: `1px solid ${LINE}`, background: '#fafafa' }}>
+          <div style={{ display: 'grid', gap: 8, padding: '10px 16px', borderBottom: `1px solid ${LINE}`, background: 'var(--canvas, #fafafa)' }}>
             <Meter label="You" pct={muted ? 0 : levelPercent(mic)} off={muted} />
             <Meter label="Agent" pct={levelPercent(out)} />
           </div>
         ) : null}
-        <div ref={scroller} role="log" aria-live="polite" aria-label="Transcript" style={{ height: 360, maxHeight: '55vh', overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 10, background: '#fff' }}>
+        <div ref={scroller} role="log" aria-live="polite" aria-label="Transcript" style={{ height: 360, maxHeight: '55vh', overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--surface, #fff)' }}>
           {lines.length === 0 && phase !== 'live' && phase !== 'connecting' ? (
             <Empty title={phase === 'ended' ? 'The call ended before anyone spoke' : 'The transcript shows here'}>
               {phase === 'ended' ? 'Start another test call to try again.' : 'Start a test call and both sides appear as they speak.'}
@@ -340,7 +348,7 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
                   {l.role === 'user' ? 'You' : agentName || 'Agent'}
                 </div>
                 <div style={{ padding: '9px 12px', borderRadius: l.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px', fontSize: 13, lineHeight: 1.5, overflowWrap: 'anywhere',
-                  background: l.role === 'user' ? GREEN : '#f4f4f5', color: l.role === 'user' ? '#fff' : INK }}>
+                  background: l.role === 'user' ? GREEN : 'var(--surface-2, #f4f4f5)', color: l.role === 'user' ? 'var(--surface, #fff)' : INK }}>
                   {l.text}
                 </div>
               </div>
@@ -355,11 +363,11 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
 
 function StatusPill({ phase, speaking, muted }: { phase: Phase; speaking: boolean; muted: boolean }) {
   const s = phase === 'live'
-    ? (speaking ? { t: 'Agent is speaking', c: GREEN, bg: '#E7F8F1', dot: true } : muted ? { t: 'Muted', c: '#92400e', bg: '#fef3c7', dot: false } : { t: 'Listening', c: GREEN, bg: '#E7F8F1', dot: true })
-    : phase === 'connecting' ? { t: 'Connecting', c: '#92400e', bg: '#fef3c7', dot: false }
-    : phase === 'starting' ? { t: 'Getting the session ready', c: '#92400e', bg: '#fef3c7', dot: false }
-    : phase === 'ended' ? { t: 'Call ended', c: '#52525b', bg: '#f4f4f5', dot: false }
-    : { t: 'Not on a call', c: '#52525b', bg: '#f4f4f5', dot: false };
+    ? (speaking ? { t: 'Agent is speaking', c: GREEN, bg: 'var(--mint-dim, #e7f8f1)', dot: true } : muted ? { t: 'Muted', c: '#92400e', bg: 'var(--caution-soft, #fef3c7)', dot: false } : { t: 'Listening', c: GREEN, bg: 'var(--mint-dim, #e7f8f1)', dot: true })
+    : phase === 'connecting' ? { t: 'Connecting', c: '#92400e', bg: 'var(--caution-soft, #fef3c7)', dot: false }
+    : phase === 'starting' ? { t: 'Getting the session ready', c: '#92400e', bg: 'var(--caution-soft, #fef3c7)', dot: false }
+    : phase === 'ended' ? { t: 'Call ended', c: 'var(--muted, #52525b)', bg: 'var(--surface-2, #f4f4f5)', dot: false }
+    : { t: 'Not on a call', c: 'var(--muted, #52525b)', bg: 'var(--surface-2, #f4f4f5)', dot: false };
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 26, padding: '0 11px', borderRadius: 999, background: s.bg, color: s.c, fontSize: 12.5, fontWeight: 600 }}>
       {phase === 'connecting' || phase === 'starting' ? <Spinner size={12} /> : <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 999, background: s.c, opacity: s.dot ? 1 : 0.55 }} />}
@@ -372,7 +380,7 @@ function Meter({ label, pct, off }: { label: string; pct: number; off?: boolean 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr)', alignItems: 'center', gap: 10, fontSize: 12, color: MUTED }}>
       <span>{off ? 'Muted' : label}</span>
-      <div role="meter" aria-label={`${label} level`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} style={{ height: 8, borderRadius: 999, background: '#e4e4e7', overflow: 'hidden' }}>
+      <div role="meter" aria-label={`${label} level`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} style={{ height: 8, borderRadius: 999, background: 'var(--divider, #e4e4e7)', overflow: 'hidden' }}>
         <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, background: pct > 85 ? '#f59e0b' : GREEN, transition: 'width .09s linear' }} />
       </div>
     </div>

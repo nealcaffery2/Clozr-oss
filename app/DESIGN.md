@@ -50,10 +50,11 @@ They are not allowed as decoration in headings.
 - Body text ≥ 4.5:1 and icons or control edges ≥ 3:1 against the background they actually sit on.
 - Colour never carries meaning alone: every coloured badge has words, every pin has a legend and a label.
 - Fix contrast by changing lightness, not hue.
+- SMS bubbles are the one sanctioned exception to the single-accent rule, by iMessage convention: ours `#0B6FE6` with white text, theirs `#E9E9EB` with ink `#18181b`, on a white `#ffffff` thread, and the SMS send arrow in the same blue. iOS's own `#007AFF` holds only 4.0:1 under white text, so ours is the deeper `#0B6FE6` (4.7:1); theirs is 14.6:1. Tokens: `--sms-out`, `--sms-in`, `--sms-thread` in `tokens.css`. Every SMS thread uses them (the dialer card, the inbox thread, the All list, template and campaign previews); email and everything else stay on the one accent.
 
 ## 3. Type
 
-System sans (`globals.css`), antialiased on the root. Dense-tool sizes:
+Inter on every platform (`app/layout.tsx` loads it; `globals.css` and `tokens.css --font-sans` put it first), antialiased on the root, the system sans only as a fallback. Dense-tool sizes:
 
 | Role | Size / weight / line-height |
 | --- | --- |

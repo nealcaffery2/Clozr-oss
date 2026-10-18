@@ -18,18 +18,18 @@ import { useSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
 
 const GRADE: Record<ReputationGrade, { text: string; bg: string; fg: string }> = {
-  good: { text: 'Good', bg: '#dcfce7', fg: '#15803d' },
-  watch: { text: 'Watch', bg: '#fef3c7', fg: '#92400e' },
-  at_risk: { text: 'At risk', bg: '#fee2e2', fg: '#b91c1c' },
+  good: { text: 'Good', bg: 'var(--positive-soft, #dcfce7)', fg: '#15803d' },
+  watch: { text: 'Watch', bg: 'var(--caution-soft, #fef3c7)', fg: '#92400e' },
+  at_risk: { text: 'At risk', bg: 'var(--negative-soft, #fee2e2)', fg: '#b91c1c' },
 };
 
 const STATUS: Record<ReputationChecklistItemDto['status'], { text: string; bg: string; fg: string }> = {
-  done: { text: 'Done', bg: '#dcfce7', fg: '#15803d' },
-  partial: { text: 'Partly', bg: '#fef3c7', fg: '#92400e' },
-  pending: { text: 'Pending', bg: '#fef3c7', fg: '#92400e' },
-  todo: { text: 'To do', bg: '#fee2e2', fg: '#b91c1c' },
-  manual: { text: 'Manual', bg: '#f4f4f5', fg: '#52525b' },
-  unknown: { text: 'Unknown', bg: '#f4f4f5', fg: '#52525b' },
+  done: { text: 'Done', bg: 'var(--positive-soft, #dcfce7)', fg: '#15803d' },
+  partial: { text: 'Partly', bg: 'var(--caution-soft, #fef3c7)', fg: '#92400e' },
+  pending: { text: 'Pending', bg: 'var(--caution-soft, #fef3c7)', fg: '#92400e' },
+  todo: { text: 'To do', bg: 'var(--negative-soft, #fee2e2)', fg: '#b91c1c' },
+  manual: { text: 'Manual', bg: 'var(--surface-2, #f4f4f5)', fg: 'var(--muted, #52525b)' },
+  unknown: { text: 'Unknown', bg: 'var(--surface-2, #f4f4f5)', fg: 'var(--muted, #52525b)' },
 };
 
 function Tag({ c, children }: { c: { bg: string; fg: string }; children: React.ReactNode }) {
@@ -79,30 +79,30 @@ export function CallerReputation({ enabled }: { enabled: boolean }) {
       </p>
 
       {s.status === 'loading' ? <div style={{ fontSize: '12.5px', color: MUTED }}>Reading reputation from Talkr…</div> : null}
-      {s.status === 'error' ? <div style={{ fontSize: '12.5px', color: '#b91c1c' }}>{s.error}</div> : null}
+      {s.status === 'error' ? <div style={{ fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)' }}>{s.error}</div> : null}
 
       {sum ? (
         <>
           {!sum.carrier_connected ? (
-            <div style={{ fontSize: '12px', color: '#92400e', background: '#fef3c7', borderRadius: '8px', padding: '7px 10px', marginBottom: '10px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--tx-amber-deep, #92400e)', background: 'var(--caution-soft, #fef3c7)', borderRadius: '8px', padding: '7px 10px', marginBottom: '10px' }}>
               Carrier checks are off ({sum.carrier === 'telnyx' ? 'no Telnyx API key on Talkr' : `calls run on ${sum.carrier}`}). Talkr&rsquo;s own call and text signals still show; caller names, 10DLC and spam checks need Telnyx.
             </div>
           ) : null}
-          {sum.ten_dlc?.error ? <div style={{ fontSize: '12px', color: '#b91c1c', marginBottom: '8px' }}>Couldn&rsquo;t read 10DLC from the carrier: {sum.ten_dlc.error}</div> : null}
+          {sum.ten_dlc?.error ? <div style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)', marginBottom: '8px' }}>Couldn&rsquo;t read 10DLC from the carrier: {sum.ten_dlc.error}</div> : null}
 
           <div style={{ border: `1px solid ${LINE}`, borderRadius: '10px', overflow: 'hidden' }}>
             {sum.checklist.map((item, i) => (
-              <div key={item.key} style={{ display: 'grid', gridTemplateColumns: '78px minmax(0,1fr)', gap: '10px', padding: '9px 12px', borderTop: i ? '1px solid #f0f0f1' : 0 }}>
+              <div key={item.key} style={{ display: 'grid', gridTemplateColumns: '78px minmax(0,1fr)', gap: '10px', padding: '9px 12px', borderTop: i ? '1px solid var(--divider-2, #f0f0f1)' : 0 }}>
                 <div><Tag c={STATUS[item.status]}>{STATUS[item.status].text}</Tag></div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: '13px', fontWeight: 600, color: INK }}>{item.title}{item.manual && item.status !== 'manual' ? <span style={{ color: MUTED, fontWeight: 500 }}> · manual</span> : null}</div>
-                  <div style={{ fontSize: '12px', color: '#52525b', lineHeight: 1.45, marginTop: '2px' }}>{item.detail}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--muted, #52525b)', lineHeight: 1.45, marginTop: '2px' }}>{item.detail}</div>
                   {CLOZR_FILES.test(`${item.key} ${item.title}`) && item.status !== 'done' ? (
                     <div style={{ fontSize: '12px', marginTop: '3px', color: INK }}>CLOZR files this from your company facts — fill them in, then Register below. <CompanyLink /></div>
                   ) : item.action || item.link ? (
                     <div style={{ fontSize: '12px', marginTop: '3px' }}>
                       {item.action ? <span style={{ color: INK }}>{item.action} </span> : null}
-                      {item.link ? <a href={item.link} target="_blank" rel="noreferrer" style={{ color: '#0A8560', fontWeight: 600 }}>Open ↗</a> : null}
+                      {item.link ? <a href={item.link} target="_blank" rel="noreferrer" style={{ color: 'var(--tx-mint, #0a8560)', fontWeight: 600 }}>Open ↗</a> : null}
                     </div>
                   ) : null}
                 </div>
@@ -172,7 +172,7 @@ function GuardStatus() {
     <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `1px solid ${LINE}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
         <span style={{ ...label, margin: 0 }}>Automatic guard</span>
-        <span style={{ flex: 1, minWidth: 0, fontSize: '12.5px', color: run?.ok ? '#27272a' : '#b91c1c' }}>
+        <span style={{ flex: 1, minWidth: 0, fontSize: '12.5px', color: run?.ok ? 'var(--ink-2, #27272a)' : '#b91c1c' }}>
           {!run ? 'Has not run yet — it runs every business morning.'
             : run.ok ? `Last run ${when(run.ran_at)} · ${run.numbers} line${run.numbers === 1 ? '' : 's'} · ${run.issues} open · ${run.enforced} corrected`
               : `Failed ${when(run.ran_at)}: ${run.error}`}
@@ -181,7 +181,7 @@ function GuardStatus() {
         <Btn small disabled={busy} onClick={() => void runNow()}>{busy ? 'Checking…' : 'Run now'}</Btn>
       </div>
       {open && items.length ? (
-        <ul style={{ margin: '8px 0 0', paddingLeft: '18px', fontSize: '12.5px', color: '#27272a', lineHeight: 1.5 }}>
+        <ul style={{ margin: '8px 0 0', paddingLeft: '18px', fontSize: '12.5px', color: 'var(--ink-2, #27272a)', lineHeight: 1.5 }}>
           {items.map((t, i) => <li key={i}>{t}</li>)}
         </ul>
       ) : null}
@@ -195,7 +195,7 @@ function GuardStatus() {
 
 function CompanyLink() {
   return (
-    <button type="button" onClick={() => requestSettingsTab({ main: 'workspace', tab: 'company' })} style={{ padding: 0, border: 0, background: 'none', color: '#0A8560', fontWeight: 600, fontSize: 'inherit', cursor: 'pointer', fontFamily: 'inherit' }}>
+    <button type="button" onClick={() => requestSettingsTab({ main: 'workspace', tab: 'company' })} style={{ padding: 0, border: 0, background: 'none', color: 'var(--tx-mint, #0a8560)', fontWeight: 600, fontSize: 'inherit', cursor: 'pointer', fontFamily: 'inherit' }}>
       Edit company facts
     </button>
   );
@@ -279,20 +279,20 @@ export function CallerRegistryStatus() {
     <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `1px solid ${LINE}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
         <span style={{ ...label, margin: 0 }}>Caller registry</span>
-        <span style={{ flex: 1, minWidth: 0, fontSize: '12.5px', color: '#52525b' }}>
+        <span style={{ flex: 1, minWidth: 0, fontSize: '12.5px', color: 'var(--muted, #52525b)' }}>
           {!state?.last_run_at ? 'Not run yet. Buying a number queues it; the morning guard runs the rest.'
             : `${lines.length} line${lines.length === 1 ? '' : 's'} tracked${waiting.length ? ` · ${waiting.length} still need Free Caller Registry` : ''}. Last run ${when(state.last_run_at)}.`}
         </span>
         <Btn small disabled={!!busy} onClick={() => void run('mail', 'sync')}>{busy === 'sync' ? 'Reading mail…' : 'Sync AgentMail'}</Btn>
         <Btn small primary disabled={!!busy} onClick={() => void run('advance', 'run')}>{busy === 'run' ? 'Running…' : 'Run registrations'}</Btn>
       </div>
-      <div style={{ fontSize: '12.5px', color: '#27272a', marginTop: '6px', lineHeight: 1.45 }}>
+      <div style={{ fontSize: '12.5px', color: 'var(--ink-2, #27272a)', marginTop: '6px', lineHeight: 1.45 }}>
         Reputation {state?.reputation_status ?? 'not started'}{state?.loa_status ? ` · LOA ${state.loa_status}` : ''}.
         {' '}Branded calling {state?.dir_status ?? 'not started'}.
         {state?.last_code ? <> Verification code from AgentMail: <b>{state.last_code}</b>.</> : null}
         {state?.fcr_job_status ? <> Registry form: {state.fcr_job_status}.</> : null}
       </div>
-      {state?.last_error ? <div style={{ fontSize: '12px', color: '#b91c1c', marginTop: '4px' }}>{state.last_error}</div> : null}
+      {state?.last_error ? <div style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)', marginTop: '4px' }}>{state.last_error}</div> : null}
       <div style={{ fontSize: '11.5px', color: MUTED, marginTop: '4px' }}>
         Free Caller Registry has no API. CLOZR reads the verification email from the AgentMail inbox set under Company &amp; 10DLC and, when Firecrawl is configured, submits new numbers on the form. Telnyx Number Reputation, spam remediation, 10DLC line assignment and branded calling run on the carrier API once the enterprise, the LOA and the terms exist. Tick Automatic filing there to create the enterprise and the display identity from the company facts.{' '}
         <CompanyLink />
@@ -359,7 +359,7 @@ export function TelnyxFunds({ onAdded }: { onAdded?: () => void }) {
         {bal ? (
           <Tag c={low ? STATUS.todo : STATUS.done}>{money(bal.balance, bal.currency)}</Tag>
         ) : <Tag c={STATUS.pending}>{loadErr ? 'Unavailable' : 'Loading'}</Tag>}
-        <span style={{ flex: 1, minWidth: 0, fontSize: '12.5px', color: '#52525b' }}>
+        <span style={{ flex: 1, minWidth: 0, fontSize: '12.5px', color: 'var(--muted, #52525b)' }}>
           {loadErr ? loadErr
             : !bal ? 'Reading the balance from Telnyx…'
               : low ? 'Under the $6.00 Telnyx needs before it files a 10DLC campaign. Add funds to keep the filing moving.'
@@ -441,7 +441,7 @@ export function TenDlcStatus() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
         <span style={{ ...label, margin: 0 }}>10DLC registration</span>
         <Tag c={state.c}>{state.text}</Tag>
-        <span style={{ flex: 1, minWidth: 0, fontSize: '12.5px', color: '#52525b' }}>
+        <span style={{ flex: 1, minWidth: 0, fontSize: '12.5px', color: 'var(--muted, #52525b)' }}>
           {unfunded ? (reg.last_error?.startsWith('funds:')
             ? reg.last_error.slice('funds:'.length).trim()
             : `Telnyx needs at least $6.00 on the account to pay the registry fee. Add funds at portal.telnyx.com → Billing, then press Continue filing (or CLOZR retries at the next morning check). Your brand is ${reg.brand_status ?? 'filed'}.`)
@@ -456,7 +456,7 @@ export function TenDlcStatus() {
         ) : null}
       </div>
       {problems.length ? (
-        <ul style={{ margin: '8px 0 0', paddingLeft: '18px', fontSize: '12.5px', color: '#b91c1c', lineHeight: 1.5 }}>
+        <ul style={{ margin: '8px 0 0', paddingLeft: '18px', fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)', lineHeight: 1.5 }}>
           {problems.map((p, i) => <li key={`${p.field}-${i}`}><b style={{ fontWeight: 600 }}>{p.field}</b> — {p.problem}</li>)}
         </ul>
       ) : null}
@@ -527,14 +527,14 @@ function PanelBody({ r }: { r: NumberReputationDto }) {
   const codes = Object.entries(m.sms_error_codes);
 
   return (
-    <div style={{ margin: '0 12px 12px', padding: '12px', border: `1px dashed ${LINE}`, borderRadius: '10px', background: '#fff' }}>
+    <div style={{ margin: '0 12px 12px', padding: '12px', border: `1px dashed ${LINE}`, borderRadius: '10px', background: 'var(--surface, #fff)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
         <span style={{ ...label, margin: 0, flex: 1 }}>Reputation · {formatPhone(r.phone_e164)}</span>
         <span style={{ fontSize: '11.5px', color: MUTED }}>Carrier checked {when(r.checked_at)}</span>
         <Btn small disabled={Boolean(busy)} onClick={() => void run('refresh', () => api.numberReputation(r.id, true), 'Re-read from the carrier.')}>{busy === 'refresh' ? 'Checking…' : 'Refresh line'}</Btn>
       </div>
-      {r.check_error ? <div style={{ fontSize: '12px', color: '#b91c1c', marginBottom: '8px' }}>Last carrier check failed: {r.check_error}</div> : null}
-      {r.paused ? <div style={{ fontSize: '12px', color: '#b91c1c', marginBottom: '8px' }}>Outbound calls from this line are paused until the warning clears.</div> : null}
+      {r.check_error ? <div style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)', marginBottom: '8px' }}>Last carrier check failed: {r.check_error}</div> : null}
+      {r.paused ? <div style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)', marginBottom: '8px' }}>Outbound calls from this line are paused until the warning clears.</div> : null}
 
       {r.warnings.length ? (
         <ul style={{ margin: '0 0 10px', padding: 0, listStyle: 'none', display: 'grid', gap: '5px' }}>
@@ -544,7 +544,7 @@ function PanelBody({ r }: { r: NumberReputationDto }) {
             </li>
           ))}
         </ul>
-      ) : <div style={{ fontSize: '12.5px', color: '#0A8560', marginBottom: '10px' }}>No warnings on this line.</div>}
+      ) : <div style={{ fontSize: '12.5px', color: 'var(--tx-mint, #0a8560)', marginBottom: '10px' }}>No warnings on this line.</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '8px', marginBottom: '12px' }}>
         <Signal title="STIR/SHAKEN">
@@ -612,7 +612,7 @@ function PanelBody({ r }: { r: NumberReputationDto }) {
 
 function Signal({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ border: `1px solid ${LINE}`, borderRadius: '8px', padding: '8px 10px', background: '#fafafa' }}>
+    <div style={{ border: `1px solid ${LINE}`, borderRadius: '8px', padding: '8px 10px', background: 'var(--canvas, #fafafa)' }}>
       <div style={{ fontSize: '11.5px', color: MUTED, fontWeight: 600, marginBottom: '3px' }}>{title}</div>
       <div style={{ fontSize: '12.5px', color: INK, lineHeight: 1.45 }}>{children}</div>
     </div>

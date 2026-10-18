@@ -19,11 +19,14 @@ import { saveRecipientToCrm } from '@/lib/contract-recipients';
 import { loadDealForSeller } from '@/lib/deal-sheet';
 import { supabase } from '@/lib/supabase';
 import type { ClozrView } from '@/app/clozr/view';
+import { ContractRequestNote, DemoRequests } from '@/components/contract-request/ContractRequestNote';
+import { requestedContracts } from '@/lib/contract-request-api';
+import { setPendingContract, useRequestStore } from '@/lib/contract-request-store';
 
-const INK = '#18181b';
-const MUTED = '#71717a';
-const LINE = '#e4e4e7';
-const HAIR = '#f0f0f1';
+const INK = 'var(--ink, #18181b)';
+const MUTED = 'var(--meta, #71717a)';
+const LINE = 'var(--divider, #e4e4e7)';
+const HAIR = 'var(--divider-2, #f0f0f1)';
 const GREEN = '#0A8560';
 
 type Directory = ReturnType<ClozrView['contractDirectory']>;
@@ -31,18 +34,20 @@ type Directory = ReturnType<ClozrView['contractDirectory']>;
 type Seller = Omit<Directory['sellers'][number], 'houses'> & Partial<Pick<Directory['sellers'][number], 'houses'>>;
 type Buyer = Directory['buyers'][number];
 /** Who the popup's contracts card is about. */
-type Target = { sellerId: number | null; dealId: number | null; buyerId: number | null; title: string; seller?: Seller; buyer?: Buyer };
+type Target = { sellerId: number | null; dealId: number | null; buyerId: number | null; title: string; seller?: Seller; buyer?: Buyer;
+  /** The contract opened from the list: a request from the dialer (migration 270) shows above the card. */
+  contractId?: number | null };
 
 const btn = (primary = false): React.CSSProperties => ({
   height: '32px', padding: '0 12px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
-  border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? GREEN : '#fff', color: primary ? '#fff' : INK, fontFamily: 'inherit',
+  border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? GREEN : 'var(--surface, #fff)', color: primary ? 'var(--surface, #fff)' : INK, fontFamily: 'inherit',
 });
 const chip = (on: boolean): React.CSSProperties => ({
   height: '30px', padding: '0 11px', borderRadius: '999px', fontSize: '12px', fontWeight: on ? 650 : 500, cursor: 'pointer', whiteSpace: 'nowrap',
-  border: `1px solid ${on ? GREEN : LINE}`, background: on ? '#E7F8F1' : '#fff', color: on ? GREEN : '#27272a', fontFamily: 'inherit',
+  border: `1px solid ${on ? GREEN : LINE}`, background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: on ? GREEN : 'var(--ink-2, #27272a)', fontFamily: 'inherit',
 });
-const th: React.CSSProperties = { position: 'sticky', top: 0, background: 'var(--c-thead, #fafafa)', borderBottom: `1px solid ${LINE}`, padding: '0 12px', height: '36px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: '#71717a', whiteSpace: 'nowrap' };
-const td: React.CSSProperties = { padding: '0 12px', height: '46px', borderBottom: `1px solid ${HAIR}`, whiteSpace: 'nowrap', color: '#52525b', fontSize: '12.5px' };
+const th: React.CSSProperties = { position: 'sticky', top: 0, background: 'var(--c-thead, #fafafa)', borderBottom: `1px solid ${LINE}`, padding: '0 12px', height: '36px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--meta, #71717a)', whiteSpace: 'nowrap' };
+const td: React.CSSProperties = { padding: '0 12px', height: '46px', borderBottom: `1px solid ${HAIR}`, whiteSpace: 'nowrap', color: 'var(--muted, #52525b)', fontSize: '12.5px' };
 const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—');
 
 const DAY = 864e5;
@@ -79,12 +84,12 @@ export function CenteredDialog({ title, onClose, children, width = 1040, z = 70 
   if (!host) return null;
   return createPortal(
     <div role="dialog" aria-modal="true" aria-label={title} onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: z, background: 'rgba(24,24,27,.45)', display: 'grid', placeItems: 'center', padding: '16px' }}>
-      <div ref={ref} onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: width, maxHeight: '92vh', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: '14px', boxShadow: '0 24px 70px rgba(0,0,0,.28)', overflow: 'hidden' }}>
+      <div ref={ref} onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: width, maxHeight: '92vh', display: 'flex', flexDirection: 'column', background: 'var(--surface, #fff)', borderRadius: '14px', boxShadow: '0 24px 70px rgba(0,0,0,.28)', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 18px', borderBottom: `1px solid ${LINE}` }}>
           <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.01em', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</h2>
-          <button type="button" onClick={onClose} aria-label="Close" style={{ width: '32px', height: '32px', borderRadius: '8px', border: `1px solid ${LINE}`, background: '#fff', cursor: 'pointer', fontSize: '18px', lineHeight: 1 }}>×</button>
+          <button type="button" onClick={onClose} aria-label="Close" style={{ width: '32px', height: '32px', borderRadius: '8px', border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', cursor: 'pointer', fontSize: '18px', lineHeight: 1 }}>×</button>
         </div>
-        <div style={{ overflow: 'auto', padding: '18px', background: '#fafafa', flex: 1 }}>{children}</div>
+        <div style={{ overflow: 'auto', padding: '18px', background: 'var(--canvas, #fafafa)', flex: 1 }}>{children}</div>
       </div>
     </div>,
     host,
@@ -92,13 +97,39 @@ export function CenteredDialog({ title, onClose, children, width = 1040, z = 70 
 }
 
 /** The full contracts card for one seller, deal or buyer, centered. */
-export function ContractPopup({ V, target, onClose, onChanged, startTemplateId }: { V: ClozrView; target: Target; onClose: () => void; onChanged?: () => void; startTemplateId?: number | null }) {
+export function ContractPopup({ V, target, onClose, onChanged, startTemplateId, newSend }: { V: ClozrView; target: Target; onClose: () => void; onChanged?: () => void; startTemplateId?: number | null; /** Fresh send after party pick: choose template vs one-off first. */ newSend?: boolean }) {
   const ids = V.liveIds;
   // "New contract" lists the templates first; the pick reopens the card on that template, filled in.
   const [picking, setPicking] = useState(false);
   const [start, setStart] = useState<{ id: number | null; n: number }>({ id: startTemplateId ?? null, n: 0 });
+  const [chooseSend, setChooseSend] = useState(newSend && !startTemplateId && !target.contractId);
+  const bigBtn: React.CSSProperties = {
+    display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px', width: '100%', textAlign: 'left',
+    padding: '18px 16px', borderRadius: '12px', border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', cursor: 'pointer', fontFamily: 'inherit',
+  };
+  if (chooseSend && ids?.workspaceId) {
+    return (
+      <CenteredDialog title={`New contract · ${target.title.replace(/^Contracts · /, '')}`} onClose={onClose} width={520} z={80}>
+        <p style={{ margin: '0 0 14px', fontSize: '14px', color: 'var(--muted, #52525b)', lineHeight: 1.45 }}>How do you want to send it?</p>
+        <div style={{ display: 'grid', gap: '10px' }}>
+          <button type="button" className="dc2" onClick={() => { setChooseSend(false); setPicking(true); }} style={bigBtn}>
+            <span style={{ fontSize: '16px', fontWeight: 700, color: INK }}>From templates</span>
+            <span style={{ fontSize: '13px', color: MUTED }}>Pick a saved PDF or CLOZR template — fields fill from the record.</span>
+          </button>
+          <button type="button" className="dc2" onClick={() => { setChooseSend(false); setStart((s) => ({ id: -1, n: s.n + 1 })); }} style={bigBtn}>
+            <span style={{ fontSize: '16px', fontWeight: 700, color: INK }}>One-time send</span>
+            <span style={{ fontSize: '13px', color: MUTED }}>Upload a PDF or use the full editor without starting from a template.</span>
+          </button>
+        </div>
+      </CenteredDialog>
+    );
+  }
   return (
     <CenteredDialog title={target.title} onClose={onClose} z={80}>
+      {target.contractId && ids?.workspaceId ? (
+        <ContractRequestNote workspaceId={ids.workspaceId} contractId={target.contractId}
+          nameOf={(id) => V.requestTeam.find((m) => m.id === id)?.name ?? 'a teammate'} />
+      ) : null}
       <ContractsCard
         key={start.n}
         workspaceId={ids?.workspaceId ?? null}
@@ -139,7 +170,7 @@ function NewParty({ workspaceId, kind, start, onDone, onCancel }: { workspaceId:
   const [addr, setAddr] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const input: React.CSSProperties = { height: '36px', borderRadius: '8px', border: `1px solid ${LINE}`, padding: '0 10px', fontSize: '14px', background: '#fff', width: '100%', boxSizing: 'border-box' };
+  const input: React.CSSProperties = { height: '36px', borderRadius: '8px', border: `1px solid ${LINE}`, padding: '0 10px', fontSize: '14px', background: 'var(--surface, #fff)', width: '100%', boxSizing: 'border-box' };
   async function save() {
     setBusy(true); setErr(null);
     const { data: auth } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
@@ -153,7 +184,7 @@ function NewParty({ workspaceId, kind, start, onDone, onCancel }: { workspaceId:
     onDone({ sellerId, dealId: d.deal?.id ?? null, buyerId: null, title: `Contracts · ${name.trim()}${addr.trim() ? ` · ${addr.trim()}` : ''}` });
   }
   return (
-    <div style={{ border: `1px solid ${LINE}`, borderRadius: '10px', background: '#fff', padding: '14px', display: 'grid', gap: '10px' }}>
+    <div style={{ border: `1px solid ${LINE}`, borderRadius: '10px', background: 'var(--surface, #fff)', padding: '14px', display: 'grid', gap: '10px' }}>
       <div style={{ fontSize: '15px', fontWeight: 650, color: INK }}>New {kind === 'seller' ? 'seller' : 'buyer'}</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" aria-label="Full name" style={input} />
@@ -161,11 +192,11 @@ function NewParty({ workspaceId, kind, start, onDone, onCancel }: { workspaceId:
         <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone" aria-label="Phone" type="tel" style={input} />
         {kind === 'seller' ? <input value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="Property address" aria-label="Property address" style={input} /> : null}
       </div>
-      <p style={{ margin: 0, fontSize: '14px', color: '#52525b', lineHeight: 1.5 }}>
+      <p style={{ margin: 0, fontSize: '14px', color: 'var(--muted, #52525b)', lineHeight: 1.5 }}>
         {kind === 'seller' ? 'Saved to People with this property, and a deal opened for it. ' : 'Saved to Buyers. '}
         Someone already in the CRM with this email or phone is used instead of a duplicate.
       </p>
-      {err ? <div role="alert" style={{ fontSize: '14px', color: '#b91c1c' }}>{err}</div> : null}
+      {err ? <div role="alert" style={{ fontSize: '14px', color: 'var(--tx-red, #b91c1c)' }}>{err}</div> : null}
       <div style={{ display: 'flex', gap: '8px' }}>
         <button type="button" disabled={busy || name.trim().length < 2} onClick={() => void save()} style={{ ...btn(true), opacity: busy || name.trim().length < 2 ? 0.55 : 1 }}>{busy ? 'Saving…' : `Add and continue`}</button>
         <button type="button" onClick={onCancel} style={btn()}>Cancel</button>
@@ -184,14 +215,14 @@ function PartyPicker({ dir, onPick, hint, workspaceId }: { dir: Directory; onPic
   const hit = (s: string) => terms.every((t) => s.toLowerCase().includes(t));
   const sellers = terms.length ? dir.sellers.filter((s) => hit(`${s.name} ${s.addr} ${s.phone} ${s.email}`)).slice(0, 25) : dir.sellers.slice(0, 12);
   const buyers = terms.length ? dir.buyers.filter((b) => hit(`${b.name} ${b.company} ${b.phone} ${b.email}`)).slice(0, 15) : [];
-  const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left', padding: '9px 12px', border: 0, borderBottom: `1px solid ${HAIR}`, background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: '13px' };
+  const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left', padding: '9px 12px', border: 0, borderBottom: `1px solid ${HAIR}`, background: 'var(--surface, #fff)', cursor: 'pointer', fontFamily: 'inherit', fontSize: '13px' };
   if (houseOf) {
     // The house in view (or the best deal) first.
     const houses = [...(houseOf.houses ?? [])].sort((a, b) => Number(b.dealId === houseOf.dealId) - Number(a.dealId === houseOf.dealId));
     return (
       <div>
-        <p style={{ margin: '0 0 12px', fontSize: '13px', color: '#52525b', lineHeight: 1.45 }}>{houseOf.name} has {houses.length} open houses. Which one is this contract for?</p>
-        <div style={{ border: `1px solid ${LINE}`, borderRadius: '10px', overflow: 'hidden', background: '#fff' }}>
+        <p style={{ margin: '0 0 12px', fontSize: '13px', color: 'var(--muted, #52525b)', lineHeight: 1.45 }}>{houseOf.name} has {houses.length} open houses. Which one is this contract for?</p>
+        <div style={{ border: `1px solid ${LINE}`, borderRadius: '10px', overflow: 'hidden', background: 'var(--surface, #fff)' }}>
           {houses.map((h) => (
             <button key={h.dealId} type="button" className="dc2" style={row} onClick={() => onPick({ sellerId: houseOf.id, dealId: h.dealId, buyerId: null, title: `Contracts · ${houseOf.name} · ${h.addr}`, seller: { ...houseOf, addr: h.addr, dealId: h.dealId } })}>
               <span style={{ fontWeight: 600, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.addr}</span>
@@ -205,19 +236,19 @@ function PartyPicker({ dir, onPick, hint, workspaceId }: { dir: Directory; onPic
   }
   return (
     <div>
-      {hint ? <p style={{ margin: '0 0 12px', fontSize: '13px', color: '#52525b', lineHeight: 1.45 }}>{hint}</p> : null}
-      <input autoFocus type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a person or buyer by name, address, phone or email…" aria-label="Search who the contract is for" style={{ width: '100%', height: '38px', borderRadius: '9px', border: `1px solid ${LINE}`, padding: '0 12px', fontSize: '14px', background: '#fff', marginBottom: '12px' }} />
-      <div style={{ border: `1px solid ${LINE}`, borderRadius: '10px', overflow: 'hidden', background: '#fff' }}>
+      {hint ? <p style={{ margin: '0 0 12px', fontSize: '13px', color: 'var(--muted, #52525b)', lineHeight: 1.45 }}>{hint}</p> : null}
+      <input autoFocus type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a person or buyer by name, address, phone or email…" aria-label="Search who the contract is for" style={{ width: '100%', height: '38px', borderRadius: '9px', border: `1px solid ${LINE}`, padding: '0 12px', fontSize: '14px', background: 'var(--surface, #fff)', marginBottom: '12px' }} />
+      <div style={{ border: `1px solid ${LINE}`, borderRadius: '10px', overflow: 'hidden', background: 'var(--surface, #fff)' }}>
         {sellers.map((s) => (
           <button key={'s' + s.id} type="button" className="dc2" style={row} onClick={() => ((s.houses?.length ?? 0) > 1 ? setHouseOf(s) : onPick({ sellerId: s.id, dealId: s.dealId, buyerId: null, title: `Contracts · ${s.name}`, seller: s }))}>
-            <span style={{ fontSize: '10px', fontWeight: 700, color: GREEN, background: '#E7F8F1', borderRadius: '999px', padding: '2px 7px' }}>PERSON</span>
+            <span style={{ fontSize: '10px', fontWeight: 700, color: GREEN, background: 'var(--mint-dim, #e7f8f1)', borderRadius: '999px', padding: '2px 7px' }}>PERSON</span>
             <span style={{ fontWeight: 600, color: INK }}>{s.name}</span>
             <span style={{ color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.addr}</span>
           </button>
         ))}
         {buyers.map((b) => (
           <button key={'b' + b.id} type="button" className="dc2" style={row} onClick={() => onPick({ sellerId: null, dealId: null, buyerId: b.id, title: `Contracts · ${b.company || b.name}`, buyer: b })}>
-            <span style={{ fontSize: '10px', fontWeight: 700, color: '#08694C', background: '#E7F5EF', borderRadius: '999px', padding: '2px 7px' }}>BUYER</span>
+            <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--tx-mint-deep, #08694c)', background: 'var(--c-action-soft, #e7f5ef)', borderRadius: '999px', padding: '2px 7px' }}>BUYER</span>
             <span style={{ fontWeight: 600, color: INK }}>{b.company || b.name}</span>
             <span style={{ color: MUTED }}>{b.company ? b.name : ''}</span>
           </button>
@@ -246,6 +277,11 @@ export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean
   const wsId = ids?.workspaceId ?? null;
   const [rows, setRows] = useState<ContractRow[] | null>(null);
   const [progress, setProgress] = useState<Map<number, Progress>>(new Map());
+  // Contracts drafted from a dialer request (migration 270), marked in the list.
+  const [requested, setRequested] = useState<Map<number, { requestedBy: string | null; status: string }>>(new Map());
+  // A draft to open on arrival: Open draft on the TC's alert, or after Send to TC.
+  const { pending } = useRequestStore();
+  const pendingId = typeof pending === 'number' ? pending : null;
   // The clock the list is judged against, read when the rows load.
   const [now, setNow] = useState(0);
   const [rev, setRev] = useState(0);
@@ -286,9 +322,12 @@ export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean
         m.set(s.contract_id, p);
       }
       if (live) setProgress(m);
+      const req = await requestedContracts(wsId);
+      if (live) setRequested(req);
     });
     return () => { live = false; };
-  }, [wsId, rev]);
+    // pendingId: read again, so a draft made seconds ago is in the list to open.
+  }, [wsId, rev, pendingId]);
   useEffect(() => {
     if (!wsId) return;
     let live = true;
@@ -351,8 +390,20 @@ export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean
     setTarget({
       sellerId: c.seller_id ?? p.s?.id ?? null, dealId: c.deal_id ?? p.s?.dealId ?? null, buyerId: c.buyer_id ?? null,
       title: `${c.name || KIND_LABELS[c.kind as keyof typeof KIND_LABELS] || 'Contract'}${p.label !== '—' ? ` · ${p.label}` : ''}`, seller: p.s, buyer: p.b,
+      contractId: c.id,
     });
   };
+  // Open the pending draft once it is in the list (during render, guarded, not in an effect).
+  const [openedFor, setOpenedFor] = useState<number | null>(null);
+  // Cleared once handled, so the same draft can be opened this way again later.
+  if (pendingId == null && openedFor != null) setOpenedFor(null);
+  const pendingRow = pendingId != null && rows ? rows.find((c) => c.id === pendingId) ?? null : null;
+  if (pendingRow && openedFor !== pendingRow.id) {
+    setOpenedFor(pendingRow.id);
+    if (filter !== 'all') setFilter('all');
+    open(pendingRow);
+  }
+  useEffect(() => { if (pendingRow) setPendingContract(null); }, [pendingRow]);
 
   const tabs = (
     <div role="tablist" aria-label="Contracts or extracted terms" style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
@@ -362,7 +413,10 @@ export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean
     </div>
   );
   const body = !wsId ? (
-    <div style={{ padding: '28px', textAlign: 'center', color: MUTED, fontSize: '13px' }}>Contracts live on a signed-in workspace. Sign in to see and send them.</div>
+    <>
+      <DemoRequests V={V} />
+      <div style={{ padding: '28px', textAlign: 'center', color: MUTED, fontSize: '13px' }}>Contracts live on a signed-in workspace. Sign in to see and send them.</div>
+    </>
   ) : tab === 'terms' ? (
     <>
       {tabs}
@@ -383,24 +437,24 @@ export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean
           return <button key={f.id} type="button" className="dc2" onClick={() => setFilter(f.id)} style={chip(filter === f.id)}>{f.label} · {n}</button>;
         })}
         <span style={{ flex: 1 }} />
-        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search contract, seller, address, buyer…" aria-label="Search contracts" style={{ height: '32px', width: 'min(300px, 100%)', borderRadius: '8px', border: `1px solid ${LINE}`, padding: '0 10px', fontSize: '12.5px', background: '#fff' }} />
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search contract, seller, address, buyer…" aria-label="Search contracts" style={{ height: '32px', width: 'min(300px, 100%)', borderRadius: '8px', border: `1px solid ${LINE}`, padding: '0 10px', fontSize: '12.5px', background: 'var(--surface, #fff)' }} />
         {ids?.canWrite && wsId && embedded ? <DocImport compact workspaceId={wsId} onToast={V.showToast} /> : null}
         <button type="button" className="dc2" onClick={() => setTemplatesOpen(true)} title="Templates, their versions and folders, and reusable sections" style={btn()}>Templates</button>
         {ids?.canWrite ? <button type="button" className="dc3" onClick={() => { setPendingTemplate(null); setPicking(true); }} style={btn(true)}>+ New contract</button> : null}
       </div>
       {tree.length || ids?.canWrite ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12.5px' }}>
-          <select value={String(folderSel)} onChange={(e) => setFolderSel(e.target.value === 'all' || e.target.value === 'none' ? e.target.value : Number(e.target.value))} aria-label="Folder" style={{ height: '30px', borderRadius: '8px', border: `1px solid ${LINE}`, padding: '0 8px', fontSize: '12.5px', background: '#fff', fontFamily: 'inherit' }}>
+          <select value={String(folderSel)} onChange={(e) => setFolderSel(e.target.value === 'all' || e.target.value === 'none' ? e.target.value : Number(e.target.value))} aria-label="Folder" style={{ height: '30px', borderRadius: '8px', border: `1px solid ${LINE}`, padding: '0 8px', fontSize: '12.5px', background: 'var(--surface, #fff)', fontFamily: 'inherit' }}>
             <option value="all">All folders</option>
             <option value="none">Not in a folder</option>
             {tree.map((f) => <option key={f.id} value={f.id}>{'\u00a0\u00a0'.repeat(f.depth)}{f.name}</option>)}
           </select>
           {ids?.canWrite ? <button type="button" onClick={() => void folderAction('create')} style={{ ...btn(), height: '30px' }}>+ Folder</button> : null}
           {ids?.canWrite && typeof folderSel === 'number' ? <button type="button" onClick={() => void folderAction('rename')} style={{ ...btn(), height: '30px' }}>Rename</button> : null}
-          {ids?.canWrite && typeof folderSel === 'number' ? <button type="button" onClick={() => void folderAction('delete')} style={{ ...btn(), height: '30px', color: '#b91c1c' }}>Delete folder</button> : null}
+          {ids?.canWrite && typeof folderSel === 'number' ? <button type="button" onClick={() => void folderAction('delete')} style={{ ...btn(), height: '30px', color: 'var(--tx-red, #b91c1c)' }}>Delete folder</button> : null}
         </div>
       ) : null}
-      <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'auto', maxHeight: embedded ? '62vh' : undefined }}>
+      <div style={{ background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'auto', maxHeight: embedded ? '62vh' : undefined }}>
         <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: '760px' }}>
           <thead>
             <tr><th style={th}>Contract</th><th style={th}>For</th><th style={th}>Status</th><th style={th}>Signatures</th><th style={th}>Sent</th><th style={th}>Expires</th><th style={th}>Signed</th>{tree.length ? <th style={th}>Folder</th> : null}</tr>
@@ -414,7 +468,7 @@ export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean
                 <tr key={c.id} className="dc2" onClick={() => open(c)} style={{ cursor: 'pointer' }}>
                   <td style={{ ...td, color: INK }}>
                     <div style={{ fontWeight: 650 }}>{c.name || c.template_name || 'Contract'}</div>
-                    <div style={{ fontSize: '11px', color: MUTED }}>{KIND_LABELS[c.kind as keyof typeof KIND_LABELS] ?? c.kind}{c.provider === 'pandadoc' ? ' · PandaDoc' : ''}</div>
+                    <div style={{ fontSize: '11px', color: MUTED }}>{KIND_LABELS[c.kind as keyof typeof KIND_LABELS] ?? c.kind}{c.provider === 'pandadoc' ? ' · PandaDoc' : ''}{requested.has(c.id) ? ` · requested by ${V.requestTeam.find((m) => m.id === requested.get(c.id)?.requestedBy)?.name ?? 'a teammate'}` : ''}</div>
                   </td>
                   <td style={{ ...td, maxWidth: '320px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.label}</td>
                   <td style={td}><span style={{ fontSize: '11px', fontWeight: 700, color: st.color, background: st.bg, borderRadius: '999px', padding: '3px 9px' }}>{st.text}</span></td>
@@ -435,7 +489,7 @@ export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean
                   {tree.length ? (
                     <td style={td} onClick={(e) => e.stopPropagation()}>
                       {ids?.canWrite ? (
-                        <select value={folderOfContract(c) ?? ''} onChange={(e) => void file(c, e.target.value ? Number(e.target.value) : null)} aria-label="Move to folder" style={{ height: '28px', maxWidth: '170px', borderRadius: '7px', border: `1px solid ${LINE}`, padding: '0 6px', fontSize: '12px', background: '#fff', fontFamily: 'inherit' }}>
+                        <select value={folderOfContract(c) ?? ''} onChange={(e) => void file(c, e.target.value ? Number(e.target.value) : null)} aria-label="Move to folder" style={{ height: '28px', maxWidth: '170px', borderRadius: '7px', border: `1px solid ${LINE}`, padding: '0 6px', fontSize: '12px', background: 'var(--surface, #fff)', fontFamily: 'inherit' }}>
                           <option value="">—</option>
                           {tree.map((f) => <option key={f.id} value={f.id}>{'\u00a0\u00a0'.repeat(f.depth)}{f.name}</option>)}
                         </select>
@@ -458,8 +512,8 @@ export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean
   return (
     <>
       {embedded ? body : (
-        <section data-screen-label="Contracts" style={{ flex: 1, minWidth: 0, overflow: 'auto', background: '#fafafa' }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', padding: '14px 20px', background: '#fff', borderBottom: `1px solid ${LINE}` }}>
+        <section data-screen-label="Contracts" style={{ flex: 1, minWidth: 0, overflow: 'auto', background: 'var(--canvas, #fafafa)' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', padding: '14px 20px', background: 'var(--surface, #fff)', borderBottom: `1px solid ${LINE}` }}>
             <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em' }}>Contracts</h1>
             <span style={{ fontSize: '12px', color: MUTED }}>{rows ? `${rows.length} in this workspace` : ''}</span>
           </div>
@@ -472,7 +526,7 @@ export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean
             dir={dir}
             workspaceId={wsId}
             hint={pendingTemplate ? `Tie ${pendingTemplate.name} to a person or a buyer. Their name and contact fill the contract.` : undefined}
-            onPick={(t) => { setPicking(false); setTarget(t); }}
+            onPick={(t) => { setPicking(false); setTarget({ ...t, contractId: null }); }}
           />
         </CenteredDialog>
       ) : null}
@@ -485,7 +539,16 @@ export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean
           />
         </CenteredDialog>
       ) : null}
-      {target ? <ContractPopup V={V} target={target} startTemplateId={pendingTemplate?.id ?? null} onClose={() => { setTarget(null); setPendingTemplate(null); }} onChanged={() => setRev((r) => r + 1)} /> : null}
+      {target ? (
+        <ContractPopup
+          V={V}
+          target={target}
+          startTemplateId={pendingTemplate?.id ?? null}
+          newSend={!target.contractId && !pendingTemplate}
+          onClose={() => { setTarget(null); setPendingTemplate(null); }}
+          onChanged={() => setRev((r) => r + 1)}
+        />
+      ) : null}
     </>
   );
 }

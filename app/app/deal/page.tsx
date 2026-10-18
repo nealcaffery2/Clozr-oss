@@ -54,8 +54,8 @@ export default function DealPage() {
 
   const missing = search !== null && !valid;
   return (
-    <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#fafafa', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', padding: '24px', color: '#18181b' }}>
-      <p role="status" style={{ margin: 0, fontSize: '14px', color: '#71717a' }}>
+    <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--canvas, #fafafa)', fontFamily: 'var(--font-inter), Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', padding: '24px', color: 'var(--ink, #18181b)' }}>
+      <p role="status" style={{ margin: 0, fontSize: '14px', color: 'var(--meta, #71717a)' }}>
         {missing ? 'This deal link is incomplete. Ask whoever sent it for a fresh one.' : 'Loading the deal…'}
       </p>
     </main>

@@ -17,35 +17,40 @@ export const TONES: { id: Tone; label: string; hint: string }[] = [
 export type TtsModel = 'eleven_v4_turbo' | 'eleven_v4' | 'eleven_flash_v2_5' | 'eleven_multilingual_v2' | 'eleven_v3_conversational';
 export const TTS_DEFAULT: TtsModel = 'eleven_v4_turbo';
 export const TTS_MODELS: { id: TtsModel; label: string; hint: string }[] = [
-  { id: 'eleven_v4_turbo', label: 'v4 Turbo', hint: 'Natural, quick, and stops mid-word when the caller cuts in. ElevenLabs\' pick for phone agents and the default.' },
+  { id: 'eleven_v4_turbo', label: 'v4 Turbo', hint: 'Natural, quick, and stops mid-word when the caller cuts in. Laughs, sighs and pauses on Expressive. ElevenLabs\' pick for phone agents and the default.' },
   { id: 'eleven_v4', label: 'v4', hint: 'The most natural v4 voice, but slower to start each reply. Better for recordings than live calls.' },
   { id: 'eleven_flash_v2_5', label: 'Flash v2.5', hint: 'Fastest replies, a little flatter.' },
   { id: 'eleven_multilingual_v2', label: 'Multilingual v2', hint: 'Richer and slower, many languages.' },
-  { id: 'eleven_v3_conversational', label: 'v3 Conversational', hint: 'The most emotional, and the only one that can laugh, sigh or clear its throat (Personality, Delivery: Expressive). Does not keep the character of a Professional Voice Clone.' },
+  { id: 'eleven_v3_conversational', label: 'v3 Conversational', hint: 'The previous generation: emotional, but slower to start each reply than v4 Turbo. Does not keep the character of a Professional Voice Clone.' },
 ];
-export const EXPRESSIVE_TTS: TtsModel = 'eleven_v3_conversational';
+/** The speech model Expressive switches to when the current one cannot perform sound tags. */
+export const EXPRESSIVE_TTS: TtsModel = 'eleven_v4_turbo';
+/** Models that perform sound tags. Mirrors TAG_TTS_MODELS in _shared/voice-agent-settings.ts. */
+export const speaksTags = (m: string): boolean => m === 'eleven_v4_turbo' || m === 'eleven_v4' || m === 'eleven_v3_conversational';
 export type Expressiveness = 'off' | 'natural' | 'expressive';
 export const EXPRESSIVENESS: { id: Expressiveness; label: string; hint: string }[] = [
   { id: 'off', label: 'Plain', hint: 'Clean, scripted delivery.' },
   { id: 'natural', label: 'Natural', hint: '"Um" and "hmm", thinking pauses, mirroring and matching the caller\'s mood.' },
-  { id: 'expressive', label: 'Expressive', hint: 'Natural, plus real sounds: laughs, gasps, sighs, a throat clear. Needs the v3 Conversational voice model.' },
+  { id: 'expressive', label: 'Expressive', hint: 'Natural, plus real sounds: laughs, sighs, a throat clear, a beat of silence. Needs v4 Turbo, v4 or v3 Conversational.' },
 ];
 const isExpressiveness = (v: unknown): v is Expressiveness => EXPRESSIVENESS.some((x) => x.id === v);
 export const ttsLabel = (m: string) => TTS_MODELS.find((x) => x.id === m)?.label ?? m;
 export const isTts = (v: unknown): v is TtsModel => TTS_MODELS.some((m) => m.id === v);
 
 /** The brain: the LLM ElevenLabs runs the conversation on. Mirrors LLMS in _shared/voice-agent-settings.ts. */
-export type Llm = 'gemini-3.8-flash' | 'claude-sonnet-5-5' | 'claude-opus-5-5' | 'claude-haiku-4-5';
-export const LLM_DEFAULT: Llm = 'gemini-3.8-flash';
+export type Llm = 'qwen35-397b-a17b' | 'gemini-3.8-flash' | 'claude-sonnet-5-5' | 'claude-haiku-5-5' | 'claude-opus-5-5' | 'claude-haiku-4-5';
+export const LLM_DEFAULT: Llm = 'qwen35-397b-a17b';
 export const LLMS: { id: Llm; label: string; hint: string }[] = [
-  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', hint: 'Fastest replies with solid judgment. The default.' },
+  { id: 'qwen35-397b-a17b', label: 'ElevenLabs default (Qwen 3.5)', hint: 'Fastest on live calls, under a second to reply. The default.' },
+  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', hint: 'Quick on paper, but it can stall mid-reply on a call and hand the turn to a slower backup.' },
   { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', hint: 'Sharpest: sticks to the script and answers a pushy caller best. About half a second slower to reply.' },
+  { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', hint: 'Quick, with Claude\'s feel for a conversation. The pick when Sonnet feels slow.' },
   { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', hint: 'The most capable, and noticeably slower to answer on a live call. Worth a test on an acquisitions agent; Sonnet 5.5 is the usual pick.' },
   { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', hint: 'Quick and cheap. Fine for short, simple calls.' },
 ];
 export const isLlm = (v: unknown): v is Llm => LLMS.some((m) => m.id === v);
-export type Thinking = 'auto' | 'light' | 'deep';
-export const THINKING: { id: Thinking; label: string }[] = [{ id: 'auto', label: 'Model default' }, { id: 'light', label: 'Light' }, { id: 'deep', label: 'Deep' }];
+export type Thinking = 'off' | 'auto' | 'light' | 'deep';
+export const THINKING: { id: Thinking; label: string }[] = [{ id: 'off', label: 'Off (fastest)' }, { id: 'auto', label: 'Model default' }, { id: 'light', label: 'Light' }, { id: 'deep', label: 'Deep' }];
 export function isTone(v: unknown): v is Tone {
   return v === 'warm' || v === 'direct' || v === 'professional';
 }
@@ -140,7 +145,7 @@ const tool = (enabled: boolean): ToolSetting => ({ enabled, available: false });
 export function defaultSettings(): AgentSettings {
   return {
     identity: { name: '', company: '', role: 'lead_manager', introduce_as: 'virtual_assistant', languages: ['en'] },
-    voice: { voice_id: DEFAULT_VOICE_ID, tts_model: TTS_DEFAULT, stability: null, similarity: null, speed: null, llm: LLM_DEFAULT, thinking: 'light' },
+    voice: { voice_id: DEFAULT_VOICE_ID, tts_model: TTS_DEFAULT, stability: null, similarity: null, speed: null, llm: LLM_DEFAULT, thinking: 'off' },
     personality: { tone: 'warm', energy: 3, verbosity: 2, warmth: 3, formality: 3, use_fillers: true, humor: 0, expressiveness: 'natural' },
     script: { template_id: '', sections: [], raw_prompt_override: null, master_script_text: '' },
     rules: {
@@ -292,7 +297,7 @@ export function normalizeSettings(raw: unknown): AgentSettings {
     },
     voice: {
       voice_id: txt(vo.voice_id) || d.voice.voice_id, tts_model: isTts(vo.tts_model) ? vo.tts_model : TTS_DEFAULT,
-      llm: isLlm(vo.llm) ? vo.llm : LLM_DEFAULT, thinking: oneOf(vo.thinking, ['auto', 'light', 'deep'] as const, 'light'),
+      llm: isLlm(vo.llm) ? vo.llm : LLM_DEFAULT, thinking: oneOf(vo.thinking, ['off', 'auto', 'light', 'deep'] as const, 'off'),
       stability: numOrNull(vo.stability, TUNING.stability.min, TUNING.stability.max),
       similarity: numOrNull(vo.similarity, TUNING.similarity.min, TUNING.similarity.max),
       speed: numOrNull(vo.speed, TUNING.speed.min, TUNING.speed.max),
@@ -818,7 +823,8 @@ export const MIC_MESSAGES: Record<MicProblem, string> = {
 const VAR_ORDER = ['first_name', 'property_address', 'caller_known', 'rep_name', 'company', 'agent_name', 'record_kind', 'do_not_engage', 'last_contact_summary', 'next_step'];
 
 export function orderVariables(vars: Record<string, string | number | boolean>): { key: string; value: string }[] {
-  const keys = Object.keys(vars).filter((k) => k !== 'lead_brief');
+  // record_token is a signature for the lookup tool, nothing to read.
+  const keys = Object.keys(vars).filter((k) => k !== 'lead_brief' && k !== 'record_token');
   keys.sort((a, b) => {
     const ia = VAR_ORDER.indexOf(a); const ib = VAR_ORDER.indexOf(b);
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);

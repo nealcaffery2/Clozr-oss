@@ -59,6 +59,7 @@ import {
 } from '../_shared/podio-sync.ts';
 import { cleanEntity, entityKey, personKey, submissionStage } from '../_shared/podio-keys.ts';
 import { classifyDoc } from '../_shared/deal-docs.ts';
+import { type People, COMM_COLS, KINDS, absorb, addrSig, candidates, findRow, keep, newPeople, partyKeys, unasked, unchangedComms } from './page.ts';
 
 // deno-lint-ignore no-explicit-any
 type Any = any;
@@ -195,45 +196,84 @@ async function resolveItems(podio: Podio, items: Any[], mapping: Mapping, warnOn
   return out;
 }
 
-/** Point every party at the CLOZR row it would update (or null = new). One query per table and key kind. */
-async function matchParties(admin: SupabaseClient, ws: number, deals: Resolved[]) {
-  const all = deals.flatMap((d) => d.parties);
-  const uniq = (xs: (string | null | undefined)[]) => [...new Set(xs.filter((x): x is string => !!x))];
-  const sourceIds = uniq(all.map((p) => p.source_id));
-  const phones = uniq(all.map((p) => phoneKey(p.phone)));
-  const emails = uniq(all.map((p) => p.email?.toLowerCase()));
-  const names = uniq(all.flatMap((p) => [p.name, p.company]));
+/**
+ * What a page of Podio deals has read (page.ts): sellers and buyers by key, the
+ * roster, properties by address key, the import lines. Sellers, buyers,
+ * properties and import lines the page writes go back in.
+ *
+ * Two reads stay per item, as before. The deal by Podio item id, right before
+ * its write: no unique key stops a second deal for one item, only that read.
+ * And the vendors: that read is PostgREST's first 1,000 of the workspace's
+ * 127,898 rows, and whether a vendor made a moment ago is among them depends on
+ * where Postgres put it (16 of the newest 200 are), so only a fresh read gives
+ * the same answer.
+ */
+type Pre = {
+  sellers: People; buyers: People; roster?: Any[];
+  keyOf: Map<string, string | null>; props: Map<string, number>; propsAsked: Set<string>;
+  imported: Set<string>; importAsked: Set<string>;
+};
+const newPre = (): Pre => ({
+  sellers: newPeople(), buyers: newPeople(),
+  keyOf: new Map(), props: new Map(), propsAsked: new Set(), imported: new Set(), importAsked: new Set(),
+});
+/** The seller columns matchParties matches on, and the ones writeDeal fills in. */
+const SELLER_KEY_COLS = 'id,name,email,phone,phone_key,source,source_id,property_id,property_address';
+const BUYER_KEY_COLS = 'id,name,company,email,phone_key,source,source_id';
 
-  async function rows(table: 'sellers' | 'buyers', cols: string) {
-    const got = new Map<number, Any>();
-    const qs = [
-      sourceIds.length ? admin.from(table).select(cols).eq('workspace_id', ws).eq('source', 'podio').in('source_id', sourceIds) : null,
-      phones.length ? admin.from(table).select(cols).eq('workspace_id', ws).in('phone_key', phones) : null,
-      emails.length ? admin.from(table).select(cols).eq('workspace_id', ws).in('email', emails) : null,
-      names.length ? admin.from(table).select(cols).eq('workspace_id', ws).in('name', names) : null,
-    ];
-    for (const r of await Promise.all(qs.filter(Boolean) as Any[])) for (const row of r.data ?? []) got.set(row.id, row);
-    return [...got.values()];
-  }
-  const [sellers, buyers, vendorsRes, rosterRes, dealsRes] = await Promise.all([
-    rows('sellers', 'id,name,email,phone_key,source,source_id,property_id'),
-    rows('buyers', 'id,name,company,email,phone_key,source,source_id'),
+/** The sellers, buyers and roster these deals need that the page has not read: one query per table and key kind. */
+async function loadPeople(admin: SupabaseClient, ws: number, pre: Pre, deals: Resolved[]) {
+  const keys = partyKeys(deals.flatMap((d) => d.parties));
+  const people = async (table: 'sellers' | 'buyers', cols: string, pool: People) => {
+    const want = unasked(pool, keys);
+    const res = await Promise.all(KINDS.map((k) => {
+      if (!want[k].length) return null;
+      const q = admin.from(table).select(cols).eq('workspace_id', ws);
+      return (k === 'source_id' ? q.eq('source', 'podio') : q).in(k, want[k]);
+    }));
+    KINDS.forEach((k, i) => { if (res[i]) absorb(pool, k, want[k], must(res[i]!) ?? []); });
+  };
+  await Promise.all([
+    people('sellers', SELLER_KEY_COLS, pre.sellers),
+    people('buyers', BUYER_KEY_COLS, pre.buyers),
+    pre.roster ? null : admin.from('workspace_roster').select('user_id,full_name,email,role').eq('workspace_id', ws)
+      .then((r) => { pre.roster = must(r) ?? []; }),
+  ]);
+  return keys;
+}
+
+/** The address keys, properties and "Imported from Podio" lines these deals need that the page has not read. */
+async function loadPlaces(admin: SupabaseClient, ws: number, pre: Pre, deals: Resolved[]) {
+  const addrs = new Map(deals.flatMap((d) => (d.addr && !pre.keyOf.has(addrSig(d.addr)) ? [[addrSig(d.addr), d.addr] as const] : [])));
+  await Promise.all([...addrs].map(async ([sig, a]) => {
+    const { data } = ok(await admin.rpc('address_key', { p_line1: a.line1, p_city: a.city ?? '', p_state: a.state ?? '', p_zip: a.zip ?? '' }));
+    pre.keyOf.set(sig, (data as string | null) ?? null);
+  }));
+  const keys = [...new Set(deals.map((d) => (d.addr ? pre.keyOf.get(addrSig(d.addr)) : null)))].filter((k): k is string => !!k && !pre.propsAsked.has(k));
+  const exts = [...new Set(deals.map((d) => 'podio:item:' + d.item_id))].filter((e) => !pre.importAsked.has(e));
+  const [props, lines] = await Promise.all([
+    keys.length ? admin.from('properties').select('id,address_key').eq('workspace_id', ws).in('address_key', keys) : null,
+    exts.length ? admin.from('activity').select('external_id').eq('workspace_id', ws).in('external_id', exts) : null,
+  ]);
+  for (const p of props ? must(props) ?? [] : []) pre.props.set(p.address_key, p.id);
+  for (const k of keys) pre.propsAsked.add(k);
+  for (const l of lines ? must(lines) ?? [] : []) pre.imported.add(l.external_id);
+  for (const e of exts) pre.importAsked.add(e);
+}
+
+/** Point every party at the CLOZR row it would update (or null = new). One query per table and key kind, none for a key the page already read. */
+async function matchParties(admin: SupabaseClient, ws: number, deals: Resolved[], pre: Pre = newPre()) {
+  const [keys, vendorsRes, dealsRes] = await Promise.all([
+    loadPeople(admin, ws, pre, deals),
     admin.from('vendors').select('id,business_name,contact_name,email,phone,service_type,source,source_id').eq('workspace_id', ws),
-    admin.from('workspace_roster').select('user_id,full_name,email,role').eq('workspace_id', ws),
     admin.from('deals').select('id,source_id').eq('workspace_id', ws).eq('source', 'podio').in('source_id', deals.map((d) => String(d.item_id))),
   ]);
-  const vendors: Any[] = vendorsRes.data ?? [];
-  const roster: Any[] = rosterRes.data ?? [];
-  const dealOf = new Map((dealsRes.data ?? []).map((d: Any) => [String(d.source_id), d.id]));
-
-  const find = (list: Any[], p: PodioPerson, nameCols: string[], phoneOf: (r: Any) => string | null) => {
-    const pk = phoneKey(p.phone); const em = p.email?.toLowerCase(); const nk = nameKey(p.name); const ck = nameKey(p.company);
-    return list.find((r) => r.source === 'podio' && r.source_id === p.source_id)
-      ?? (pk && list.find((r) => phoneOf(r) === pk))
-      ?? (em && list.find((r) => r.email?.toLowerCase() === em))
-      // A name alone only counts when exactly one row carries it — "John Smith" is not an identity.
-      ?? ((hits) => (hits.length === 1 ? hits[0] : undefined))(list.filter((r) => nameCols.some((c) => r[c] && ((nk && nameKey(r[c]) === nk) || (ck && nameKey(r[c]) === ck)))));
-  };
+  const vendors: Any[] = must(vendorsRes) ?? [];
+  const dealOf = new Map((must(dealsRes) ?? []).map((d: Any) => [String(d.source_id), d.id]));
+  const sellers = candidates(pre.sellers, keys);
+  const buyers = candidates(pre.buyers, keys);
+  const roster: Any[] = pre.roster ?? [];
+  const find = findRow;
   for (const d of deals) {
     d.existing_deal_id = dealOf.get(String(d.item_id)) ?? null;
     for (const p of d.parties) {
@@ -263,13 +303,16 @@ type Counts = Record<'deals' | 'sellers' | 'buyers' | 'vendors' | 'properties' |
 const bump = (c: Counts, k: keyof Omit<Counts, 'parties' | 'skipped'>, created: boolean) => { c[k][created ? 'created' : 'updated']++; };
 const compact = <T extends Record<string, unknown>>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v != null && v !== '')) as Partial<T>;
 const must = (r: { data: unknown; error: Any }): Any => { if (r.error) throw new Error(r.error.message); return r.data; };
+/** The whole response, for a read that decides a write: a failed read throws instead of reading as "nothing there". */
+const ok = <T extends { error: Any }>(r: T): T => { if (r.error) throw new Error(r.error.message); return r; };
 
 /** Buyers and vendors on a deal that CLOZR does not have yet. */
-async function createPeople(admin: SupabaseClient, ws: number, userId: string | null, d: Resolved, c: Counts) {
+async function createPeople(admin: SupabaseClient, ws: number, userId: string | null, d: Resolved, c: Counts, pre?: Pre) {
   for (const p of d.parties.filter((x) => x.role === 'buyer')) {
     if (p.match) { bump(c, 'buyers', false); continue; }
-    const id = must(await admin.from('buyers').insert({ workspace_id: ws, name: p.name || p.company || 'Buyer', company: p.company, email: p.email?.toLowerCase() ?? null, phone: p.phone, source: 'podio', source_id: p.source_id, created_by: userId }).select('id').single()).id;
-    p.match = { table: 'buyers', id, label: p.name }; bump(c, 'buyers', true);
+    const made = must(await admin.from('buyers').insert({ workspace_id: ws, name: p.name || p.company || 'Buyer', company: p.company, email: p.email?.toLowerCase() ?? null, phone: p.phone, source: 'podio', source_id: p.source_id, created_by: userId }).select(BUYER_KEY_COLS).single());
+    if (pre) keep(pre.buyers, made);
+    p.match = { table: 'buyers', id: made.id, label: p.name }; bump(c, 'buyers', true);
   }
   for (const p of d.parties.filter((x) => VENDOR_TYPE[x.role] && x.target !== 'title_contact')) {
     if (p.match) { bump(c, 'vendors', false); continue; }
@@ -279,18 +322,22 @@ async function createPeople(admin: SupabaseClient, ws: number, userId: string | 
   }
 }
 
-async function writeDeal(admin: SupabaseClient, ws: number, userId: string | null, d: Resolved, c: Counts, opts: { sellerStage?: string | null; tc?: boolean } = {}) {
+/** One deal. `pre` is the page's reads (matchParties got the same one); the rows written here go back into it. */
+async function writeDeal(admin: SupabaseClient, ws: number, userId: string | null, d: Resolved, c: Counts, opts: { sellerStage?: string | null; tc?: boolean } = {}, pre: Pre = newPre()) {
   if (!d.stage) { c.skipped++; return null; }
   const src = String(d.item_id);
+  await loadPlaces(admin, ws, pre, [d]);
 
-  // Property, on the database's own address key.
+  // Property, on the database's own address key (properties_key_uniq: one per key).
   let propertyId: number | null = null;
   if (d.addr) {
-    const { data: key } = await admin.rpc('address_key', { p_line1: d.addr.line1, p_city: d.addr.city ?? '', p_state: d.addr.state ?? '', p_zip: d.addr.zip ?? '' });
-    const hit = key ? (await admin.from('properties').select('id').eq('workspace_id', ws).eq('address_key', key).limit(1)).data?.[0] : null;
-    if (hit) { propertyId = hit.id; bump(c, 'properties', false); }
+    const key = pre.keyOf.get(addrSig(d.addr));
+    const hit = key ? pre.props.get(key) : undefined;
+    if (hit) { propertyId = hit; bump(c, 'properties', false); }
     else {
-      propertyId = must(await admin.from('properties').insert({ workspace_id: ws, line1: d.addr.line1, city: d.addr.city, state: d.addr.state, zip: d.addr.zip, source: 'podio', source_id: 'item:' + src }).select('id').single()).id;
+      const made = must(await admin.from('properties').insert({ workspace_id: ws, line1: d.addr.line1, city: d.addr.city, state: d.addr.state, zip: d.addr.zip, source: 'podio', source_id: 'item:' + src }).select('id,address_key').single());
+      propertyId = made.id;
+      if (made.address_key) pre.props.set(made.address_key, made.id);
       bump(c, 'properties', true);
     }
   }
@@ -304,25 +351,31 @@ async function writeDeal(admin: SupabaseClient, ws: number, userId: string | nul
   for (const [i, p] of sellerParties.entries()) {
     const base = compact({ email: p.email, phone: p.phone, property_id: propertyId, property_address: d.addr?.full });
     if (p.match) {
+      const id = Number(p.match.id);
       const patch: Record<string, unknown> = i === 0 && sellerStage ? { lead_stage: sellerStage } : {};
-      const { data: cur } = await admin.from('sellers').select('email,phone,property_id,property_address,source_id').eq('id', p.match.id).single();
+      // The page read this seller (matchParties) and keeps every write to it, so this is what a fresh read says.
+      const cur = pre.sellers.rows.get(id) ?? must(await admin.from('sellers').select(SELLER_KEY_COLS).eq('id', id).maybeSingle());
       for (const [k, v] of Object.entries(base)) if (cur && (cur as Any)[k] == null) patch[k] = v;
       if (cur && !cur.source_id) Object.assign(patch, { source: 'podio', source_id: p.source_id });
-      if (Object.keys(patch).length) must(await admin.from('sellers').update(patch).eq('id', p.match.id).select('id'));
+      if (Object.keys(patch).length) {
+        const [fresh] = must(await admin.from('sellers').update(patch).eq('id', id).select(SELLER_KEY_COLS));
+        if (fresh) keep(pre.sellers, fresh); else pre.sellers.rows.delete(id);
+      }
       bump(c, 'sellers', false);
-      if (i === 0) sellerId = Number(p.match.id);
+      if (i === 0) sellerId = id;
     } else {
       // The first seller goes in at the contract stage (the stage trigger opens their deal, adopted below);
       // co-sellers keep the default stage so they do not open deals of their own.
       const row: Record<string, unknown> & { name: string } = { workspace_id: ws, name: p.name || 'Seller', ...base, source: 'podio', source_id: p.source_id, created_by: userId, ...(i === 0 ? (sellerStage ? { lead_stage: sellerStage } : {}) : { notes: 'Co-seller on a Podio deal' }) };
-      const id = must(await admin.from('sellers').insert(row).select('id').single()).id;
-      p.match = { table: 'sellers', id, label: row.name };
+      const made = must(await admin.from('sellers').insert(row).select(SELLER_KEY_COLS).single());
+      keep(pre.sellers, made);
+      p.match = { table: 'sellers', id: made.id, label: row.name };
       bump(c, 'sellers', true);
-      if (i === 0) sellerId = id;
+      if (i === 0) sellerId = made.id;
     }
   }
 
-  await createPeople(admin, ws, userId, d, c);
+  await createPeople(admin, ws, userId, d, c, pre);
 
   const first = (target: string) => d.parties.find((p) => p.target === target && p.match);
   const titleCo = d.parties.find((p) => p.target === 'title_company');
@@ -343,9 +396,9 @@ async function writeDeal(admin: SupabaseClient, ws: number, userId: string | nul
   // The deal: ours from a previous run, else the one the seller's stage trigger opened, else a new one.
   let dealId = d.existing_deal_id;
   if (!dealId && sellerId) {
-    const { data } = await admin.from('deals').select('id').eq('workspace_id', ws).eq('seller_id', sellerId)
+    const { data } = ok(await admin.from('deals').select('id').eq('workspace_id', ws).eq('seller_id', sellerId)
       .or('source.is.null,source.neq.podio').not('stage', 'in', '("Closed","Terminated","Realtor Referral")')
-      .order('created_at', { ascending: false }).limit(1);
+      .order('created_at', { ascending: false }).limit(1));
     dealId = data?.[0]?.id ?? null;
   }
   if (dealId) {
@@ -363,7 +416,7 @@ async function writeDeal(admin: SupabaseClient, ws: number, userId: string | nul
     contract_date: d.columns.contract_date, title_email: dealPatch.title_email, title_phone: dealPatch.title_phone,
     buyer_id: dealPatch.buyer_id, seller_id: sellerId, property_id: propertyId,
   });
-  const { data: txRow } = await admin.from('transactions').select('id').eq('deal_id', dealId).limit(1);
+  const { data: txRow } = ok(await admin.from('transactions').select('id').eq('deal_id', dealId).limit(1));
   if (txRow?.[0]) { must(await admin.from('transactions').update(tx).eq('id', txRow[0].id).select('id')); bump(c, 'transactions', false); }
   else if (opts.tc !== false) { must(await admin.from('transactions').insert({ workspace_id: ws, deal_id: dealId, status: 'open', created_by: userId, ...tx })); bump(c, 'transactions', true); }
 
@@ -389,10 +442,10 @@ async function writeDeal(admin: SupabaseClient, ws: number, userId: string | nul
   // One activity line on the seller, once.
   if (sellerId) {
     const ext = 'podio:item:' + src;
-    const { data: had } = await admin.from('activity').select('id').eq('workspace_id', ws).eq('external_id', ext).limit(1);
-    if (!had?.length) {
+    if (!pre.imported.has(ext)) {
       const team = d.parties.map((p) => `${p.role.replace('_', ' ')}: ${p.name || p.company}`).join(' · ');
-      await admin.from('activity').insert({ workspace_id: ws, entity_type: 'seller', entity_id: sellerId, kind: 'import', title: 'Imported from Podio', body: `${d.podio_stage ?? d.stage}${d.link ? ' · ' + d.link : ''}${team ? '\n' + team : ''}`, actor_id: userId, external_id: ext });
+      const { error } = await admin.from('activity').insert({ workspace_id: ws, entity_type: 'seller', entity_id: sellerId, kind: 'import', title: 'Imported from Podio', body: `${d.podio_stage ?? d.stage}${d.link ? ' · ' + d.link : ''}${team ? '\n' + team : ''}`, actor_id: userId, external_id: ext });
+      if (!error) pre.imported.add(ext);
     }
   }
   return { item_id: d.item_id, deal_id: dealId, seller_id: sellerId, property_id: propertyId, address: d.address ?? d.title };
@@ -457,6 +510,8 @@ type SyncCtx = {
   worked: number;
   /** Writes sync_cursor and last_sync_notes. Set by syncWorkspace; absent in tests. */
   flush?: () => Promise<void>;
+  /** The current page's reads for Deals-app items (matchParties, writeDeal). */
+  pre?: Pre;
 };
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -469,8 +524,8 @@ const lastEventOf = (item: Any) => podioIso(item?.last_event_on ?? item?.last_ed
 const newCounts = (): Counts => ({ deals: { created: 0, updated: 0 }, sellers: { created: 0, updated: 0 }, buyers: { created: 0, updated: 0 }, vendors: { created: 0, updated: 0 }, properties: { created: 0, updated: 0 }, transactions: { created: 0, updated: 0 }, parties: 0, skipped: 0 });
 
 async function ledgerFor(c: SyncCtx, ids: number[]): Promise<Map<number, Ledger>> {
-  const { data } = await c.admin.from('podio_items').select('item_id,deal_id,seller_id,property_id,last_event_on,applied,podio_stage')
-    .eq('workspace_id', c.ws).in('item_id', ids);
+  const { data } = ok(await c.admin.from('podio_items').select('item_id,deal_id,seller_id,property_id,last_event_on,applied,podio_stage')
+    .eq('workspace_id', c.ws).in('item_id', ids));
   return new Map((data ?? []).map((r: Any) => [Number(r.item_id), r as Ledger]));
 }
 async function remember(c: SyncCtx, row: Record<string, unknown>) {
@@ -481,7 +536,7 @@ async function remember(c: SyncCtx, row: Record<string, unknown>) {
 async function movedInClozr(c: SyncCtx, entity: 'deal' | 'seller', id: number, field: string, since: string | null) {
   let q = c.admin.from('stage_events').select('id').eq('entity_type', entity).eq('entity_id', id).eq('field', field).not('changed_by', 'is', null);
   if (since) q = q.gt('changed_at', since);
-  const { data } = await q.limit(1);
+  const { data } = ok(await q.limit(1));
   return !!data?.length;
 }
 
@@ -528,7 +583,7 @@ async function fillFacts(c: SyncCtx, propertyId: number, facts: Submission['fact
 
 async function withSellers(c: SyncCtx, rows: Any[]): Promise<DealCandidate[]> {
   const ids = [...new Set(rows.map((r) => r.seller_id).filter(Boolean))];
-  const { data } = ids.length ? await c.admin.from('sellers').select('id,phone_key,email').in('id', ids) : { data: [] };
+  const { data } = ids.length ? ok(await c.admin.from('sellers').select('id,phone_key,email').in('id', ids)) : { data: [] };
   const by = new Map((data ?? []).map((x: Any) => [x.id, x]));
   return rows.map((r) => ({ id: r.id, source_id: r.source_id, stage: r.stage, submitted_at: r.submitted_at, seller_phone_key: by.get(r.seller_id)?.phone_key ?? null, seller_email: by.get(r.seller_id)?.email ?? null }));
 }
@@ -540,7 +595,7 @@ async function addressDeals(c: SyncCtx, keys: string[], withDealKey: boolean): P
   for (const k of keys) {
     const qs = [c.admin.from('deals').select(cols).eq('workspace_id', c.ws).eq('source', 'podio').like('source_id', `submission:${likeEsc(k)}|%`).limit(50)];
     if (withDealKey) qs.push(c.admin.from('deals').select(cols).eq('workspace_id', c.ws).eq('source', 'podio').eq('source_id', 'deal:' + k).limit(5));
-    for (const r of await Promise.all(qs)) for (const row of r.data ?? []) rows.set(row.id, row);
+    for (const r of await Promise.all(qs)) for (const row of must(r) ?? []) rows.set(row.id, row);
   }
   return [...rows.values()];
 }
@@ -552,7 +607,7 @@ type Addr = { line1: string; city: string | null; state: string | null; zip: str
 
 async function rosterOf(c: SyncCtx): Promise<RosterMember[]> {
   if (!c.rosterMembers) {
-    const { data } = await c.admin.from('workspace_roster').select('user_id,full_name,email').eq('workspace_id', c.ws);
+    const { data } = ok(await c.admin.from('workspace_roster').select('user_id,full_name,email').eq('workspace_id', c.ws));
     c.rosterMembers = (data ?? []) as RosterMember[];
     c.roster = new Map(c.rosterMembers.filter((m) => m.full_name).map((m) => [nameKey(m.full_name), m.user_id]));
   }
@@ -568,9 +623,9 @@ const noteAmbiguous = async (c: SyncCtx, base: Record<string, unknown>, itemId: 
 /** Deals on these properties, live and archived, with the seller's phone and email for the contact tie-break. */
 async function propertyDeals(c: SyncCtx, propertyIds: number[]): Promise<PropertyDeal[]> {
   if (!propertyIds.length) return [];
-  const { data } = await c.admin.from('deals')
+  const { data } = ok(await c.admin.from('deals')
     .select('id,source,source_id,stage,lead_stage,submitted_at,seller_id,created_at,archived_at,archived_reason')
-    .eq('workspace_id', c.ws).in('property_id', propertyIds).limit(80);
+    .eq('workspace_id', c.ws).in('property_id', propertyIds).limit(80));
   const rows = data ?? [];
   const base = await withSellers(c, rows);
   const extra = new Map(rows.map((r: Any) => [r.id as number, r]));
@@ -586,12 +641,12 @@ async function zipWindowDeals(c: SyncCtx, zip: string, created: string): Promise
   if (Number.isNaN(t)) return [];
   const from = new Date(t - 2 * 60 * 60 * 1000).toISOString();
   const to = new Date(t + 2 * 60 * 60 * 1000).toISOString();
-  const { data: props } = await c.admin.from('properties').select('id').eq('workspace_id', c.ws).eq('zip', zip).limit(400);
+  const { data: props } = ok(await c.admin.from('properties').select('id').eq('workspace_id', c.ws).eq('zip', zip).limit(400));
   const pids = (props ?? []).map((p: Any) => p.id as number);
   if (!pids.length) return [];
-  const { data } = await c.admin.from('deals')
+  const { data } = ok(await c.admin.from('deals')
     .select('id,source,source_id,stage,lead_stage,submitted_at,seller_id,created_at,archived_at,archived_reason')
-    .eq('workspace_id', c.ws).in('property_id', pids).is('archived_at', null).gte('created_at', from).lte('created_at', to).limit(40);
+    .eq('workspace_id', c.ws).in('property_id', pids).is('archived_at', null).gte('created_at', from).lte('created_at', to).limit(40));
   const rows = data ?? [];
   const base = await withSellers(c, rows);
   const extra = new Map(rows.map((r: Any) => [r.id as number, r]));
@@ -639,7 +694,7 @@ async function syncSubmission(c: SyncCtx, app: AppCred, item: Any, led: Ledger |
   c.worked++;
   if (!dealId) return createSubmission(c, s, base);
 
-  const { data: deal } = await c.admin.from('deals').select(SUBMISSION_DEAL_COLS).eq('id', dealId).eq('workspace_id', c.ws).maybeSingle();
+  const { data: deal } = ok(await c.admin.from('deals').select(SUBMISSION_DEAL_COLS).eq('id', dealId).eq('workspace_id', c.ws).maybeSingle());
   if (!deal) {
     c.counts.skipped++;
     await remember(c, { ...base, note: 'Its CLOZR deal was deleted; not recreated.' });
@@ -688,9 +743,9 @@ async function syncSubmission(c: SyncCtx, app: AppCred, item: Any, led: Ledger |
 
 /** The database's address_key for one parsed address, and the property that already has it. */
 async function findPropertyId(c: SyncCtx, a: Addr): Promise<number | null> {
-  const { data: key } = await c.admin.rpc('address_key', { p_line1: a.line1, p_city: a.city ?? '', p_state: a.state ?? '', p_zip: a.zip ?? '' });
+  const { data: key } = ok(await c.admin.rpc('address_key', { p_line1: a.line1, p_city: a.city ?? '', p_state: a.state ?? '', p_zip: a.zip ?? '' }));
   if (!key) return null;
-  return (await c.admin.from('properties').select('id').eq('workspace_id', c.ws).eq('address_key', key).limit(1)).data?.[0]?.id ?? null;
+  return ok(await c.admin.from('properties').select('id').eq('workspace_id', c.ws).eq('address_key', key).limit(1)).data?.[0]?.id ?? null;
 }
 
 /** Every variant, each tried against address_key(), before anything is inserted. */
@@ -719,7 +774,7 @@ async function propertyFor(c: SyncCtx, a: Addr, facts: Submission['facts'], item
 async function attachSourcePhotos(admin: SupabaseClient, ws: number, dealId: number, urls: string[]) {
   const clean = [...new Set(urls.map((u) => u.trim()).filter((u) => /^https?:\/\//i.test(u)))];
   if (!clean.length) return;
-  const { data: have } = await admin.from('deal_files').select('url').eq('deal_id', dealId).in('url', clean);
+  const { data: have } = ok(await admin.from('deal_files').select('url').eq('deal_id', dealId).in('url', clean));
   const got = new Set((have ?? []).map((r: { url: string | null }) => r.url));
   const rows = clean.filter((u) => !got.has(u)).map((url) => ({
     workspace_id: ws, deal_id: dealId, kind: 'link' as const, name: 'Photos', url, source: 'podio', category: 'photos',
@@ -729,8 +784,8 @@ async function attachSourcePhotos(admin: SupabaseClient, ws: number, dealId: num
   // photos: Mark Spain's photo page is drawn by script, so COMPR reading it is
   // the only way its pictures reach the album. A deal COMPR already filled is
   // left alone until a new link comes in, so a sync does not re-pull the set.
-  const { count: comprPhotos } = rows.length ? { count: 0 } : await admin.from('deal_files')
-    .select('id', { count: 'exact', head: true }).eq('deal_id', dealId).eq('source', 'compr');
+  const { count: comprPhotos } = rows.length ? { count: 0 } : ok(await admin.from('deal_files')
+    .select('id', { count: 'exact', head: true }).eq('deal_id', dealId).eq('source', 'compr'));
   queueComprRoundTrip(admin, ws, dealId, rows.length || !comprPhotos ? clean.length : 0);
 }
 
@@ -742,7 +797,7 @@ async function attachSourcePhotos(admin: SupabaseClient, ws: number, dealId: num
 async function pullLinkedComprPhotos(admin: SupabaseClient, ws: number, dealId: number, reportUrl: string | null | undefined, photoLinks: string[]) {
   // A deal with photo links already went to COMPR from attachSourcePhotos.
   if (photoLinks.length || !reportUrl || !/thecompr\.(?:com|ai)\/r\//i.test(reportUrl)) return;
-  const { count } = await admin.from('deal_files').select('id', { count: 'exact', head: true }).eq('deal_id', dealId).eq('source', 'compr');
+  const { count } = ok(await admin.from('deal_files').select('id', { count: 'exact', head: true }).eq('deal_id', dealId).eq('source', 'compr'));
   if (count) return;
   queueComprRoundTrip(admin, ws, dealId, 1, true);
 }
@@ -777,7 +832,7 @@ function queueComprRoundTrip(admin: SupabaseClient, ws: number, dealId: number, 
 /** Underwriters (dispositions, team) and funds (role other), added when the deal does not list them yet. */
 async function addSubmissionParties(c: SyncCtx, dealId: number, s: Submission, roster: RosterMember[]) {
   if (!s.underwriters.length && !s.funds.length) return;
-  const { data: have } = await c.admin.from('deal_parties').select('role,name,source_id,user_id').eq('deal_id', dealId);
+  const { data: have } = ok(await c.admin.from('deal_parties').select('role,name,source_id,user_id').eq('deal_id', dealId));
   const rows: Record<string, unknown>[] = [];
   for (const u of s.underwriters) {
     const userId = matchRoster(roster, u);
@@ -801,7 +856,7 @@ async function markDead(c: SyncCtx, dealId: number, sellerId: number | null, ite
     body: 'Marked dead in Podio', actor_id: null, external_id: `podio:${itemId}:dead`,
   }).then(() => null, () => null);
   if (!sellerId) return;
-  const { data: sel } = await c.admin.from('sellers').select('tags').eq('id', sellerId).maybeSingle();
+  const { data: sel } = ok(await c.admin.from('sellers').select('tags').eq('id', sellerId).maybeSingle());
   const tags: string[] = Array.isArray(sel?.tags) ? sel.tags : [];
   if (!tags.includes('Dead')) await c.admin.from('sellers').update({ tags: [...tags, 'Dead'] }).eq('id', sellerId).then(() => null, () => null);
 }
@@ -817,14 +872,14 @@ async function createSubmission(c: SyncCtx, s: Submission, base: Record<string, 
   // The partner's one contact (migration 49): from its other submissions, else by phone or email, else new.
   let sellerId: number | null = null;
   if (s.partner_key) {
-    const { data } = await c.admin.from('deals').select('seller_id').eq('workspace_id', c.ws).eq('source', 'podio')
-      .like('source_id', `submission:%|${likeEsc(s.partner_key)}|%`).not('seller_id', 'is', null).order('id', { ascending: false }).limit(1);
+    const { data } = ok(await c.admin.from('deals').select('seller_id').eq('workspace_id', c.ws).eq('source', 'podio')
+      .like('source_id', `submission:%|${likeEsc(s.partner_key)}|%`).not('seller_id', 'is', null).order('id', { ascending: false }).limit(1));
     sellerId = data?.[0]?.seller_id ?? null;
   }
-  if (!sellerId && s.phone) sellerId = (await c.admin.from('sellers').select('id').eq('workspace_id', c.ws).eq('phone_key', s.phone).order('id').limit(1)).data?.[0]?.id ?? null;
-  if (!sellerId && s.email) sellerId = (await c.admin.from('sellers').select('id').eq('workspace_id', c.ws).ilike('email', likeEsc(s.email)).order('id').limit(1)).data?.[0]?.id ?? null;
+  if (!sellerId && s.phone) sellerId = ok(await c.admin.from('sellers').select('id').eq('workspace_id', c.ws).eq('phone_key', s.phone).order('id').limit(1)).data?.[0]?.id ?? null;
+  if (!sellerId && s.email) sellerId = ok(await c.admin.from('sellers').select('id').eq('workspace_id', c.ws).ilike('email', likeEsc(s.email)).order('id').limit(1)).data?.[0]?.id ?? null;
   const vendor = s.partner_key
-    ? (await c.admin.from('vendors').select('id,business_name').eq('workspace_id', c.ws).eq('source', 'podio').eq('source_id', 'partner:' + s.partner_key).limit(1)).data?.[0] ?? null
+    ? ok(await c.admin.from('vendors').select('id,business_name').eq('workspace_id', c.ws).eq('source', 'podio').eq('source_id', 'partner:' + s.partner_key).limit(1)).data?.[0] ?? null
     : null;
   const stage = s.stage ?? 'New Submission';
   const where = [a.line1, a.city, [a.state, a.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
@@ -893,7 +948,7 @@ async function syncDealItem(c: SyncCtx, app: AppCred, item: Any, led: Ledger | u
   let dealId: number | null = led?.deal_id ?? null;
   let by: string | null = dealId ? 'item id' : null;
   if (!dealId) {
-    const { data } = await c.admin.from('deals').select('id').eq('workspace_id', c.ws).eq('source', 'podio').eq('source_id', String(itemId)).limit(1);
+    const { data } = ok(await c.admin.from('deals').select('id').eq('workspace_id', c.ws).eq('source', 'podio').eq('source_id', String(itemId)).limit(1));
     if (data?.[0]) { dealId = data[0].id; by = 'item id (manual import)'; }
   }
   if (!dealId) {
@@ -903,7 +958,7 @@ async function syncDealItem(c: SyncCtx, app: AppCred, item: Any, led: Ledger | u
       let rows = await addressDeals(c, keys, true);
       // A deal another Deals-app item already owns is not this one.
       if (rows.length) {
-        const { data: owned } = await c.admin.from('podio_items').select('deal_id,item_id').eq('workspace_id', c.ws).eq('app_key', 'deals').in('deal_id', rows.map((r) => r.id));
+        const { data: owned } = ok(await c.admin.from('podio_items').select('deal_id,item_id').eq('workspace_id', c.ws).eq('app_key', 'deals').in('deal_id', rows.map((r) => r.id)));
         const taken = new Set((owned ?? []).filter((o: Any) => Number(o.item_id) !== itemId).map((o: Any) => o.deal_id));
         rows = rows.filter((r) => !taken.has(r.id));
       }
@@ -914,7 +969,7 @@ async function syncDealItem(c: SyncCtx, app: AppCred, item: Any, led: Ledger | u
   }
 
   const [d] = await resolveItems(c.podio, [item], mapping, c.warnOnce, !dealId);
-  await matchParties(c.admin, c.ws, [d]);
+  await matchParties(c.admin, c.ws, [d], c.pre);
   const label = d.podio_stage ?? '';
   const mapped = pipelineStage(label);
 
@@ -922,7 +977,7 @@ async function syncDealItem(c: SyncCtx, app: AppCred, item: Any, led: Ledger | u
     // New: the manual import's writer. An unmapped stage still brings the deal, at Prospect, seller stage untouched.
     const unmapped = !!label && !mapped;
     d.stage = mapped ?? 'Prospect';
-    const r = await writeDeal(c.admin, c.ws, c.actor, d, newCounts(), { sellerStage: mapped ? undefined : null, tc: CONTRACT_STAGES.has(d.stage) });
+    const r = await writeDeal(c.admin, c.ws, c.actor, d, newCounts(), { sellerStage: mapped ? undefined : null, tc: CONTRACT_STAGES.has(d.stage) }, c.pre);
     if (unmapped) { c.counts.unmapped++; tally(c.unmapped, label); }
     c.counts.created++;
     await remember(c, {
@@ -932,14 +987,14 @@ async function syncDealItem(c: SyncCtx, app: AppCred, item: Any, led: Ledger | u
     return;
   }
 
-  const { data: cur } = await c.admin.from('deals').select('*').eq('id', dealId).eq('workspace_id', c.ws).maybeSingle();
+  const { data: cur } = ok(await c.admin.from('deals').select('*').eq('id', dealId).eq('workspace_id', c.ws).maybeSingle());
   if (!cur) {
     c.counts.skipped++;
     await remember(c, { ...base, podio_stage: label || null, note: 'Its CLOZR deal was deleted; not recreated.' });
     return;
   }
   // The deal keeps its seller and property; buyers and vendors CLOZR does not have yet are added.
-  await createPeople(c.admin, c.ws, c.actor, d, newCounts());
+  await createPeople(c.admin, c.ws, c.actor, d, newCounts(), c.pre);
   const first = (t: string) => d.parties.find((p) => p.target === t && p.match);
   const team = (t: string) => { const p = first(t); return p?.match?.table === 'team' ? String(p.match.id) : null; };
   const titleCo = d.parties.find((p) => p.target === 'title_company');
@@ -978,7 +1033,7 @@ async function syncDealItem(c: SyncCtx, app: AppCred, item: Any, led: Ledger | u
     emd_amount: d.columns.earnest_money, option_ends_on: d.columns.option_ends_on, close_date: d.columns.close_date,
     contract_date: d.columns.contract_date, title_email: inc.title_email, title_phone: inc.title_phone, buyer_id: inc.buyer_id,
   });
-  const { data: txRows } = await c.admin.from('transactions').select('*').eq('deal_id', cur.id).limit(1);
+  const { data: txRows } = ok(await c.admin.from('transactions').select('*').eq('deal_id', cur.id).limit(1));
   if (txRows?.[0]) {
     const tp = syncPatch(txRows[0], txInc, last?.tx ?? null);
     if (Object.keys(tp).length) must(await c.admin.from('transactions').update(tp).eq('id', txRows[0].id).select('id'));
@@ -987,7 +1042,7 @@ async function syncDealItem(c: SyncCtx, app: AppCred, item: Any, led: Ledger | u
   }
 
   // The deal team: whoever Podio names that the deal does not list yet. Nothing is removed.
-  const { data: have } = await c.admin.from('deal_parties').select('role,name,source_id,vendor_id,buyer_id,user_id').eq('deal_id', cur.id);
+  const { data: have } = ok(await c.admin.from('deal_parties').select('role,name,source_id,vendor_id,buyer_id,user_id').eq('deal_id', cur.id));
   const rows = d.parties.filter((p) => p.role !== 'seller').map((p) => ({
     workspace_id: c.ws, deal_id: cur.id, role: p.role, name: p.name || null, company: p.company, email: p.email, phone: p.phone,
     buyer_id: p.match?.table === 'buyers' ? p.match.id : null,
@@ -1018,7 +1073,7 @@ async function syncDealItem(c: SyncCtx, app: AppCred, item: Any, led: Ledger | u
 const SELLER_COLS = 'id,name,email,phone,property_id,property_address,lead_stage,asking_price,motivation,timeline,occupancy,mortgage,notes,owner2_name,import_extra';
 
 async function sellerStages(c: SyncCtx): Promise<string[]> {
-  if (!c.sellerStages) c.sellerStages = ((await c.admin.from('seller_stages').select('label')).data ?? []).map((r: Any) => String(r.label));
+  if (!c.sellerStages) c.sellerStages = (ok(await c.admin.from('seller_stages').select('label')).data ?? []).map((r: Any) => String(r.label));
   return c.sellerStages;
 }
 
@@ -1049,7 +1104,7 @@ async function syncAcquisition(c: SyncCtx, app: AppCred, item: Any, led: Ledger 
   let by: string | null = sellerId ? 'item id' : null;
   const find = async (q: Any, how: string) => {
     if (sellerId) return;
-    const id = (await q.order('id').limit(1)).data?.[0]?.id;
+    const id = ok(await q.order('id').limit(1)).data?.[0]?.id;
     if (id) { sellerId = id; by = how; }
   };
   await find(c.admin.from('sellers').select('id').eq('workspace_id', c.ws).eq('source', 'podio').eq('source_id', 'acq:' + a.item_id), 'item id');
@@ -1079,7 +1134,7 @@ async function syncAcquisition(c: SyncCtx, app: AppCred, item: Any, led: Ledger 
     by = 'new';
     c.counts.created++;
   } else {
-    const { data: cur } = await c.admin.from('sellers').select(SELLER_COLS).eq('id', sellerId).eq('workspace_id', c.ws).maybeSingle();
+    const { data: cur } = ok(await c.admin.from('sellers').select(SELLER_COLS).eq('id', sellerId).eq('workspace_id', c.ws).maybeSingle());
     if (!cur) {
       c.counts.skipped++;
       await remember(c, { ...base, note: 'Its CLOZR seller was deleted; not recreated.' });
@@ -1132,20 +1187,21 @@ async function syncComms(c: SyncCtx, items: Any[]) {
   if (!comms.length) return;
   const refIds = [...new Set(comms.flatMap((x) => x.contact_item_ids))];
   const phones = [...new Set(comms.map((x) => x.contact_phone).filter(Boolean) as string[])];
-  const none = Promise.resolve({ data: [] as Any[] });
+  const none = Promise.resolve({ data: [] as Any[], error: null });
   const [ledRes, selRes, morRes, buyRes] = await Promise.all([
     refIds.length ? c.admin.from('podio_items').select('item_id,seller_id').eq('workspace_id', c.ws).in('item_id', refIds).not('seller_id', 'is', null) : none,
     phones.length ? c.admin.from('sellers').select('id,phone_key').eq('workspace_id', c.ws).in('phone_key', phones) : none,
     phones.length ? c.admin.from('seller_phones').select('seller_id,phone_key').eq('workspace_id', c.ws).in('phone_key', phones) : none,
     phones.length ? c.admin.from('buyers').select('id,phone_key').eq('workspace_id', c.ws).in('phone_key', phones) : none,
   ]);
-  const byItem = new Map((ledRes.data ?? []).map((r: Any) => [Number(r.item_id), r.seller_id as number]));
+  // A failed read is not "nobody has this number": the page stops instead of writing the rows unlinked.
+  const byItem = new Map((must(ledRes) ?? []).map((r: Any) => [Number(r.item_id), r.seller_id as number]));
   const byPhone = new Map<string, number>();
-  for (const r of (morRes.data ?? []) as Any[]) byPhone.set(r.phone_key, r.seller_id);
-  for (const r of (selRes.data ?? []) as Any[]) byPhone.set(r.phone_key, r.id);
-  const buyer = new Map((buyRes.data ?? []).map((r: Any) => [r.phone_key as string, r.id as number]));
+  for (const r of (must(morRes) ?? []) as Any[]) byPhone.set(r.phone_key, r.seller_id);
+  for (const r of (must(selRes) ?? []) as Any[]) byPhone.set(r.phone_key, r.id);
+  const buyer = new Map((must(buyRes) ?? []).map((r: Any) => [r.phone_key as string, r.id as number]));
   if (!c.roster) {
-    const { data } = await c.admin.from('workspace_roster').select('user_id,full_name').eq('workspace_id', c.ws);
+    const { data } = ok(await c.admin.from('workspace_roster').select('user_id,full_name').eq('workspace_id', c.ws));
     c.roster = new Map((data ?? []).filter((m: Any) => m.full_name).map((m: Any) => [nameKey(m.full_name), m.user_id]));
   }
   const rows = comms.map((x) => {
@@ -1156,7 +1212,16 @@ async function syncComms(c: SyncCtx, items: Any[]) {
       seller_id: sellerId, buyer_id: buyerId, rep_id: x.owner ? c.roster!.get(nameKey(x.owner)) ?? null : null,
     };
   });
-  must(await c.admin.from('communications').upsert(rows, { onConflict: 'workspace_id,source,source_id' }).select('id'));
+  // The window overlaps the last run, and Podio hands back the same items run after run (the same
+  // six on every run of 2026-10-17 from 13:03): a row already stored exactly as this page has it is not written again.
+  const [stored, lines] = await Promise.all([
+    c.admin.from('communications').select(COMM_COLS).eq('workspace_id', c.ws).eq('source', 'podio').in('source_id', rows.map((r) => r.source_id)),
+    c.admin.from('rep_phone_numbers').select('phone_e164,user_id').eq('workspace_id', c.ws).not('user_id', 'is', null),
+  ]);
+  const lineOwner = new Map<string, string>((must(lines) ?? []).map((r: Any) => [r.phone_e164 as string, r.user_id as string]));
+  const same = unchangedComms(rows, must(stored) ?? [], lineOwner, Date.now());
+  const write = rows.filter((r) => !same.has(r.source_id));
+  if (write.length) must(await c.admin.from('communications').upsert(write, { onConflict: 'workspace_id,source,source_id' }).select('id'));
   c.counts.comms += rows.length;
   c.counts.comms_linked += rows.filter((r) => r.seller_id || r.buyer_id).length;
 }
@@ -1186,6 +1251,7 @@ async function syncApp(c: SyncCtx, key: SyncApp, app: AppCred, cursor: Record<st
   };
 
   // Items that failed last time are tried again by id (they may not be in the next window).
+  c.pre = newPre();
   for (const id of [...(cur.retry ?? [])]) {
     if (outOfBudget(c)) { await c.flush?.(); return; }
     cur.retry = (cur.retry ?? []).filter((x) => x !== id);
@@ -1226,6 +1292,7 @@ async function syncApp(c: SyncCtx, key: SyncApp, app: AppCred, cursor: Record<st
       continue;
     }
     const ledger = items.length ? await ledgerFor(c, items.map((it) => Number(it.item_id))) : new Map<number, Ledger>();
+    c.pre = newPre();
     let i = 0;
     for (; i < items.length; i++) {
       if (outOfBudget(c)) break;
@@ -1415,7 +1482,7 @@ async function pushWorkspace(admin: SupabaseClient, row: Any, deadline: number):
       if (d.kind === 'put') await podio.call(app.app_id, `/item/${itemId}/value/${field.field_id}?silent=true`, [d.option.id], 'PUT');
       const text = d.kind === 'put' ? d.option.text : podioNow;
       // The ledger follows: the counts move now, and the next sync sees Podio already agreeing.
-      const { data: led } = await admin.from('podio_items').select('applied').eq('workspace_id', ws).eq('item_id', itemId).maybeSingle();
+      const { data: led } = ok(await admin.from('podio_items').select('applied').eq('workspace_id', ws).eq('item_id', itemId).maybeSingle());
       await admin.from('podio_items').update({
         podio_stage: text, stage_unmapped: false, applied: { ...(led?.applied ?? {}), lead_stage: r.to_stage },
         ...(d.kind === 'put' ? { last_event_on: now() } : {}), synced_at: now(),
@@ -1446,7 +1513,7 @@ async function pushValues(
   if (!Object.keys(want).length) return { sent: false, already: false, result: `The Submissions app has no money field ${missing.join(' or ') || 'for these amounts'}.` };
   const item = await podio.call(app.app_id, `/item/${itemId}`);
   const podioNow = Object.fromEntries(MONEY_KEYS.map((k) => [k, money[k] ? podioMoney(item, money[k]!.label) : null]));
-  const { data: led } = await admin.from('podio_items').select('applied').eq('workspace_id', ws).eq('item_id', itemId).maybeSingle();
+  const { data: led } = ok(await admin.from('podio_items').select('applied').eq('workspace_id', ws).eq('item_id', itemId).maybeSingle());
   const d = valuesPush({ want, podioNow, applied: led?.applied ?? null, itemLastEvent: lastEventOf(item), movedAt: r.moved_at });
   const put = Object.entries(d.put) as [MoneyKey, number][];
   if (put.length) {
@@ -1580,7 +1647,7 @@ async function historyApp(admin: SupabaseClient, ws: number, conn: Conn, key: st
   if (key === 'submissions') stageOf = (l) => submissionStage(l);
   if (key === 'acquisitions') {
     // seller_stages is one global list (no workspace_id), as syncPatch reads it.
-    const { data } = await admin.from('seller_stages').select('label');
+    const { data } = ok(await admin.from('seller_stages').select('label'));
     const labels = (data ?? []).map((r: Any) => r.label as string);
     stageOf = (l) => sellerStageOf(l, labels);
   }
@@ -1714,7 +1781,9 @@ Deno.serve(async (req) => {
   if (!rl.allowed) return tooMany(CORS, rl);
 
   // select('*'): the sync columns (migration 132) are read when they exist, and nothing breaks before.
-  const { data: row } = await admin.from('podio_connections').select('*').eq('workspace_id', ws).maybeSingle();
+  // A failed read is not "not connected": `save` would keep no stored token or secret.
+  const { data: row, error: rowErr } = await admin.from('podio_connections').select('*').eq('workspace_id', ws).maybeSingle();
+  if (rowErr) return serverError(CORS, 'podio-import', rowErr);
   const conn: Conn = { client_id: row?.client_id ?? null, client_secret: row?.client_secret ?? null, apps: (row?.apps ?? []) as AppCred[], last_mapping: row?.last_mapping ?? {}, last_import_at: row?.last_import_at ?? null };
   const dealsApp = conn.apps.find((a) => a.key === 'deals');
   const ready = !!(conn.client_id && conn.client_secret && dealsApp?.app_token);
@@ -1839,19 +1908,37 @@ Deno.serve(async (req) => {
       if (!ids.length) return json({ error: 'item_ids is required (up to 15 per call)' }, 422);
       const counts: Counts = { deals: { created: 0, updated: 0 }, sellers: { created: 0, updated: 0 }, buyers: { created: 0, updated: 0 }, vendors: { created: 0, updated: 0 }, properties: { created: 0, updated: 0 }, transactions: { created: 0, updated: 0 }, parties: 0, skipped: 0 };
       const imported: Any[] = []; const errors: { item_id: number; message: string }[] = [];
+      const failed = (id: number, e: unknown) => {
+        const message = e instanceof Error ? e.message : String(e);
+        console.error('podio-import item', id, message);
+        errors.push({ item_id: id, message: message.startsWith('Podio') ? message : 'Could not write this deal: ' + message.slice(0, 200) });
+        return message.includes('rate limit');
+      };
+      // Podio first, item by item as before. Then the page's people, deals, properties and import
+      // lines in one read each, and the deals written in order, each seeing what the ones before it wrote.
+      const page: { id: number; d?: Resolved; skip?: true; err?: unknown }[] = [];
       for (const id of ids) {
         try {
           const item = await podio.call(dealsApp!.app_id, `/item/${id}`);
           const [d] = await resolveItems(podio, [item], mapping, warnOnce);
-          if (!optionIds.some((o) => (fieldOf(item, stageField.external_id)?.values ?? []).some((v: Any) => v.value?.id === o))) { counts.skipped++; continue; }
-          await matchParties(admin, ws, [d]);
-          const r = await writeDeal(admin, ws, who.user.id, d, counts);
+          page.push(optionIds.some((o) => (fieldOf(item, stageField.external_id)?.values ?? []).some((v: Any) => v.value?.id === o)) ? { id, d } : { id, skip: true });
+        } catch (e) {
+          page.push({ id, err: e });
+          if (errMsg(e).includes('rate limit')) break;
+        }
+      }
+      const pre = newPre();
+      const ds = page.flatMap((x) => (x.d ? [x.d] : []));
+      if (ds.length) await Promise.all([loadPeople(admin, ws, pre, ds), loadPlaces(admin, ws, pre, ds)]);
+      for (const x of page) {
+        if (x.skip) { counts.skipped++; continue; }
+        if (!x.d) { failed(x.id, x.err); continue; }
+        try {
+          await matchParties(admin, ws, [x.d], pre);
+          const r = await writeDeal(admin, ws, who.user.id, x.d, counts, {}, pre);
           if (r) imported.push(r);
         } catch (e) {
-          const message = e instanceof Error ? e.message : String(e);
-          console.error('podio-import item', id, message);
-          errors.push({ item_id: id, message: message.startsWith('Podio') ? message : 'Could not write this deal: ' + message.slice(0, 200) });
-          if (message.includes('rate limit')) break;
+          if (failed(x.id, e)) break;
         }
       }
       await admin.from('podio_connections').update({ last_import_at: new Date().toISOString(), last_mapping: { mapping, stage_option_ids: optionIds } }).eq('workspace_id', ws);

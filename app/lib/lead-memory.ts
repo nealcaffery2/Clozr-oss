@@ -68,6 +68,18 @@ export type LeadHistory = {
   context?: Record<string, unknown>;
 };
 
+/**
+ * The rows of one history read. A failed read throws, so no memory (and no
+ * agent decision) is made from a history with parts missing; the record stays
+ * dirty and is read again. `optional` reads skip only a table or column this
+ * database lacks.
+ */
+export function historyRows<T>(res: { data: T | null; error: { message: string } | null }, what: string, optional = false): T | null {
+  if (!res.error) return res.data;
+  if (optional && /does not exist|schema cache/i.test(res.error.message)) return null;
+  throw new Error(`lead history ${what} unread: ${res.error.message}`);
+}
+
 /** The JSON schema the model answers in (structured outputs). */
 export const MEMORY_SCHEMA = {
   type: 'object',
@@ -203,6 +215,20 @@ export function fallbackMemory(h: LeadHistory): { brief: string; facts: LeadFact
     facts.next_step ? `Next: ${facts.next_step}.` : '',
   ].filter(Boolean);
   return { brief: clampBrief(bits.join(' ')), facts };
+}
+
+/**
+ * Who spoke for our side on a call or message, by name. Several AI agents
+ * (Riley, Jordan, Avery, Cody...) and reps work one record and all read its
+ * memory, so an unnamed "Rep:" line is read by the next agent as its own.
+ */
+export function ourSide(c: { call_origin?: unknown; ai_agent_key?: unknown; direction?: unknown }, agentNames: Record<string, string>): string {
+  const key = typeof c.ai_agent_key === 'string' ? c.ai_agent_key : '';
+  const name = (key && agentNames[key]) || '';
+  const who = name ? `the AI agent ${name}` : 'one of our AI agents';
+  if (c.call_origin === 'ai_agent') return `(Call by ${who}; "Rep" in the transcript is ${name || 'that agent'}.)`;
+  if (key && c.direction === 'outbound') return `(Sent by ${who}.)`;
+  return '';
 }
 
 /** The history as the model reads it: record, deals, offers, then touches oldest first. */

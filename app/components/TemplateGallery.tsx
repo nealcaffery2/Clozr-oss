@@ -15,9 +15,9 @@ import { VAR_HELP } from '@/supabase/functions/_shared/doc-vars';
 import { PdfPageCanvas, usePdf, useWidth } from '@/components/PdfPages';
 import { CenteredDialog } from '@/components/ContractsHub';
 
-const INK = '#18181b';
-const MUTED = '#71717a';
-const LINE = '#e4e4e7';
+const INK = 'var(--ink, #18181b)';
+const MUTED = 'var(--meta, #71717a)';
+const LINE = 'var(--divider, #e4e4e7)';
 const GREEN = '#0A8560';
 
 /** What the letterhead prints (workspace settings → company). */
@@ -100,7 +100,7 @@ function PdfThumb({ path, onPages }: { path: string; onPages?: (n: number) => vo
       {/* A data: URL rendered here; nothing for next/image to optimise. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       {cur?.thumb ? <img src={cur.thumb.src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />
-        : <span style={{ fontSize: '11px', color: '#a1a1aa' }}>{cur?.err ? 'No preview' : 'Loading…'}</span>}
+        : <span style={{ fontSize: '11px', color: 'var(--subtle, #a1a1aa)' }}>{cur?.err ? 'No preview' : 'Loading…'}</span>}
     </div>
   );
 }
@@ -142,7 +142,7 @@ function Inline({ text }: { text: string }) {
         const tk = p.match(/^\[([A-Z][A-Za-z]*)\.([A-Za-z0-9]+)\]$/);
         if (v || tk) {
           const label = v ? varName.get(v[1]) ?? v[1] : tk![1] === 'Fill' ? tk![2].replace(/([a-z])([A-Z])/g, '$1 $2') : `${tk![1]} ${tk![2]}`;
-          return <span key={i} style={{ background: '#E7F8F1', color: '#065f46', borderRadius: '3px', padding: '0 3px', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>;
+          return <span key={i} style={{ background: 'var(--mint-dim, #e7f8f1)', color: '#065f46', borderRadius: '3px', padding: '0 3px', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>;
         }
         return <React.Fragment key={i}>{p}</React.Fragment>;
       })}
@@ -161,7 +161,7 @@ export function TextPaper({ body, title, head, signers, pageLimit }: { body: str
   return (
     <div style={{ display: 'grid', gap: '16px' }}>
       {shown.map((blocks, n) => (
-        <div key={n} style={{ width: '612px', minHeight: '792px', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.12)', padding: '30px 54px 48px', boxSizing: 'border-box', fontFamily: 'Helvetica, Arial, sans-serif', color: INK, position: 'relative' }}>
+        <div key={n} style={{ width: '612px', minHeight: '792px', background: 'var(--surface, #fff)', boxShadow: '0 1px 3px rgba(0,0,0,.12)', padding: '30px 54px 48px', boxSizing: 'border-box', fontFamily: 'Helvetica, Arial, sans-serif', color: INK, position: 'relative' }}>
           <Letterhead head={head} title={title} />
           {blocks.map((b, i) => {
             switch (b.t) {
@@ -222,9 +222,9 @@ export function TemplateCard({ t, head, folder, selected, draggable, onOpen, onD
   const W = 196;
   return (
     <button type="button" onClick={onOpen} draggable={draggable} onDragStart={onDragStart} onDragEnd={onDragEnd} className="tg-card"
-      style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', padding: 0, border: `1px solid ${selected ? GREEN : LINE}`, borderRadius: '12px', background: '#fff', cursor: 'pointer', overflow: 'hidden', fontFamily: 'inherit', minWidth: 0 }}>
-      <div style={{ position: 'relative', height: '220px', background: '#f4f4f5', overflow: 'hidden', borderBottom: `1px solid ${LINE}` }}>
-        <div style={{ position: 'absolute', left: '50%', top: '14px', width: `${W}px`, height: '240px', marginLeft: `-${W / 2}px`, background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,.14)', overflow: 'hidden' }}>
+      style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', padding: 0, border: `1px solid ${selected ? GREEN : LINE}`, borderRadius: '12px', background: 'var(--surface, #fff)', cursor: 'pointer', overflow: 'hidden', fontFamily: 'inherit', minWidth: 0 }}>
+      <div style={{ position: 'relative', height: '220px', background: 'var(--surface-2, #f4f4f5)', overflow: 'hidden', borderBottom: `1px solid ${LINE}` }}>
+        <div style={{ position: 'absolute', left: '50%', top: '14px', width: `${W}px`, height: '240px', marginLeft: `-${W / 2}px`, background: 'var(--surface, #fff)', boxShadow: '0 1px 4px rgba(0,0,0,.14)', overflow: 'hidden' }}>
           {pdf && path ? <PdfThumb path={path} onPages={setPages} /> : (
             <div style={{ transform: `scale(${W / 612})`, transformOrigin: 'top left', width: '612px', pointerEvents: 'none' }}>
               <TextPaper body={t.body_md} title={t.name} head={head} signers={roles} pageLimit={1} />
@@ -233,17 +233,17 @@ export function TemplateCard({ t, head, folder, selected, draggable, onOpen, onD
         </div>
         <span style={{ position: 'absolute', top: '8px', left: '8px', fontSize: '11px', fontWeight: 800, borderRadius: '5px', padding: '2px 6px',
           background: pdf ? '#0A8560' : '#fff', color: pdf ? '#fff' : MUTED, border: pdf ? 0 : `1px solid ${LINE}` }}>{pdf ? 'Your document' : t.built_in ? 'Built-in text' : 'Text'}</span>
-        {t.archived_at ? <span style={{ position: 'absolute', top: '8px', right: '8px', fontSize: '11px', fontWeight: 800, borderRadius: '5px', padding: '2px 6px', background: '#ffedd5', color: '#9a3412' }}>Archived</span> : null}
+        {t.archived_at ? <span style={{ position: 'absolute', top: '8px', right: '8px', fontSize: '11px', fontWeight: 800, borderRadius: '5px', padding: '2px 6px', background: 'var(--tint-orange-2, #ffedd5)', color: 'var(--tx-orange-deep, #9a3412)' }}>Archived</span> : null}
       </div>
       <div style={{ padding: '10px 12px 12px', minWidth: 0 }}>
-        <div style={{ fontSize: '13px', fontWeight: 650, color: t.archived_at ? '#a1a1aa' : INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.name}>{t.name}</div>
+        <div style={{ fontSize: '13px', fontWeight: 650, color: t.archived_at ? 'var(--subtle, #a1a1aa)' : INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.name}>{t.name}</div>
         <div style={{ fontSize: '11.5px', color: MUTED, marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {KIND_LABELS[t.kind as keyof typeof KIND_LABELS] ?? t.kind}
           {pages ? ` · ${pages} page${pages === 1 ? '' : 's'}` : ''}
           {roles.length ? ` · ${roles.map((r) => r.label || r.role).join(', ')}` : ''}
         </div>
         {folder || t.used ? (
-          <div style={{ fontSize: '11px', color: '#a1a1aa', marginTop: '3px' }}>{[folder, t.used ? `used ${t.used}×` : null].filter(Boolean).join(' · ')}</div>
+          <div style={{ fontSize: '11px', color: 'var(--subtle, #a1a1aa)', marginTop: '3px' }}>{[folder, t.used ? `used ${t.used}×` : null].filter(Boolean).join(' · ')}</div>
         ) : null}
       </div>
     </button>
@@ -283,7 +283,7 @@ export function TemplatePreview({ t, head, folder, onClose, children }: {
       <div className="tp-wrap">
         <div ref={paneRef} className="tp-pages">
           {pdf ? (
-            cur?.err || error ? <div style={{ padding: '40px', textAlign: 'center', color: '#b91c1c', fontSize: '13px' }}>{cur?.err ?? error}</div>
+            cur?.err || error ? <div style={{ padding: '40px', textAlign: 'center', color: 'var(--tx-red, #b91c1c)', fontSize: '13px' }}>{cur?.err ?? error}</div>
             : loading || !doc ? <div style={{ padding: '40px', textAlign: 'center', color: MUTED, fontSize: '13px' }}>Loading the document…</div>
             : sizes.map((sz, i) => {
               const h = Math.round(pw * sz.height / sz.width);
@@ -310,13 +310,13 @@ export function TemplatePreview({ t, head, folder, onClose, children }: {
         </div>
         <aside className="tp-side">
           <div style={{ fontSize: '11px', fontWeight: 800, color: pdf ? GREEN : MUTED }}>{pdf ? 'Your document' : t.built_in ? 'Built-in text template' : 'Text template'}</div>
-          <div style={{ fontSize: '12.5px', color: '#52525b', lineHeight: 1.5 }}>
+          <div style={{ fontSize: '12.5px', color: 'var(--muted, #52525b)', lineHeight: 1.5 }}>
             {KIND_LABELS[t.kind as keyof typeof KIND_LABELS] ?? t.kind}{folder ? ` · ${folder}` : ''}
             {sizes.length ? ` · ${sizes.length} page${sizes.length === 1 ? '' : 's'}` : ''}
             {t.used ? ` · used ${t.used}×` : ''}
           </div>
           {!pdf ? (
-            <div style={{ fontSize: '12px', color: MUTED, lineHeight: 1.5, background: '#fafafa', border: `1px solid ${LINE}`, borderRadius: '8px', padding: '8px 10px' }}>
+            <div style={{ fontSize: '12px', color: MUTED, lineHeight: 1.5, background: 'var(--canvas, #fafafa)', border: `1px solid ${LINE}`, borderRadius: '8px', padding: '8px 10px' }}>
               CLOZR lays this one out itself, under your letterhead (logo and details from Settings → Contracts). To send your own design instead, upload the PDF and it replaces this.
             </div>
           ) : null}

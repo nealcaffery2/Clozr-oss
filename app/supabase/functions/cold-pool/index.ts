@@ -372,6 +372,15 @@ Deno.serve(async (req) => {
         if (error) throw error;
         return json({ ok: true, status });
       }
+      case 'auto_enroll_campaign': {
+        // Autopilot (migration 268): keep a tag campaign topped up with newly tagged buyers while it sends.
+        if (!isAdmin) return adminOnly();
+        const { data, error } = await admin.from('cold_campaigns').update({ auto_enroll: b.on === true })
+          .eq('workspace_id', ws).eq('id', Number(b.id)).eq('audience_kind', 'tag').select('id').maybeSingle();
+        if (error) throw error;
+        if (!data) return json({ error: 'Autopilot works on a campaign sent to a buyer tag.' }, 422);
+        return json({ ok: true, auto_enroll: b.on === true });
+      }
       default:
         return json({ error: 'unknown action' }, 400);
     }
@@ -421,7 +430,7 @@ async function overview(admin: SupabaseClient, asCaller: SupabaseClient, ws: num
   const settings = await readSettings(admin, ws);
   const { data: domains } = await admin.from('cold_domains').select('id, domain, daily_cap, tracking_domain, dkim_selectors, score, blocking, checked_at, paused, paused_reason, paused_auto').eq('workspace_id', ws).order('domain');
   const { data: mailboxes } = await admin.from('cold_mailboxes').select('id, domain_id, email, display_name, signature, provider, status, daily_cap, hourly_cap, min_gap_seconds, timezone, ramp_enabled, ramp_start, ramp_increase_pct, ramp_target, ramp_started_on, paused, paused_reason, paused_auto, smtp_host, smtp_port, imap_host, imap_port, last_polled_at, last_error, connected_at, warmup_started_at, warmup_score, warmup_checked_at, warmup_sent_14d, warmup_spam_14d').eq('workspace_id', ws).order('email');
-  const { data: campaigns } = await admin.from('cold_campaigns').select('id, name, status, audience_kind, audience_tag, saved_view_id, window_start, window_end, window_days, fallback_timezone').eq('workspace_id', ws).order('id');
+  const { data: campaigns } = await admin.from('cold_campaigns').select('id, name, status, audience_kind, audience_tag, auto_enroll, saved_view_id, window_start, window_end, window_days, fallback_timezone').eq('workspace_id', ws).order('id');
   const ids = ((campaigns ?? []) as Any[]).map((c) => c.id);
   const { data: steps } = ids.length ? await admin.from('cold_steps').select('id, campaign_id, position, delay_business_days, subject, body, variants').eq('workspace_id', ws).in('campaign_id', ids).order('position') : { data: [] };
   const { data: views } = await asCaller.from('saved_views').select('id, name, shared').eq('workspace_id', ws).eq('screen', 'buyers').order('name');
@@ -430,10 +439,13 @@ async function overview(admin: SupabaseClient, asCaller: SupabaseClient, ws: num
   const projectKey = !!(Deno.env.get('INSTANTLY_API_KEY') ?? '').trim();
   const keySet = !!key.data || projectKey;
   const counts = await enrollmentCounts(admin, ws);
+  // cold_autopilot (migration 268) tops up every auto-enroll campaign.
+  const autopilot = true;
   const gateOn = warmupGateOn(settings.warmup_provider);
   const now = new Date();
   return {
     admin: isAdmin,
+    autopilot,
     locked_domains: [...DEFAULT_BLOCKED_SENDING_DOMAINS],
     blocked: settings.blocked,
     blocked_extra: settings.extra,
@@ -525,15 +537,19 @@ async function saveCampaign(admin: SupabaseClient, ws: number, userId: string, b
     variants: variantsOf(s.variants),
   }));
   if (stepRows.some((r) => !r.subject || !r.body)) return { error: 'Every step needs a subject and a body.' };
+  const autoEnroll = kind === 'tag' && b.auto_enroll === true;
   const id = Number(b.id);
   let campaignId = id;
   if (Number.isFinite(id) && id > 0) {
     const { data: existing } = await admin.from('cold_campaigns').select('id, status').eq('workspace_id', ws).eq('id', id).maybeSingle();
     if (!existing) return { error: 'Campaign not found.' };
-    if (existing.status !== 'draft') return { error: 'Steps can be edited while the campaign is a draft. Pause it to stop sending; start a new draft to change the sequence.' };
+    if (existing.status === 'active') return { error: 'Pause the campaign before changing the emails.' };
+    if (existing.status === 'done') return { error: 'That campaign is finished.' };
     const { error } = await admin.from('cold_campaigns').update({
       name, audience_kind: kind, audience_tag: kind === 'tag' ? tag : null, saved_view_id: kind === 'saved_view' ? viewId : null,
       window_start: start, window_end: end, window_days: days, fallback_timezone: tz,
+      // Left alone when the caller does not say, so an edit never switches autopilot off by omission.
+      ...(typeof b.auto_enroll === 'boolean' ? { auto_enroll: autoEnroll } : {}),
     }).eq('id', id);
     if (error) throw error;
     await admin.from('cold_steps').delete().eq('campaign_id', id).eq('workspace_id', ws);
@@ -541,7 +557,7 @@ async function saveCampaign(admin: SupabaseClient, ws: number, userId: string, b
     const { data, error } = await admin.from('cold_campaigns').insert({
       workspace_id: ws, name, status: 'draft', audience_kind: kind, audience_tag: kind === 'tag' ? tag : null,
       saved_view_id: kind === 'saved_view' ? viewId : null, window_start: start, window_end: end, window_days: days,
-      fallback_timezone: tz, created_by: userId,
+      fallback_timezone: tz, auto_enroll: autoEnroll, created_by: userId,
     }).select('id').single();
     if (error) throw error;
     campaignId = data.id;

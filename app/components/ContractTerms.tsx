@@ -12,15 +12,15 @@ import {
   listExtractions, normDate, reviewTerms,
 } from '@/lib/contract-extract';
 
-const INK = '#18181b';
-const MUTED = '#71717a';
-const LINE = '#e4e4e7';
-const HAIR = '#f0f0f1';
+const INK = 'var(--ink, #18181b)';
+const MUTED = 'var(--meta, #71717a)';
+const LINE = 'var(--divider, #e4e4e7)';
+const HAIR = 'var(--divider-2, #f0f0f1)';
 const GREEN = '#0A8560';
 const link: React.CSSProperties = { fontSize: '12px', color: GREEN, background: 'none', border: 0, cursor: 'pointer', padding: 0, fontWeight: 500, fontFamily: 'inherit' };
 const btn = (primary = false, disabled = false): React.CSSProperties => ({
   height: '28px', padding: '0 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
-  border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? GREEN : '#fff', color: primary ? '#fff' : INK, opacity: disabled ? 0.6 : 1, fontFamily: 'inherit',
+  border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? GREEN : 'var(--surface, #fff)', color: primary ? 'var(--surface, #fff)' : INK, opacity: disabled ? 0.6 : 1, fontFamily: 'inherit',
 });
 const pct = (c: number | null) => (c == null ? '' : `${Math.round(c * 100)}%`);
 const confColor = (c: number | null) => (c == null ? MUTED : c >= 0.85 ? '#15803d' : c >= 0.6 ? '#b45309' : '#b91c1c');
@@ -69,8 +69,8 @@ export function ContractTermsPanel({ contract, canWrite, onToast, onChanged }: {
     setTick((t) => t + 1);
   }
 
-  if (failed) return <div style={{ fontSize: '12px', color: '#b91c1c', marginTop: '8px' }}>{failed}</div>;
-  if (!review) return <div style={{ fontSize: '12px', color: '#a1a1aa', marginTop: '8px' }}>Loading terms…</div>;
+  if (failed) return <div style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)', marginTop: '8px' }}>{failed}</div>;
+  if (!review) return <div style={{ fontSize: '12px', color: 'var(--subtle, #a1a1aa)', marginTop: '8px' }}>Loading terms…</div>;
   const diff = review.diff;
   const applyable = diff.filter((d) => d.column);
   const live = review.extractions.filter((x) => !x.dismissed_at);
@@ -94,14 +94,14 @@ export function ContractTermsPanel({ contract, canWrite, onToast, onChanged }: {
       {diff.length ? (
         <div style={{ marginTop: '10px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-            <span style={{ fontSize: '11.5px', color: '#b45309', fontWeight: 700, flex: 1 }}>Review changes · {diff.length}</span>
+            <span style={{ fontSize: '11.5px', color: 'var(--tx-amber, #b45309)', fontWeight: 700, flex: 1 }}>Review changes · {diff.length}</span>
             {canWrite && applyable.length > 1 ? (
               <button type="button" style={btn(true, !!busy)} disabled={!!busy} onClick={() => void apply(applyable.map((d) => d.extraction_id))}>Apply all to deal</button>
             ) : null}
           </div>
           {diff.map((d) => (
             <div key={d.extraction_id} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: '6px 0', borderTop: `1px solid ${HAIR}` }}>
-              <div style={{ flex: 1, minWidth: '200px', fontSize: '12.5px', color: '#3f3f46' }}>
+              <div style={{ flex: 1, minWidth: '200px', fontSize: '12.5px', color: 'var(--ink-3, #3f3f46)' }}>
                 <b style={{ color: INK }}>{d.label}</b>: PDF says <b style={{ color: INK }}>{d.pdf_display}</b>, deal says <b style={{ color: INK }}>{d.deal_display}</b>
                 <span style={{ fontSize: '11px', color: confColor(d.confidence), marginLeft: '6px' }}>{pct(d.confidence)}</span>
                 {d.page ? <span style={{ fontSize: '11px', color: MUTED, marginLeft: '6px' }}>p.{d.page}</span> : null}
@@ -110,23 +110,23 @@ export function ContractTermsPanel({ contract, canWrite, onToast, onChanged }: {
               {canWrite ? (
                 <span style={{ display: 'inline-flex', gap: '10px' }}>
                   {d.column ? <button type="button" style={link} disabled={!!busy} onClick={() => void apply([d.extraction_id])}>{busy === `apply:${d.extraction_id}` ? 'Applying…' : 'Apply'}</button> : null}
-                  <button type="button" style={{ ...link, color: '#52525b' }} disabled={!!busy} onClick={() => void dismiss([d.extraction_id])}>Dismiss</button>
+                  <button type="button" style={{ ...link, color: 'var(--muted, #52525b)' }} disabled={!!busy} onClick={() => void dismiss([d.extraction_id])}>Dismiss</button>
                 </span>
               ) : null}
             </div>
           ))}
         </div>
-      ) : live.length ? <div style={{ fontSize: '12px', color: '#15803d', marginTop: '6px' }}>The deal matches the PDF.</div> : null}
+      ) : live.length ? <div style={{ fontSize: '12px', color: 'var(--tx-green, #15803d)', marginTop: '6px' }}>The deal matches the PDF.</div> : null}
 
       {live.length ? (
         <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '4px 16px' }}>
           {live.map((x) => (
-            <div key={x.id} style={{ fontSize: '12px', color: '#3f3f46', padding: '3px 0', borderBottom: `1px solid ${HAIR}` }} title={x.model ? `Read by ${x.model}` : undefined}>
+            <div key={x.id} style={{ fontSize: '12px', color: 'var(--ink-3, #3f3f46)', padding: '3px 0', borderBottom: `1px solid ${HAIR}` }} title={x.model ? `Read by ${x.model}` : undefined}>
               <span style={{ color: MUTED }}>{fieldLabel(x.field_key)}</span>{' '}
               <span style={{ color: INK, fontWeight: 550 }}>{x.value}</span>{' '}
               <span style={{ fontSize: '10.5px', color: confColor(x.confidence) }}>{pct(x.confidence)}</span>
               {x.page ? <span style={{ fontSize: '10.5px', color: MUTED }}> · p.{x.page}</span> : null}
-              {x.applied_to_deal_at ? <span style={{ fontSize: '10.5px', color: '#15803d' }}> · applied</span> : null}
+              {x.applied_to_deal_at ? <span style={{ fontSize: '10.5px', color: 'var(--tx-green, #15803d)' }}> · applied</span> : null}
             </div>
           ))}
         </div>
@@ -178,17 +178,17 @@ export function ExtractedTermsView({ workspaceId, contracts, onOpen }: { workspa
     return terms.every((t) => hay.includes(t));
   }).sort((a, b) => (isDate ? String(normDate(a.value) ?? '').localeCompare(String(normDate(b.value) ?? '')) : 0));
 
-  const th: React.CSSProperties = { position: 'sticky', top: 0, background: 'var(--c-thead, #fafafa)', borderBottom: `1px solid ${LINE}`, padding: '0 12px', height: '36px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: '#71717a', whiteSpace: 'nowrap' };
-  const td: React.CSSProperties = { padding: '0 12px', height: '42px', borderBottom: `1px solid ${HAIR}`, whiteSpace: 'nowrap', color: '#52525b', fontSize: '12.5px' };
+  const th: React.CSSProperties = { position: 'sticky', top: 0, background: 'var(--c-thead, #fafafa)', borderBottom: `1px solid ${LINE}`, padding: '0 12px', height: '36px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--meta, #71717a)', whiteSpace: 'nowrap' };
+  const td: React.CSSProperties = { padding: '0 12px', height: '42px', borderBottom: `1px solid ${HAIR}`, whiteSpace: 'nowrap', color: 'var(--muted, #52525b)', fontSize: '12.5px' };
   const chip = (on: boolean): React.CSSProperties => ({
     height: '30px', padding: '0 11px', borderRadius: '999px', fontSize: '12px', fontWeight: on ? 650 : 500, cursor: 'pointer', whiteSpace: 'nowrap',
-    border: `1px solid ${on ? GREEN : LINE}`, background: on ? '#E7F8F1' : '#fff', color: on ? GREEN : '#27272a', fontFamily: 'inherit',
+    border: `1px solid ${on ? GREEN : LINE}`, background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: on ? GREEN : 'var(--ink-2, #27272a)', fontFamily: 'inherit',
   });
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
-        <select value={field} onChange={(e) => setField(e.target.value)} aria-label="Which term" style={{ height: '32px', borderRadius: '8px', border: `1px solid ${LINE}`, padding: '0 8px', fontSize: '12.5px', background: '#fff', fontFamily: 'inherit' }}>
+        <select value={field} onChange={(e) => setField(e.target.value)} aria-label="Which term" style={{ height: '32px', borderRadius: '8px', border: `1px solid ${LINE}`, padding: '0 8px', fontSize: '12.5px', background: 'var(--surface, #fff)', fontFamily: 'inherit' }}>
           <option value="">Every term</option>
           {EXTRACT_FIELDS.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
         </select>
@@ -196,9 +196,9 @@ export function ExtractedTermsView({ workspaceId, contracts, onOpen }: { workspa
           <button key={id} type="button" className="dc2" style={chip(range.id === id)} onClick={() => setRange(rangeFor(id))}>{RANGE_LABEL[id]}</button>
         )) : null}
         <span style={{ flex: 1 }} />
-        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search terms or contracts…" aria-label="Search extracted terms" style={{ height: '32px', width: 'min(280px, 100%)', borderRadius: '8px', border: `1px solid ${LINE}`, padding: '0 10px', fontSize: '12.5px', background: '#fff' }} />
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search terms or contracts…" aria-label="Search extracted terms" style={{ height: '32px', width: 'min(280px, 100%)', borderRadius: '8px', border: `1px solid ${LINE}`, padding: '0 10px', fontSize: '12.5px', background: 'var(--surface, #fff)' }} />
       </div>
-      <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'auto', maxHeight: '62vh' }}>
+      <div style={{ background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'auto', maxHeight: '62vh' }}>
         <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: '680px' }}>
           <thead><tr><th style={th}>Term</th><th style={th}>Value</th><th style={th}>Contract</th><th style={th}>Confidence</th><th style={th}>Page</th><th style={th}>Deal</th></tr></thead>
           <tbody>
@@ -211,7 +211,7 @@ export function ExtractedTermsView({ workspaceId, contracts, onOpen }: { workspa
                   <td style={{ ...td, maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c?.name ?? (x.deal_file_id ? 'Uploaded file' : '—')}</td>
                   <td style={{ ...td, color: confColor(x.confidence) }}>{pct(x.confidence) || '—'}</td>
                   <td style={td}>{x.page ?? '—'}</td>
-                  <td style={td}>{x.applied_to_deal_at ? <span style={{ color: '#15803d' }}>Applied</span> : '—'}</td>
+                  <td style={td}>{x.applied_to_deal_at ? <span style={{ color: 'var(--tx-green, #15803d)' }}>Applied</span> : '—'}</td>
                 </tr>
               );
             })}

@@ -195,7 +195,7 @@ export function AgentEditor({ api, workspaceId, summary, form, seeded, admin, ca
         {!admin ? <div style={{ marginTop: 14 }}><Banner tone="info">You can see how this agent is set up, preview its prompt and read its calls. Only owners and admins can change it, hear voices or start a test call.</Banner></div> : null}
         {admin && !canEdit ? <div style={{ marginTop: 14 }}><Banner tone="info">{roTitle}.</Banner></div> : null}
 
-        <div style={{ marginTop: 14, borderTop: '1px solid #f0f0f1' }}>
+        <div style={{ marginTop: 14, borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
           <button type="button" className="va-btn" aria-expanded={showChecks} aria-controls="va-checks" onClick={() => setChecksOpen(!showChecks)}
             style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 8, padding: '11px 0 9px', border: 0, background: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
             <span style={{ flex: 1, fontSize: 11.5, color: MUTED, fontWeight: 600 }}>Connection</span>
@@ -208,8 +208,8 @@ export function AgentEditor({ api, workspaceId, summary, form, seeded, admin, ca
                 {CHECK_ROWS.map((c) => {
                   const ok = detail.checks[c.key];
                   return (
-                    <li key={c.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0', borderTop: '1px solid #f0f0f1' }}>
-                      <span aria-hidden="true" style={{ width: 20, height: 20, marginTop: 1, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 999, background: ok ? GREEN : '#f4f4f5', color: ok ? '#fff' : '#a1a1aa', border: ok ? 0 : `1px solid ${LINE}` }}>
+                    <li key={c.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
+                      <span aria-hidden="true" style={{ width: 20, height: 20, marginTop: 1, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 999, background: ok ? GREEN : 'var(--surface-2, #f4f4f5)', color: ok ? 'var(--surface, #fff)' : 'var(--subtle, #a1a1aa)', border: ok ? 0 : `1px solid ${LINE}` }}>
                         {ok ? <Check size={13} strokeWidth={3} /> : <Minus size={13} strokeWidth={3} />}
                       </span>
                       <span style={{ flex: 1, minWidth: 0 }}>
@@ -232,7 +232,7 @@ export function AgentEditor({ api, workspaceId, summary, form, seeded, admin, ca
                   <div key={label}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: INK, marginBottom: 3 }}>{label} URL</div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span style={{ ...mono, flex: '1 1 220px', minWidth: 0, padding: '7px 10px', border: `1px solid ${LINE}`, borderRadius: 8, background: '#fafafa' }}>{url || 'Not provided'}</span>
+                      <span style={{ ...mono, flex: '1 1 220px', minWidth: 0, padding: '7px 10px', border: `1px solid ${LINE}`, borderRadius: 8, background: 'var(--canvas, #fafafa)' }}>{url || 'Not provided'}</span>
                       {url ? <CopyButton value={url} /> : null}
                     </div>
                   </div>

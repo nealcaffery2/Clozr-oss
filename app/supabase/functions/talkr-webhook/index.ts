@@ -25,30 +25,13 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { HARDENING, clientIp, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import { smsAutoReply } from '../_shared/sms-auto-reply.ts';
+import { hmacHex, safeEqual } from './hmac.ts';
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...HARDENING, 'Content-Type': 'application/json' } });
 
 /** Replay window, matching what Talkr's own consumers are told to enforce. */
 const MAX_SKEW_S = 300;
-
-const enc = new TextEncoder();
-
-async function hmacHex(secret: string, message: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    'raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
-  );
-  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
-  return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-/** Length-independent compare, so a wrong signature leaks no timing signal. */
-function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
 
 type TalkrEvent = { id?: string; type?: string; occurredAt?: string; data?: Record<string, any> };
 

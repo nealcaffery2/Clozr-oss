@@ -149,7 +149,7 @@ function Overview({ scores, admin, go, api, toast, onGraded, workspaceId }: {
                   {c.name} <span style={{ color: gradeColor(c.avgCallScore) }}>{c.avgCallScore ?? 'n/a'}</span>
                   <span style={{ fontWeight: 400, color: MUTED }}> · {c.reviewedCalls} graded · {c.flaggedCalls} flagged</span>
                 </div>
-                <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12.5, color: '#27272a', lineHeight: 1.5 }}>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12.5, color: 'var(--ink-2, #27272a)', lineHeight: 1.5 }}>
                   {ruleInsights(c).map((l) => <li key={l}>{l}</li>)}
                 </ul>
               </div>
@@ -281,7 +281,7 @@ function Flagged({ api, admin, workspaceId, me, cards, isMobile }: {
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{c.flags.map((f) => <FlagChip key={f.id} flag={f} />)}</div>
             <button type="button" style={btn} onClick={() => setOpen(open === c.id ? null : c.id)}>{open === c.id ? 'Close' : c.has_recording ? 'Listen' : 'Transcript'}</button>
           </div>
-          {c.verdict ? <div style={{ fontSize: 12.5, color: '#3f3f46', lineHeight: 1.5 }}>{c.verdict}</div> : null}
+          {c.verdict ? <div style={{ fontSize: 12.5, color: 'var(--ink-3, #3f3f46)', lineHeight: 1.5 }}>{c.verdict}</div> : null}
           <Insights items={c.insights} />
           {open === c.id ? (
             <div style={{ borderTop: `1px solid ${LINE}`, paddingTop: 10, marginLeft: isMobile ? 0 : 4 }}>
@@ -325,13 +325,13 @@ function Scorecards({ scores, isMobile }: { scores: { res: ScorecardsResult | nu
           <tbody>
             {cards.map((c) => (
               <React.Fragment key={c.id}>
-                <tr onClick={() => setOpen(open === c.id ? null : c.id)} style={{ cursor: 'pointer', background: open === c.id ? '#fafafa' : undefined }}>
+                <tr onClick={() => setOpen(open === c.id ? null : c.id)} style={{ cursor: 'pointer', background: open === c.id ? 'var(--canvas, #fafafa)' : undefined }}>
                   <td style={{ ...td, fontWeight: 600, whiteSpace: 'nowrap' }}>{c.name}</td>
                   {cols.map(([l, get]) => <td key={l} style={{ ...td, textAlign: 'right' }}>{get(c)}</td>)}
                 </tr>
                 {open === c.id ? (
                   <tr>
-                    <td colSpan={cols.length + 1} style={{ ...td, background: '#fafafa' }}>
+                    <td colSpan={cols.length + 1} style={{ ...td, background: 'var(--canvas, #fafafa)' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, padding: '6px 2px' }}>
                         <div>
                           <div style={{ ...eyebrow, marginBottom: 6 }}>Call-flow stage hit rate</div>
@@ -364,7 +364,7 @@ function Scorecards({ scores, isMobile }: { scores: { res: ScorecardsResult | nu
   );
 }
 const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', borderBottom: `1px solid ${LINE}`, ...eyebrow, fontSize: 10, whiteSpace: 'nowrap' };
-const td: React.CSSProperties = { padding: '8px 10px', borderBottom: '1px solid #f0f0f1', color: INK };
+const td: React.CSSProperties = { padding: '8px 10px', borderBottom: '1px solid var(--divider-2, #f0f0f1)', color: INK };
 
 // ---- Practice history -------------------------------------------------------------------
 

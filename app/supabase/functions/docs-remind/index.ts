@@ -22,6 +22,8 @@ import { type Any, loadCompany, logContractFeed, logEvent } from '../_shared/doc
 import { deliverLinks } from '../_shared/docs-flow.ts';
 import { inSendingHours, pendingApprovals, reminderDue, turn } from '../_shared/signing-order.ts';
 import { publishContract } from '../_shared/contract-webhooks.ts';
+import { wantsEmail } from '../_shared/docs-people.ts';
+import { BLACKLIST_UNREAD } from '../../../lib/blacklist.ts';
 
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...HARDENING, 'Content-Type': 'application/json' } });
 
@@ -100,7 +102,9 @@ Deno.serve(async (req) => {
       const company = await companyOf(row.workspace_id);
       const d = await deliverLinks(admin, row, due, { company, origin, who: {}, senderId: row.created_by ?? null }, { reminder: true, approve: approving });
       const sent = d.emailed + d.texted;
-      for (const s of due) await admin.from('contract_signers').update({ last_reminded_at: nowIso, reminder_count: Number(s.reminder_count ?? 0) + 1 }).eq('id', s.id);
+      // A text held because the blacklist could not be read reached nobody: a text-only signer is not counted as reminded, so the next run tries again.
+      const held = new Set(d.failed.filter((f) => f.reason === BLACKLIST_UNREAD).map((f) => f.id));
+      for (const s of due) if (!held.has(s.id) || wantsEmail(s)) await admin.from('contract_signers').update({ last_reminded_at: nowIso, reminder_count: Number(s.reminder_count ?? 0) + 1 }).eq('id', s.id);
       await logEvent(admin, row, 'reminded', { to: due.map((s) => s.label || s.role), emailed: d.emailed, texted: d.texted, ...(d.failed.length ? { failed: d.failed } : {}), automatic: true });
       out.reminded += sent;
     } catch (e) {

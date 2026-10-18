@@ -6,21 +6,21 @@
 
 import React from 'react';
 
-/** System-first stack (SF Pro on Apple, Inter fallback via --font-inter). */
+/** Inter first (via --font-inter), the system sans as the fallback. */
 export const SANS = "var(--font-sans)";
 
 export const CZ = {
-  ink: '#18181b',
-  ink2: '#27272a',
-  muted: '#71717a',
-  faint: '#a1a1aa',
-  line: '#e4e4e7',
-  soft: '#f0f0f1',
-  panel: '#ffffff',
-  panel2: '#f4f4f5',
-  bg: '#fafafa',
+  ink: 'var(--ink, #18181b)',
+  ink2: 'var(--ink-2, #27272a)',
+  muted: 'var(--meta, #71717a)',
+  faint: 'var(--subtle, #a1a1aa)',
+  line: 'var(--divider, #e4e4e7)',
+  soft: 'var(--divider-2, #f0f0f1)',
+  panel: 'var(--surface, #ffffff)',
+  panel2: 'var(--surface-2, #f4f4f5)',
+  bg: 'var(--canvas, #fafafa)',
   mint: '#0A8560',
-  mintSoft: '#E7F8F1',
+  mintSoft: 'var(--mint-dim, #e7f8f1)',
   tray: 'rgba(118, 118, 128, 0.12)',
   hairline: 'rgba(60, 60, 67, 0.18)',
 } as const;
@@ -54,7 +54,7 @@ export const seg = (on: boolean, size: 'sm' | 'md' = 'md'): React.CSSProperties 
   border: 0,
   cursor: 'pointer',
   font: `600 ${size === 'sm' ? 11.5 : 12.5}px/1 ${SANS}`,
-  background: on ? '#fff' : 'transparent',
+  background: on ? 'var(--surface, #fff)' : 'transparent',
   color: on ? CZ.ink : CZ.muted,
   boxShadow: on ? '0 1px 2px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.04)' : 'none',
   flex: 'none',
@@ -91,7 +91,7 @@ export const ghostBtn: React.CSSProperties = {
   padding: '0 12px',
   borderRadius: 10,
   border: 0,
-  background: '#fff',
+  background: 'var(--surface, #fff)',
   font: `600 12.5px/1 ${SANS}`,
   color: CZ.ink,
   cursor: 'pointer',
@@ -104,7 +104,7 @@ export const ghostBtn: React.CSSProperties = {
 export const primaryBtn: React.CSSProperties = {
   ...ghostBtn,
   background: CZ.mint,
-  color: '#fff',
+  color: 'var(--on-dark, #fff)',
   boxShadow: '0 0 0 1px rgba(10,133,96,.35), 0 1px 2px -1px rgba(10,133,96,.35), 0 2px 4px 0 rgba(10,133,96,.12)',
 };
 
@@ -112,7 +112,7 @@ export const primaryBtn: React.CSSProperties = {
 export const darkBtn: React.CSSProperties = {
   ...ghostBtn,
   background: CZ.ink,
-  color: '#fff',
+  color: 'var(--surface, #fff)',
   boxShadow: '0 0 0 1px rgba(0,0,0,.2), 0 1px 2px -1px rgba(0,0,0,.2), 0 2px 4px 0 rgba(0,0,0,.08)',
 };
 
@@ -122,7 +122,7 @@ export const field: React.CSSProperties = {
   padding: '0 11px',
   borderRadius: 10,
   border: 0,
-  background: '#fff',
+  background: 'var(--surface, #fff)',
   font: `500 12.5px/1 ${SANS}`,
   color: CZ.ink,
   outline: 'none',

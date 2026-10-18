@@ -26,7 +26,7 @@ const LOCAL = 'local_presence';
  */
 export function DefaultStar({ size = 12 }: { size?: number }) {
   return (
-    <span role="img" aria-label="Default number" title="Your default number" className="inline-flex flex-none" style={{ color: 'var(--c-accent, #0A8560)', verticalAlign: '-0.1em' }}>
+    <span role="img" aria-label="Default number" title="Your default number" className="inline-flex flex-none" style={{ color: 'var(--c-accent, #0a8560)', verticalAlign: '-0.1em' }}>
       <Icon name="star" size={size} />
     </span>
   );

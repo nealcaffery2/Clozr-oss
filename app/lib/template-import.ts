@@ -83,7 +83,7 @@ export async function importPdf(workspaceId: number, file: File, opts: {
     const layout = await readLayout(doc);
     const pages = doc.numPages;
     void doc.destroy();
-    const { found, side } = detectFields(layout.items, layout.pages, layout.shapes, { name, kind });
+    const { found, side } = detectFields(layout.items, layout.pages, layout.shapes, { name, kind, outlined: layout.outlined });
     let who = [...new Set(found.filter((f) => f.type === 'signature' || f.type === 'initials' || f.type === 'date_signed').map((f) => f.who).filter((w): w is Who => !!w))];
     if (!who.length) who = ['seller', 'buyer'];
     who.sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));

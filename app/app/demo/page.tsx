@@ -13,7 +13,6 @@
 // truth and is exactly the line between the demo and the product.
 'use client';
 
-import '../clozr/tokens.css';
 import '../clozr/clozr.css';
 import '../clozr/chrome.css';
 import '../clozr/surfaces.css';

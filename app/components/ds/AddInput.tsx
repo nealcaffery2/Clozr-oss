@@ -75,13 +75,13 @@ export function AddInput({ f, placesKey, onPlace, style }: {
     <div style={{ position: 'relative' }}>
       {input}
       {open && items.length ? (
-        <ul id={`addr-list-${f.key}`} role="listbox" style={{ position: 'absolute', zIndex: 40, left: 0, right: 0, top: 'calc(100% + 4px)', margin: 0, padding: '4px', listStyle: 'none', background: '#fff', border: '1px solid #e4e4e7', borderRadius: '9px', boxShadow: '0 8px 24px rgba(0,0,0,.12)', maxHeight: '240px', overflow: 'auto' }}>
+        <ul id={`addr-list-${f.key}`} role="listbox" style={{ position: 'absolute', zIndex: 40, left: 0, right: 0, top: 'calc(100% + 4px)', margin: 0, padding: '4px', listStyle: 'none', background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', boxShadow: '0 8px 24px rgba(0,0,0,.12)', maxHeight: '240px', overflow: 'auto' }}>
           {items.map((s, i) => (
             <li key={s.place_id} role="option" aria-selected={i === hi}
               onMouseDown={(e) => { e.preventDefault(); pick(s); }} onMouseEnter={() => setHi(i)}
-              style={{ padding: '7px 9px', borderRadius: '7px', cursor: 'pointer', background: i === hi ? '#E7F8F1' : 'transparent', fontSize: '13px', color: '#18181b' }}>
+              style={{ padding: '7px 9px', borderRadius: '7px', cursor: 'pointer', background: i === hi ? 'var(--mint-dim, #e7f8f1)' : 'transparent', fontSize: '13px', color: 'var(--ink, #18181b)' }}>
               <span style={{ fontWeight: 600 }}>{s.main}</span>
-              {s.secondary ? <span style={{ color: '#71717a', fontSize: '12px' }}> · {s.secondary}</span> : null}
+              {s.secondary ? <span style={{ color: 'var(--meta, #71717a)', fontSize: '12px' }}> · {s.secondary}</span> : null}
             </li>
           ))}
         </ul>

@@ -84,6 +84,27 @@ export async function ivu(c: IvueitCreds, token: string, path: string, init: { m
   try { return JSON.parse(text) as Any; } catch { return { body: text }; }
 }
 
+export { IVUEIT_HOOK_TYPES, hookTypeOf, type IvueitHookType } from './ivueit-photos.ts';
+
+/**
+ * iVueit canceled the Vue (canceled there, or it expired): close the open order
+ * once and tell the deal team. Returns whether this call closed it.
+ */
+export async function closeCanceledOrder(admin: SupabaseClient, o: PhotoOrder): Promise<boolean> {
+  const { data } = await admin.from('photo_orders').update({ status: 'canceled', error: 'Canceled at iVueit (or it expired before a Vuer took it).', checked_at: new Date().toISOString() })
+    .eq('id', o.id).eq('status', 'ordered').select('id');
+  if (!(data ?? []).length) return false;
+  await admin.from('activity').insert({ workspace_id: o.workspace_id, entity_type: 'deal', entity_id: o.deal_id, kind: 'photos', title: 'iVueit photo order canceled at iVueit', body: null });
+  await notifyDealTeam(admin, o, `iVueit order canceled · ${o.address ?? 'a deal'}`, 'iVueit canceled this photo order or it expired before a Vuer took it. Order again from the deal sheet or the TC file.');
+  return true;
+}
+
+/** iVueit escalated the Vue: its photos were flagged and the report may be regenerated. Tell the deal team. */
+export async function noteEscalation(admin: SupabaseClient, o: PhotoOrder): Promise<void> {
+  await admin.from('activity').insert({ workspace_id: o.workspace_id, entity_type: 'deal', entity_id: o.deal_id, kind: 'photos', title: 'iVueit flagged the photos on this order', body: 'iVueit escalated the Vue after a photo review; the report may be regenerated.' });
+  await notifyDealTeam(admin, o, `iVueit flagged photos · ${o.address ?? 'a deal'}`, 'iVueit escalated this photo order after a photo review. Check the photos on the deal; the report may be regenerated.');
+}
+
 export type IvueitTemplate = { id: string; name: string; description: string; cost: number | null; slaHours: number | null; minutes: number | null };
 
 export async function ivueitTemplates(c: IvueitCreds, token: string): Promise<IvueitTemplate[]> {
@@ -290,13 +311,18 @@ export async function checkOrder(admin: SupabaseClient, c: IvueitCreds, token: s
     return { status: 'ordered', photos: 0 };
   }
   // Only the run that flips the order to completed tells the team (the
-  // webhook, the sweep and Check now can land on the same Vue together).
+  // webhook, the sweep and Check now can land on the same Vue together). A
+  // cancel that landed while the photos copied wins: canceled stays canceled.
   const { data: flipped } = await admin.from('photo_orders').update({
     status: 'completed', submission_id: submissionId, photo_count: saved, error: null,
     checked_at: now, completed_at: now, ...(Number.isFinite(cost) ? { cost } : {}),
-  }).eq('id', o.id).neq('status', 'completed').select('id');
+  }).eq('id', o.id).in('status', ['ordered', 'failed']).select('id');
   const first = (flipped ?? []).length > 0;
-  if (!first) await admin.from('photo_orders').update({ photo_count: saved, checked_at: now }).eq('id', o.id);
+  if (!first) {
+    const { data: done } = await admin.from('photo_orders').update({ photo_count: saved, checked_at: now })
+      .eq('id', o.id).eq('status', 'completed').select('id');
+    if (!(done ?? []).length) return { status: 'canceled', photos: saved };
+  }
   if (first) {
     await notifyDealTeam(admin, o, `iVueit photos are in · ${o.address ?? 'your deal'}`,
       `${saved} photo${saved === 1 ? '' : 's'} from the Vuer${pdfId ? ' and the photo report' : ''}, on the deal under Files & photos.`);

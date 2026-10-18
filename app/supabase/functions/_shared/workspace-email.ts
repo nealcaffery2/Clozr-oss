@@ -14,7 +14,8 @@
  */
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { seal, unseal } from './google.ts';
-import { type EnvLike, parseFrom, workspaceResendEnv } from './resend-rules.ts';
+import { type EnvLike, parseFrom, suggestBlastFrom, workspaceResendEnv } from './resend-rules.ts';
+import { transactionalFrom } from './resend.ts';
 import { listInboxkitWorkspaces } from './inboxkit.ts';
 
 type Any = any;
@@ -60,6 +61,27 @@ export async function resendEnvFor(admin: SupabaseClient, ws: number): Promise<W
     ownFrom,
     company: String(settings?.company?.name || (row as Any)?.name || ''),
   };
+}
+
+/**
+ * Resend env for contract signing mail. Uses the workspace key and blast_from
+ * when set; otherwise keeps the workspace key but falls back to the project's
+ * MAIL_FROM or a suggested deals@ sender so a workspace with its own Resend
+ * account is not stuck silent (blasts still require blast_from).
+ */
+export async function signingResendEnv(admin: SupabaseClient, ws: number): Promise<EnvLike> {
+  const r = await resendEnvFor(admin, ws);
+  if (transactionalFrom(r.env)) return r.env;
+  const { data: row } = await admin.from('workspaces').select('name, settings').eq('id', ws).maybeSingle();
+  const settings = ((row as Any)?.settings ?? {}) as Any;
+  const company = settings?.company ?? {};
+  const key = (r.env.get('RESEND_API_KEY') ?? '').trim();
+  const from = r.ownFrom
+    ?? suggestBlastFrom(company.name || (row as Any)?.name, company.email)
+    ?? transactionalFrom(Deno.env)?.from
+    ?? null;
+  if (!key || !from) return r.env;
+  return workspaceResendEnv(Deno.env, { key, from });
 }
 
 /** Every webhook signing secret to try: the project's, then each workspace's own. */

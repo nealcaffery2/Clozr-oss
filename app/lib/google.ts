@@ -7,6 +7,7 @@
 
 import { supabase } from './supabase';
 import { isReadOnly } from './read-only';
+import { dueNow } from './mail-focus';
 import type { GoogleAccountRow } from './database.types';
 
 export type GoogleAccount = GoogleAccountRow;
@@ -89,6 +90,21 @@ export function syncGoogle(workspaceId: number, opts: { calendarOnly?: boolean; 
   return p;
 }
 
+/** When this tab last asked for new mail per workspace. Module scope: screens remount. */
+const mailAskedAt = new Map<number, number>();
+
+/**
+ * New Gmail now, without the calendar: the inbox or an open record regaining
+ * focus. At most once a minute per workspace from this tab; null when it did
+ * not ask. Mail it stores reaches open screens through realtime.
+ */
+export function pullNewMail(workspaceId: number | null | undefined): Promise<Result<SyncSummary>> | null {
+  // A background sync writes, so a read-only preview skips it (see nudgeGoogle).
+  if (!workspaceId || !supabase || isReadOnly()) return null;
+  if (!dueNow(mailAskedAt, workspaceId, Date.now())) return null;
+  return call<SyncSummary>('google-sync', { workspace_id: workspaceId, action: 'gmail' });
+}
+
 export const testGoogleMail = (workspaceId: number) =>
   call<{ ok: boolean; message: string }>('google-sync', { workspace_id: workspaceId, action: 'test' });
 
@@ -118,7 +134,31 @@ export type SendEmailInput = {
    * domain's launch checks. Default one_to_one.
    */
   kind?: 'one_to_one' | 'bulk';
+  /** A claim from claimBulkEmail: the guard counted and spaced this send already. Bulk only. */
+  claim_id?: number;
 };
+
+export type BulkClaimResult = {
+  connected: boolean; ok?: boolean; status?: string; message?: string;
+  code?: string; next_at?: string | null;
+  /** Lower-cased address → the claim to send it with. */
+  claims?: Record<string, number>;
+  /** Addresses the guard would not claim, each with why. */
+  refused?: { email: string; code: string; message: string }[];
+};
+
+/**
+ * One mailbox-guard claim for a whole bulk send, before any email goes. The
+ * send is spaced from the mailbox's last send, not each email from the one
+ * before it, so seven buyers go out together instead of one, a gap refusal,
+ * and six "not attempted".
+ */
+export const claimBulkEmail = (workspaceId: number, to: string[], allowUnverified = false) =>
+  call<BulkClaimResult>('google-sync', { workspace_id: workspaceId, action: 'claim_bulk', to, allowUnverified });
+
+/** Claims a send never spent (it stopped early), so they stop counting against the caps. */
+export const releaseBulkEmail = (workspaceId: number, claimIds: number[]) =>
+  call<{ ok: boolean }>('google-sync', { workspace_id: workspaceId, action: 'release_bulk', claim_ids: claimIds });
 
 export type SendEmailResult = {
   connected: boolean; ok?: boolean; status?: string; message?: string;

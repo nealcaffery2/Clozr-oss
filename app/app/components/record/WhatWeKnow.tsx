@@ -160,10 +160,43 @@ function KnowRow({ V, f, readOnly }: { V: ClozrView; f: KnowField; readOnly: str
 
 const SECTIONS: KnowSection[] = ['dd', 'property', 'deal', 'seller', 'form'];
 
-export function WhatWeKnow({ V, bare }: { V: ClozrView; bare?: boolean }) {
-  const others = (V.sellersOnProperty || []).filter((p) => !p.isCurrent);
+/**
+ * The editable rows of What we know, section by section. The Submission tab
+ * draws the form's answers with this; What we know draws the rest.
+ */
+export function KnowRows({ V, sections = SECTIONS, heads = true }: { V: ClozrView; sections?: readonly KnowSection[]; heads?: boolean }) {
   const fields: KnowField[] = V.personFields || [];
   const dd = dueDiligence(fields);
+  const readOnly = V.liveIds && !V.liveIds.canWrite ? 'Read-only: you can’t edit this record' : false;
+  return (
+    <>
+      {sections.map((sec) => {
+        const rows = fields.filter((f) => f.section === sec);
+        // A lead that never came through the disposition form has no form answers to show.
+        if (!rows.length || (sec === 'form' && rows.every((f) => f.v === '—'))) return null;
+        return (
+          <React.Fragment key={sec}>
+            {heads ? (
+              <div role="heading" aria-level={3} style={sectionHead}>
+                <span>{SECTION_LABEL[sec]}</span>
+                {sec === 'dd' ? (
+                  <span data-testid="dd-progress" style={{ fontWeight: 600, color: dd.done === dd.of ? '#0A8560' : '#b45309' }}>
+                    {dd.done === dd.of ? 'All four in' : `${dd.done} of ${dd.of} in`}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+            {rows.map((f) => <KnowRow key={f.field} V={V} f={f} readOnly={readOnly} />)}
+          </React.Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+/** `omit`: sections another tab already draws (the form's answers, on a record with a Submission tab). */
+export function WhatWeKnow({ V, bare, omit }: { V: ClozrView; bare?: boolean; omit?: readonly KnowSection[] }) {
+  const others = (V.sellersOnProperty || []).filter((p) => !p.isCurrent);
   // A live record this user can't edit reads as text, with the reason as the tooltip.
   const readOnly = V.liveIds && !V.liveIds.canWrite ? 'Read-only: you can’t edit this record' : false;
   const ws = V.liveIds?.workspaceId ?? null;
@@ -214,24 +247,7 @@ export function WhatWeKnow({ V, bare }: { V: ClozrView; bare?: boolean }) {
           </dd>
         </div>
         {V.liveIds?.sellerId ? <ImportInfoRows key={V.liveIds.sellerId} workspaceId={V.liveIds.workspaceId} sellerId={V.liveIds.sellerId} /> : null}
-        {SECTIONS.map((sec) => {
-          const rows = fields.filter((f) => f.section === sec);
-          // A lead that never came through the disposition form has no form answers to show.
-          if (!rows.length || (sec === 'form' && rows.every((f) => f.v === '—'))) return null;
-          return (
-            <React.Fragment key={sec}>
-              <div role="heading" aria-level={3} style={sectionHead}>
-                <span>{SECTION_LABEL[sec]}</span>
-                {sec === 'dd' ? (
-                  <span data-testid="dd-progress" style={{ fontWeight: 600, color: dd.done === dd.of ? '#0A8560' : '#b45309' }}>
-                    {dd.done === dd.of ? 'All four in' : `${dd.done} of ${dd.of} in`}
-                  </span>
-                ) : null}
-              </div>
-              {rows.map((f) => <KnowRow key={f.field} V={V} f={f} readOnly={readOnly} />)}
-            </React.Fragment>
-          );
-        })}
+        <KnowRows V={V} sections={omit?.length ? SECTIONS.filter((x) => !omit.includes(x)) : SECTIONS} />
       </dl>
     </section>
   );

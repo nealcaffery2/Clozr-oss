@@ -110,7 +110,7 @@ export function BuyerPagePanel({
         </div>
         {link && !editing ? (
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flex: '1 1 320px', minWidth: 0, justifyContent: 'flex-end' }}>
-            <code title={url} style={{ flex: '1 1 auto', minWidth: 0, maxWidth: '360px', fontSize: '11.5px', background: '#fafafa', border: `1px solid ${C.line}`, borderRadius: '8px', padding: '0 10px', height: '32px', lineHeight: '30px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: C.muted, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <code title={url} style={{ flex: '1 1 auto', minWidth: 0, maxWidth: '360px', fontSize: '11.5px', background: 'var(--canvas, #fafafa)', border: `1px solid ${C.line}`, borderRadius: '8px', padding: '0 10px', height: '32px', lineHeight: '30px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: C.muted, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Svg d={Icon.link} size={12} color={C.muted2} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{url.replace(/^https:\/\//, '')}</span>
             </code>
             <Btn onClick={copy}>Copy</Btn>
@@ -169,4 +169,4 @@ export function BuyerPagePanel({
   );
 }
 
-const card: React.CSSProperties = { background: '#fff', border: `1px solid ${C.line}`, borderRadius: '12px' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: `1px solid ${C.line}`, borderRadius: '12px' };

@@ -17,10 +17,12 @@ import { responseTone } from '@/lib/heat';
 import { isTireKicker } from '@/lib/tire-kicker';
 import { BlacklistButton } from '@/components/BlacklistButton';
 import { openReach } from '@/app/components/record/reach';
+import { CalendarIcon, openMeetingInvite } from '@/app/components/meeting/MeetingInvite';
 import { LeadMemoryCard } from '@/app/components/record/LeadMemoryCard';
 import { demoLeadMemory } from '@/lib/lead-memory-client';
 import { setBuyerStage } from '@/lib/crm-write';
 import { BuyerHeadFields, BuyerProfileFields } from '@/app/components/buyer/BuyerProfileFields';
+import { useComposerText } from '@/app/clozr/composerStore';
 import { BUYER_STAGES } from '@/lib/stages';
 import { BulkSkipTrace } from '@/components/BulkSkipTrace';
 import { CenteredDialog, ContractPopup } from '@/components/ContractsHub';
@@ -34,6 +36,8 @@ import { ContractTemplatePicker } from '@/components/ContractTemplatePicker';
 import '@/app/components/record/record.css';
 
 export function BuyerRecord({ V }: { V: ClozrView }) {
+  // The text line's contents (composerStore): a keystroke used to rebuild the whole view model.
+  const composerText = useComposerText();
   const [dealMenu, setDealMenu] = useState(false);
   const [pickingContract, setPickingContract] = useState(false);
   // false: closed; null: open, nothing picked; a number: open on that template (-1 for "other").
@@ -87,12 +91,12 @@ export function BuyerRecord({ V }: { V: ClozrView }) {
   });
   return (
     <section data-screen-label="Buyer record" style={{flex: "1", minWidth: "0", display: "flex", flexDirection: "column"}}>
-      <div style={{minHeight: "48px", flex: "none", display: "flex", alignItems: "center", flexWrap: V.isMobile ? "wrap" : "nowrap", rowGap: "8px", gap: "10px", padding: V.isMobile ? "8px 14px" : "0 16px", background: "#fff", borderBottom: "1px solid #e4e4e7", minWidth: "0"}}>
+      <div style={{minHeight: "48px", flex: "none", display: "flex", alignItems: "center", flexWrap: V.isMobile ? "wrap" : "nowrap", rowGap: "8px", gap: "10px", padding: V.isMobile ? "8px 14px" : "0 16px", background: "var(--surface, #fff)", borderBottom: "1px solid var(--divider, #e4e4e7)", minWidth: "0"}}>
         {(() => {
           const back = V.backFor('buyers');
           return <BackLink to={back.to.screen === 'buyers' && V.buyerList !== 'buyers' ? { ...back, label: V.buyerListLabel } : back} />;
         })()}
-        <span style={{color: "#d4d4d8"}}>
+        <span style={{color: "var(--line, #d4d4d8)"}}>
           /
         </span>
         <span style={{fontSize: "12.5px", fontWeight: "600", minWidth: "0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
@@ -109,19 +113,28 @@ export function BuyerRecord({ V }: { V: ClozrView }) {
           </button>
         ) : null}
         {V.can.tc ? (
-          <button type="button" data-testid="buyer-tc" className="dc2" onClick={V.openBuyerTc} title="Open transaction coordination" style={{height: "32px", padding: "0 11px", borderRadius: "8px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "700", color: "#1f7a4d", cursor: "pointer", flex: "none", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "6px"}}>
+          <button type="button" data-testid="buyer-tc" className="dc2" onClick={V.openBuyerTc} title="Open transaction coordination" style={{height: "32px", padding: "0 11px", borderRadius: "8px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "700", color: "var(--tx-green-deep, #1f7a4d)", cursor: "pointer", flex: "none", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "6px"}}>
             <Mark label="TC" />
             TC
           </button>
         ) : null}
-        <button className="clozr-talkr-ghost" onClick={V.callBuyer} style={{color: "var(--c-talkr)", height: "32px", padding: "0 11px", borderRadius: "8px", border: "1px solid #fecdd3", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "500", cursor: "pointer", flex: "none", whiteSpace: "nowrap"}}>
+        <button className="clozr-talkr-ghost" onClick={V.callBuyer} style={{color: "var(--c-talkr)", height: "32px", padding: "0 11px", borderRadius: "8px", border: "1px solid var(--tint-rose, #fecdd3)", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "500", cursor: "pointer", flex: "none", whiteSpace: "nowrap"}}>
           Call
         </button>
-        <button className="clozr-talkr-ghost" onClick={() => reachBuyer('text')} style={{color: "var(--c-talkr)", height: "32px", padding: "0 11px", borderRadius: "8px", border: "1px solid #fecdd3", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "500", cursor: "pointer", flex: "none", whiteSpace: "nowrap"}}>
+        <button className="clozr-talkr-ghost" onClick={() => reachBuyer('text')} style={{color: "var(--c-talkr)", height: "32px", padding: "0 11px", borderRadius: "8px", border: "1px solid var(--tint-rose, #fecdd3)", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "500", cursor: "pointer", flex: "none", whiteSpace: "nowrap"}}>
           Text
         </button>
         <button onClick={() => reachBuyer('email')} className="dc6" style={{height: "32px", padding: "0 11px", borderRadius: "8px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "500", cursor: "pointer", flex: "none", whiteSpace: "nowrap"}}>
           Email
+        </button>
+        <button type="button" data-testid="buyer-meet" className="dc6" title="Send a meeting invite with a Google Meet link"
+          aria-label={V.isMobile ? 'Send meeting invite' : undefined}
+          onClick={() => openMeetingInvite({
+            name: V.B.name || V.B.company, email: V.B.email.includes('@') ? V.B.email : '', phone: V.B.phone && V.B.phone !== '—' ? V.B.phone : '',
+            buyerId: V.B.dbId ?? null, typeKey: 'check_in',
+          })}
+          style={{height: "32px", padding: V.isMobile ? "0 10px" : "0 11px", borderRadius: "8px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "500", cursor: "pointer", flex: "none", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "6px"}}>
+          <CalendarIcon size={13} />{V.isMobile ? null : 'Meeting'}
         </button>
         {buyerId != null && V.liveIds?.workspaceId ? (
           <MoreMenu items={[
@@ -138,9 +151,9 @@ export function BuyerRecord({ V }: { V: ClozrView }) {
             <>
             <div onClick={() => setDealMenu(false)} style={{position: "fixed", inset: "0", zIndex: "44"}}></div>
             <div style={{position: "absolute", top: "38px", right: "0", minWidth: "260px", maxWidth: "min(360px, calc(100vw - 24px))", maxHeight: "min(340px, 46vh)", overflow: "auto", background: "var(--c-menu-bg)", border: "1px solid var(--c-menu-line)", borderRadius: "12px", boxShadow: "0 2px 6px rgba(18,20,28,0.06),0 28px 60px -24px rgba(18,22,45,0.26)", zIndex: "45", padding: "4px"}}>
-              <div style={{padding: "7px 9px 4px", fontSize: "11.5px", fontWeight: "600", color: "#71717a"}}>Into the campaign for…</div>
+              <div style={{padding: "7px 9px 4px", fontSize: "11.5px", fontWeight: "600", color: "var(--meta, #71717a)"}}>Into the campaign for…</div>
               {(V.sendDealOptions || []).map((d) => (
-                <button key={d.id} className="dc2" onClick={() => { setDealMenu(false); d.go(); }} style={{display: "block", width: "100%", textAlign: "left", padding: "8px 9px", border: "0", borderRadius: "7px", background: "none", cursor: "pointer", fontSize: "12.5px", color: "#27272a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>
+                <button key={d.id} className="dc2" onClick={() => { setDealMenu(false); d.go(); }} style={{display: "block", width: "100%", textAlign: "left", padding: "8px 9px", border: "0", borderRadius: "7px", background: "none", cursor: "pointer", fontSize: "12.5px", color: "var(--ink-2, #27272a)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>
                   {d.label}
                 </button>
               ))}
@@ -150,11 +163,11 @@ export function BuyerRecord({ V }: { V: ClozrView }) {
         </div>
       </div>
       <div style={{flex: "1", minHeight: "0", display: V.isMobile ? "block" : "grid", overflow: V.isMobile ? "auto" : "visible", gridTemplateColumns: V.isMobile ? "1fr" : `${rails.left ? '300px' : '36px'} 6px minmax(0,1fr) 6px ${rails.right ? '296px' : '36px'}`, gridTemplateRows: "minmax(0,1fr)"}}>
-        <aside className={rails.left || V.isMobile ? undefined : 'rec-rail-collapsed'} style={{borderRight: "1px solid #e4e4e7", background: "#fff", overflow: "auto", padding: rails.left || V.isMobile ? "16px" : "8px 4px", ...(V.isMobile ? {} : {gridColumn: "1", gridRow: "1"})}}>
+        <aside className={rails.left || V.isMobile ? undefined : 'rec-rail-collapsed'} style={{borderRight: "1px solid var(--divider, #e4e4e7)", background: "var(--surface, #fff)", overflow: "auto", padding: rails.left || V.isMobile ? "16px" : "8px 4px", ...(V.isMobile ? {} : {gridColumn: "1", gridRow: "1"})}}>
           {rails.left || V.isMobile ? (
           <>
           <div style={{display: "flex", gap: "12px", alignItems: "center"}}>
-            <span style={{width: "44px", height: "44px", borderRadius: "10px", background: "#fff1ea", color: "#ff7a45", display: "grid", placeItems: "center", fontSize: "14px", fontWeight: "700"}}>
+            <span style={{width: "44px", height: "44px", borderRadius: "10px", background: "var(--orange-soft, #fff1ea)", color: "#ff7a45", display: "grid", placeItems: "center", fontSize: "14px", fontWeight: "700"}}>
               {V.B.initials}
             </span>
             <div>
@@ -179,22 +192,22 @@ export function BuyerRecord({ V }: { V: ClozrView }) {
               ))}
             </span>
           </div>
-          <div style={{marginTop: "14px", borderTop: "1px solid #f0f0f1"}}>
+          <div style={{marginTop: "14px", borderTop: "1px solid var(--divider-2, #f0f0f1)"}}>
             <BuyerProfileFields V={V} />
             <BuyerContact key={V.B.dbId ?? V.B.name} V={V} />
-            <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "minmax(0,86px) minmax(0,1fr)" : "88px 1fr", gap: "10px", padding: "8px 0", borderBottom: "1px solid #f0f0f1", fontSize: "12.5px"}}>
-              <span style={{color: "#71717a"}}>
+            <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "minmax(0,86px) minmax(0,1fr)" : "88px 1fr", gap: "10px", padding: "8px 0", borderBottom: "1px solid var(--divider-2, #f0f0f1)", fontSize: "12.5px"}}>
+              <span style={{color: "var(--meta, #71717a)"}}>
                 Preferred
               </span>
               <span style={{fontWeight: "500"}}>
                 {V.B.pref}
               </span>
             </div>
-            <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "minmax(0,86px) minmax(0,1fr)" : "88px 1fr", gap: "10px", padding: "8px 0", borderBottom: "1px solid #f0f0f1", fontSize: "12.5px"}}>
-              <span style={{color: "#71717a"}}>
+            <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "minmax(0,86px) minmax(0,1fr)" : "88px 1fr", gap: "10px", padding: "8px 0", borderBottom: "1px solid var(--divider-2, #f0f0f1)", fontSize: "12.5px"}}>
+              <span style={{color: "var(--meta, #71717a)"}}>
                 Do not
               </span>
-              <span style={{fontWeight: "500", color: "#dc2626"}}>
+              <span style={{fontWeight: "500", color: "var(--tx-hot, #dc2626)"}}>
                 {V.B.doNot}
               </span>
             </div>
@@ -210,34 +223,34 @@ export function BuyerRecord({ V }: { V: ClozrView }) {
               demo={V.isLiveData ? null : demoLeadMemory('buyer', { id: V.B.name, name: V.B.name, company: V.B.company })}
             />
           </div>
-          <div data-testid="buyer-action-plans" style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #f0f0f1' }}>
+          <div data-testid="buyer-action-plans" style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '11.5px', color: '#71717a', fontWeight: 600 }}>
+              <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600 }}>
                 Action plans
               </span>
-              <button type="button" className="dc12" onClick={V.goPlans} style={{ fontSize: '11px', color: '#0A8560', background: 'none', border: 0, cursor: 'pointer', padding: 0, fontWeight: 600 }}>
+              <button type="button" className="dc12" onClick={V.goPlans} style={{ fontSize: '11px', color: 'var(--tx-mint, #0a8560)', background: 'none', border: 0, cursor: 'pointer', padding: 0, fontWeight: 600 }}>
                 Builder
               </button>
             </div>
             {plan ? (
-              <div style={{ marginTop: '8px', padding: '10px', border: '1px solid #e4e4e7', borderRadius: '9px', background: '#fafafa' }}>
+              <div style={{ marginTop: '8px', padding: '10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', background: 'var(--canvas, #fafafa)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '12.5px' }}>
-                  <button type="button" className="dc12" onClick={plan.open} style={{ fontWeight: 600, background: 'none', border: 0, padding: 0, cursor: 'pointer', textAlign: 'left', color: '#18181b', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <button type="button" className="dc12" onClick={plan.open} style={{ fontWeight: 600, background: 'none', border: 0, padding: 0, cursor: 'pointer', textAlign: 'left', color: 'var(--ink, #18181b)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {plan.name}
                   </button>
-                  <span style={{ color: '#71717a', flex: 'none' }}>Step {plan.step} / {plan.total}</span>
+                  <span style={{ color: 'var(--meta, #71717a)', flex: 'none' }}>Step {plan.step} / {plan.total}</span>
                 </div>
-                <div style={{ height: '4px', background: '#e4e4e7', borderRadius: '2px', overflow: 'hidden', marginTop: '8px' }}>
+                <div style={{ height: '4px', background: 'var(--divider, #e4e4e7)', borderRadius: '2px', overflow: 'hidden', marginTop: '8px' }}>
                   <div style={{ width: plan.pct, height: '100%', background: '#0A8560' }} />
                 </div>
-                <div style={{ fontSize: '11.5px', color: '#52525b', marginTop: '6px' }}>{plan.nextLabel} · {plan.statusNote}</div>
+                <div style={{ fontSize: '11.5px', color: 'var(--muted, #52525b)', marginTop: '6px' }}>{plan.nextLabel} · {plan.statusNote}</div>
                 <div style={{ display: 'flex', gap: '5px', marginTop: '8px' }}>
                   <button type="button" className="dc2" onClick={plan.open} style={{ height: '24px', padding: '0 8px', borderRadius: '6px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '11.5px', cursor: 'pointer' }}>Open</button>
-                  <button type="button" className="dc2" onClick={plan.stop} style={{ height: '24px', padding: '0 8px', borderRadius: '6px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '11.5px', cursor: 'pointer', color: '#52525b' }}>Remove</button>
+                  <button type="button" className="dc2" onClick={plan.stop} style={{ height: '24px', padding: '0 8px', borderRadius: '6px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '11.5px', cursor: 'pointer', color: 'var(--muted, #52525b)' }}>Remove</button>
                 </div>
               </div>
             ) : (
-              <select aria-label="Add to action plan" defaultValue="" onChange={V.startBuyerPlanFor} style={{ marginTop: '8px', width: '100%', height: '30px', borderRadius: '8px', border: '1px solid #e4e4e7', padding: '0 8px', fontSize: '12.5px', background: '#fff' }}>
+              <select aria-label="Add to action plan" defaultValue="" onChange={V.startBuyerPlanFor} style={{ marginTop: '8px', width: '100%', height: '30px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', padding: '0 8px', fontSize: '12.5px', background: 'var(--surface, #fff)' }}>
                 <option value="">Add to action plan…</option>
                 {(V.buyerPlanPickerOptions || V.planPickerOptions || []).map((o) => (
                   <option key={o.v} value={o.v}>{o.label}</option>
@@ -246,18 +259,18 @@ export function BuyerRecord({ V }: { V: ClozrView }) {
             )}
           </div>
           <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "14px"}}>
-            <span style={{fontSize: "11.5px", color: "#71717a", fontWeight: "600"}}>
+            <span style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600"}}>
               Buy box
             </span>
-            <button type="button" onClick={V.editBuyerProfile} title="Strategy, property types, rehab, economics and how they want to hear from you" style={{fontSize: "11.5px", color: "#0A8560", background: "none", border: "0", cursor: "pointer", minHeight: "24px"}}>
+            <button type="button" onClick={V.editBuyerProfile} title="Strategy, property types, rehab, economics and how they want to hear from you" style={{fontSize: "11.5px", color: "var(--tx-mint, #0a8560)", background: "none", border: "0", cursor: "pointer", minHeight: "24px"}}>
               Edit buy box
             </button>
             <BuyerTrace V={V} />
           </div>
           {(V.buyBoxRows || []).map((r, r__i) => (
             <React.Fragment key={r__i}>
-            <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "minmax(0,86px) minmax(0,1fr)" : "100px 1fr", gap: "10px", padding: "6px 0", borderBottom: "1px solid #f0f0f1", fontSize: "12.5px"}}>
-              <span style={{color: "#71717a"}}>
+            <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "minmax(0,86px) minmax(0,1fr)" : "100px 1fr", gap: "10px", padding: "6px 0", borderBottom: "1px solid var(--divider-2, #f0f0f1)", fontSize: "12.5px"}}>
+              <span style={{color: "var(--meta, #71717a)"}}>
                 {r.k}
               </span>
               <span style={{fontWeight: "500", minWidth: "0", overflowWrap: "anywhere"}}>
@@ -267,13 +280,13 @@ export function BuyerRecord({ V }: { V: ClozrView }) {
             </React.Fragment>
           ))}
           <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "minmax(0,86px) minmax(0,1fr)" : "100px 1fr", gap: "10px", padding: "8px 0", fontSize: "12.5px"}}>
-            <span style={{color: "#71717a"}}>
+            <span style={{color: "var(--meta, #71717a)"}}>
               Avoid
             </span>
             <span style={{display: "flex", flexWrap: "wrap", gap: "4px"}}>
               {(V.buyerAvoid || []).map((a, a__i) => (
                 <React.Fragment key={a__i}>
-                <span style={{fontSize: "11px", padding: "2px 7px", borderRadius: "6px", background: "#fee2e2", color: "#991b1b"}}>
+                <span style={{fontSize: "11px", padding: "2px 7px", borderRadius: "6px", background: "var(--negative-soft, #fee2e2)", color: "var(--tx-red-deep, #991b1b)"}}>
                   {a.a}
                 </span>
                 </React.Fragment>
@@ -282,7 +295,7 @@ export function BuyerRecord({ V }: { V: ClozrView }) {
           </div>
           <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" className="dc2" data-testid="record-archive" title="Archive this record (Ctrl+A). Asks first; nothing is deleted." onClick={() => V.archiveOpenRecord('buyer')}
-              style={{ height: 32, padding: '0 12px', borderRadius: 8, border: '1px solid #d4d4d8', background: '#fff', color: '#3f3f46', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              style={{ height: 32, padding: '0 12px', borderRadius: 8, border: '1px solid var(--line, #d4d4d8)', background: 'var(--surface, #fff)', color: 'var(--ink-3, #3f3f46)', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', whiteSpace: 'nowrap' }}>
               Archive
             </button>
             <BlacklistButton count={1} names={[V.B.name]} onConfirm={V.blacklistBuyer} />
@@ -294,12 +307,12 @@ export function BuyerRecord({ V }: { V: ClozrView }) {
           <button type="button" className="rec-split" style={{gridColumn: "2"}} aria-label="Resize left column. Double-click to stretch." title="Double-click to stretch / expand"
             onDoubleClick={() => stretch('left')} />
         )}
-        <div style={{display: "flex", flexDirection: "column", minWidth: "0", background: "#fafafa", overflow: "auto", padding: "16px 20px", ...(V.isMobile ? {} : {gridColumn: "3", gridRow: "1"})}}>
-          <div style={{flex: "none", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", background: "#fff", border: "1px solid #e4e4e7", borderRadius: "12px", overflow: "hidden"}}>
+        <div style={{display: "flex", flexDirection: "column", minWidth: "0", background: "var(--canvas, #fafafa)", overflow: "auto", padding: "16px 20px", ...(V.isMobile ? {} : {gridColumn: "3", gridRow: "1"})}}>
+          <div style={{flex: "none", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", overflow: "hidden"}}>
             {(V.buyerActivity || []).map((a, a__i) => (
               <React.Fragment key={a__i}>
-              <div style={{padding: "10px 12px", boxShadow: "1px 1px 0 #f0f0f1"}}>
-                <div style={{fontSize: "11px", color: "#71717a", fontWeight: "600", whiteSpace: "nowrap"}}>
+              <div style={{padding: "10px 12px", boxShadow: "1px 1px 0 var(--divider-2, #f0f0f1)"}}>
+                <div style={{fontSize: "11px", color: "var(--meta, #71717a)", fontWeight: "600", whiteSpace: "nowrap"}}>
                   {a.k}
                 </div>
                 <div style={{fontSize: "18px", fontWeight: "700", letterSpacing: "-0.03em", marginTop: "4px"}}>
@@ -309,8 +322,8 @@ export function BuyerRecord({ V }: { V: ClozrView }) {
               </React.Fragment>
             ))}
           </div>
-          <div style={{flex: "none", marginTop: "14px", background: "#fff", border: "1px solid #e4e4e7", borderRadius: "12px", overflow: "hidden"}}>
-            <div data-tabs style={{display: "flex", alignItems: "center", gap: "2px", padding: "0 16px", borderBottom: "1px solid #e4e4e7"}}>
+          <div style={{flex: "none", marginTop: "14px", background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", overflow: "hidden"}}>
+            <div data-tabs style={{display: "flex", alignItems: "center", gap: "2px", padding: "0 16px", borderBottom: "1px solid var(--divider, #e4e4e7)"}}>
               {(V.buyerTabs || []).map((t, t__i) => (
                 <React.Fragment key={t__i}>
                 <button onClick={t.go} style={{height: "40px", padding: "0 10px", border: "0", borderBottom: `2px solid ${t.border}`, background: "none", fontSize: "13px", fontWeight: "500", marginBottom: "-1px", cursor: "pointer", color: t.color}}>
@@ -321,9 +334,9 @@ export function BuyerRecord({ V }: { V: ClozrView }) {
             </div>
             <BuyerDesk V={V} />
           </div>
-          <div style={{flex: "none", marginTop: "14px", background: "#fff", borderTop: "1px solid #e4e4e7", border: "1px solid #e4e4e7", borderRadius: "12px", padding: "12px 16px"}}>
+          <div style={{flex: "none", marginTop: "14px", background: "var(--surface, #fff)", borderTop: "1px solid var(--divider, #e4e4e7)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", padding: "12px 16px"}}>
             <div style={{display: "flex", gap: "8px"}}>
-              <input ref={textRef} data-testid="buyer-text" className="dc21" value={V.composerText} onChange={V.setBuyerMsg} placeholder={`Text ${V.B.name} · preferred channel is ${V.B.pref}`} style={{flex: "1", height: "36px", padding: "0 12px", border: "1px solid #e4e4e7", borderRadius: "9px", fontSize: "13px", outline: "0", background: "#fafafa"}} />
+              <input ref={textRef} data-testid="buyer-text" className="dc21" value={composerText} onChange={V.setBuyerMsg} placeholder={`Text ${V.B.name} · preferred channel is ${V.B.pref}`} style={{flex: "1", height: "36px", padding: "0 12px", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "9px", fontSize: "13px", outline: "0", background: "var(--canvas, #fafafa)"}} />
               <button className="dc3" onClick={V.sendBuyerMsg} style={{height: "36px", padding: "0 14px", borderRadius: "9px", border: "1px solid #0A8560", background: "#0A8560", color: "#fff", fontSize: "12.5px", fontWeight: "600", cursor: "pointer"}}>
                 Send
               </button>
@@ -337,32 +350,32 @@ export function BuyerRecord({ V }: { V: ClozrView }) {
           <button type="button" className="rec-split" style={{gridColumn: "4"}} aria-label="Resize right column. Double-click to stretch." title="Double-click to stretch / expand"
             onDoubleClick={() => stretch('right')} />
         )}
-        <aside className={rails.right || V.isMobile ? undefined : 'rec-rail-collapsed'} style={{borderLeft: "1px solid #e4e4e7", background: "#fff", overflow: "auto", padding: rails.right || V.isMobile ? "14px 14px 96px" : "8px 4px", ...(V.isMobile ? {} : {gridColumn: "5", gridRow: "1"})}}>
+        <aside className={rails.right || V.isMobile ? undefined : 'rec-rail-collapsed'} style={{borderLeft: "1px solid var(--divider, #e4e4e7)", background: "var(--surface, #fff)", overflow: "auto", padding: rails.right || V.isMobile ? "14px 14px 96px" : "8px 4px", ...(V.isMobile ? {} : {gridColumn: "5", gridRow: "1"})}}>
           {rails.right || V.isMobile ? (
           <>
-          <div style={{border: "1px solid #e4e4e7", borderRadius: "10px", padding: "12px"}}>
-            <div style={{fontSize: "11.5px", color: "#71717a", fontWeight: "600"}}>
+          <div style={{border: "1px solid var(--divider, #e4e4e7)", borderRadius: "10px", padding: "12px"}}>
+            <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600"}}>
               Response
             </div>
             <div style={{display: "flex", alignItems: "baseline", gap: "6px", marginTop: "4px", flexWrap: "wrap"}}>
-              <span style={{fontSize: "30px", fontWeight: "700", letterSpacing: "-0.04em", color: resp.pct == null ? "#71717a" : resp.tone.text, fontVariantNumeric: "tabular-nums"}}>
+              <span style={{fontSize: "30px", fontWeight: "700", letterSpacing: "-0.04em", color: resp.pct == null ? "var(--meta, #71717a)" : resp.tone.text, fontVariantNumeric: "tabular-nums"}}>
                 {resp.pct == null ? '—' : `${resp.pct}%`}
               </span>
               <span style={{fontSize: "12px", fontWeight: 600, color: resp.tone.text, background: resp.tone.tint, borderRadius: "6px", padding: "1px 7px"}}>
                 {resp.tone.label}
               </span>
             </div>
-            <div style={{fontSize: "12px", color: "#71717a", marginTop: "2px", fontVariantNumeric: "tabular-nums"}}>
+            <div style={{fontSize: "12px", color: "var(--meta, #71717a)", marginTop: "2px", fontVariantNumeric: "tabular-nums"}}>
               {resp.sent ? `Answered ${resp.answered ?? 0} of ${resp.sent} texts, emails, calls and deal sends` : 'Nothing sent to this buyer yet'}
             </div>
-            <div style={{height: "5px", background: "#f0f0f1", borderRadius: "3px", overflow: "hidden", marginTop: "8px"}}>
+            <div style={{height: "5px", background: "var(--divider-2, #f0f0f1)", borderRadius: "3px", overflow: "hidden", marginTop: "8px"}}>
               <div style={{height: "100%", width: `${resp.pct ?? 0}%`, background: resp.tone.stroke}}></div>
             </div>
             <div style={{marginTop: "10px"}}>
               {(V.buyerSummary || []).map((s, s__i) => (
                 <React.Fragment key={s__i}>
-                <div style={{fontSize: "12.5px", color: "#27272a", display: "flex", gap: "7px", marginTop: "4px"}}>
-                  <span style={{color: "#0A8560", display: "inline-flex"}}>
+                <div style={{fontSize: "12.5px", color: "var(--ink-2, #27272a)", display: "flex", gap: "7px", marginTop: "4px"}}>
+                  <span style={{color: "var(--tx-mint, #0a8560)", display: "inline-flex"}}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{flex: "none", marginTop: "3px"}}><path d="M20 6 9 17l-5-5" /></svg>
                   </span>
                   {s.t}
@@ -371,22 +384,22 @@ export function BuyerRecord({ V }: { V: ClozrView }) {
               ))}
             </div>
           </div>
-          <div style={{marginTop: "12px", border: "1px solid #e4e4e7", borderRadius: "10px", padding: "12px"}}>
-            <div style={{fontSize: "11.5px", color: "#71717a", fontWeight: "600"}}>
+          <div style={{marginTop: "12px", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "10px", padding: "12px"}}>
+            <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600"}}>
               Open deals sent
             </div>
             {V.buyerDeals.map((d, d__i) => (
-              <div key={d__i} style={{display: "flex", justifyContent: "space-between", gap: "8px", padding: "8px 0", borderBottom: "1px solid #f0f0f1", fontSize: "12.5px"}}>
+              <div key={d__i} style={{display: "flex", justifyContent: "space-between", gap: "8px", padding: "8px 0", borderBottom: "1px solid var(--divider-2, #f0f0f1)", fontSize: "12.5px"}}>
                 <span style={{fontWeight: "600"}}>{d.addr}</span>
                 <span style={{color: d.color, fontWeight: "600"}}>{d.status}</span>
               </div>
             ))}
-            {V.buyerDeals.length ? null : <div style={{padding: "8px 0", fontSize: "12.5px", color: "#71717a"}}>No deals sent to this buyer yet.</div>}
+            {V.buyerDeals.length ? null : <div style={{padding: "8px 0", fontSize: "12.5px", color: "var(--meta, #71717a)"}}>No deals sent to this buyer yet.</div>}
           </div>
           {/* The insight and the owner below are sample copy; a live buyer has neither yet. */}
           {(V.showAi && !V.isLiveData) ? (
             <>
-            <div style={{marginTop: "12px", borderRadius: "10px", padding: "12px", background: "#141419", color: "#fff", position: "relative", overflow: "hidden"}}>
+            <div style={{marginTop: "12px", borderRadius: "10px", padding: "12px", background: "var(--ink-hero, #141419)", color: "var(--on-dark, #fff)", position: "relative", overflow: "hidden"}}>
               <div style={{position: "absolute", inset: "0", pointerEvents: "none", background: "radial-gradient(120% 90% at 90% -10%, rgba(10, 133, 96,0.34), transparent 58%)"}}></div>
               <div style={{position: "relative"}}>
                 <div style={{fontSize: "11.5px", color: "rgba(255,255,255,.6)", fontWeight: "600"}}>
@@ -401,17 +414,17 @@ export function BuyerRecord({ V }: { V: ClozrView }) {
           ) : null}
           {V.isLiveData ? null : (
           <div style={{marginTop: "12px"}}>
-            <div style={{fontSize: "11.5px", color: "#71717a", fontWeight: "600"}}>
+            <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600"}}>
               Relationship owner
             </div>
             <div style={{display: "flex", alignItems: "center", gap: "8px", marginTop: "8px"}}>
-              <span style={{width: "26px", height: "26px", borderRadius: "7px", background: "#f4f4f5", color: "#52525b", display: "grid", placeItems: "center", fontSize: "10px", fontWeight: "700"}}>
+              <span style={{width: "26px", height: "26px", borderRadius: "7px", background: "var(--surface-2, #f4f4f5)", color: "var(--muted, #52525b)", display: "grid", placeItems: "center", fontSize: "10px", fontWeight: "700"}}>
                 TM
               </span>
               <span style={{fontSize: "12.5px", fontWeight: "500"}}>
                 Morgan Lane
               </span>
-              <span style={{fontSize: "11px", color: "#71717a"}}>
+              <span style={{fontSize: "11px", color: "var(--meta, #71717a)"}}>
                 dispo
               </span>
             </div>
@@ -479,7 +492,7 @@ function BuyerStage({ V }: { V: ClozrView }) {
   };
   return (
     <select value={stage} disabled={!bulk.canWrite && !!bulk.workspaceId} onChange={(e) => void change(e.target.value)} aria-label="Buyer stage" title="Stage"
-      style={{ height: '22px', borderRadius: '999px', border: '1px solid #e4e4e7', padding: '0 6px', fontSize: '11px', fontWeight: 600, background: '#fff', color: '#18181b', fontFamily: 'inherit' }}>
+      style={{ height: '22px', borderRadius: '999px', border: '1px solid var(--divider, #e4e4e7)', padding: '0 6px', fontSize: '11px', fontWeight: 600, background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)', fontFamily: 'inherit' }}>
       {[...new Set([...BUYER_STAGES, stage])].map((st) => <option key={st} value={st}>{st}</option>)}
     </select>
   );
@@ -492,7 +505,7 @@ function BuyerTrace({ V }: { V: ClozrView }) {
   if (V.B.dbId == null && bulk.workspaceId) return null;
   return (
     <>
-      <button onClick={() => setOpen(true)} title="Find phones and emails for this buyer" style={{fontSize: "11.5px", color: "#0A8560", background: "none", border: "0", cursor: "pointer"}}>
+      <button onClick={() => setOpen(true)} title="Find phones and emails for this buyer" style={{fontSize: "11.5px", color: "var(--tx-mint, #0a8560)", background: "none", border: "0", cursor: "pointer"}}>
         Skip trace
       </button>
       {open ? (

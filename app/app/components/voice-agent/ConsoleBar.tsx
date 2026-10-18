@@ -14,15 +14,15 @@ export function ConsoleBar({ canEdit, dirty, invalid, saving, published, unpubli
   onSave: () => void; onDiscard: () => void; onPreview: () => void; onPublish: () => void; onDismiss: () => void;
 }) {
   const state = dirty ? { dot: '#f59e0b', text: invalid ? 'Fix the highlighted fields to save.' : 'Unsaved edits' }
-    : !published ? { dot: '#a1a1aa', text: 'Draft, not published yet' }
+    : !published ? { dot: 'var(--subtle, #a1a1aa)', text: 'Draft, not published yet' }
       : unpublished ? { dot: '#f59e0b', text: `Draft saved, not published. Live is v${liveVersion}` }
         : { dot: '#34d399', text: `Live v${liveVersion}, no unpublished changes` };
-  const tone = note ? (note.tone === 'ok' ? '#86efac' : note.tone === 'warn' ? '#fcd34d' : '#fca5a5') : '#fff';
-  const btn: React.CSSProperties = { ...ghost, height: 34, background: 'transparent', border: '1px solid rgba(255,255,255,.25)', color: '#fff' };
+  const tone = note ? (note.tone === 'ok' ? '#86efac' : note.tone === 'warn' ? '#fcd34d' : '#fca5a5') : 'var(--surface, #fff)';
+  const btn: React.CSSProperties = { ...ghost, height: 34, background: 'transparent', border: '1px solid rgba(255,255,255,.25)', color: 'var(--on-dark, #fff)' };
   const publishOff = !canEdit || saving || invalid || (published && !dirty && !unpublished);
   return (
     <div role="region" aria-label="Save and publish" className="va-bar" style={{ position: 'sticky', bottom: 12, zIndex: 5, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 12px 10px 14px', borderRadius: 12,
-      background: '#18181b', color: '#fff', boxShadow: 'var(--elev-3), 0 0 0 1px rgba(255,255,255,.06)' }}>
+      background: 'var(--ink, #18181b)', color: 'var(--surface, #fff)', boxShadow: 'var(--elev-3), 0 0 0 1px rgba(255,255,255,.06)' }}>
       <span role="status" className="va-bar-status" style={{ flex: '1 1 200px', minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, lineHeight: 1.4 }}>
         <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 999, background: state.dot, flex: 'none' }} />
         <span style={{ minWidth: 0 }}>

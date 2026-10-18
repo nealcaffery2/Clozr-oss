@@ -88,7 +88,7 @@ export function Walkthroughs({ dealId, workspaceId, userId, canWrite, isMobile, 
     });
 
   return (
-    <div data-gx style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'hidden' }}>
+    <div data-gx style={{ background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'hidden' }}>
       <div style={{ padding: '12px 16px', borderBottom: `1px solid ${HAIR}`, fontSize: '13.5px', fontWeight: 650, color: INK }}>Walkthroughs on this property</div>
       {state === 'loading' ? <div role="status" style={{ padding: '14px 16px', fontSize: '12.5px', color: MUTED }}>Loading walkthroughs…</div> : null}
       {state === 'error' ? <div role="alert" style={{ padding: '14px 16px', fontSize: '12.5px', color: RED }}>Could not read the walkthroughs. Reload to try again.</div> : null}

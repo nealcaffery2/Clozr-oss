@@ -1,7 +1,7 @@
 // The @mention token in notes: parse, render, and the picker's caret query.
 // Run with:  npx tsx tools/mentions.test.ts
 import { deepStrictEqual as eq } from 'node:assert';
-import { insertMention, mentionIds, mentionPlain, mentionQuery, mentionSegments } from '../lib/mentions';
+import { insertMention, mentionIds, mentionPlain, mentionQuery, mentionSegments, mentionTokens } from '../lib/mentions';
 
 const u1 = '6f1c2d3e-0000-4000-8000-000000000001';
 const u2 = '6f1c2d3e-0000-4000-8000-000000000002';
@@ -24,5 +24,20 @@ const ins = insertMention('Ping @an today', 5, 8, 'Ann Lee', u1);
 eq(ins.text, `Ping @[Ann Lee](${u1})  today`);
 eq(ins.caret, 5 + `@[Ann Lee](${u1}) `.length);
 eq(mentionIds(ins.text), [u1], 'an inserted token parses back');
+
+// The note box shows "@Name" and stores tokens: longest name wins, emails are left alone, and it round-trips.
+const roster = [{ id: 'w1', name: 'Casey Melton' }, { id: 'w2', name: 'Casey' }, { id: 't1', name: 'Sam Carter' }];
+const shown = '@Casey Melton send the amendment, cc @Sam Carter and @Casey. a@b.com';
+const stored = mentionTokens(shown, roster);
+eq(stored, '@[Casey Melton](w1) send the amendment, cc @[Sam Carter](t1) and @[Casey](w2). a@b.com');
+eq(mentionPlain(stored), shown);
+eq(mentionTokens(mentionPlain(stored), roster), stored);
+eq(mentionTokens('no one here', roster), 'no one here');
+
+// Ids already in the draft win over the roster: a rename keeps the mention, a pick between two of one name stays.
+eq(mentionTokens('@Ann Lee call', [{ id: 'u9', name: 'Ann Smith' }], [{ id: 'u1', name: 'Ann Lee' }]), '@[Ann Lee](u1) call');
+eq(mentionTokens('@Ann Lee call', [{ id: 'a', name: 'Ann Lee' }, { id: 'b', name: 'Ann Lee' }], [{ id: 'b', name: 'Ann Lee' }]), '@[Ann Lee](b) call');
+// A non-ASCII letter after the name is a longer name, not a mention.
+eq(mentionTokens('@Anné here, @Ann too', [{ id: 'a', name: 'Ann' }]), '@Anné here, @[Ann](a) too');
 
 console.log('all mention checks passed');

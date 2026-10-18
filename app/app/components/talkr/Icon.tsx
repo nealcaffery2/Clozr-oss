@@ -73,6 +73,8 @@ const GLYPHS = {
   },
   filter: { d: ['M22 3H2l8 9.46V19l4 2v-8.54L22 3z'] },
   // Lucide `mail`: an email in the activity feed.
+  // Lucide paperclip.
+  paperclip: { d: ['m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48'] },
   mail: { d: ['M22 7l-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7'], extra: <rect key="r" x="2" y="4" width="20" height="16" rx="2" /> },
   // Lucide `award`: the coaching surfaces (a scored call, the coaching view).
   award: { d: ['M8.21 13.89 7 23l5-3 5 3-1.21-9.12'], extra: C(12, 8, 6) },

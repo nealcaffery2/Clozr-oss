@@ -6,6 +6,7 @@
 import type { VoiceTokenDto } from '@/lib/softphone-engine';
 import { talkrToken, talkrUrl } from '@/lib/talkr';
 import { isReadOnly, isTalkrWrite, readOnlyResponse } from '@/lib/read-only';
+import { withoutElsewhereConversations } from '@/lib/talkr-elsewhere';
 export interface CallDto {
   id: string;
   correlation_id: string;
@@ -372,22 +373,49 @@ export function openAccess(): Promise<boolean> {
   return openAccessPromise;
 }
 
+/**
+ * Sample data for /demo (lib/inbox-demo.ts): while set, Talkr reads are
+ * answered here and nothing reaches the network. Only the Inbox on sample
+ * data sets it.
+ */
+let demoResponder: ((path: string, init: RequestInit) => unknown) | null = null;
+export function setTalkrDemo(fn: ((path: string, init: RequestInit) => unknown) | null): void {
+  demoResponder = fn;
+}
+
+/** How long one Talkr request may take before it is given up. */
+const REQUEST_TIMEOUT_MS = 30_000;
+
 async function request<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
+  if (demoResponder) {
+    const answer = demoResponder(path, init);
+    if (answer === undefined) throw new ApiError(0, 'demo', 'Not available on sample data.');
+    return answer as T;
+  }
   // A read-only preview (lib/read-only.ts) sends no changes to Talkr either.
   if (isReadOnly() && isTalkrWrite(path, init.method)) throw await parseError(readOnlyResponse(path, 'read_only'));
   if (sessionIsStale()) await refreshSession();
   const token = (await talkrToken()) ?? getToken() ?? memoryToken;
   let res: Response;
+  // A request that never answers must not leave a Send button spinning for
+  // good: the composer's "sending" stayed set and every later click did
+  // nothing. Give up after REQUEST_TIMEOUT_MS and say so.
+  const timeout = !init.signal && typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal
+    ? AbortSignal.timeout(REQUEST_TIMEOUT_MS) : undefined;
   try {
     res = await fetch(`${apiUrl()}${path}`, {
       ...init,
+      ...(timeout ? { signal: timeout } : {}),
       headers: {
         ...(init.body ? { 'content-type': 'application/json' } : {}),
         ...(token ? { authorization: `Bearer ${token}` } : {}),
         ...init.headers,
       },
     });
-  } catch {
+  } catch (err) {
+    if (timeout?.aborted || (err as Error)?.name === 'TimeoutError') {
+      throw new ApiError(0, 'timeout', 'Talkr did not answer in time. Check your connection and try again.');
+    }
     // The API server is unreachable (not deployed yet, or the wrong URL). Say
     // that plainly instead of leaking the browser's "Failed to fetch".
     throw new ApiError(
@@ -717,6 +745,8 @@ export interface PhoneNumberDto {
 /** A teammate, with the zone they actually work in. */
 export interface TeamMemberDto {
   id: string;
+  /** Their sign-in address: how a Talkr user is matched to the CLOZR teammate (lib/sms-record talkrUserMap). */
+  email?: string | null;
   display_name: string;
   role: string;
   /** The job ("Acquisitions"), not the RBAC role. Null when nobody set one. */
@@ -1205,8 +1235,9 @@ export const api = {
   listLeads: () => request<{ leads: Array<Record<string, unknown>> }>('/v1/leads'),
   getLead: (id: string) => request<LeadActivityDto>(`/v1/leads/${encodeURIComponent(id)}`),
   // SMS (Phase 4 — docs/sms.md)
+  /** Without the threads another workspace on this org owns (lib/talkr-elsewhere): the Inbox, every owner's view, the dialer. */
   listConversations: (query?: ConversationListQuery) =>
-    request<ConversationListDto>(`/v1/conversations${conversationsQuery(query)}`),
+    request<ConversationListDto>(`/v1/conversations${conversationsQuery(query)}`).then(withoutElsewhereConversations),
   listConversationMessages: (id: string) =>
     request<{ conversation_id: string; messages: MessageDto[] }>(`/v1/conversations/${id}/messages`),
   markConversationRead: (id: string) =>
@@ -1578,6 +1609,11 @@ export interface MessageDto {
   sent_at: string | null;
   delivered_at: string | null;
   failed_at: string | null;
+  /** The Talkr user who sent it (outbound, by a person); null for inbound and auto-replies. */
+  created_by?: string | null;
+  /** The thread's numbers, as this message saw them. Absent from a Talkr older than the from_number release. */
+  from_number?: string | null;
+  to_number?: string | null;
 }
 
 export interface MessageTemplateDto {

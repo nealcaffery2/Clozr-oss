@@ -112,7 +112,7 @@ export function OfferDesk({
   };
 
   if (!demo && !dealId) {
-    return <div style={{ padding: '14px 16px', fontSize: '12.5px', color: MUTED, background: '#fff', border: `1px solid ${LINE}`, borderRadius: '12px' }}>This property has no deal yet, so there is nothing to take offers on.</div>;
+    return <div style={{ padding: '14px 16px', fontSize: '12.5px', color: MUTED, background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px' }}>This property has no deal yet, so there is nothing to take offers on.</div>;
   }
 
   return (
@@ -143,7 +143,7 @@ export function OfferDesk({
       {state === 'error' ? <div role="alert" style={{ fontSize: '12.5px', color: RED }}>Could not read this deal&apos;s offers. Reload to try again.</div> : null}
 
       {state === 'ready' ? (
-        <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'hidden' }}>
+        <div style={{ background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'hidden' }}>
           {offers.length === 0 ? (
             <div style={{ padding: '14px 16px', fontSize: '12.5px', color: MUTED }}>No buyer offers yet. Log each one here with its proof of funds as it comes in.</div>
           ) : (
@@ -152,7 +152,7 @@ export function OfferDesk({
                 <thead>
                   <tr>
                     {['', 'Buyer', 'Offer', 'Vs ask', 'Assignment', 'EMD', 'Closes', 'Option', 'Proof of funds', 'Status'].map((c) => (
-                      <th key={c} scope="col" style={{ padding: '0 10px', height: '34px', textAlign: 'left', fontSize: '11.5px', fontWeight: 500, color: MUTED, borderBottom: `1px solid ${LINE}`, background: '#fafafa', whiteSpace: 'nowrap' }}>{c}</th>
+                      <th key={c} scope="col" style={{ padding: '0 10px', height: '34px', textAlign: 'left', fontSize: '11.5px', fontWeight: 500, color: MUTED, borderBottom: `1px solid ${LINE}`, background: 'var(--canvas, #fafafa)', whiteSpace: 'nowrap' }}>{c}</th>
                     ))}
                   </tr>
                 </thead>
@@ -169,7 +169,7 @@ export function OfferDesk({
                         </td>
                         <td style={{ padding: '0 10px', borderBottom: `1px solid ${HAIR}`, whiteSpace: 'nowrap' }}>
                           <button type="button" onClick={(e) => { e.stopPropagation(); if (!demo) onOpenBuyer(o.buyer_id); }} style={{ border: 0, background: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', font: 'inherit', color: INK }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>{b?.company || b?.name || 'Buyer'}{b?.vip ? <Badge color="#08694C" tint="#E7F5EF">VIP</Badge> : null}</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>{b?.company || b?.name || 'Buyer'}{b?.vip ? <Badge color="var(--tx-mint-deep, #08694c)" tint="var(--c-action-soft, #e7f5ef)">VIP</Badge> : null}</span>
                             <span style={{ display: 'block', fontSize: '11.5px', color: MUTED }}>{b?.name ?? ''}</span>
                           </button>
                         </td>
@@ -180,11 +180,11 @@ export function OfferDesk({
                         <td style={{ padding: '0 10px', borderBottom: `1px solid ${HAIR}`, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{contract == null ? '—' : fmt(o.amount - contract)}</td>
                         <td style={{ padding: '0 10px', borderBottom: `1px solid ${HAIR}`, fontVariantNumeric: 'tabular-nums' }}>{o.terms?.emd ? fmt(o.terms.emd) : '—'}</td>
                         <td style={{ padding: '0 10px', borderBottom: `1px solid ${HAIR}`, whiteSpace: 'nowrap' }}>{dateLabel(buyerClose(o))}</td>
-                        <td style={{ padding: '0 10px', borderBottom: `1px solid ${HAIR}`, whiteSpace: 'nowrap', color: o.terms?.option_days ? '#b45309' : INK_2 }}>{o.terms?.option_days ? `${o.terms.option_days} days` : 'None'}</td>
+                        <td style={{ padding: '0 10px', borderBottom: `1px solid ${HAIR}`, whiteSpace: 'nowrap', color: o.terms?.option_days ? 'var(--tx-amber, #b45309)' : INK_2 }}>{o.terms?.option_days ? `${o.terms.option_days} days` : 'None'}</td>
                         <td style={{ padding: '0 10px', borderBottom: `1px solid ${HAIR}`, whiteSpace: 'nowrap' }}><PofCell o={o} demo={demo} canWrite={canWrite} onToast={onToast} onChange={(p) => setOffers((x) => x.map((y) => (y.id === o.id ? { ...y, ...p } : y)))} /></td>
                         <td style={{ padding: '0 10px', borderBottom: `1px solid ${HAIR}`, whiteSpace: 'nowrap' }}>
                           {isAccepted(o) ? <Badge color={GREEN} tint="#e7f6f0">Accepted</Badge>
-                            : under && !o.approved_at ? <Badge color="#b45309" tint="#fef3c7">Needs approval</Badge>
+                            : under && !o.approved_at ? <Badge color="var(--tx-amber, #b45309)" tint="var(--caution-soft, #fef3c7)">Needs approval</Badge>
                               : under ? <Badge color={INK_2}>Approved</Badge>
                                 : <span style={{ color: INK_2 }}>{o.status || 'Submitted'}</span>}
                         </td>
@@ -239,7 +239,7 @@ function PofCell({ o, demo, canWrite, onToast, onChange }: { o: DeskOffer; demo?
       <button type="button" onClick={(e) => void open(e)} style={{ ...btn('ghost', true), height: '26px' }}>Open</button>
       {o.pof_verified ? <Badge color={GREEN} tint="#e7f6f0">Verified</Badge>
         : canWrite ? <button type="button" disabled={busy} onClick={(e) => void verify(e)} style={{ ...btn('ghost', true), height: '26px' }}>{busy ? 'Saving…' : 'Mark verified'}</button>
-          : <Badge color="#b45309" tint="#fef3c7">Not verified</Badge>}
+          : <Badge color="var(--tx-amber, #b45309)" tint="var(--caution-soft, #fef3c7)">Not verified</Badge>}
     </span>
   );
 }
@@ -295,7 +295,7 @@ function LogOffer({ workspaceId, dealId, userId, ask, isMobile, demo, buyerChoic
 
   const err = (k: string) => (errors[k] ? <div role="alert" style={{ fontSize: '11.5px', color: RED, marginTop: '4px' }}>{errors[k]}</div> : null);
   return (
-    <form onSubmit={(e) => { e.preventDefault(); void save(); }} aria-label="Log an offer" style={{ padding: '14px', border: `1px solid ${LINE}`, borderRadius: '12px', background: '#fff', display: 'grid', gap: '12px' }}>
+    <form onSubmit={(e) => { e.preventDefault(); void save(); }} aria-label="Log an offer" style={{ padding: '14px', border: `1px solid ${LINE}`, borderRadius: '12px', background: 'var(--surface, #fff)', display: 'grid', gap: '12px' }}>
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,2fr) repeat(4,minmax(0,1fr))', gap: '10px' }}>
         <div style={{ minWidth: 0 }}>
           <span style={label}>Buyer</span>
@@ -309,7 +309,7 @@ function LogOffer({ workspaceId, dealId, userId, ask, isMobile, demo, buyerChoic
         <div><label style={label} htmlFor="lo-opt">Option period (days)</label><input id="lo-opt" value={f.optionDays} onChange={on('optionDays')} inputMode="numeric" placeholder="0" style={field} /></div>
       </div>
       {under && price.value != null ? (
-        <div role="status" style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '8px 10px', borderRadius: '8px', background: '#fef3c7', color: '#92400e', fontSize: '12.5px' }}>
+        <div role="status" style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '8px 10px', borderRadius: '8px', background: 'var(--caution-soft, #fef3c7)', color: 'var(--tx-amber-deep, #92400e)', fontSize: '12.5px' }}>
           <strong style={{ fontWeight: 600 }}>{ask == null ? 'This deal has no ask set.' : `${fmt(ask - price.value)} under the ${fmt(ask)} ask.`}</strong>
           <span>It logs now; an owner or admin has to approve it before it can be accepted.</span>
         </div>
@@ -408,7 +408,7 @@ function Steps({ o, deal, ask, buyer, workspaceId, userId, address, canWrite, ca
 
   const step = (n: number, title: string, done: boolean, body: React.ReactNode) => (
     <li style={{ display: 'grid', gridTemplateColumns: '24px minmax(0,1fr)', gap: '10px', padding: '12px 16px', borderTop: n > 1 ? `1px solid ${HAIR}` : 0 }}>
-      <span aria-hidden="true" style={{ width: '22px', height: '22px', borderRadius: '999px', display: 'grid', placeItems: 'center', fontSize: '11px', fontWeight: 600, background: done ? GREEN : '#f4f4f5', color: done ? '#fff' : INK_2 }}>
+      <span aria-hidden="true" style={{ width: '22px', height: '22px', borderRadius: '999px', display: 'grid', placeItems: 'center', fontSize: '11px', fontWeight: 600, background: done ? GREEN : 'var(--surface-2, #f4f4f5)', color: done ? 'var(--surface, #fff)' : INK_2 }}>
         {done ? <Icon d={ICON.check} size={12} /> : n}
       </span>
       <div style={{ minWidth: 0 }}>
@@ -419,7 +419,7 @@ function Steps({ o, deal, ask, buyer, workspaceId, userId, address, canWrite, ca
   );
 
   return (
-    <section aria-label={`${name}'s offer`} style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'hidden' }}>
+    <section aria-label={`${name}'s offer`} style={{ background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'hidden' }}>
       <header style={{ padding: '12px 16px', borderBottom: `1px solid ${HAIR}`, display: 'flex', gap: '8px', alignItems: 'baseline', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '13.5px', fontWeight: 650 }}>{name}</span>
         <span style={{ fontSize: '13.5px', fontWeight: 650, fontVariantNumeric: 'tabular-nums' }}>{fmt(o.amount)}</span>
@@ -428,7 +428,7 @@ function Steps({ o, deal, ask, buyer, workspaceId, userId, address, canWrite, ca
       <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
         {under ? step(1, 'Below-ask approval', !waiting, waiting ? (
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '12.5px', color: '#92400e' }}>{offerAsk == null ? (ask != null && ask > 0 ? 'Logged before the deal had an ask.' : 'The deal has no ask set.') : `${fmt(offerAsk - o.amount)} under the ask.`} Only an owner or admin can approve it.</span>
+            <span style={{ fontSize: '12.5px', color: 'var(--tx-amber-deep, #92400e)' }}>{offerAsk == null ? (ask != null && ask > 0 ? 'Logged before the deal had an ask.' : 'The deal has no ask set.') : `${fmt(offerAsk - o.amount)} under the ask.`} Only an owner or admin can approve it.</span>
             {canApprove && canWrite ? <button type="button" style={btn('solid', true)} disabled={!!busy} onClick={() => void approve()}>{busy === 'approve' ? 'Approving…' : 'Approve'}</button> : null}
           </div>
         ) : <span style={{ fontSize: '12.5px', color: INK_2 }}>Approved {o.approved_at ? dateLabel(o.approved_at) : ''}. Logged on the deal.</span>) : null}

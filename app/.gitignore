@@ -44,3 +44,6 @@ next-env.d.ts
 # Podio import plans (contain partner phones and emails)
 /tools/out/
 deno.lock
+
+# playwright-cli session scratch
+.playwright-cli/

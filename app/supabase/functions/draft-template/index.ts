@@ -101,12 +101,14 @@ Deno.serve(async (req) => {
   const rl = await rateLimit(admin, `draft-template:${who.user.id}`, 40, 3600);
   if (!rl.allowed) return tooMany(CORS, rl);
 
+  const brief = SYSTEM;
+
   try {
     const client = new Anthropic({ apiKey, ...anthropicHeaders() });
     const res = await client.messages.create({
       model: CLAUDE_MODEL, thinking: CLAUDE_THINKING,
       max_tokens: 2500,
-      system: toolRule('template') + SYSTEM,
+      system: toolRule('template') + brief,
       tools: [TOOL],
       tool_choice: { type: 'auto' },
       messages: [{

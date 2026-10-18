@@ -9,26 +9,26 @@ import { FRAMEWORK_STAGES, REVIEW_SECTION_TITLES, type CallFlag, type CallFramew
 import { fmtClock } from '@/lib/call-media';
 import type { RoleplayFeedback } from '@/lib/roleplay';
 
-export const INK = '#18181b';
-export const MUTED = '#71717a';
-export const LINE = '#e4e4e7';
+export const INK = 'var(--ink, #18181b)';
+export const MUTED = 'var(--meta, #71717a)';
+export const LINE = 'var(--divider, #e4e4e7)';
 export const GREEN = '#0A8560';
 export const AMBER = '#b45309';
 export const RED = '#b91c1c';
 
-export const card: React.CSSProperties = { background: '#fff', border: `1px solid ${LINE}`, borderRadius: 12, padding: '14px 16px' };
+export const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: 12, padding: '14px 16px' };
 export const eyebrow: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: MUTED };
-export const btn: React.CSSProperties = { height: 30, padding: '0 12px', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff', color: INK, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' };
-export const primary: React.CSSProperties = { ...btn, border: 0, background: INK, color: '#fff', fontWeight: 600 };
-export const select: React.CSSProperties = { height: 30, padding: '0 8px', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff', fontSize: 12.5, color: INK };
+export const btn: React.CSSProperties = { height: 30, padding: '0 12px', borderRadius: 8, border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', color: INK, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' };
+export const primary: React.CSSProperties = { ...btn, border: 0, background: INK, color: 'var(--on-dark, #fff)', fontWeight: 600 };
+export const select: React.CSSProperties = { height: 30, padding: '0 8px', borderRadius: 8, border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', fontSize: 12.5, color: INK };
 
 export const gradeColor = (n: number | null | undefined) => (n == null ? MUTED : n >= 70 ? GREEN : n >= 50 ? AMBER : RED);
 
 const STATUS_STYLE: Record<StageStatus, { bg: string; fg: string; label: string }> = {
-  hit: { bg: '#e7f5ef', fg: GREEN, label: 'Hit' },
+  hit: { bg: 'var(--c-action-soft, #e7f5ef)', fg: GREEN, label: 'Hit' },
   partial: { bg: '#fdf3e2', fg: AMBER, label: 'Partial' },
   miss: { bg: '#fdecec', fg: RED, label: 'Missed' },
-  na: { bg: '#f4f4f5', fg: '#a1a1aa', label: 'n/a' },
+  na: { bg: 'var(--surface-2, #f4f4f5)', fg: 'var(--subtle, #a1a1aa)', label: 'n/a' },
 };
 
 /** One row per call-flow stage with its status. */
@@ -38,7 +38,7 @@ export function StageGrid({ stages, compact = false }: { stages: Partial<Record<
       {FRAMEWORK_STAGES.map((s) => {
         const st = STATUS_STYLE[stages[s.id] ?? 'na'];
         return (
-          <div key={s.id} title={s.hint} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 8, background: '#fafafa', border: `1px solid ${LINE}`, minWidth: 0 }}>
+          <div key={s.id} title={s.hint} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 8, background: 'var(--canvas, #fafafa)', border: `1px solid ${LINE}`, minWidth: 0 }}>
             <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{compact ? s.short : s.label}</span>
             <span style={{ fontSize: 11, fontWeight: 600, color: st.fg, background: st.bg, borderRadius: 6, padding: '1px 6px' }}>{st.label}</span>
           </div>
@@ -57,7 +57,7 @@ export function StageRates({ rates }: { rates: Record<StageId, number | null> })
         return (
           <div key={s.id} title={s.hint} style={{ display: 'grid', gridTemplateColumns: '130px 1fr 40px', alignItems: 'center', gap: 8, fontSize: 12 }}>
             <span style={{ color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.short}</span>
-            <div style={{ height: 8, background: '#f0f0f1', borderRadius: 4 }}>
+            <div style={{ height: 8, background: 'var(--divider-2, #f0f0f1)', borderRadius: 4 }}>
               {v != null ? <div style={{ height: 8, width: `${Math.max(2, v)}%`, background: gradeColor(v), borderRadius: 4 }} /> : null}
             </div>
             <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: v == null ? MUTED : INK }}>{v == null ? 'n/a' : `${v}%`}</span>
@@ -87,7 +87,7 @@ export function Insights({ items, onSeek }: { items: CoachingInsight[]; onSeek?:
             {i.title}
           </div>
           {i.quote ? <div style={{ fontSize: 12.5, color: MUTED, fontStyle: 'italic', marginTop: 2 }}>&ldquo;{i.quote}&rdquo;</div> : null}
-          <div style={{ fontSize: 12.5, color: '#27272a', marginTop: 2 }}>{i.tip}</div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-2, #27272a)', marginTop: 2 }}>{i.tip}</div>
         </div>
       ))}
     </div>
@@ -129,7 +129,7 @@ export function ReviewSectionsView({ s }: { s: ReviewSections }) {
               <div key={i} style={{ borderLeft: `3px solid ${AMBER}`, paddingLeft: 10 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: INK }}>{at(o.at_s)}{o.objection}</div>
                 {quote(o.quote)}
-                <div style={{ fontSize: 12.5, color: '#27272a', marginTop: 2 }}>{o.handle}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--ink-2, #27272a)', marginTop: 2 }}>{o.handle}</div>
               </div>
             ))}
           </div>
@@ -161,7 +161,7 @@ export function ReviewSectionsView({ s }: { s: ReviewSections }) {
         <div style={{ fontSize: 12.5, color: MUTED, marginBottom: 4 }}>
           {[s.emotional.tone && `Tone: ${s.emotional.tone}`, s.emotional.energy && `Energy: ${s.emotional.energy}`].filter(Boolean).join(' · ')}
         </div>
-        {s.emotional.summary ? <div style={{ fontSize: 13, color: '#27272a', lineHeight: 1.5 }}>{s.emotional.summary}</div> : null}
+        {s.emotional.summary ? <div style={{ fontSize: 13, color: 'var(--ink-2, #27272a)', lineHeight: 1.5 }}>{s.emotional.summary}</div> : null}
         {s.emotional.turning_points.length ? (
           <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
             {s.emotional.turning_points.map((t, i) => (
@@ -185,11 +185,11 @@ export function FeedbackView({ f }: { f: RoleplayFeedback }) {
         <span style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.03em', color: gradeColor(f.overall) }}>{f.overall}</span>
         <span style={{ fontSize: 13, color: MUTED }}>/100 · talk {f.rep_name} {f.rep_talk}% / {f.prospect_name} {f.prospect_talk}%{f.framework?.hit_rate != null ? ` · call flow ${f.framework.hit_rate}% hit` : ''}</span>
       </div>
-      <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55, color: '#27272a' }}>{f.verdict}</p>
+      <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink-2, #27272a)' }}>{f.verdict}</p>
       {f.objection ? (
         <div>
           <div style={eyebrow}>Objection handling · {f.objection.score}/10</div>
-          <div style={{ fontSize: 13, color: '#27272a', marginTop: 3 }}>{f.objection.note}</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-2, #27272a)', marginTop: 3 }}>{f.objection.note}</div>
         </div>
       ) : null}
       <div>
@@ -197,7 +197,7 @@ export function FeedbackView({ f }: { f: RoleplayFeedback }) {
         <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.55 }}>{f.fix.map((l) => <li key={l}>{l}</li>)}</ol>
       </div>
       {f.hardest_moment ? (
-        <div style={{ background: '#fafafa', border: `1px solid ${LINE}`, borderRadius: 10, padding: '10px 12px' }}>
+        <div style={{ background: 'var(--canvas, #fafafa)', border: `1px solid ${LINE}`, borderRadius: 10, padding: '10px 12px' }}>
           <div style={eyebrow}>Hardest moment</div>
           {f.hardest_moment.quote ? <div style={{ fontSize: 12.5, color: MUTED, fontStyle: 'italic', marginTop: 4 }}>Seller: &ldquo;{f.hardest_moment.quote}&rdquo;</div> : null}
           <div style={{ fontSize: 13.5, color: INK, fontWeight: 600, marginTop: 6 }}>{f.hardest_moment.model_answer}</div>

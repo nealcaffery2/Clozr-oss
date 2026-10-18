@@ -1,18 +1,29 @@
-// The Inbox's per-member memory (migration 154): what this person opened,
-// pinned and cleared. Talkr owns the SMS threads and calls; this decides how
-// they show for one rep. Keys: sms:<E.164>, call:<talkr id>, email:<thread>.
+// The Inbox's per-member memory (migrations 154, 357): what this person
+// opened, pinned, cleared, marked unread and labelled, and the filters they
+// saved. Talkr owns the SMS threads and calls; this decides how they show for
+// one rep. Keys: sms:<E.164>, call:<talkr id>, email:<thread>, and
+// filter:<id> for a saved filter (its settings in `data`).
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from './supabase';
+import type { InboxFilter, SavedFilter } from './inbox-folders';
 
-export type ItemState = { seen_at: string | null; pinned_at: string | null; cleared_at: string | null };
+export type ItemState = {
+  seen_at: string | null; pinned_at: string | null; cleared_at: string | null;
+  /** "Mark unread": unread again until seen_at is newer. */
+  unread_at?: string | null;
+  /** Disposition chips on the thread (lib/inbox-folders DISPOSITIONS). */
+  labels?: string[];
+  data?: unknown;
+};
 type Patch = Partial<ItemState>;
 
 const ms = (iso: string | null | undefined) => (iso ? Date.parse(iso) || 0 : 0);
 
-/** Unread: the source says so and nothing happened after this person opened it. */
+/** Unread: the source says so and nothing happened after this person opened it, or they marked it unread since. */
 export function isUnread(base: boolean, at: string | null | undefined, st: ItemState | undefined): boolean {
+  if (st?.unread_at && ms(st.unread_at) > ms(st.seen_at)) return true;
   return base && !(st?.seen_at && ms(st.seen_at) >= ms(at));
 }
 
@@ -28,6 +39,10 @@ export function pinnedFirst<T>(items: T[], keyOf: (t: T) => string, state: Map<s
 }
 
 export const smsKey = (e164: string) => 'sms:' + String(e164 ?? '').replace(/[^\d+]/g, '');
+const FILTER = 'filter:';
+
+const NEW_COLS = 'item_key, seen_at, pinned_at, cleared_at, unread_at, labels, data';
+const OLD_COLS = 'item_key, seen_at, pinned_at, cleared_at';
 
 /** The signed-in member's inbox state, with writes that show at once and persist in the background. */
 export function useInboxState(workspaceId: number | null, userId: string | null) {
@@ -42,13 +57,15 @@ export function useInboxState(workspaceId: number | null, userId: string | null)
   useEffect(() => {
     if (!supabase || !workspaceId || !userId) return;
     let live = true;
-    void supabase.from('inbox_item_state' as never).select('item_key, seen_at, pinned_at, cleared_at')
-      .eq('workspace_id', workspaceId).eq('user_id', userId).limit(5000)
-      .then(({ data }) => {
-        if (!live) return;
-        const rows = (data ?? []) as unknown as ({ item_key: string } & ItemState)[];
-        setState(new Map(rows.map((r) => [r.item_key, { seen_at: r.seen_at, pinned_at: r.pinned_at, cleared_at: r.cleared_at }])));
-      });
+    const read = (cols: string) => supabase!.from('inbox_item_state' as never).select(cols)
+      .eq('workspace_id', workspaceId).eq('user_id', userId).limit(5000);
+    void read(NEW_COLS).then(async (r) => {
+      // Migration 357 not applied yet: the old columns still work.
+      const res = r.error && /column|schema cache/i.test(r.error.message) ? await read(OLD_COLS) : r;
+      if (!live) return;
+      const rows = (res.data ?? []) as unknown as ({ item_key: string } & ItemState)[];
+      setState(new Map(rows.map((r) => [r.item_key, { seen_at: r.seen_at, pinned_at: r.pinned_at, cleared_at: r.cleared_at, unread_at: r.unread_at ?? null, labels: r.labels ?? [], data: r.data ?? null }])));
+    });
     return () => { live = false; };
   }, [workspaceId, userId]);
 
@@ -63,13 +80,31 @@ export function useInboxState(workspaceId: number | null, userId: string | null)
       .upsert({ workspace_id: workspaceId, user_id: userId, item_key: key, ...patch, updated_at: new Date().toISOString() } as never, { onConflict: 'workspace_id,user_id,item_key' })
       .then(({ error }) => { if (error) console.warn('inbox state', error.message); });
   }, [workspaceId, userId]);
+  const erase = useCallback((key: string) => {
+    setState((m) => { const next = new Map(m); next.delete(key); return next; });
+    if (!supabase || !workspaceId || !userId) return;
+    void supabase.from('inbox_item_state' as never).delete().eq('workspace_id', workspaceId).eq('user_id', userId).eq('item_key', key)
+      .then(({ error }) => { if (error) console.warn('inbox state', error.message); });
+  }, [workspaceId, userId]);
 
   const now = () => new Date().toISOString();
+  // Saved filters ride on the same rows, keyed filter:<id>.
+  const filters = useMemo<SavedFilter[]>(() => [...state.entries()]
+    .filter(([k, v]) => k.startsWith(FILTER) && v.data && typeof v.data === 'object')
+    .map(([k, v]) => ({ id: k.slice(FILTER.length), ...(v.data as { name: string; filter: InboxFilter }) }))
+    .sort((a, b) => a.name.localeCompare(b.name)), [state]);
   return {
     state,
+    filters,
     seen: useCallback((key: string) => write(key, { seen_at: now() }), [write]),
+    markUnread: useCallback((key: string) => write(key, { unread_at: now() }), [write]),
     pin: useCallback((key: string, on: boolean) => write(key, { pinned_at: on ? now() : null }), [write]),
     clear: useCallback((key: string) => write(key, { cleared_at: now(), pinned_at: null, seen_at: now() }), [write]),
+    /** Back on the list: the clear is undone. */
+    unclear: useCallback((key: string) => write(key, { cleared_at: null }), [write]),
+    label: useCallback((key: string, labels: string[]) => write(key, { labels }), [write]),
+    saveFilter: useCallback((name: string, filter: InboxFilter, id = `${Date.now().toString(36)}`) => { write(FILTER + id, { data: { name, filter } }); return id; }, [write]),
+    removeFilter: useCallback((id: string) => erase(FILTER + id), [erase]),
   };
 }
 export type InboxState = ReturnType<typeof useInboxState>;

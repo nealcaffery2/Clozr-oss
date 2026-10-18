@@ -16,8 +16,12 @@
 // chore.
 
 import { attachPhotoLinks, parseLinks } from './deal-files';
+import { type Json } from './database.types';
+import { type Table, parseTable } from './parse-table';
 import { supabase } from './supabase';
-import { buyerRow, enrollInPlan, logActivity, moveOpenDeals, parseDue } from './crm-write';
+
+export { type Table, parseTable };
+import { buyerRow, eachLimited, enrollInPlan, enrollSellersInPlan, moveOpenDeals, parseDue } from './crm-write';
 import { type Action, type DealOnFile, type Existing, type Keys, type Match, classify, mergePatch, planImportDeal } from './import-dedupe';
 import { toE164 } from './talkr';
 import { type FoundPhone, keepImportPhones } from './seller-phones';
@@ -325,48 +329,6 @@ const norm = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, '');
 /** A Podio header without its field-part suffix (" - amount", " - start") or a note in brackets. */
 const podioLabel = (h: string) => h.replace(/\s+-\s*(amount|start|end|value|text)\s*$/i, '').replace(/\s*\([^)]*\)/g, '').trim() || h;
 const tokens = (h: string) => h.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 1);
-
-// ---- parsing ----------------------------------------------------------------
-
-export type Table = { headers: string[]; rows: string[][]; delimiter: string };
-
-/**
- * CSV / TSV / pasted-spreadsheet parser. Handles quoted fields with embedded
- * commas, quotes and newlines. Picks the delimiter that splits the first line
- * into the most columns, which is what a paste from Excel or Sheets (tabs)
- * and a real CSV (commas) both want.
- */
-export function parseTable(text: string): Table {
-  const src = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
-  const firstLine = src.split('\n').find((l) => l.trim()) ?? '';
-  const delimiter = [',', '\t', ';', '|'].map((d) => ({ d, n: firstLine.split(d).length }))
-    .sort((a, b) => b.n - a.n)[0]?.d ?? ',';
-
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = '';
-  let quoted = false;
-  for (let i = 0; i < src.length; i++) {
-    const c = src[i];
-    if (quoted) {
-      if (c === '"') {
-        if (src[i + 1] === '"') { cell += '"'; i++; } else quoted = false;
-      } else cell += c;
-    } else if (c === '"') {
-      quoted = true;
-    } else if (c === delimiter) {
-      row.push(cell); cell = '';
-    } else if (c === '\n') {
-      row.push(cell); rows.push(row); row = []; cell = '';
-    } else cell += c;
-  }
-  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
-
-  const nonEmpty = rows.filter((r) => r.some((v) => v.trim() !== ''));
-  const headers = (nonEmpty[0] ?? []).map((h) => h.trim());
-  const body = nonEmpty.slice(1).map((r) => headers.map((_, i) => (r[i] ?? '').trim()));
-  return { headers, rows: body, delimiter };
-}
 
 // ---- mapping ----------------------------------------------------------------
 
@@ -1188,6 +1150,59 @@ export async function importProperty(workspaceId: number, r: ImportRecord, mode:
   return res.error ? null : (res.data as { id: number }).id;
 }
 
+/** Rows per import_property_batch / import_address_lookup call. The functions cap at 500. */
+export const IMPORT_PROPERTY_BATCH = 400;
+
+export type ImportPropertyHit = { propertyId: number | null; addressKey: string | null };
+
+/**
+ * Match a batch of import rows to properties in one call per 400 rows.
+ * `write` finds or creates (import_property_batch). Otherwise it only looks
+ * up (import_address_lookup). Null when the function is missing or errors,
+ * so the caller can keep the per-row path. A later batch that fails returns
+ * the hits already written, and the caller fills the gaps one row at a time.
+ */
+export async function resolveImportProperties(
+  workspaceId: number,
+  rows: { i: number; r: ImportRecord; mode: 'fill' | 'overwrite' }[],
+  write: boolean,
+): Promise<Map<number, ImportPropertyHit> | null> {
+  if (!supabase) return null;
+  const sb = supabase;
+  const map = new Map<number, ImportPropertyHit>();
+  if (!rows.length) return map;
+  const rpc = write ? 'import_property_batch' as const : 'import_address_lookup' as const;
+  let wrote = false;
+  try {
+    for (let i = 0; i < rows.length; i += IMPORT_PROPERTY_BATCH) {
+      const slice = rows.slice(i, i + IMPORT_PROPERTY_BATCH);
+      const payload = slice.map(({ i: rowIndex, r, mode }) => {
+        const place = normalizePlace({ city: r.city, state: r.st, zip: r.zip });
+        return {
+          i: rowIndex,
+          line1: r.addr,
+          city: place.city ?? '',
+          state: place.state ?? '',
+          zip: place.zip ?? '',
+          mode,
+          ...propertyImportFields(r),
+        };
+      });
+      const { data, error } = await sb.rpc(rpc, { p_workspace: workspaceId, p_rows: payload as Json });
+      if (error || !Array.isArray(data)) return write && wrote ? map : null;
+      const hits = data as { i?: number; property_id?: number | null; address_key?: string | null }[];
+      for (const h of hits) {
+        if (h.i == null || !Number.isFinite(Number(h.i))) continue;
+        map.set(Number(h.i), { propertyId: h.property_id ?? null, addressKey: h.address_key ?? null });
+      }
+      wrote = write;
+    }
+    return map;
+  } catch {
+    return wrote ? map : null;
+  }
+}
+
 /** What a record is matched on (address is the raw line; the database turns it into address_key). */
 const keysOf = (kind: RecordKind, rec: AnyRecord): Omit<Keys, 'address'> => ({
   name: rec.name, phone: rec.phone, email: rec.email,
@@ -1196,14 +1211,32 @@ const keysOf = (kind: RecordKind, rec: AnyRecord): Omit<Keys, 'address'> => ({
 
 // ---- duplicate review -----------------------------------------------------------
 
-/** Every row of a table, 1000 at a time (PostgREST caps a single read). */
-async function readAll<T>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null }>): Promise<T[]> {
+/**
+ * Every row of a table, 1000 at a time (PostgREST caps a single read). A page
+ * that fails throws: a short list would let the import create records CLOZR
+ * already has.
+ */
+async function readAll<T>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
   const out: T[] = [];
   for (let from = 0; ; from += 1000) {
-    const { data } = await page(from, from + 999);
+    const { data, error } = await page(from, from + 999);
+    if (error) throw new Error(`Could not read what CLOZR already has: ${error.message}`);
     out.push(...(data ?? []));
     if (!data || data.length < 1000) return out;
   }
+}
+
+/**
+ * The rows the duplicate check compares against: one import_existing_keys
+ * call (migration 303, the same columns in id order), else, on a database
+ * without it or a refused call, the table a page at a time as before (which
+ * throws if a page fails, rather than answer with part of the table).
+ */
+async function existingRows<T>(
+  kind: RecordKind, workspaceId: number, page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const { data, error } = await supabase!.rpc('import_existing_keys' as never, { p_ws: workspaceId, p_kind: kind } as never, { get: true });
+  return !error && Array.isArray(data) ? (data as T[]) : readAll(page);
 }
 
 export type Review = { matches: Match[]; existing: Record<number, Existing>; addressKeys: (string | null)[] };
@@ -1222,43 +1255,66 @@ export async function reviewDuplicates(
   const addressKeys: (string | null)[] = records.map(() => null);
 
   if (kind === 'sellers') {
-    const [sellers, props] = await Promise.all([
-      readAll((a, b) => sb.from('sellers').select('id, name, phone, email, property_id, property_address, source_id, lead_stage').eq('workspace_id', workspaceId).order('id').range(a, b)),
-      readAll((a, b) => sb.from('properties').select('id, address_key').eq('workspace_id', workspaceId).order('id').range(a, b)),
-    ]);
-    const keyOf = new Map(props.map((p) => [p.id, p.address_key]));
-    existing = sellers.map((s) => ({
-      id: s.id, name: s.name, phone: s.phone, email: s.email, sourceId: s.source_id,
-      address: s.property_id ? keyOf.get(s.property_id) ?? null : null, propertyId: s.property_id,
-      show: [s.name, s.phone ?? '', s.email ?? '', s.property_address ?? '', s.lead_stage],
-    }));
-    // address_key for each distinct incoming address, a few at a time.
-    const lines = records.map((r) => {
+    const wanted = records.flatMap((r, i) => {
       const x = r as ImportRecord;
-      return x.addr ? [x.addr, x.city ?? '', x.st ?? '', x.zip ?? ''] : null;
+      return x.addr ? [{ i, r: x, mode: 'fill' as const }] : [];
     });
-    const distinct = [...new Set(lines.filter(Boolean).map((l) => JSON.stringify(l)))];
-    const got = new Map<string, string | null>();
-    for (let i = 0; i < distinct.length; i += 20) {
-      await Promise.all(distinct.slice(i, i + 20).map(async (k) => {
-        const [line1, city, st, zip] = JSON.parse(k) as string[];
-        const { data } = await sb.rpc('address_key', { p_line1: line1, p_city: city, p_state: st, p_zip: zip });
-        got.set(k, (data as string | null) ?? null);
+    // Both only read, so they go at once.
+    const [sellers, looked] = await Promise.all([
+      existingRows(kind, workspaceId, (a, b) => sb.from('sellers').select('id, name, phone, email, property_id, property_address, source_id, lead_stage').eq('workspace_id', workspaceId).order('id').range(a, b)),
+      resolveImportProperties(workspaceId, wanted, false),
+    ]);
+    if (looked) {
+      const keyOf = new Map<number, string>();
+      looked.forEach((h) => { if (h.propertyId != null && h.addressKey) keyOf.set(h.propertyId, h.addressKey); });
+      existing = sellers.map((s) => ({
+        id: s.id, name: s.name, phone: s.phone, email: s.email, sourceId: s.source_id,
+        address: s.property_id ? keyOf.get(s.property_id) ?? null : null, propertyId: s.property_id,
+        show: [s.name, s.phone ?? '', s.email ?? '', s.property_address ?? '', s.lead_stage],
       }));
-      onProgress?.(Math.min(i + 20, distinct.length), distinct.length);
+      records.forEach((_, i) => { addressKeys[i] = looked.get(i)?.addressKey ?? null; });
+      onProgress?.(wanted.length, wanted.length);
+    } else {
+      const props = await readAll((a, b) => sb.from('properties').select('id, address_key').eq('workspace_id', workspaceId).order('id').range(a, b));
+      const keyOf = new Map(props.map((p) => [p.id, p.address_key]));
+      existing = sellers.map((s) => ({
+        id: s.id, name: s.name, phone: s.phone, email: s.email, sourceId: s.source_id,
+        address: s.property_id ? keyOf.get(s.property_id) ?? null : null, propertyId: s.property_id,
+        show: [s.name, s.phone ?? '', s.email ?? '', s.property_address ?? '', s.lead_stage],
+      }));
+      // address_key for each distinct incoming address, a few at a time.
+      const lines = records.map((r) => {
+        const x = r as ImportRecord;
+        return x.addr ? [x.addr, x.city ?? '', x.st ?? '', x.zip ?? ''] : null;
+      });
+      const distinct = [...new Set(lines.filter(Boolean).map((l) => JSON.stringify(l)))];
+      const got = new Map<string, string | null>();
+      for (let i = 0; i < distinct.length; i += 20) {
+        await Promise.all(distinct.slice(i, i + 20).map(async (k) => {
+          const [line1, city, st, zip] = JSON.parse(k) as string[];
+          const { data, error } = await sb.rpc('address_key', { p_line1: line1, p_city: city, p_state: st, p_zip: zip });
+          // No key would read as "no house on file" and let the import add the address again.
+          if (error) throw new Error(`Could not match addresses: ${error.message}`);
+          got.set(k, (data as string | null) ?? null);
+        }));
+        onProgress?.(Math.min(i + 20, distinct.length), distinct.length);
+      }
+      lines.forEach((l, i) => { addressKeys[i] = l ? got.get(JSON.stringify(l)) ?? null : null; });
     }
-    lines.forEach((l, i) => { addressKeys[i] = l ? got.get(JSON.stringify(l)) ?? null : null; });
   } else if (kind === 'buyers') {
-    const rows = await readAll((a, b) => sb.from('buyers').select('id, name, company, phone, email, source_id, status').eq('workspace_id', workspaceId).order('id').range(a, b));
+    const rows = await existingRows(kind, workspaceId, (a, b) => sb.from('buyers').select('id, name, company, phone, email, source_id, status').eq('workspace_id', workspaceId).order('id').range(a, b));
     existing = rows.map((b) => ({ id: b.id, name: b.name, phone: b.phone, email: b.email, sourceId: b.source_id, address: null, show: [b.name, b.phone ?? '', b.email ?? '', b.company ?? '', b.status] }));
   } else {
-    const rows = await readAll((a, b) => sb.from('vendors').select('id, business_name, contact_name, phone, email, service_type').eq('workspace_id', workspaceId).order('id').range(a, b));
+    const rows = await existingRows(kind, workspaceId, (a, b) => sb.from('vendors').select('id, business_name, contact_name, phone, email, service_type').eq('workspace_id', workspaceId).order('id').range(a, b));
     existing = rows.map((v) => ({ id: v.id, name: v.business_name, phone: v.phone, email: v.email, sourceId: null, address: null, show: [v.business_name, v.phone ?? '', v.email ?? '', v.contact_name ?? '', v.service_type ?? ''] }));
   }
 
   const matches = classify(records.map((r, i) => ({ ...keysOf(kind, r), address: addressKeys[i] })), existing);
   const byId: Record<number, Existing> = {};
-  for (const m of matches) if (m.kind === 'existing' || m.kind === 'conflict') byId[m.id] = existing.find((e) => e.id === m.id)!;
+  // A map, not a scan of every existing row per match (a big workspace holds 100,000+ buyers).
+  const known = new Map<number, Existing>();
+  for (const e of existing) if (!known.has(e.id)) known.set(e.id, e);
+  for (const m of matches) if (m.kind === 'existing' || m.kind === 'conflict') byId[m.id] = known.get(m.id)!;
   return { matches, existing: byId, addressKeys };
 }
 
@@ -1307,8 +1363,10 @@ async function dealForUpdatedSeller(
   make: { propertyId: number | null; ownerId: string | null; userId: string | null },
 ): Promise<string> {
   if (!supabase) return '';
-  const { data: deals } = await supabase.from('deals').select('id, stage, arv, rehab, offer_amount')
+  const { data: deals, error: readError } = await supabase.from('deals').select('id, stage, arv, rehab, offer_amount')
     .eq('workspace_id', workspaceId).eq('seller_id', sellerId).order('created_at', { ascending: false }).limit(50);
+  // Unread deals would look like none and get the seller a second one.
+  if (readError) throw new Error('deal: ' + readError.message);
   const plan = planImportDeal(r, (deals ?? []) as DealOnFile[], mode);
   if (plan.kind === 'none') return '';
   if (plan.kind === 'create') {
@@ -1364,8 +1422,8 @@ export function foldInto<T extends AnyRecord>(into: T, from: AnyRecord): T {
 
 /**
  * Write the reviewed rows. Only rows whose action says so are touched; a
- * duplicate is never created. Rows go in parallel batches of ten with progress,
- * and every row ends up in the report, whatever happened to it.
+ * duplicate is never created. Rows go ten at a time with progress, and every
+ * row ends up in the report, whatever happened to it.
  */
 export async function runImport(
   kind: RecordKind, workspaceId: number, userId: string | null,
@@ -1398,6 +1456,15 @@ export async function runImport(
   });
 
   const extraTags = uniq([...opts.tags, opts.label]);
+
+  const propertyHits = kind === 'sellers'
+    ? await resolveImportProperties(workspaceId, recs.flatMap((rec, i) => {
+      const a = actions[i];
+      const r = rec as ImportRecord;
+      if (rec.problem || !a || a === 'skip' || a === 'merge' || !r.addr) return [];
+      return [{ i, r, mode: (a === 'overwrite' ? 'overwrite' : 'fill') as 'fill' | 'overwrite' }];
+    }), true)
+    : null;
 
   async function payload(i: number, rec: AnyRecord): Promise<Record<string, unknown>> {
     if (kind === 'vendors') {
@@ -1436,7 +1503,10 @@ export async function runImport(
       return { ...row, source_id: r.source_id };
     }
     const r = rec as ImportRecord;
-    const propertyId = r.addr ? await importProperty(workspaceId, r, actions[i] === 'overwrite' ? 'overwrite' : 'fill') : null;
+    const hit = propertyHits?.get(i);
+    const propertyId = !r.addr ? null
+      : hit ? hit.propertyId
+      : await importProperty(workspaceId, r, actions[i] === 'overwrite' ? 'overwrite' : 'fill');
     return {
       name: r.name, phone: phoneOut(r.phone), email: r.email?.toLowerCase() ?? null,
       property_id: propertyId,
@@ -1456,6 +1526,26 @@ export async function runImport(
 
   const entity = kind === 'sellers' ? 'seller' : kind === 'buyers' ? 'buyer' : 'vendor';
   const table = kind;
+
+  /** logActivity's row for this import's line on a record. */
+  const line = (id: number, title: string, body: string) => ({
+    workspace_id: workspaceId, entity_type: entity, entity_id: id, kind: entity === 'seller' ? 'lead' : entity, title, body, actor_id: userId,
+  });
+  /**
+   * What written rows still owe, sent together instead of per row: new sellers'
+   * plan enrolment (enrollSellersInPlan, the same rows enrollInPlan wrote) and
+   * then each row's activity line in one insert, so a record still reads
+   * phones and deal, plan started, then Imported. Errors are ignored, as the
+   * per-row writes ignored them.
+   */
+  const owed: { id: number; enroll: boolean; line: ReturnType<typeof line> }[] = [];
+  const settle = async () => {
+    const take = owed.splice(0);
+    if (!take.length) return;
+    const enroll = take.filter((o) => o.enroll).map((o) => String(o.id));
+    if (opts.planId && enroll.length) await enrollSellersInPlan(workspaceId, String(opts.planId), enroll, userId).catch(() => null);
+    await sb.from('activity').insert(take.map((o) => o.line)).then(() => undefined, () => undefined);
+  };
 
   /**
    * Every number of a seller row goes on their other numbers (seller_phones)
@@ -1517,9 +1607,9 @@ export async function runImport(
             }).select('id').single();
             if (deal && r.photos.length) await attachPhotos(workspaceId, deal.id, r.photos);
           }
-          if (opts.planId) await enrollInPlan(workspaceId, String(opts.planId), String(id), userId);
         }
-        await logActivity(workspaceId, entity, id, entity === 'seller' ? 'lead' : entity, 'Imported', opts.label, userId);
+        // The plan enrolment (a new seller) and then the Imported line: settle() writes them for several rows at once.
+        owed.push({ id, enroll: kind === 'sellers' && !!opts.planId, line: line(id, 'Imported', opts.label) });
         if (a === 'coseller') result.cosellers++; else result.created++;
         report.push({ ...base, action: a, result: a === 'coseller' ? 'co-seller' : 'created', id,
           detail: [owners[i] ? 'assigned' : '', underwriters[i] ? 'underwriter set' : '', second].filter(Boolean).join(' · ') });
@@ -1527,7 +1617,9 @@ export async function runImport(
       }
       // fill / overwrite an existing record.
       const id = (m as { id: number }).id;
-      const { data: cur } = await sb.from(table as 'sellers').select('*').eq('id', id).single();
+      const { data: cur, error: curError } = await sb.from(table as 'sellers').select('*').eq('id', id).single();
+      // Without the record as it is, fill and override would merge against nothing and overwrite its tags and notes.
+      if (curError || !cur) throw new Error(!curError || curError.code === 'PGRST116' ? 'not found in CLOZR' : curError.message);
       const incoming = { ...row };
       if (!opts.applyToUpdated) { delete incoming.assigned_to; delete incoming.underwriter_id; }
       if (!opts.applyToUpdated || !opts.stage) delete incoming.lead_stage;
@@ -1561,7 +1653,7 @@ export async function runImport(
         ? await dealForUpdatedSeller(workspaceId, id, rec as ImportRecord, mode, { propertyId: nowOn, ownerId: owners[i], userId })
         : '';
       const changed = [Object.keys(patch).join(', '), dealNote].filter(Boolean).join('; ');
-      await logActivity(workspaceId, entity, id, entity === 'seller' ? 'lead' : entity, 'Updated by import', `${opts.label}: ${changed || 'nothing new'}`, userId);
+      owed.push({ id, enroll: false, line: line(id, 'Updated by import', `${opts.label}: ${changed || 'nothing new'}`) });
       result.updated++;
       report.push({ ...base, action: a, result: 'updated', id, detail: [Object.keys(patch).join(' '), dealNote, second].filter(Boolean).join(' · ') || 'nothing new' });
     } catch (e) {
@@ -1570,13 +1662,17 @@ export async function runImport(
     }
   }
 
+  // Ten rows at a time as a rolling pool (a slow row no longer holds the other
+  // nine), progress every ten rows as before, and what the rows owe settled
+  // every ten rows and at the end.
   let done = 0;
-  for (let i = 0; i < recs.length; i += 10) {
-    const batch = recs.slice(i, i + 10).map((_, k) => i + k);
-    await Promise.all(batch.map(one));
-    done += batch.length;
-    onProgress?.(done);
-  }
+  await eachLimited(recs.map((_, i) => i), 10, async (i) => {
+    await one(i);
+    if (owed.length >= 10) await settle();
+    done++;
+    if (done % 10 === 0 || done === recs.length) onProgress?.(done);
+  });
+  await settle();
   report.sort((x, y) => x.row - y.row);
   const runEntity = kind === 'sellers' ? 'seller' : kind === 'buyers' ? 'buyer' : 'vendor';
   const ok = result.created + result.updated + result.cosellers;

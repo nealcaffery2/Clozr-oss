@@ -20,8 +20,8 @@ const MODES: { id: Mode; label: string }[] = [
   { id: 'facebook', label: 'Facebook buyers' },
 ];
 
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '14px', padding: '14px 16px' };
-const muted: React.CSSProperties = { margin: '6px 0 0', fontSize: '12.5px', color: '#71717a', lineHeight: 1.5 };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '14px', padding: '14px 16px' };
+const muted: React.CSSProperties = { margin: '6px 0 0', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 };
 
 export function Buyr({ V }: { V: ClozrView }) {
   const session = useSession();
@@ -79,11 +79,11 @@ export function Buyr({ V }: { V: ClozrView }) {
 
   return (
     <section data-screen-label="Buyr" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      <div style={{ background: '#fff', borderBottom: '1px solid #e4e4e7', padding: V.isMobile ? '10px 12px 0' : '12px 20px 0' }}>
+      <div style={{ background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)', padding: V.isMobile ? '10px 12px 0' : '12px 20px 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: BUYR, flex: 'none' }} />
           <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em' }}>Buyr</h1>
-          <span style={{ fontSize: '12px', color: '#71717a' }}>Wholesale sniping · Facebook buyers</span>
+          <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>Wholesale sniping · Facebook buyers</span>
           <div style={{ flex: 1 }} />
           <button type="button" onClick={() => V.goBuyerProspects()} style={ghost}>Buyer Prospects</button>
         </div>
@@ -91,7 +91,7 @@ export function Buyr({ V }: { V: ClozrView }) {
           {MODES.map((m) => {
             const on = mode === m.id;
             return (
-              <button key={m.id} type="button" onClick={() => setMode(m.id)} style={{ height: '36px', padding: '0 12px', border: 0, borderBottom: `2px solid ${on ? BUYR : 'transparent'}`, background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: on ? '#18181b' : '#71717a', whiteSpace: 'nowrap' }}>
+              <button key={m.id} type="button" onClick={() => setMode(m.id)} style={{ height: '36px', padding: '0 12px', border: 0, borderBottom: `2px solid ${on ? BUYR : 'transparent'}`, background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: on ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)', whiteSpace: 'nowrap' }}>
                 {m.label}
               </button>
             );
@@ -99,7 +99,7 @@ export function Buyr({ V }: { V: ClozrView }) {
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: V.isMobile ? '12px 12px 40px' : '16px 20px 48px', background: '#fafafa' }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: V.isMobile ? '12px 12px 40px' : '16px 20px 48px', background: 'var(--canvas, #fafafa)' }}>
         {mode === 'facebook' ? (
           workspaceId ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '1100px' }}>
@@ -147,22 +147,22 @@ function SnipeQueue({ days, setDays, deals, optins, queueMsg, syncNote, onOpenGe
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
           <div style={{ fontSize: '14px', fontWeight: 700 }}>Aged deals to snipe</div>
-          <label style={{ fontSize: '12px', color: '#71717a', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+          <label style={{ fontSize: '12px', color: 'var(--meta, #71717a)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
             Older than
-            <select value={days} onChange={(e) => setDays(Number(e.target.value))} style={{ height: '28px', borderRadius: '8px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12px' }}>
+            <select value={days} onChange={(e) => setDays(Number(e.target.value))} style={{ height: '28px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px' }}>
               {[30, 60, 90, 180].map((n) => <option key={n} value={n}>{n} days</option>)}
             </select>
           </label>
         </div>
         <p style={muted}>Deal Machine deals, including the deals@yourcompany.com list once it has aged. Buyr searches them in Genius automatically. The buyers are labeled Buyr.</p>
-        <p style={{ ...muted, color: '#3f3f46' }}>{queueMsg}</p>
-        <p style={{ ...muted, color: '#3f3f46' }}>{syncNote}</p>
+        <p style={{ ...muted, color: 'var(--ink-3, #3f3f46)' }}>{queueMsg}</p>
+        <p style={{ ...muted, color: 'var(--ink-3, #3f3f46)' }}>{syncNote}</p>
         <button type="button" onClick={onOpenGenius} style={{ ...ghost, marginTop: '8px' }}>Open Genius</button>
         <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0, maxHeight: '280px', overflow: 'auto' }}>
           {deals.map((d) => (
-            <li key={d.id} style={{ padding: '7px 8px', fontSize: '12.5px', color: '#18181b' }}>
+            <li key={d.id} style={{ padding: '7px 8px', fontSize: '12.5px', color: 'var(--ink, #18181b)' }}>
               {d.address}
-              <span style={{ display: 'block', fontSize: '11px', color: '#a1a1aa' }}>{d.createdAt.slice(0, 10)}{d.leadSource ? ` · ${d.leadSource}` : ''}</span>
+              <span style={{ display: 'block', fontSize: '11px', color: 'var(--subtle, #a1a1aa)' }}>{d.createdAt.slice(0, 10)}{d.leadSource ? ` · ${d.leadSource}` : ''}</span>
             </li>
           ))}
         </ul>
@@ -172,7 +172,7 @@ function SnipeQueue({ days, setDays, deals, optins, queueMsg, syncNote, onOpenGe
         <p style={muted}>Lists the Deal Machine opt-in bot joined. Aged deals from these lists are the sniping queue.</p>
         <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0, maxHeight: '280px', overflow: 'auto' }}>
           {optins.map((o) => (
-            <li key={o.domain} style={{ padding: '6px 0', borderTop: '1px solid #f4f4f5', fontSize: '12.5px' }}>
+            <li key={o.domain} style={{ padding: '6px 0', borderTop: '1px solid var(--surface-2, #f4f4f5)', fontSize: '12.5px' }}>
               {o.url ? <a href={o.url} target="_blank" rel="noreferrer" style={{ color: BUYR }}>{o.domain}</a> : o.domain}
             </li>
           ))}
@@ -230,11 +230,11 @@ function Facebook({ V, workspaceId, userId }: { V: ClozrView; workspaceId: numbe
           <button type="button" disabled={busy || !V.liveIds?.canWrite} onClick={() => void scrape()} style={primary}>Scrape comment emails</button>
         </div>
         <p style={muted}>Reads buyer names and emails from comments on the groups above, and skips deals@yourcompany.com. They file into Buyer Prospects, labeled Facebook.</p>
-        {note ? <p style={{ ...muted, color: '#3f3f46' }}>{note}</p> : null}
+        {note ? <p style={{ ...muted, color: 'var(--ink-3, #3f3f46)' }}>{note}</p> : null}
         <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0, maxHeight: '180px', overflow: 'auto' }}>
           {groups.slice(0, 8).map((g) => (
-            <li key={g.id} style={{ padding: '7px 0', borderTop: '1px solid #f4f4f5', fontSize: '12.5px' }}>
-              <a href={g.url} target="_blank" rel="noreferrer" style={{ color: '#18181b', fontWeight: 600 }}>{g.name || g.url}</a>
+            <li key={g.id} style={{ padding: '7px 0', borderTop: '1px solid var(--surface-2, #f4f4f5)', fontSize: '12.5px' }}>
+              <a href={g.url} target="_blank" rel="noreferrer" style={{ color: 'var(--ink, #18181b)', fontWeight: 600 }}>{g.name || g.url}</a>
             </li>
           ))}
           {!groups.length ? <li style={muted}>No active groups yet. Add them above.</li> : null}
@@ -244,7 +244,7 @@ function Facebook({ V, workspaceId, userId }: { V: ClozrView; workspaceId: numbe
         <div style={{ ...card, background: BUYR_TINT, borderColor: `${BUYR}33` }}>
           <div style={{ fontSize: '14px', fontWeight: 700 }}>Paste comments</div>
           <p style={muted}>One person per line. Name, then the comment. They file into Buyer Prospects, labeled Facebook.</p>
-          <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={5} placeholder={'Jane Doe: send it to jane@buyer.com'} style={{ width: '100%', marginTop: '8px', borderRadius: '10px', border: '1px solid #e4e4e7', padding: '8px 10px', fontSize: '12.5px', fontFamily: 'inherit', resize: 'vertical', background: '#fff' }} />
+          <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={5} placeholder={'Jane Doe: send it to jane@buyer.com'} style={{ width: '100%', marginTop: '8px', borderRadius: '10px', border: '1px solid var(--divider, #e4e4e7)', padding: '8px 10px', fontSize: '12.5px', fontFamily: 'inherit', resize: 'vertical', background: 'var(--surface, #fff)' }} />
           <button type="button" disabled={busy || !paste.trim() || !V.liveIds?.canWrite} onClick={() => void filePaste()} style={{ ...primary, marginTop: '8px' }}>File buyer prospects</button>
         </div>
         <div style={card}>
@@ -253,9 +253,9 @@ function Facebook({ V, workspaceId, userId }: { V: ClozrView; workspaceId: numbe
             {filed.map((p) => (
               <li key={p.id}>
                 <button type="button" onClick={() => V.genius.openBuyer(p.id)} style={{ width: '100%', textAlign: 'left', border: 0, background: 'transparent', padding: '6px 0', cursor: 'pointer', fontSize: '12.5px' }}>
-                  <span style={{ fontWeight: 600, color: '#18181b' }}>{p.name}</span>
-                  <span style={{ marginLeft: '6px', fontSize: '11px', fontWeight: 700, color: '#3f3f46' }}>Facebook</span>
-                  {p.email ? <span style={{ color: '#71717a' }}> · {p.email}</span> : null}
+                  <span style={{ fontWeight: 600, color: 'var(--ink, #18181b)' }}>{p.name}</span>
+                  <span style={{ marginLeft: '6px', fontSize: '11px', fontWeight: 700, color: 'var(--ink-3, #3f3f46)' }}>Facebook</span>
+                  {p.email ? <span style={{ color: 'var(--meta, #71717a)' }}> · {p.email}</span> : null}
                 </button>
               </li>
             ))}
@@ -267,5 +267,5 @@ function Facebook({ V, workspaceId, userId }: { V: ClozrView; workspaceId: numbe
   );
 }
 
-const ghost: React.CSSProperties = { height: '30px', padding: '0 10px', borderRadius: '8px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer', color: '#18181b' };
-const primary: React.CSSProperties = { height: '30px', padding: '0 10px', borderRadius: '8px', border: `1px solid ${BUYR}`, background: BUYR, color: '#fff', fontSize: '12px', fontWeight: 650, cursor: 'pointer' };
+const ghost: React.CSSProperties = { height: '30px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', color: 'var(--ink, #18181b)' };
+const primary: React.CSSProperties = { height: '30px', padding: '0 10px', borderRadius: '8px', border: `1px solid ${BUYR}`, background: BUYR, color: 'var(--on-dark, #fff)', fontSize: '12px', fontWeight: 650, cursor: 'pointer' };

@@ -112,6 +112,12 @@ export type Persona = {
   recordingNotice?: string | null;
   /** Casual agents (formality 1 or 2) answer "how can I help ya?" instead of "Who am I speaking with?". */
   casual?: boolean;
+  /**
+   * On a call we place: 'first' (a new lead or cold call, they have never talked with us) or 'known'
+   * (a follow-up, we know it's them), as the rep set it on the AI agent (migration 258). Unset: 'known'
+   * when there is a last contact on file, else 'first'.
+   */
+  contact?: 'first' | 'known';
 };
 
 /** The per-call values only some agents use (offer range, rep line, lead source). '' when unknown or not allowed. */
@@ -133,7 +139,12 @@ export const DYNAMIC_VARIABLES = [
   'caller_known', 'do_not_engage', 'record_kind',
   'rep_phone', 'lead_source', 'property_facts', 'mortgage_payoff_estimate', 'offer_low', 'offer_high', 'seller_asking_price',
   'call_goal', 'rep_available',
+  // For the lead_context tool, never a prompt: who a browser test is about (no caller ID there), and the proof it came from test_session.
+  'record_id', 'record_token',
 ] as const;
+
+/** Variables only the lead_context tool reads; a prompt may not use them. */
+export const TOOL_ONLY_VARIABLES: readonly string[] = ['record_id', 'record_token'];
 
 export type InitiationData = {
   type: 'conversation_initiation_client_data';
@@ -147,6 +158,58 @@ function intro(p: Persona): string {
   const who = p.introduceAs === 'virtual_assistant' ? 'a virtual assistant with' : p.casual ? 'from' : 'with';
   return p.agentName ? `this is ${p.agentName}${p.introduceAs === 'virtual_assistant' ? ', ' : ' '}${who} ${p.company}` : `you've reached ${p.company}`;
 }
+
+/** call_goal on a test the team places from the console: hours do not apply (voice-agent-prompt's compliance note). */
+export const TEST_CALL_GOAL = 'TEST CALL: someone on our team is testing you. Quiet hours and call hours do not apply, so talk with them at any time, and play the call as if they were the person on the record. Stay in your own role: you are the agent your instructions describe, on that side of the deal, whatever the tester throws at you.';
+
+/**
+ * A console test, known by its call_goal. A test rung on the tester's own phone has a
+ * real caller ID, which can belong to a real record (the owner is often on file as a
+ * buyer or a seller): such a call must not be filed on that record, rewrite its memory,
+ * or let a tool book, save or flag anything on it.
+ */
+export const isTestCall = (goal: unknown): boolean => typeof goal === 'string' && goal.startsWith('TEST CALL:');
+
+const SUFFIX: Record<string, string> = {
+  st: 'Street', ave: 'Avenue', av: 'Avenue', rd: 'Road', dr: 'Drive', ln: 'Lane', blvd: 'Boulevard', ct: 'Court', cir: 'Circle',
+  pkwy: 'Parkway', trl: 'Trail', hwy: 'Highway', pl: 'Place', ter: 'Terrace', cv: 'Cove',
+};
+
+/** "123 N Warnock St, San Antonio, TX" -> "Warnock Street": the street the way RJ says it ("your property there on Warnock Street"). */
+export function streetOf(address: string): string {
+  const line = String(address ?? '').split(',')[0].trim();
+  const words = line.replace(/\s+(apt|unit|ste|suite|#)\s*\S*$/i, '').split(/\s+/).filter(Boolean);
+  // House numbers in every shape ("123", "123A", "123-125", "12 1/2", "#4") never get spoken; "33rd" is a street, so it stays.
+  // A house number starts with a digit or "#"; "I-10", "IH-10" and "US-90" start with letters and are the street.
+  const houseNo = (w: string) => /^[#\d]/.test(w) && !/^\d+(st|nd|rd|th)$/i.test(w);
+  while (words.length > 1 && houseNo(words[0])) words.shift();
+  if (words.length > 1 && /^(n|s|e|w|ne|nw|se|sw)\.?$/i.test(words[0])) words.shift();
+  if (words.length === 1 && houseNo(words[0])) return '';
+  if (!words.length) return '';
+  const last = words[words.length - 1].replace(/\.$/, '').toLowerCase();
+  if (SUFFIX[last]) words[words.length - 1] = SUFFIX[last];
+  return words.join(' ').slice(0, 60);
+}
+
+/**
+ * The first line on a call we placed to a known person, the way RJ Bates opens
+ * hundreds of calls: their name said with confidence (no "is this...?"), who we
+ * are, and the reason in the same breath ("calling about your property there on
+ * Warnock Street"), then a pause for them to answer. Stating the reason up front
+ * is what moves a cold call; asking whether it's a bad time is what stalls it.
+ */
+export function outboundOpener(first: string, p: Persona, address = ''): string {
+  const street = streetOf(address);
+  // A follow-up sounds like one: "it's Riley", following up, no cold-call reason.
+  if (p.contact === 'known') return `Hey ${first}, ${intro(p).replace(/^this is /, "it's ")}${street ? `, following up on your property on ${street}` : ', just following up with you'}.`;
+  return `Hey ${first}, ${intro(p)}${street ? `, calling about your property there on ${street}` : ''}.`;
+}
+
+/** Put at the front of call_goal so the prompt's opening-line block knows which call this is. */
+export const CONTACT_NOTE = {
+  first: 'FIRST CALL: they have never talked with us.',
+  known: "FOLLOW-UP: we have talked with them before and know it's them.",
+} as const;
 
 /**
  * The conversation initiation response. Blocked: nothing about the person,
@@ -170,6 +233,9 @@ export function buildInitiation(res: Resolution, leg: CallLeg | null, mem: Memor
     caller_known: known,
     do_not_engage: res.status === 'blocked',
     record_kind: known ? res.match.kind : '',
+    // A sample caller is id 0: no record behind it.
+    record_id: known && res.match.id > 0 ? String(res.match.id) : '',
+    record_token: '',
     // Nothing about the person, or an offer, for a caller we will not talk to.
     ...(res.status === 'blocked' ? NO_EXTRAS : extras),
   };
@@ -178,8 +244,13 @@ export function buildInitiation(res: Resolution, leg: CallLeg | null, mem: Memor
   if (res.status === 'blocked') {
     first_message = outbound ? `Hi, ${intro(p)}. Sorry, I think I have the wrong number.` : `Thanks for calling ${p.company}. How can I help you today?`;
   } else if (known && first) {
+    if (outbound) {
+      const contact = p.contact ?? (vars.last_contact_summary ? 'known' : 'first');
+      vars.call_goal = [CONTACT_NOTE[contact], String(vars.call_goal ?? '')].filter(Boolean).join(' ');
+      p = { ...p, contact };
+    }
     first_message = outbound
-      ? `Hi, is this ${first}? ${cap(intro(p))}.`
+      ? outboundOpener(first, p, vars.record_kind === 'seller' ? String(vars.property_address ?? '') : '')
       : p.casual ? `Hey ${first}! ${cap(intro(p))}, how can I help ya?` : `Hey ${first}, thanks for calling back, ${intro(p)}.`;
   } else {
     first_message = outbound
@@ -239,6 +310,8 @@ export type PostCall = {
   status: string;
   /** Tools used and what the caller said, for voice_agent_calls (see voice-agent-classify.ts). */
   flags: CallFlags;
+  /** A console test (isTestCall): stored for review, never filed on a record. */
+  test: boolean;
 };
 
 /**
@@ -281,6 +354,7 @@ export function parsePostCall(event: unknown): PostCall | null {
     summary: sum ? (title ? `${title}. ${sum}` : sum) : title || null,
     status: durationS === 0 || !text ? 'no-answer' : 'completed',
     flags: classifyCall(d.transcript),
+    test: isTestCall(dyn.call_goal),
   };
 }
 
@@ -327,6 +401,54 @@ export async function hmacHex(secret: string, message: string): Promise<string> 
   const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(message)));
   return Array.from(sig).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ---- Browser tests (test_session) ------------------------------------------
+
+/** How long a test session's record_token works: longer than any call. */
+export const TEST_RECORD_TTL_SECS = 2 * 60 * 60;
+
+export type TestRecord = { ws: number; agentId: string; kind: 'seller' | 'buyer'; id: number };
+
+const testRecordMessage = (r: TestRecord, exp: number) => `vat1:${r.ws}:${r.agentId}:${r.kind}:${r.id}:${exp}`;
+
+/**
+ * The proof test_session gives a browser test that it may read this record:
+ * `<expiry unix secs>.<hex HMAC>` over the workspace, the ElevenLabs agent and
+ * the record. The browser hands the dynamic variables to ElevenLabs itself, so
+ * record_id alone could be swapped for any record in the workspace.
+ */
+export async function testRecordToken(key: string, r: TestRecord, nowMs = Date.now()): Promise<string> {
+  const exp = Math.floor(nowMs / 1000) + TEST_RECORD_TTL_SECS;
+  return `${exp}.${await hmacHex(key, testRecordMessage(r, exp))}`;
+}
+
+export async function checkTestRecordToken(key: string, token: string, r: TestRecord, nowMs = Date.now()): Promise<boolean> {
+  const m = /^(\d{9,12})\.([0-9a-f]{64})$/.exec(String(token ?? '').trim());
+  if (!key || !m || !r.agentId) return false;
+  const exp = Number(m[1]);
+  if (exp * 1000 < nowMs) return false;
+  return safeEqual(m[2], await hmacHex(key, testRecordMessage(r, exp)));
+}
+
+/**
+ * What a lead_context call without a caller ID (a browser test) asks for: a
+ * real record (kind, id and token), a sample caller (a kind and no id), or
+ * nothing to go on. Null when the call has a caller ID: a phone call is
+ * resolved by its number, and record_id is only ever a tie-break there.
+ */
+export function browserLookup(body: { caller_id?: unknown; record_kind?: unknown; record_id?: unknown; record_token?: unknown }):
+  | { want: 'record'; kind: 'seller' | 'buyer'; id: number; token: string }
+  | { want: 'sample' }
+  | { want: 'none' }
+  | null {
+  if (phoneKey(typeof body.caller_id === 'string' ? body.caller_id : null)) return null;
+  const kind = body.record_kind === 'seller' || body.record_kind === 'buyer' ? body.record_kind : null;
+  const rawId = String(body.record_id ?? '').trim();
+  const id = /^\d{1,15}$/.test(rawId) ? Number(rawId) : 0;
+  if (kind && id > 0) return { want: 'record', kind, id, token: String(body.record_token ?? '').trim() };
+  if (kind) return { want: 'sample' };
+  return { want: 'none' };
 }
 
 // ---- Per-workspace secrets (migration 111) --------------------------------

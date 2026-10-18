@@ -14,9 +14,10 @@
 import { useEffect, useState } from 'react';
 import type { LiveCallDto, MonitorMode } from '@/lib/talkr-web/api';
 import { duration, formatPhone } from '@/lib/talkr-web/time';
-import { useSoftphone } from './softphoneAdapter';
+import { useSoftphone, useWantLiveCalls } from './softphoneAdapter';
+import { everyWhileVisible } from '@/lib/visible-timer';
 import { Icon } from './Icon';
-import { Avatar, EmptyState, Eyebrow } from './ui';
+import { EmptyState, Eyebrow } from './ui';
 import { IosSegmented } from './ios';
 
 const MODES: Array<{ value: MonitorMode; label: string }> = [
@@ -49,8 +50,8 @@ function useTicking(seconds: number) {
   useEffect(() => {
     const at = Date.now();
     setExtra(0);
-    const t = setInterval(() => setExtra(Math.floor((Date.now() - at) / 1000)), 1000);
-    return () => clearInterval(t);
+    const tick = () => setExtra(Math.floor((Date.now() - at) / 1000));
+    return everyWhileVisible(tick, 1000);
   }, [seconds]);
   return seconds + extra;
 }
@@ -65,7 +66,6 @@ function Row({ call }: { call: LiveCallDto }) {
   const busy = monitor !== null || callState !== 'idle';
   return (
     <div className="flex flex-wrap items-center gap-2.5 px-2 py-2" style={{ borderBottom: '1px solid var(--line-soft)' }}>
-      <Avatar name={call.rep.display_name} size={28} />
       <span className="mr-auto flex min-w-0 flex-col gap-1">
         <span className="truncate" style={{ font: '600 12px/1 var(--sans)' }}>
           {call.rep.display_name}
@@ -105,7 +105,6 @@ export function MonitorCard() {
       style={{ borderRadius: 'var(--r-lg)', background: 'var(--panel)' }}
       aria-label="Monitoring a call"
     >
-      <Avatar name={call.rep.display_name} size={64} />
       <span className="display max-w-full truncate" style={{ font: '600 22px/1.1 var(--sans)' }}>
         {call.rep.display_name}
       </span>
@@ -136,6 +135,8 @@ export function MonitorCard() {
 /** Teammates' live calls. Null when the viewer cannot monitor. */
 export function LiveCalls() {
   const { liveCalls, monitor } = useSoftphone();
+  // Mounted, the list asks for live calls every few seconds; elsewhere the app barely asks.
+  useWantLiveCalls();
   if (liveCalls === null) return null;
   return (
     <div className="flex flex-col gap-0.5">

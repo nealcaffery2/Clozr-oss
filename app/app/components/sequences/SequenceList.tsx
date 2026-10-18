@@ -39,10 +39,10 @@ const MIN_WIDTH = 900;
 /** CLOZR's screen header (the same row Action plans draws), in place of Talkr's TopBar. */
 export function SeqHead({ title, subtitle, left }: { title: string; subtitle: string; left?: ReactNode }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', background: '#fff', borderBottom: '1px solid #e4e4e7', flex: 'none', flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)', flex: 'none', flexWrap: 'wrap' }}>
       {left}
-      <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em', color: '#18181b' }}>{title}</h1>
-      <span style={{ fontSize: '12.5px', color: '#71717a' }}>{subtitle}</span>
+      <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink, #18181b)' }}>{title}</h1>
+      <span style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>{subtitle}</span>
     </div>
   );
 }

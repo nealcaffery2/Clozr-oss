@@ -58,7 +58,7 @@ export function PdfPageCanvas({ doc, page, width, height }: { doc: PdfDoc; page:
     })();
     return () => { live = false; task?.cancel(); };
   }, [doc, page, width]);
-  return <canvas ref={ref} aria-label={`Page ${page}`} style={{ display: 'block', width: `${width}px`, height: `${height}px`, background: '#fff' }} />;
+  return <canvas ref={ref} aria-label={`Page ${page}`} style={{ display: 'block', width: `${width}px`, height: `${height}px`, background: 'var(--surface, #fff)' }} />;
 }
 
 /** The width of an element, kept current as it resizes. */

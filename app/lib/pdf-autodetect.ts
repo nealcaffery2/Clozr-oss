@@ -10,6 +10,10 @@
 //   boxes    empty rectangles drawn where a value goes (PandaDoc and
 //            DocuSign exports, the Acme Homes amendment)
 //   rules    drawn horizontal lines with nothing written on them
+// Forms exported with their words drawn as outlines (zipForm / Lone Wolf, so
+// most TXR and TREC paper from agents) have no text layer: lib/pdf-ocr reads
+// those pages and its words come in marked `ocr`. Whatever text such a page
+// does carry is what someone typed into the form, never a label.
 // The words beside, above or under a blank are its label; the nearest party
 // heading ("SELLER (TENANT):") or signature above it, in the same column, says
 // whose it is.
@@ -23,8 +27,8 @@
 import type { FieldDef, FieldType } from '../supabase/functions/_shared/pdf-fields';
 import type { Shape } from './pdf-shapes';
 
-/** One run of text as pdf.js reports it: points, top-left origin, `y` on the baseline. `page` is 1-based. */
-export type TextItem = { page: number; str: string; x: number; y: number; w: number; h: number };
+/** One run of text as pdf.js reports it: points, top-left origin, `y` on the baseline. `page` is 1-based. `ocr` marks a word read off the page image (lib/pdf-ocr). */
+export type TextItem = { page: number; str: string; x: number; y: number; w: number; h: number; ocr?: boolean };
 export type PageDim = { width: number; height: number };
 export type Side = 'acquisition' | 'disposition';
 /** A party in the document's own words. */
@@ -146,7 +150,8 @@ const RULES: Rule[] = [
 const KEEPS_RECORD_ON_AMENDMENT = new Set(['property.address', 'property.legal_description', 'property.apn', 'property.county', 'property.city', 'property.zip', 'title.company', 'deal.contract_date', 'doc.date']);
 
 const SIGN_RE = /\bsign(ature|ed)?\b|signed by|^by$|^x$/;
-const INITIAL_RE = /\binitial(s|ed)?\b/;
+// Loose enough for OCR's "Initiled" and "Initaled".
+const INITIAL_RE = /\binit\w{0,4}(ls?|led)\b/;
 const DATE_RE = /^dated?$|\bdate\b/;
 const NAME_RE = /print(ed)?\s*name|typed name|^name$|\bname\b/;
 
@@ -154,6 +159,8 @@ const NAME_RE = /print(ed)?\s*name|typed name|^name$|\bname\b/;
 export function tidyLabel(s: string, keep: 'end' | 'start' = 'end'): string {
   let t = s.replace(/[_.…]{2,}/g, ' ').replace(/["“”]/g, '').replace(/\s+/g, ' ').trim();
   t = t.replace(/^(\(?[0-9a-z]{1,3}[.)]\s+)+/i, '').replace(/[:$#(\[\s]+$/, '').replace(/^[)\]:\s•●-]+/, '').trim();
+  // Punctuation alone ("," between two initials blanks) says nothing.
+  if (!/[a-z0-9]/i.test(t)) return '';
   const words = t.split(' ');
   // Inline ("…for the sum of $____") the words nearest the blank matter; a caption over a box reads from its start.
   if (words.length > 8) t = keep === 'end' ? words.slice(-8).join(' ') : words.slice(0, 8).join(' ');
@@ -169,14 +176,28 @@ const pretty = (s: string, keep: 'end' | 'start' = 'end') => {
 /** The blank beside a signature or initials with nothing between: the same thing for a second person (null when there is no second one). */
 function secondOf(prev: Classified, side: Side): Classified | null {
   if (prev.type !== 'initials' && prev.type !== 'signature') return null;
-  if (prev.who === 'seller') return { type: prev.type, who: 'seller2' };
+  if (prev.who === 'seller') return { type: prev.type, who: 'seller2', explicit: true };
   // Acme Homes buys as one entity: a second buyer box stays empty.
   if (prev.who === 'buyer' && partyOf('buyer', side) === 'company') return null;
   return prev;
 }
 
+/**
+ * A signature block with a generic label ("Signature", "By", "X") stacked
+ * under another block inherits its context, so without help every block is
+ * the seller's. The second generic block is the other side; a third is the
+ * second seller. Explicit labels ("Signature of Seller" twice) already go
+ * through secondOf above, so only context-inherited blocks promote here.
+ */
+function stackedNext(who: Who, sigs: { who: Who }[]): Who | null {
+  const has = (w: Who) => sigs.some((g) => g.who === w);
+  if (who === 'seller') return has('buyer') ? (has('seller2') ? null : 'seller2') : 'buyer';
+  if (who === 'buyer') return has('seller') ? (has('seller2') ? null : 'seller2') : 'seller';
+  return null;
+}
+
 export type Classified =
-  | { type: 'signature' | 'initials' | 'date_signed'; who: Who }
+  | { type: 'signature' | 'initials' | 'date_signed'; who: Who; /** The label itself named the party (not inherited context). */ explicit?: boolean }
   | { type: 'text'; who: Who; printedName: true }
   | { type: FieldType; who: Who | null; variable_key: string | null; label: string };
 
@@ -203,11 +224,11 @@ export function classify(raw: string, o: { ctx: Who | null; inSignBlock: boolean
   if (o.after && /^\s*((calendar|business)\b|days?\b)/i.test(o.after) && !INITIAL_RE.test(l)) return { type: 'number', who, variable_key: null, label: 'Days' };
   if (o.after && /^\s*per day\b/i.test(o.after)) return { type: 'currency', who, variable_key: null, label: /holdover/i.test(o.after) ? 'Holdover rent per day' : 'Per day' };
   if (/^print(ed)?( name)?$/.test(l) && who) return { type: 'text', who, printedName: true };
-  if (INITIAL_RE.test(l)) return { type: 'initials', who: who ?? 'seller' };
-  if (SIGN_RE.test(l) && !/date/.test(l)) return { type: 'signature', who: who ?? 'seller' };
+  if (INITIAL_RE.test(l)) return { type: 'initials', who: who ?? 'seller', explicit: !!own };
+  if (SIGN_RE.test(l) && !/date/.test(l)) return { type: 'signature', who: who ?? 'seller', explicit: !!own };
   // A bare "Seller: ________" on a long line is where the seller signs.
   const bare = l.replace(/\([^)]*\)/g, '').replace(/['’]s?\b/g, '').replace(/[^a-z\s-]/g, '').trim();
-  if (own && o.longBlank && !o.box && o.late !== false && bare.split(/\s+/).length <= 2 && whoIn(bare) === own && !/name|email|phone|address/.test(l) && !/tenant|landlord/.test(l)) return { type: 'signature', who: own };
+  if (own && o.longBlank && !o.box && o.late !== false && bare.split(/\s+/).length <= 2 && whoIn(bare) === own && !/name|email|phone|address/.test(l) && !/tenant|landlord/.test(l)) return { type: 'signature', who: own, explicit: true };
   if (o.inSignBlock && who) {
     if (DATE_RE.test(l)) return { type: 'date_signed', who };
     if (NAME_RE.test(l) && !/company|entity|llc/.test(l)) return { type: 'text', who, printedName: true };
@@ -266,20 +287,58 @@ const BLANK = /_{3,}|\.{6,}|…{3,}/g;
 const BOX = /[☐□❑▢]|\[\s?\]/g;
 const SIGN_CAPTION = /^(.{0,30}\b)?signature\b|^signature of|^by:?$/i;
 
+/** Fields a person signs with: what is left on a form that is already filled in. */
+export const isSigning = (f: Pick<Found, 'type' | 'printedName'>) => f.type === 'signature' || f.type === 'initials' || f.type === 'date_signed' || !!f.printedName;
+
 /**
  * Every blank on the document. `name` and `kind` (lib/contracts guessKind)
  * decide which side of the deal it is, and so who "Buyer" means.
+ * `signOnly` keeps just the signatures, initials, dates and printed names;
+ * left out, it is on when the document is a form someone already filled in.
  */
-export function detectFields(items: TextItem[], pages: PageDim[], shapes: Shape[] = [], meta: { name?: string; kind?: string } = {}): { found: Found[]; side: Side } {
+export function detectFields(items: TextItem[], pages: PageDim[], shapes: Shape[] = [],
+  meta: { name?: string; kind?: string; signOnly?: boolean; /** Pages whose words are drawn as outlines (lib/pdf-shapes), read or not. */ outlined?: number[] } = {}): { found: Found[]; side: Side; signOnly: boolean } {
   const kind = meta.kind ?? 'other';
   const side = sideOf(meta.name ?? '', kind);
-  const lines = toLines(items);
+  // On a page that had to be read off its image, the real text is what was typed into the form: an "X" in a box, "Unknown" on a line.
+  const ocrPages = new Set([...(meta.outlined ?? []), ...items.filter((i) => i.ocr).map((i) => i.page)]);
+  // An outlined page OCR never read has no labels at all: every drawn line on it would come out as a nameless "Text" box.
+  const unread = new Set([...ocrPages].filter((p) => !items.some((i) => i.ocr && i.page === p)));
+  const isFill = (i: TextItem) => !i.ocr && ocrPages.has(i.page);
+  const fills = items.filter((i) => isFill(i) && /[a-z0-9]/i.test(i.str)).length;
+  // A filled-in form (a seller's disclosure back from the listing agent) needs signing, not filling.
+  const signOnly = meta.signOnly ?? fills >= 3;
+  // Fills say a blank is taken (textIn reads every item) but never name one.
+  const lines = toLines(items.filter((i) => !isFill(i)));
   const found: Found[] = [];
-  const sigs: { page: number; x0: number; x1: number; y: number; who: Who }[] = [];
+  const sigs: { page: number; x0: number; x1: number; y: number; who: Who; skip?: boolean }[] = [];
   const heads: { page: number; x: number; y: number; who: Who }[] = [];
 
   const add = (page: number, xPt: number, yTopPt: number, wPt: number, hPt: number, c: Classified) => {
     const p = pages[page - 1] ?? { width: 612, height: 792 };
+    if ((c.type === 'signature' || c.type === 'initials') && c.who && !((c as { explicit?: boolean }).explicit ?? false)) {
+      // A generic block stacked under another inherits its context. The
+      // second generic block is the other side's, not the same seller twice.
+      // Only same-type boxes count (initials beside a signature are not a
+      // second signature), and an explicit party label never promotes.
+      const prior = found.filter((g) => g.page === page && g.type === c.type && g.who != null).map((g) => ({ who: g.who as Who }));
+      if (prior.some((g) => g.who === (c as { who: Who }).who)) {
+        const next = stackedNext((c as { who: Who }).who, prior);
+        if (next) c = { type: c.type, who: next, explicit: true };
+      }
+    }
+    if (c.type === 'signature' && c.who) {
+      // "Signature of Seller" twice on one row: the second is the second seller's (or nobody's, for Acme Homes buying as one).
+      const twin = sigs.find((g) => g.page === page && g.who === c.who && Math.abs(g.y - (yTopPt + hPt)) < 10 && (xPt >= g.x1 - 4 || xPt + wPt <= g.x0 + 4));
+      if (twin) {
+        const again = secondOf(c, side);
+        if (!again || again.who == null) { sigs.push({ page, x0: xPt, x1: xPt + wPt, y: yTopPt + hPt, who: c.who, skip: true }); return; }
+        c = { type: 'signature', who: again.who, explicit: true };
+      }
+    } else if (c.type === 'date_signed' || 'printedName' in c) {
+      // The date and name under a signature nobody gets go with it.
+      if (sigAt(page, xPt, yTopPt + hPt)?.skip) return;
+    }
     const w = Math.min(1, wPt / p.width), h = Math.min(1, hPt / p.height);
     const f: Found = {
       page, x: clamp(xPt / p.width, 0, 1 - w), y: clamp(yTopPt / p.height, 0, 1 - h), w, h,
@@ -308,10 +367,14 @@ export function detectFields(items: TextItem[], pages: PageDim[], shapes: Shape[
     }
     return best;
   };
+  /** The signature just left of a blank on its row: "Seller ____ Date ____ | Seller ____ Date ____". */
+  const rowSigAt = (page: number, x: number, y: number) =>
+    sigs.filter((g) => g.page === page && Math.abs(g.y - y) < 8 && g.x1 <= x + 4).sort((a, b) => b.x1 - a.x1)[0];
   // The nearer of the two wins: a "BUYER (LANDLORD):" heading under the seller's block starts the buyer's.
   const ctxAt = (page: number, x: number, y: number): Who | null => {
     const g = sigAt(page, x, y), h = headAt(page, x, y);
-    if (g && h) return h.y > g.y - 2 ? h.who : g.who;
+    // "Signature of Seller" under the second seller's line still says seller; the signature knows it is the second.
+    if (g && h) return h.y > g.y - 2 && !(h.who === 'seller' && g.who === 'seller2') ? h.who : g.who;
     return g?.who ?? h?.who ?? null;
   };
   const isLate = (page: number, y: number) => page > 1 || pages.length === 1 ? page === pages.length || y > (pages[page - 1]?.height ?? 792) * 0.5 : y > (pages[0]?.height ?? 792) * 0.55;
@@ -358,7 +421,7 @@ export function detectFields(items: TextItem[], pages: PageDim[], shapes: Shape[
       prevEnd = end;
       const width = Math.max(24, x1 - x0);
       // On a row like "Seller: ____ Print: ____", the print name belongs to whoever signs just left of it.
-      const rowSig = sigs.find((g) => g.page === ln.page && Math.abs(g.y - ln.y) < 8 && g.x1 <= x0 + 4);
+      const rowSig = rowSigAt(ln.page, x0, ln.y);
       const c = classify(tidyLabel(label) ? label : caption, { ctx: (prev && prev.type === 'signature' ? prev.who : null) ?? rowSig?.who ?? ctxAt(ln.page, lx, ln.y), inSignBlock: !!sigAt(ln.page, lx, ln.y) || !!sigAt(ln.page, x0, ln.y) || !!rowSig || /sign/i.test(caption + label), side, kind, longBlank: width >= 150, late: isLate(ln.page, ln.y), after, named });
       prev = c;
       // Never taller than the gap to the line above, or it would swallow that line's blank.
@@ -418,19 +481,22 @@ export function detectFields(items: TextItem[], pages: PageDim[], shapes: Shape[
     const last: RowPrev | null = rowPrev;
     const sameRow: RowPrev | null = last && last.s.page === s.page && Math.abs(last.s.y - s.y) < 4 ? last : null;
     const left = leftOf(lines, s, shapes);
-    const row = lines.find((l) => l.page === s.page && Math.abs(l.y - s.y) < Math.max(8, l.h))?.text ?? '';
+    const row = lines.filter((l) => l.page === s.page && Math.abs(l.y - s.y) < Math.max(8, l.h)).map((l) => l.text).join(' ');
     let c: Classified;
-    if (sameRow && !tidyLabel(left) && (sameRow.c.type === 'initials' || sameRow.c.type === 'signature')) {
+    // A caption under it ("Signature of Seller ____ Date") makes it its own blank, not the one before it again.
+    const cap = captionUnder(lines, s);
+    const captioned = /\b(date|sign|name|initial)/i.test(cap) || !!whoIn(cap);
+    if (sameRow && !tidyLabel(left) && !captioned && (sameRow.c.type === 'initials' || sameRow.c.type === 'signature')) {
       const again = secondOf(sameRow.c, side);
       rowPrev = { s, c: sameRow.c };
       if (again) add(s.page, s.x, s.y - 22, s.w, 22, again);
       return;
     }
-    if (INITIAL_RE.test(row.toLowerCase()) && s.w < 120) c = { type: 'initials', who: whoIn(left) ?? (sameRow?.c.who ?? null) ?? 'seller' };
+    if (INITIAL_RE.test(row.toLowerCase()) && s.w < 120) c = { type: 'initials', who: whoIn(left) ?? (sameRow?.c.who ?? null) ?? 'seller', explicit: !!whoIn(left) };
     else {
       const right = rightOf(lines, s, shapes);
       const tag = /^\s*\(([^)]{2,30})\)/.exec(right) ?? /^\W*(?:hereinafter )?(?:referred to as|called)\s+["“']?([a-z ]{3,20})/i.exec(right);
-      const rowSig = sigs.find((g) => g.page === s.page && Math.abs(g.y - s.y) < 8 && g.x1 <= s.x + 4);
+      const rowSig = rowSigAt(s.page, s.x, s.y);
       c = classify(tag && whoIn(tag[1]) ? tag[1] : labelNear(lines, s, shapes), { ctx: rowSig?.who ?? ctxAt(s.page, s.x, s.y), inSignBlock: !!sigAt(s.page, s.x, s.y) || !!rowSig, side, kind, longBlank: s.w >= 150, late: isLate(s.page, s.y), after: right, named: !!(tag && whoIn(tag[1])) });
     }
     rowPrev = { s, c };
@@ -455,8 +521,9 @@ export function detectFields(items: TextItem[], pages: PageDim[], shapes: Shape[
   steps.sort((p, q) => p.page - q.page || (Math.abs(p.y - q.y) < 3 ? p.x - q.x : p.y - q.y));
   for (const st of steps) st.run();
 
-  found.sort((a, b) => a.page - b.page || a.y - b.y || a.x - b.x);
-  return { found, side };
+  const out = found.filter((f) => !unread.has(f.page) && (!signOnly || isSigning(f)));
+  out.sort((a, b) => a.page - b.page || a.y - b.y || a.x - b.x);
+  return { found: out, side, signOnly };
 }
 
 /** The words that name a drawn blank: on its line to the left, else just above it, else just under it. */
@@ -477,12 +544,17 @@ function rightOf(lines: Line[], s: Shape, shapes: Shape[]): string {
     .map((l) => l.items.filter((it) => it.x >= end - 4 && it.x + it.w <= fence + 2).map((it) => it.str).join(' ').trim()).find(Boolean) ?? '');
 }
 
+/** The words printed straight under a blank, within its span. */
+function captionUnder(lines: Line[], s: Shape): string {
+  const bottom = s.kind === 'rule' ? s.y : s.y + s.h;
+  const capLine = lines.filter((l) => l.page === s.page && l.y > bottom && l.y - bottom < 14).sort((a, b) => a.y - b.y)[0];
+  return capLine ? textUnder(capLine, s.x, s.x + s.w) : '';
+}
+
 function labelNear(lines: Line[], s: Shape, shapes: Shape[]): string {
   const onPage = lines.filter((l) => l.page === s.page);
   // A bracketed caption straight under the line, or right after it, names it outright: "(Address of Property)", "(Seller)".
-  const bottom = s.kind === 'rule' ? s.y : s.y + s.h;
-  const capLine = onPage.filter((l) => l.y > bottom && l.y - bottom < 14).sort((a, b) => a.y - b.y)[0];
-  const cap = capLine ? textUnder(capLine, s.x, s.x + s.w) : '';
+  const cap = captionUnder(lines, s);
   if (/^\(.{3,40}\)/.test(cap)) return cap.replace(/^\((.*?)\).*$/, '$1');
   // A party name or "Date" printed under a bare line: the line is where they sign, or the date they do.
   if (s.kind === 'rule' && !tidyLabel(leftOf(lines, s, shapes))) {

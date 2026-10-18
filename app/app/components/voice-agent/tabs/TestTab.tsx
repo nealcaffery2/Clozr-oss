@@ -29,7 +29,7 @@ export function TestTab(ctx: TabCtx) {
 
   return (
     <>
-      <section style={{ background: '#fff', border: '1px solid #e4e4e7', borderRadius: 12, padding: '14px 18px', marginBottom: 12 }} aria-labelledby="va-test-which">
+      <section style={{ background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: 12, padding: '14px 18px', marginBottom: 12 }} aria-labelledby="va-test-which">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <h2 id="va-test-which" style={{ margin: 0, fontSize: 14, fontWeight: 600, color: INK }}>What you are testing</h2>
           {published ? <Badge tone="green">Live v{detail.live_version}</Badge> : <Badge tone="amber">Not published</Badge>}

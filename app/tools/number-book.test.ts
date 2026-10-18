@@ -74,4 +74,16 @@ const repView = buildNumberBook({
 assert.equal(repView.people.find((p) => p.member.user_id === 'morgan')!.callerId, '+12105550174');
 assert.deepEqual(repView.people.find((p) => p.member.user_id === 'alex')!.lines.map((l) => l.phone), ['+15125550100']);
 
+// Talkr email differs from CLOZR but display name matches uniquely → still linked.
+const caseyTeam = [{ user_id: 'w', full_name: 'Casey Example', email: 'casey@yourcompany.com', role: 'acquisitions' }];
+const caseyBook = buildNumberBook({
+  team: caseyTeam,
+  rows: [{ phone_e164: '+12105550332', user_id: 'w', label: 'Casey' }],
+  talkrNumbers: [tn('wn', '+12105550332', 'T-w')],
+  talkrMembers: [{ id: 'T-w', email: 'w.example@talkr.io', display_name: 'Casey Example', status: 'active', default_phone_number_id: 'wn' }],
+  callerLines: [], health: [], agentPhones: [],
+});
+assert.equal(caseyBook.people[0]!.talkr?.id, 'T-w');
+assert.equal(caseyBook.people[0]!.lines[0]!.talkr?.id, 'wn');
+
 console.log('number-book ok');

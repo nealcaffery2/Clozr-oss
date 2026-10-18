@@ -128,21 +128,21 @@ function NewSmartListForm({ suggested, keeps, onSave, onClose }: { suggested: st
   return (
     <div role="presentation" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'grid', placeItems: 'center', background: 'rgba(12,13,16,.28)', padding: '16px' }}>
       <form ref={box} role="dialog" aria-modal="true" aria-labelledby="buyer-smart-list-title" onSubmit={submit} onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(420px, 100%)', background: '#fff', borderRadius: '14px', padding: '18px', boxShadow: '0 2.8px 2.2px rgba(0,0,0,.034), 0 6.7px 5.3px rgba(0,0,0,.048), 0 12.5px 10px rgba(0,0,0,.06), 0 22.3px 17.9px rgba(0,0,0,.072), 0 41.8px 33.4px rgba(0,0,0,.086), 0 100px 80px rgba(0,0,0,.12)' }}>
-        <h2 id="buyer-smart-list-title" style={{ margin: 0, fontSize: '15px', fontWeight: 700, letterSpacing: '-0.015em', color: '#18181b' }}>New smart list</h2>
-        <label htmlFor="buyer-smart-list-name" style={{ display: 'block', marginTop: '14px', fontSize: '11.5px', fontWeight: 500, color: '#71717a' }}>Name</label>
+        style={{ width: 'min(420px, 100%)', background: 'var(--surface, #fff)', borderRadius: '14px', padding: '18px', boxShadow: '0 2.8px 2.2px rgba(0,0,0,.034), 0 6.7px 5.3px rgba(0,0,0,.048), 0 12.5px 10px rgba(0,0,0,.06), 0 22.3px 17.9px rgba(0,0,0,.072), 0 41.8px 33.4px rgba(0,0,0,.086), 0 100px 80px rgba(0,0,0,.12)' }}>
+        <h2 id="buyer-smart-list-title" style={{ margin: 0, fontSize: '15px', fontWeight: 700, letterSpacing: '-0.015em', color: 'var(--ink, #18181b)' }}>New smart list</h2>
+        <label htmlFor="buyer-smart-list-name" style={{ display: 'block', marginTop: '14px', fontSize: '11.5px', fontWeight: 500, color: 'var(--meta, #71717a)' }}>Name</label>
         <input id="buyer-smart-list-name" name="smart-list-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} autoComplete="off"
-          style={{ marginTop: '4px', width: '100%', height: '36px', padding: '0 10px', borderRadius: '8px', border: '1px solid #e4e4e7', fontSize: '16px', fontWeight: 600, color: '#18181b' }} />
-        <p style={{ margin: '10px 0 0', fontSize: '12.5px', color: '#3f3f46', lineHeight: 1.5 }}>
-          <span style={{ color: '#71717a' }}>Keeps </span>{keeps}
+          style={{ marginTop: '4px', width: '100%', height: '36px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', fontSize: '16px', fontWeight: 600, color: 'var(--ink, #18181b)' }} />
+        <p style={{ margin: '10px 0 0', fontSize: '12.5px', color: 'var(--ink-3, #3f3f46)', lineHeight: 1.5 }}>
+          <span style={{ color: 'var(--meta, #71717a)' }}>Keeps </span>{keeps}
         </p>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', minHeight: '32px', fontSize: '13px', color: '#18181b', cursor: 'pointer' }}>
-          <input type="checkbox" checked={shared} onChange={(e) => setShared(e.target.checked)} style={{ width: '16px', height: '16px', accentColor: '#0A8560' }} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', minHeight: '32px', fontSize: '13px', color: 'var(--ink, #18181b)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={shared} onChange={(e) => setShared(e.target.checked)} style={{ width: '16px', height: '16px', accentColor: 'var(--tx-mint, #0a8560)' }} />
           Everyone on the team can open it
         </label>
-        {error ? <p role="alert" style={{ margin: '8px 0 0', fontSize: '12.5px', color: '#b91c1c' }}>{error}</p> : null}
+        {error ? <p role="alert" style={{ margin: '8px 0 0', fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)' }}>{error}</p> : null}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
-          <button type="button" className="dc2" onClick={onClose} style={{ height: '32px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', color: '#18181b', fontSize: '12.5px', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
+          <button type="button" className="dc2" onClick={onClose} style={{ height: '32px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', color: 'var(--ink, #18181b)', fontSize: '12.5px', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
           <button type="submit" className="dc2" disabled={saving} style={{ height: '32px', padding: '0 14px', borderRadius: '8px', border: 0, background: '#0A8560', color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: saving ? 'progress' : 'pointer', opacity: saving ? 0.5 : 1 }}>
             {saving ? 'Saving…' : 'Save list'}
           </button>

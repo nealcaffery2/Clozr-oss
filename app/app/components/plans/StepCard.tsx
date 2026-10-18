@@ -6,7 +6,7 @@
 import React, { useRef } from 'react';
 import { RvmRecordingPicker } from '@/app/components/talkr/RvmRecordingPicker';
 import { SELLER_STAGE_LABELS } from '@/lib/stages';
-import { type DelayUnit, type PlanStepDraft, type Priority, type StepType, type Teammate, CAPABILITIES, CAPABILITY_LABEL, DELAY_UNITS, MERGE_FIELDS, STEP_TYPES, stepMeta } from '@/lib/plans';
+import { type DelayUnit, type PlanStepDraft, type Priority, type StepType, type Teammate, CAPABILITIES, CAPABILITY_LABEL, DELAY_UNITS, HANDOFF_CHANNELS, MERGE_FIELDS, STEP_TYPES, stepMeta } from '@/lib/plans';
 import { Btn, FAINT, INK, LINE, MUTED, label, smallInput, smallSelect, textarea } from './ui';
 
 export function StepCard({
@@ -51,10 +51,10 @@ export function StepCard({
       style={{ display: 'grid', gridTemplateColumns: '26px minmax(0,1fr)', gap: '12px', marginBottom: '10px', opacity: dragging ? 0.4 : 1 }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <span style={{ width: '26px', height: '26px', borderRadius: '999px', background: '#fff', border: `1px solid ${LINE}`, display: 'grid', placeItems: 'center', fontSize: '11px', fontWeight: 700, color: '#52525b', flex: 'none' }}>{index + 1}</span>
+        <span style={{ width: '26px', height: '26px', borderRadius: '999px', background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, display: 'grid', placeItems: 'center', fontSize: '11px', fontWeight: 700, color: 'var(--muted, #52525b)', flex: 'none' }}>{index + 1}</span>
         <span style={{ flex: 1, width: '1px', background: LINE, marginTop: '6px' }} />
       </div>
-      <div className="dc19" style={{ background: '#fff', border: `1px solid ${dragging ? '#0A8560' : LINE}`, borderRadius: '10px', padding: '12px 14px' }}>
+      <div className="dc19" style={{ background: 'var(--surface, #fff)', border: `1px solid ${dragging ? '#0A8560' : LINE}`, borderRadius: '10px', padding: '12px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span
             draggable onDragStart={onDragStart} onDragEnd={onDragEnd} title="Drag to reorder"
@@ -164,7 +164,7 @@ export function StepCard({
                 return (
                   <button
                     key={v} type="button" role="radio" aria-checked={on} className="dc23"
-                    onClick={() => onPatch({ allowed: v === 'once' ? (step.allowed ?? [...CAPABILITIES]) : undefined })}
+                    onClick={() => onPatch(v === 'once' ? { allowed: step.allowed ?? [...CAPABILITIES] } : { allowed: undefined, channels: step.channels ?? HANDOFF_CHANNELS.map((c) => c.v) })}
                     style={{ height: '26px', padding: '0 10px', borderRadius: '7px', border: `1px solid ${on ? '#0f766e' : LINE}`, background: on ? '#f0fdfa' : '#fff', color: on ? '#0f766e' : MUTED, fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
                   >
                     {text}
@@ -191,14 +191,35 @@ export function StepCard({
                 </div>
                 <span style={{ display: 'block', fontSize: '11.5px', color: MUTED, marginTop: '6px' }}>
                   {step.allowed.length
-                    ? 'When the lead reaches this step the AI reads their texts, calls, earlier plans and open tasks, then does at most one of each — or nothing — and the run table shows what it did and why. Texts go out as the lead’s rep, 9am–8pm their time, with opt-out and STOP respected.'
+                    ? 'When the lead reaches this step the AI reads their texts, calls, earlier plans and open tasks, then does at most one of each — or nothing — and the run table shows what it did and why. Texts go out as the lead’s rep, 9am–8pm their time, with opt-out and STOP respected. Seller leads only: a buyer skips this step, so hand buyers to the AI agent.'
                     : 'Nothing is ticked, so this step will only be marked done.'}
                 </span>
               </div>
             ) : (
-              <span style={{ display: 'block', fontSize: '11.5px', color: MUTED, marginTop: '6px' }}>
-                Switches the workspace’s AI agent on for the record with this goal. It texts and emails over days until the goal is met or a rep switches it off.
-              </span>
+              <div style={{ marginTop: '8px' }}>
+                <span style={label}>The AI agent may</span>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  {HANDOFF_CHANNELS.map((c) => {
+                    // Older steps saved no channels and keep text and email only.
+                    const cur = step.channels ?? ['sms', 'email'];
+                    const on = cur.includes(c.v);
+                    return (
+                      <label key={c.v} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', color: INK, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox" checked={on}
+                          onChange={() => onPatch({ channels: HANDOFF_CHANNELS.map((x) => x.v).filter((x) => (x === c.v ? !on : cur.includes(x))) })}
+                        />
+                        {c.label}
+                      </label>
+                    );
+                  })}
+                </div>
+                <span style={{ display: 'block', fontSize: '11.5px', color: MUTED, marginTop: '6px' }}>
+                  {(step.channels ?? ['sms', 'email']).length
+                    ? 'Turns on the workspace’s AI agent for this lead, seller or buyer, with this goal. It works the lead over days, calling only inside its call hours, until the goal is met or a rep switches it off.'
+                    : 'Nothing is ticked, so the AI agent will not be started.'}
+                </span>
+              </div>
             )}
           </div>
         ) : null}
@@ -220,11 +241,11 @@ export function StepCard({
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '6px', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '11.5px', color: FAINT, fontWeight: 600, marginRight: '2px' }}>Insert</span>
               {(compr ? [...MERGE_FIELDS, 'report_link'] : MERGE_FIELDS).map((f) => (
-                <button key={f} type="button" className="dc23" onClick={() => insertField(f)} style={{ height: '20px', padding: '0 7px', borderRadius: '5px', border: `1px solid ${LINE}`, background: '#fafafa', fontSize: '11px', color: '#52525b', cursor: 'pointer', fontFamily: 'inherit' }}>
+                <button key={f} type="button" className="dc23" onClick={() => insertField(f)} style={{ height: '20px', padding: '0 7px', borderRadius: '5px', border: `1px solid ${LINE}`, background: 'var(--canvas, #fafafa)', fontSize: '11px', color: 'var(--muted, #52525b)', cursor: 'pointer', fontFamily: 'inherit' }}>
                   {`{{${f}}}`}
                 </button>
               ))}
-              {step.type === 'sms' || (compr && step.via !== 'email') ? <span style={{ marginLeft: 'auto', fontSize: '11px', color: step.body.length > 320 ? '#b91c1c' : FAINT, fontVariantNumeric: 'tabular-nums' }}>{step.body.length} chars</span> : null}
+              {step.type === 'sms' || (compr && step.via !== 'email') ? <span style={{ marginLeft: 'auto', fontSize: '11px', color: step.body.length > 320 ? 'var(--tx-red, #b91c1c)' : FAINT, fontVariantNumeric: 'tabular-nums' }}>{step.body.length} chars</span> : null}
             </div>
           </>
         ) : null}
@@ -254,7 +275,7 @@ export function StepCard({
         <div style={{ display: 'flex', gap: '5px', marginTop: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
           <span style={{ fontSize: '11px', color: FAINT }}>Add after:</span>
           {STEP_TYPES.map((t) => (
-            <button key={t.v} type="button" className="dc23" onClick={() => onAddAfter(t.v)} title={t.hint} style={{ height: '20px', padding: '0 7px', borderRadius: '5px', border: `1px dashed #d4d4d8`, background: 'none', fontSize: '11px', color: INK, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button key={t.v} type="button" className="dc23" onClick={() => onAddAfter(t.v)} title={t.hint} style={{ height: '20px', padding: '0 7px', borderRadius: '5px', border: `1px dashed var(--line, #d4d4d8)`, background: 'none', fontSize: '11px', color: INK, cursor: 'pointer', fontFamily: 'inherit' }}>
               {t.label}
             </button>
           ))}

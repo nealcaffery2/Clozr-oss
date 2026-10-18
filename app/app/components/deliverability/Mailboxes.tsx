@@ -52,7 +52,7 @@ export function Mailboxes({ workspaceId, mailboxes, admin, onChange }: { workspa
           <div key={m.account_id} style={row}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '13px', fontWeight: 600 }}>{textValue(m.email)}</span>
-              {textValue(m.owner) ? <span style={{ fontSize: '12px', color: '#71717a' }}>{textValue(m.owner)}</span> : null}
+              {textValue(m.owner) ? <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>{textValue(m.owner)}</span> : null}
               {s.paused ? <Badge tone="bad" title={textValue(s.paused_reason)}>paused</Badge> : m.status !== 'active' ? <Badge tone="warn">needs reconnect</Badge> : <Badge tone="good">active</Badge>}
               {s.ramp_enabled && m.allowance < s.daily_cap && <Badge tone="warn">warm-up day {m.ramp_day}</Badge>}
               {!m.gmail_read && <Badge tone="warn" title="Without Gmail read access CLOZR cannot see bounce notices">bounces unseen</Badge>}
@@ -60,15 +60,15 @@ export function Mailboxes({ workspaceId, mailboxes, admin, onChange }: { workspa
               {admin && <button type="button" style={ghost} onClick={() => setEditing(editing === m.account_id ? null : m.account_id)}>{editing === m.account_id ? 'Close' : 'Limits'}</button>}
               {admin && <button type="button" style={s.paused ? primary : ghost} onClick={() => void toggle(m)}>{s.paused ? 'Resume' : 'Pause'}</button>}
             </div>
-            {s.paused && <div style={{ fontSize: '12px', color: '#b91c1c', marginTop: '4px' }}>{textValue(s.paused_reason)}{s.paused_at ? ` · ${new Date(s.paused_at).toLocaleString()}` : ''}</div>}
-            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginTop: '8px', fontSize: '12px', color: '#52525b' }}>
+            {s.paused && <div style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)', marginTop: '4px' }}>{textValue(s.paused_reason)}{s.paused_at ? ` · ${new Date(s.paused_at).toLocaleString()}` : ''}</div>}
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginTop: '8px', fontSize: '12px', color: 'var(--muted, #52525b)' }}>
               <span style={{ minWidth: '160px' }}>
                 Today {m.sent_today} / {m.allowance}
-                <span style={{ display: 'block', height: '5px', borderRadius: '3px', background: '#f4f4f5', marginTop: '3px', overflow: 'hidden' }}>
+                <span style={{ display: 'block', height: '5px', borderRadius: '3px', background: 'var(--surface-2, #f4f4f5)', marginTop: '3px', overflow: 'hidden' }}>
                   <span style={{ display: 'block', height: '100%', width: `${used * 100}%`, background: used >= 1 ? '#b91c1c' : used > 0.8 ? '#d97706' : '#0A8560' }} />
                 </span>
               </span>
-              <span>Bounced, last 7 days <strong style={{ color: bounce != null && bounce > 0.05 ? '#b91c1c' : '#18181b' }}>{pct(bounce)}</strong> <span style={{ color: '#71717a' }}>({m.bounced_7d}/{m.sent_7d})</span></span>
+              <span>Bounced, last 7 days <strong style={{ color: bounce != null && bounce > 0.05 ? '#b91c1c' : 'var(--ink, #18181b)' }}>{pct(bounce)}</strong> <span style={{ color: 'var(--meta, #71717a)' }}>({m.bounced_7d}/{m.sent_7d})</span></span>
               <span>Hourly cap {s.hourly_cap}</span>
               <span>Window {s.window_start}:00–{s.window_end}:00 {s.window_days.map((d) => DAYS[d]).join(' ')} · {textValue(s.timezone)}</span>
             </div>
@@ -88,7 +88,7 @@ function Limits({ workspaceId, m, onSaved }: { workspaceId: number; m: MailboxRo
   const num = (k: keyof MailboxSettings, label: string, hint?: string) => (
     <label><span style={fieldLabel}>{label}</span>
       <input type="number" style={{ ...input, width: '100%' }} value={String(s[k])} onChange={(e) => setS({ ...s, [k]: Number(e.target.value) })} />
-      {hint && <span style={{ fontSize: '11px', color: '#71717a' }}>{hint}</span>}
+      {hint && <span style={{ fontSize: '11px', color: 'var(--meta, #71717a)' }}>{hint}</span>}
     </label>
   );
   const today = new Date().toISOString().slice(0, 10);
@@ -106,7 +106,7 @@ function Limits({ workspaceId, m, onSaved }: { workspaceId: number; m: MailboxRo
   };
 
   return (
-    <div style={{ marginTop: '10px', padding: '12px', border: '1px solid #e4e4e7', borderRadius: '10px', background: '#fafafa' }}>
+    <div style={{ marginTop: '10px', padding: '12px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px', background: 'var(--canvas, #fafafa)' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
         {num('daily_cap', 'Daily cap', 'Workspace max 2,000')}
         {num('hourly_cap', 'Hourly cap')}
@@ -118,12 +118,12 @@ function Limits({ workspaceId, m, onSaved }: { workspaceId: number; m: MailboxRo
       <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', margin: '8px 0' }}>
         {DAYS.map((d, i) => {
           const on = s.window_days.includes(i);
-          return <button key={d} type="button" onClick={() => setS({ ...s, window_days: on ? s.window_days.filter((x) => x !== i) : [...s.window_days, i].sort() })} style={{ ...ghost, height: '26px', background: on ? '#E7F8F1' : '#fff', borderColor: on ? '#A8ECD2' : '#e4e4e7', color: on ? '#0A8560' : '#71717a' }}>{d}</button>;
+          return <button key={d} type="button" onClick={() => setS({ ...s, window_days: on ? s.window_days.filter((x) => x !== i) : [...s.window_days, i].sort() })} style={{ ...ghost, height: '26px', background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', borderColor: on ? '#A8ECD2' : 'var(--divider, #e4e4e7)', color: on ? 'var(--tx-mint, #0a8560)' : 'var(--meta, #71717a)' }}>{d}</button>;
         })}
-        <span style={{ fontSize: '11.5px', color: '#71717a', alignSelf: 'center' }}>The mailbox&apos;s time zone stands in for the recipient&apos;s, which CLOZR does not know.</span>
+        <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', alignSelf: 'center' }}>The mailbox&apos;s time zone stands in for the recipient&apos;s, which CLOZR does not know.</span>
       </div>
       <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 600, margin: '10px 0 6px' }}>
-        <input type="checkbox" checked={s.ramp_enabled} onChange={(e) => setS({ ...s, ramp_enabled: e.target.checked })} style={{ accentColor: '#0A8560' }} /> Warm-up ramp
+        <input type="checkbox" checked={s.ramp_enabled} onChange={(e) => setS({ ...s, ramp_enabled: e.target.checked })} style={{ accentColor: 'var(--tx-mint, #0a8560)' }} /> Warm-up ramp
       </label>
       {s.ramp_enabled && (
         <>
@@ -133,7 +133,7 @@ function Limits({ workspaceId, m, onSaved }: { workspaceId: number; m: MailboxRo
             {num('ramp_target', 'Target volume / day')}
             <label><span style={fieldLabel}>Started on</span><input type="date" max={today} style={{ ...input, width: '100%' }} value={s.ramp_started_on} onChange={(e) => setS({ ...s, ramp_started_on: e.target.value })} /></label>
           </div>
-          <p style={{ fontSize: '11.5px', color: '#71717a', margin: '6px 0 0' }}>{preview}. A new mailbox or domain should start low; a mailbox with months of normal sending can switch the ramp off.</p>
+          <p style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', margin: '6px 0 0' }}>{preview}. A new mailbox or domain should start low; a mailbox with months of normal sending can switch the ramp off.</p>
         </>
       )}
       <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>

@@ -15,6 +15,8 @@ export type NotifListItem = {
   mute: () => void;
   /** The open button's label; '' when there is nothing to open (no button). */
   actionLabel?: string;
+  /** A reply's tone (lib/reply-tone), shown as a Good or Not interested tag. */
+  tone?: 'good' | 'bad' | 'auto' | null;
 };
 
 type Row = NotifListItem & { leaving: boolean; delay: number };
@@ -26,7 +28,7 @@ export type NotifListHandle = {
 
 const LEAVE_MS = 420;
 
-function Check({ color = '#fff' }: { color?: string }) {
+function Check({ color = 'var(--on-dark, #fff)' }: { color?: string }) {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden style={{ display: 'block' }}>
       <path d="M2.2 6.2 4.7 8.7 9.8 3.3" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
@@ -65,7 +67,7 @@ const NotifRow = ({ row, onOpen, onMark, onGone }: { row: Row; onOpen: (id: stri
           data-testid="notif-row-card"
           title={opens ? row.actionLabel || 'Open record' : undefined}
           onClick={opens ? () => onOpen(row.id) : undefined}
-          style={{ display: 'grid', gridTemplateColumns: '22px 1fr', gap: '10px', padding: '11px 14px', borderBottom: '1px solid #f0f0f1', background: row.leaving ? '#E7F8F1' : '#fff' }}>
+          style={{ display: 'grid', gridTemplateColumns: '22px 1fr', gap: '10px', padding: '11px 14px', borderBottom: '1px solid var(--divider-2, #f0f0f1)', background: row.leaving ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)' }}>
           <span className={row.leaving ? 'notif-check is-on' : undefined} style={row.leaving ? { background: '#0A8560' } : { color: row.catColor, display: 'inline-flex', marginTop: 2 }}>
             {row.leaving ? <Check /> : <Mark label={row.cat} size={14} />}
           </span>
@@ -74,12 +76,17 @@ const NotifRow = ({ row, onOpen, onMark, onGone }: { row: Row; onOpen: (id: stri
               <span style={{ fontSize: '11px', fontWeight: 600, color: row.catColor }}>
                 {row.cat}
               </span>
-              <span style={{ fontSize: '11px', color: '#a1a1aa' }}>{row.time}</span>
+              <span style={{ fontSize: '11px', color: 'var(--subtle, #a1a1aa)' }}>{row.time}</span>
+              {row.tone === 'good' || row.tone === 'bad' ? (
+                <span data-testid="notif-tone" style={{ fontSize: '10.5px', fontWeight: 600, padding: '1px 6px', borderRadius: '999px', background: row.tone === 'good' ? '#E7F8F1' : '#fdecec', color: row.tone === 'good' ? '#0A8560' : '#b42318' }}>
+                  {row.tone === 'good' ? 'Good' : 'Not interested'}
+                </span>
+              ) : null}
               {row.isUnread && !row.leaving ? (
                 <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#0A8560' }} />
               ) : null}
             </div>
-            <div style={{ fontSize: '13px', color: '#18181b', marginTop: '3px', lineHeight: 1.45 }}>{row.text}</div>
+            <div style={{ fontSize: '13px', color: 'var(--ink, #18181b)', marginTop: '3px', lineHeight: 1.45 }}>{row.text}</div>
             <div className="notif-row-actions" style={{ display: 'flex', gap: '4px', marginTop: '7px', opacity: row.leaving ? 0 : 1 }}>
               {row.actionLabel !== '' ? (
                 <button type="button" className="dc6" onClick={(e) => { e.stopPropagation(); onOpen(row.id); }} style={{ height: '26px', padding: '0 9px', borderRadius: '7px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}>
@@ -89,7 +96,7 @@ const NotifRow = ({ row, onOpen, onMark, onGone }: { row: Row; onOpen: (id: stri
               <button type="button" data-testid="notif-mark-read" className="dc2" onClick={(e) => { e.stopPropagation(); onMark(row.id); }} style={{ height: '26px', padding: '0 9px', borderRadius: '7px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '11.5px', cursor: 'pointer' }}>
                 Mark read
               </button>
-              <button type="button" className="dc2" onClick={(e) => { e.stopPropagation(); row.mute(); }} style={{ height: '26px', padding: '0 9px', borderRadius: '7px', border: 0, background: 'none', fontSize: '11.5px', cursor: 'pointer', color: '#71717a' }}>
+              <button type="button" className="dc2" onClick={(e) => { e.stopPropagation(); row.mute(); }} style={{ height: '26px', padding: '0 9px', borderRadius: '7px', border: 0, background: 'none', fontSize: '11.5px', cursor: 'pointer', color: 'var(--meta, #71717a)' }}>
                 Mute
               </button>
             </div>
@@ -153,11 +160,11 @@ export const NotifList = forwardRef<NotifListHandle, {
   if (!rows.length) {
     return (
       <div style={{ padding: '48px 24px', textAlign: 'center', animation: 'clozrFade .28s ease' }}>
-        <span style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#E7F8F1', display: 'inline-grid', placeItems: 'center' }}>
-          <Check color="#0A8560" />
+        <span style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--mint-dim, #e7f8f1)', display: 'inline-grid', placeItems: 'center' }}>
+          <Check color="var(--tx-mint, #0a8560)" />
         </span>
-        <div style={{ marginTop: '10px', fontSize: '13.5px', fontWeight: 650, color: '#18181b' }}>All caught up</div>
-        <div style={{ marginTop: '4px', fontSize: '12.5px', color: '#71717a' }}>Nothing waiting in this list.</div>
+        <div style={{ marginTop: '10px', fontSize: '13.5px', fontWeight: 650, color: 'var(--ink, #18181b)' }}>All caught up</div>
+        <div style={{ marginTop: '4px', fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>Nothing waiting in this list.</div>
       </div>
     );
   }

@@ -28,7 +28,7 @@ const apply = (m: M, x: number, y: number): [number, number] => [m[0] * x + m[2]
  * A thin filled rectangle is how most generators draw a line, so anything
  * under 2.5pt tall counts as a rule.
  */
-export async function pageShapes(page: PdfPage, OPS: Ops, pageNo: number): Promise<Shape[]> {
+export async function pageShapes(page: PdfPage, OPS: Ops, pageNo: number, stats?: { curves: number }): Promise<Shape[]> {
   const vp = page.getViewport({ scale: 1 });
   const ol = await page.getOperatorList();
   let ctm: M = [1, 0, 0, 1, 0, 0];
@@ -98,8 +98,8 @@ export async function pageShapes(page: PdfPage, OPS: Ops, pageNo: number): Promi
             else if (Math.abs(bx - ax) <= 1.5 && Math.abs(by - ay) >= 6) sides.push({ x: (ax + bx) / 2, y0: Math.min(ay, by), y1: Math.max(ay, by) });
           }
           cur = [nx, ny];
-        } else if (op === OPS.curveTo) k += 6;
-        else if (op === OPS.curveTo2 || op === OPS.curveTo3) k += 4;
+        } else if (op === OPS.curveTo) { k += 6; if (stats) stats.curves++; }
+        else if (op === OPS.curveTo2 || op === OPS.curveTo3) { k += 4; if (stats) stats.curves++; }
       }
     }
   }
@@ -139,23 +139,53 @@ function dedupe(shapes: Shape[]): Shape[] {
 
 // --------------------------------------------------------------- browser
 
-/** Everything lib/pdf-autodetect reads from an open PDF: positioned text, page sizes and drawn shapes. */
-export async function readLayout(doc: PdfDoc): Promise<{ items: TextItem[]; pages: PageDim[]; shapes: Shape[] }> {
+/**
+ * A page whose words are drawn as outlines: thousands of curve segments (each
+ * letter is a few) and almost no text to show for them. zipForm and Lone Wolf
+ * export TXR and TREC forms this way, with only the typed-in values as text.
+ */
+export function isOutlined(letters: number, curves: number): boolean {
+  return curves >= 1500 && letters * 6 < curves;
+}
+
+/** Progress while pages are read off their image: `page` of `of`. */
+export type Reading = (page: number, of: number) => void;
+
+/**
+ * Everything lib/pdf-autodetect reads from an open PDF: positioned text, page
+ * sizes and drawn shapes. Outlined pages are read with OCR (lib/pdf-ocr), and
+ * their words come in marked `ocr`; if OCR cannot run, the page keeps the
+ * text it has.
+ */
+export async function readLayout(doc: PdfDoc, onReading?: Reading): Promise<{ items: TextItem[]; pages: PageDim[]; shapes: Shape[]; outlined: number[]; ocrFailed: boolean }> {
   const lib = await loadPdfJs();
   const items: TextItem[] = [];
   const pages: PageDim[] = [];
   const shapes: Shape[] = [];
+  const outlined: number[] = [];
   for (let n = 1; n <= doc.numPages; n++) {
     const page = await doc.getPage(n);
     const vp = page.getViewport({ scale: 1 });
     pages.push({ width: vp.width, height: vp.height });
+    let letters = 0;
     for (const raw of (await page.getTextContent()).items) {
       if (!('str' in raw) || !raw.str) continue;
       const [, , c, d, e, f] = raw.transform as number[];
       const [x, y] = vp.convertToViewportPoint(e, f);
       items.push({ page: n, str: raw.str, x, y, w: raw.width, h: Math.abs(raw.height || Math.hypot(c, d)) || 10 });
+      letters += raw.str.replace(/\s/g, '').length;
     }
-    try { shapes.push(...await pageShapes(page, lib.OPS as unknown as Record<string, number>, n)); } catch { /* text cues still work */ }
+    const stats = { curves: 0 };
+    try { shapes.push(...await pageShapes(page, lib.OPS as unknown as Record<string, number>, n, stats)); } catch { /* text cues still work */ }
+    if (isOutlined(letters, stats.curves)) outlined.push(n);
   }
-  return { items, pages, shapes };
+  if (!outlined.length) return { items, pages, shapes, outlined, ocrFailed: false };
+  try {
+    const { ocrPages, mergeOcr } = await import('./pdf-ocr');
+    const words = await ocrPages(doc, outlined, onReading);
+    return { items: mergeOcr(items, words), pages, shapes, outlined, ocrFailed: false };
+  } catch (e) {
+    console.warn('OCR could not run; mapping from the text layer alone', e);
+    return { items, pages, shapes, outlined, ocrFailed: true };
+  }
 }

@@ -14,10 +14,10 @@ type Tone = 'good' | 'warn' | 'bad' | 'off';
 export type Chip = { key: string; text: string; tone: Tone; detail: string };
 
 const TONE: Record<Tone, { bg: string; fg: string }> = {
-  good: { bg: '#E7F8F1', fg: '#066B47' }, // #0A8560 is 4.2:1 on this tint; this is 6:1
-  warn: { bg: '#fef3c7', fg: '#92400e' },
-  bad: { bg: '#fee2e2', fg: '#b91c1c' },
-  off: { bg: '#f4f4f5', fg: '#52525b' },
+  good: { bg: 'var(--mint-dim, #e7f8f1)', fg: '#066B47' }, // #0A8560 is 4.2:1 on this tint; this is 6:1
+  warn: { bg: 'var(--caution-soft, #fef3c7)', fg: '#92400e' },
+  bad: { bg: 'var(--negative-soft, #fee2e2)', fg: '#b91c1c' },
+  off: { bg: 'var(--surface-2, #f4f4f5)', fg: 'var(--muted, #52525b)' },
 };
 
 const FCR: Record<string, [string, Tone, string]> = {

@@ -9,7 +9,7 @@ export function PickBox({ on }: { on: boolean }) {
       border: `1.5px solid ${on ? '#0A8560' : '#c4c4cc'}`, background: on ? '#0A8560' : '#fff',
     }}>
       {on ? (
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--on-dark, #fff)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
       ) : null}
     </span>
   );

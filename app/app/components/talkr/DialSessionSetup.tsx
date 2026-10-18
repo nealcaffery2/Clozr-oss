@@ -130,7 +130,7 @@ function SetupSheet({ V, prompt, onClose }: { V: ClozrView; prompt: Prompt; onCl
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="dial-setup-title" data-testid="dial-setup" onClick={() => onClose(null)} style={backdrop}>
       <div className="talkr-dialer" onClick={(e) => e.stopPropagation()} style={sheet}>
-        <div style={{ ...eyebrow, color: blocked ? '#b91c1c' : check.warnings.length ? '#b45309' : '#0e7a57' }}>
+        <div style={{ ...eyebrow, color: blocked ? 'var(--tx-red, #b91c1c)' : check.warnings.length ? '#b45309' : '#0e7a57' }}>
           {campaign ? 'Start a Talkr campaign' : 'Start a dial session'}
         </div>
         <div id="dial-setup-title" style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', marginTop: 4 }}>
@@ -147,7 +147,7 @@ function SetupSheet({ V, prompt, onClose }: { V: ClozrView; prompt: Prompt; onCl
         )}
 
         {resume && (
-          <div data-testid="dial-setup-resume" style={{ ...box, marginTop: 12, background: '#fffbeb', borderColor: '#fde68a' }}>
+          <div data-testid="dial-setup-resume" style={{ ...box, marginTop: 12, background: 'var(--tint-amber, #fffbeb)', borderColor: 'var(--tint-amber-2, #fde68a)' }}>
             <span style={{ font: '600 12.5px/1.35 var(--sans)' }}>You have an unfinished session: {resume.title}</span>
             <span className="flex flex-wrap gap-2" style={{ marginTop: 8 }}>
               <button type="button" style={ghostSm} onClick={() => { onClose(null); resume.resume(); }}>{resume.label}</button>
@@ -246,8 +246,8 @@ function SetupSheet({ V, prompt, onClose }: { V: ClozrView; prompt: Prompt; onCl
           )}
           {(check.blockers.length > 0 || check.warnings.length > 0) && (
             <ul data-testid="dial-setup-checks" style={{ listStyle: 'none', margin: '8px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {check.blockers.map((b) => <li key={b} style={{ font: '600 12px/1.4 var(--sans)', color: '#b91c1c' }}>Blocks the start: {b}</li>)}
-              {check.warnings.map((w) => <li key={w} style={{ font: '500 12px/1.4 var(--sans)', color: '#b45309' }}>{w}</li>)}
+              {check.blockers.map((b) => <li key={b} style={{ font: '600 12px/1.4 var(--sans)', color: 'var(--tx-red, #b91c1c)' }}>Blocks the start: {b}</li>)}
+              {check.warnings.map((w) => <li key={w} style={{ font: '500 12px/1.4 var(--sans)', color: 'var(--tx-amber, #b45309)' }}>{w}</li>)}
             </ul>
           )}
         </Field>
@@ -291,7 +291,7 @@ function FinishedSheet({ done }: { done: NonNullable<ClozrView['queueDone']> }) 
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="dial-done-title" data-testid="dial-finished" onClick={done.close} style={backdrop}>
       <div className="talkr-dialer" onClick={(e) => e.stopPropagation()} style={sheet}>
-        <div style={{ ...eyebrow, color: '#0e7a57' }}>{finished ? 'Session finished' : 'Session ended'}</div>
+        <div style={{ ...eyebrow, color: 'var(--tx-green-2, #0e7a57)' }}>{finished ? 'Session finished' : 'Session ended'}</div>
         <div id="dial-done-title" style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', marginTop: 4 }}>
           {finished ? `You finished ${done.title}`
             : done.progress.position ? `${done.title}: stopped at ${done.progress.position} of ${done.progress.people}`
@@ -371,9 +371,9 @@ const sheet: React.CSSProperties = {
   borderRadius: 18, padding: '20px 18px 16px', boxShadow: '0 30px 80px rgba(28,29,31,.35)',
 };
 const eyebrow: React.CSSProperties = { fontSize: 11, fontWeight: 800 };
-const box: React.CSSProperties = { display: 'block', border: '1px solid #e6e3da', borderRadius: 12, padding: '10px 12px', background: '#fff' };
-const select: React.CSSProperties = { width: '100%', border: '1px solid var(--line)', borderRadius: 10, padding: '9px 10px', font: '500 12.5px/1.2 var(--sans)', background: '#fff', color: 'var(--text)' };
-const primary: React.CSSProperties = { height: 38, padding: '0 16px', borderRadius: 10, border: '1px solid #1c1d1f', background: '#1c1d1f', color: '#fff', fontWeight: 700, cursor: 'pointer' };
-const ghost: React.CSSProperties = { height: 38, padding: '0 12px', borderRadius: 10, border: '1px solid #ddd9ce', background: '#fff', color: '#1c1d1f', fontWeight: 650, cursor: 'pointer' };
+const box: React.CSSProperties = { display: 'block', border: '1px solid #e6e3da', borderRadius: 12, padding: '10px 12px', background: 'var(--surface, #fff)' };
+const select: React.CSSProperties = { width: '100%', border: '1px solid var(--line)', borderRadius: 10, padding: '9px 10px', font: '500 12.5px/1.2 var(--sans)', background: 'var(--surface, #fff)', color: 'var(--text)' };
+const primary: React.CSSProperties = { height: 38, padding: '0 16px', borderRadius: 10, border: '1px solid var(--ink-deep, #1c1d1f)', background: 'var(--ink-deep, #1c1d1f)', color: 'var(--surface, #fff)', fontWeight: 700, cursor: 'pointer' };
+const ghost: React.CSSProperties = { height: 38, padding: '0 12px', borderRadius: 10, border: '1px solid #ddd9ce', background: 'var(--surface, #fff)', color: 'var(--ink-deep, #1c1d1f)', fontWeight: 650, cursor: 'pointer' };
 const ghostSm: React.CSSProperties = { ...ghost, height: 30, fontSize: 12 };
 const link: React.CSSProperties = { border: 0, background: 'none', padding: 0, color: 'var(--green)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' };

@@ -26,10 +26,10 @@ select.cz-select,
   padding: 0 30px 0 11px;
   border: 0;
   border-radius: 10px;
-  color: #18181b;
+  color: var(--ink, #18181b);
   font: 500 12.5px/1 var(--font-sans);
   cursor: pointer;
-  background-color: #fff;
+  background-color: var(--surface, #fff);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
@@ -42,16 +42,16 @@ select.cz-select,
 .clozr-cal select:not([multiple]):not([size]):hover,
 select.cz-select:hover,
 .talkr-inbox .email-tab .em-select:hover {
-  background-color: #fafafa;
+  background-color: var(--canvas, #fafafa);
 }
 .clozr-shell select:not([multiple]):not([size]):focus,
 .talkr-inbox select:not([multiple]):not([size]):focus,
 .clozr-cal select:not([multiple]):not([size]):focus,
 select.cz-select:focus,
 .talkr-inbox .email-tab .em-select:focus {
-  outline: 2px solid var(--c-focus, #0A8560);
+  outline: 2px solid var(--c-focus, #0a8560);
   outline-offset: 1px;
-  background-color: #fff;
+  background-color: var(--surface, #fff);
   box-shadow: var(--shadow-ring);
 }
 .clozr-shell select:not([multiple]):not([size]):disabled,
@@ -60,14 +60,14 @@ select.cz-select:disabled,
 .talkr-inbox .email-tab .em-select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-  background-color: #f4f4f5;
+  background-color: var(--surface-2, #f4f4f5);
 }
 .clozr-shell select:not([multiple]):not([size]) option,
 .talkr-inbox select:not([multiple]):not([size]) option,
 select.cz-select option,
 .talkr-inbox .email-tab .em-select option {
   font: 500 12.5px/1.4 var(--font-sans);
-  color: #18181b;
+  color: var(--ink, #18181b);
 }
 
 /* Soft tray chip — same recipe as .talkr-inbox .tray-btn. */
@@ -89,15 +89,15 @@ select.cz-select option,
 }
 .cz-tray[aria-pressed='true'],
 .cz-tray.is-on {
-  background: var(--c-accent-soft, #E7F8F1);
-  color: var(--c-accent-2, #08694C);
+  background: var(--c-accent-soft, #e7f8f1);
+  color: var(--c-accent-2, #08694c);
 }
 .cz-tray:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 .cz-tray:focus-visible {
-  outline: 2px solid var(--c-accent, #0A8560);
+  outline: 2px solid var(--c-accent, #0a8560);
   outline-offset: 2px;
 }
 @media (hover: hover) and (pointer: fine) {
@@ -115,9 +115,9 @@ select.cz-select option,
   padding: 0 12px;
   border-radius: 10px;
   border: 0;
-  background: #fff;
+  background: var(--surface, #fff);
   font: 600 12.5px/1 var(--font-sans);
-  color: #18181b;
+  color: var(--ink, #18181b);
   cursor: pointer;
   white-space: nowrap;
   flex: none;
@@ -127,28 +127,28 @@ select.cz-select option,
 @media (hover: hover) and (pointer: fine) {
   .cz-btn:not(:disabled):hover {
     filter: brightness(0.97);
-    background: var(--c-btn-hover, #E7F8F1);
+    background: var(--c-btn-hover, #e7f8f1);
   }
 }
 .cz-btn:not(:disabled):active { transform: scale(0.97); }
 .cz-btn--primary {
-  background: var(--c-primary, #0A8560);
+  background: var(--c-primary, #0a8560);
   color: #fff;
   box-shadow: 0 0 0 1px rgba(10, 133, 96, 0.35), 0 1px 2px -1px rgba(10, 133, 96, 0.35), 0 2px 4px 0 rgba(10, 133, 96, 0.12);
 }
-.cz-btn--primary:hover { background: var(--c-primary-hover, #08694C); }
+.cz-btn--primary:hover { background: var(--c-primary-hover, #08694c); }
 .cz-btn--dark {
-  background: #18181b;
-  color: #fff;
+  background: var(--ink, #18181b);
+  color: var(--surface, #fff);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2), 0 1px 2px -1px rgba(0, 0, 0, 0.2), 0 2px 4px 0 rgba(0, 0, 0, 0.08);
 }
-.cz-btn--dark:hover { background: #27272a; }
+.cz-btn--dark:hover { background: var(--ink-2, #27272a); }
 .cz-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 .cz-btn:focus-visible {
-  outline: 2px solid var(--c-accent, #0A8560);
+  outline: 2px solid var(--c-accent, #0a8560);
   outline-offset: 2px;
 }
 
@@ -157,7 +157,7 @@ select.cz-select option,
   display: inline-flex;
   gap: 2px;
   padding: 3px;
-  background: #f4f4f5;
+  background: var(--surface-2, #f4f4f5);
   border-radius: 8px;
   max-width: 100%;
   overflow-x: auto;
@@ -174,15 +174,15 @@ select.cz-select option,
   cursor: pointer;
   font: 600 12.5px/1 var(--font-sans);
   background: transparent;
-  color: #71717a;
+  color: var(--meta, #71717a);
   flex: none;
   white-space: nowrap;
   transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 .cz-seg > button[aria-selected='true'],
 .cz-seg > button.is-on {
-  background: #fff;
-  color: #18181b;
+  background: var(--surface, #fff);
+  color: var(--ink, #18181b);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);
 }
 
@@ -194,7 +194,7 @@ select.cz-select option,
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: #27272a;
+  color: var(--ink-2, #27272a);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -214,9 +214,9 @@ select.cz-select option,
   padding: 0 10px;
   border-radius: 10px;
   border: 0;
-  background: #fff;
+  background: var(--surface, #fff);
   font: 500 12.5px/1 var(--font-sans);
-  color: #27272a;
+  color: var(--ink-2, #27272a);
   cursor: pointer;
   white-space: nowrap;
   flex: none;
@@ -225,20 +225,20 @@ select.cz-select option,
 }
 @media (hover: hover) and (pointer: fine) {
   .cz-menu-trigger:not(:disabled):hover {
-    background: var(--c-btn-hover, #E7F8F1);
-    color: var(--c-accent, #0A8560);
+    background: var(--c-btn-hover, #e7f8f1);
+    color: var(--c-accent, #0a8560);
   }
 }
 .cz-menu-trigger:not(:disabled):active { transform: scale(0.97); }
 .cz-menu-trigger.is-on,
 .cz-menu-trigger[aria-expanded='true'] {
-  background: var(--c-accent-soft, #E7F8F1);
-  color: var(--c-accent-2, #08694C);
+  background: var(--c-accent-soft, #e7f8f1);
+  color: var(--c-accent-2, #08694c);
   font-weight: 600;
   box-shadow: 0 0 0 1px rgba(10, 133, 96, 0.28), 0 1px 2px -1px rgba(10, 133, 96, 0.12);
 }
 .cz-menu-trigger:focus-visible {
-  outline: 2px solid var(--c-accent, #0A8560);
+  outline: 2px solid var(--c-accent, #0a8560);
   outline-offset: 2px;
 }
 
@@ -264,11 +264,11 @@ select.cz-select option,
   gap: 10px;
   padding: 8px 10px 6px;
   font: 500 11.5px/1.2 var(--font-sans);
-  color: #71717a;
+  color: var(--meta, #71717a);
 }
 .cz-menu-head strong {
   font-weight: 600;
-  color: #3f3f46;
+  color: var(--ink-3, #3f3f46);
 }
 
 .cz-menu-item {
@@ -285,24 +285,24 @@ select.cz-select option,
   text-align: left;
   cursor: pointer;
   font: 400 12.5px/1.25 var(--font-sans);
-  color: #27272a;
+  color: var(--ink-2, #27272a);
   white-space: nowrap;
   transition: background 120ms ease, color 120ms ease;
 }
 @media (hover: hover) and (pointer: fine) {
   .cz-menu-item:hover {
-    background: #f4f4f5;
+    background: var(--surface-2, #f4f4f5);
   }
 }
 .cz-menu-item:focus-visible {
-  outline: 2px solid var(--c-accent, #0A8560);
+  outline: 2px solid var(--c-accent, #0a8560);
   outline-offset: -2px;
 }
 .cz-menu-item.is-on,
 .cz-menu-item[aria-checked='true'],
 .cz-menu-item[aria-current='true'] {
-  background: var(--c-accent-soft, #E7F8F1);
-  color: var(--c-accent, #0A8560);
+  background: var(--c-accent-soft, #e7f8f1);
+  color: var(--c-accent, #0a8560);
   font-weight: 600;
 }
 .cz-menu-item.is-on:hover,
@@ -311,7 +311,7 @@ select.cz-select option,
 }
 .cz-menu-item .cz-menu-meta {
   font: 500 11px/1 var(--font-sans);
-  color: #a1a1aa;
+  color: var(--subtle, #a1a1aa);
 }
 .cz-menu-item.is-on .cz-menu-meta {
   color: rgba(10, 133, 96, 0.7);
@@ -320,7 +320,7 @@ select.cz-select option,
 .cz-menu-sep {
   height: 1px;
   margin: 6px 4px;
-  background: #f0f0f1;
+  background: var(--divider-2, #f0f0f1);
   border: 0;
 }
 
@@ -330,28 +330,28 @@ select.cz-select option,
   margin: 6px 2px 2px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #f4f4f5;
-  border: 1px solid #e4e4e7;
-  border-left: 3px solid var(--c-accent, #0A8560);
+  background: var(--surface-2, #f4f4f5);
+  border: 1px solid var(--divider, #e4e4e7);
+  border-left: 3px solid var(--c-accent, #0a8560);
   font: 500 11.5px/1.5 var(--font-sans);
-  color: #52525b;
+  color: var(--muted, #52525b);
 }
 .cz-menu-info strong,
 .cz-info strong {
-  color: #18181b;
+  color: var(--ink, #18181b);
   font-weight: 600;
 }
 .cz-info--warn {
-  background: #fffbeb;
-  border-color: #fde68a;
+  background: var(--tint-amber, #fffbeb);
+  border-color: var(--tint-amber-2, #fde68a);
   border-left-color: #b45309;
-  color: #92400e;
+  color: var(--tx-amber-deep, #92400e);
 }
 .cz-info--danger {
-  background: #fef2f2;
-  border-color: #fecaca;
+  background: var(--tint-red, #fef2f2);
+  border-color: var(--tint-red-2, #fecaca);
   border-left-color: #b91c1c;
-  color: #991b1b;
+  color: var(--tx-red-deep, #991b1b);
 }
 
 /* Filter chip on calendar sidebars — soft tray, not a full pill. */
@@ -364,7 +364,7 @@ select.cz-select option,
   border-radius: 14px;
   border: 0;
   background: transparent;
-  color: #a1a1aa;
+  color: var(--subtle, #a1a1aa);
   font: 500 12px/1 var(--font-sans);
   cursor: pointer;
   white-space: nowrap;
@@ -405,12 +405,12 @@ select.cz-select option,
 
 /* ── Google Calendar layout helpers (under .clozr-cal) ───────── */
 .clozr-cal {
-  background: #fff;
-  color: #18181b;
+  background: var(--surface, #fff);
+  color: var(--ink, #18181b);
 }
 .clozr-cal .cal-grid {
-  background: #fff;
-  border: 1px solid #dadce0;
+  background: var(--surface, #fff);
+  border: 1px solid var(--line-2, #dadce0);
   border-radius: 0;
   overflow: hidden;
 }
@@ -438,48 +438,100 @@ select.cz-select option,
    width. */
 .cz-rail {
   width: 248px; flex: none; overflow: auto; padding: 12px 10px;
-  background: #fff; border-right: 1px solid var(--c-line, #e4e4e7);
+  background: var(--surface, #fff); border-right: 1px solid var(--c-line, #e4e4e7);
 }
 .cz-rail-head {
   display: flex; align-items: center; justify-content: space-between; gap: 6px;
   padding: 0 4px 8px 8px;
 }
-.cz-rail-title { font-size: 11.5px; font-weight: 500; color: #71717a; }
+.cz-rail-title { font-size: 11.5px; font-weight: 500; color: var(--meta, #71717a); }
 .cz-rail-toggle {
   display: inline-flex; align-items: center; justify-content: center; flex: none;
   width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px;
-  background: transparent; color: #52525b; cursor: pointer;
+  background: transparent; color: var(--muted, #52525b); cursor: pointer;
 }
-.cz-rail-toggle:focus-visible, .cz-rail-row:focus-visible { outline: 2px solid var(--c-accent, #0A8560); outline-offset: 2px; }
+.cz-rail-toggle:focus-visible, .cz-rail-row:focus-visible { outline: 2px solid var(--c-accent, #0a8560); outline-offset: 2px; }
 .cz-rail-row {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   width: 100%; height: 30px; padding: 0 8px; border: 0; border-radius: 8px;
-  background: transparent; color: #3f3f46; font: 500 13px/1 var(--font-sans); text-align: left; cursor: pointer;
+  background: transparent; color: var(--ink-3, #3f3f46); font: 500 13px/1 var(--font-sans); text-align: left; cursor: pointer;
 }
 .cz-rail-row[aria-current="page"] {
-  background: #fff; color: #18181b; font-weight: 600;
+  background: var(--surface, #fff); color: var(--ink, #18181b); font-weight: 600;
   box-shadow: 0 0 0 1px rgba(24,24,27,.07), 0 1px 2px rgba(24,24,27,.05);
 }
 .cz-rail-name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .cz-rail-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cz-rail-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; }
-.cz-rail-count { flex: none; font-size: 11.5px; color: #71717a; font-variant-numeric: tabular-nums; }
-.cz-rail-note { margin: 14px 8px 0; padding-top: 12px; border-top: 1px solid #f0f0f1; font-size: 11.5px; color: #71717a; line-height: 1.5; }
+.cz-rail-count { flex: none; font-size: 11.5px; color: var(--meta, #71717a); font-variant-numeric: tabular-nums; }
+.cz-rail-note { margin: 14px 8px 0; padding-top: 12px; border-top: 1px solid var(--divider-2, #f0f0f1); font-size: 11.5px; color: var(--meta, #71717a); line-height: 1.5; }
 /* A saved smart list: the row, then its delete button beside it (never inside: a button cannot hold one). */
 .cz-rail-group {
   display: flex; align-items: center; justify-content: space-between; gap: 6px;
-  margin: 12px 0 4px; padding: 10px 4px 0 8px; border-top: 1px solid #f0f0f1;
+  margin: 12px 0 4px; padding: 10px 4px 0 8px; border-top: 1px solid var(--divider-2, #f0f0f1);
 }
 .cz-rail-item { display: flex; align-items: center; gap: 2px; }
 .cz-rail-item .cz-rail-row { flex: 1; min-width: 0; }
 .cz-rail-remove {
   display: inline-flex; align-items: center; justify-content: center; flex: none;
   width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px;
-  background: transparent; color: #71717a; cursor: pointer;
+  background: transparent; color: var(--meta, #71717a); cursor: pointer;
 }
-.cz-rail-remove:focus-visible { outline: 2px solid var(--c-accent, #0A8560); outline-offset: 2px; }
+.cz-rail-remove:focus-visible { outline: 2px solid var(--c-accent, #0a8560); outline-offset: 2px; }
 @media (hover: hover) and (pointer: fine) {
-  .cz-rail-remove:hover { background: #fef2f2; color: #b91c1c; }
+  .cz-rail-remove:hover { background: var(--tint-red, #fef2f2); color: var(--tx-red, #b91c1c); }
+}
+/* People: Leads | Submissions, the two halves of the list rail. */
+.cz-half {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2px; width: 100%;
+  padding: 2px; border-radius: 10px;
+  background: var(--surface-2, #f4f4f5); box-shadow: inset 0 0 0 1px var(--divider, #e4e4e7);
+}
+.cz-half-btn {
+  min-width: 0; width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  height: 28px; padding: 0 6px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--muted, #52525b); font: 500 12px/1 var(--font-sans); white-space: nowrap; cursor: pointer;
+}
+.cz-half-btn[aria-pressed="true"] {
+  background: var(--surface, #fff); color: var(--ink, #18181b); font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04);
+}
+/* Not a rail row: no mint bar (surfaces.css gives pressed rail buttons one). */
+.clozr-shell .cz-half .cz-half-btn[aria-pressed="true"] {
+  background: var(--surface, #fff) !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04) !important;
+}
+.cz-half-count { font-size: 10.5px; font-weight: 500; color: var(--meta, #71717a); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.cz-half-btn:focus-visible { outline: 2px solid var(--c-accent, #0a8560); outline-offset: 2px; }
+.cz-half--phone .cz-half-btn { height: 36px; font-size: 13.5px; }
+
+/* A labelled on/off switch (Settings › Try new design). The off track is
+   #85858e, 3.6:1 on white, so the control's edge reads (DESIGN.md §2); on is
+   the accent. 44x24 on a desk, a 44px row on a phone. */
+.cz-switch {
+  position: relative; flex: none; width: 44px; height: 24px; padding: 0;
+  border: 0; border-radius: 999px; background: #85858e; cursor: pointer;
+  transition: background-color 140ms ease;
+}
+.cz-switch[aria-checked="true"] { background: var(--c-accent, #0a8560); }
+.cz-switch-thumb {
+  position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 999px;
+  background: var(--surface, #fff); box-shadow: 0 1px 2px rgba(0,0,0,.2), 0 0 0 .5px rgba(0,0,0,.06);
+  transition: transform 160ms cubic-bezier(.23, 1, .32, 1);
+}
+.cz-switch[aria-checked="true"] .cz-switch-thumb { transform: translateX(20px); }
+.cz-switch:focus-visible { outline: 2px solid var(--c-accent, #0a8560); outline-offset: 2px; }
+.cz-switch:active .cz-switch-thumb { transform: scale(.94); }
+.cz-switch[aria-checked="true"]:active .cz-switch-thumb { transform: translateX(20px) scale(.94); }
+@media (hover: hover) and (pointer: fine) {
+  .cz-switch[aria-checked="false"]:hover { background: var(--meta, #71717a); }
+  .cz-switch[aria-checked="true"]:hover { background: var(--c-accent-hover, #08694c); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cz-switch, .cz-switch-thumb { transition: none; }
+}
+@media (hover: hover) and (pointer: fine) {
+  .cz-half-btn[aria-pressed="false"]:hover { color: var(--ink, #18181b); }
 }
 
 /* ---- components/ds: BackLink and InlineField ------------------------------ */
@@ -507,11 +559,11 @@ button.ds-inline-text[data-busy] { opacity: .6; }
 @media (hover: hover) and (pointer: fine) { button.ds-inline-text:hover { background: rgba(0, 0, 0, .04); box-shadow: inset 0 0 0 1px var(--edge, #dde2ea); } }
 .ds-inline-empty { color: var(--subtle, #a1a1aa); }
 .ds-inline-input {
-  width: 100%; min-height: 28px; padding: 4px 6px; margin: 0 -6px; border: 0; border-radius: 8px; background: #fff;
+  width: 100%; min-height: 28px; padding: 4px 6px; margin: 0 -6px; border: 0; border-radius: 8px; background: var(--surface, #fff);
   font: inherit; font-size: 13px; color: var(--ink, #18181b); font-variant-numeric: tabular-nums;
-  box-shadow: 0 0 0 1px var(--c-accent, #0A8560), 0 0 0 3px var(--c-accent-soft, #E7F5EF);
+  box-shadow: 0 0 0 1px var(--c-accent, #0a8560), 0 0 0 3px var(--c-accent-soft, #e7f5ef);
 }
 textarea.ds-inline-input { resize: vertical; min-height: 64px; line-height: 1.45; }
-.ds-inline-input[aria-invalid] { box-shadow: 0 0 0 1px #b91c1c, 0 0 0 3px #fee2e2; }
-.ds-inline-error { font-size: 11.5px; font-weight: 500; color: #b91c1c; line-height: 1.35; white-space: normal; }
+.ds-inline-input[aria-invalid] { box-shadow: 0 0 0 1px #b91c1c, 0 0 0 3px var(--negative-soft, #fee2e2); }
+.ds-inline-error { font-size: 11.5px; font-weight: 500; color: var(--tx-red, #b91c1c); line-height: 1.35; white-space: normal; }
 @media (max-width: 640px) { .ds-inline-input, .ds-inline-text { font-size: 16px; } }

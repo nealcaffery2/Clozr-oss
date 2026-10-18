@@ -232,6 +232,8 @@ class Log {
 
 type Source = { id: number; settings: Any };
 
+const missingFn = (e: { message: string; code?: string }) => /PGRST202|could not find the function/i.test(`${e.code ?? ''} ${e.message}`);
+
 /**
  * ingest_apply for the property and contact, then the deal row, photos, COMPR
  * and round robin — what ingest/index.ts does after its key check, so a cloud
@@ -248,26 +250,43 @@ async function land(db: Db, ws: number, src: Source, env: Any): Promise<{ create
   let dealId: number | null = null;
   if (applied.property_id && hasDealFacts(env.deal)) {
     const cols = dealColumns(env.deal);
-    const { data: found } = await db.from('deals').select('id, seller_id').eq('workspace_id', ws).eq('source', SOURCE).eq('source_id', env.source_id).order('id').limit(1);
-    if (found?.length) {
-      dealId = found[0].id as number;
-      const { error: upErr } = await db.from('deals').update({ ...cols, ...(found[0].seller_id ? {} : { seller_id: applied.seller_id ?? null }), updated_at: new Date().toISOString() }).eq('id', dealId);
-      if (upErr) throw new Error(`deal update: ${upErr.message}`);
-    } else {
-      const { data: made, error: insErr } = await db.from('deals').insert({
-        workspace_id: ws, property_id: applied.property_id, seller_id: applied.seller_id ?? null, stage: 'Prospect', source: SOURCE,
-        source_id: env.source_id, submitted_at: env.occurred_at ?? new Date().toISOString(), ...cols,
-      }).select('id').single();
-      if (insErr) throw new Error(`deal insert: ${insErr.message}`);
-      dealId = made.id as number;
-      created = true;
-    }
     const links = dealLinks(env.deal);
-    if (links.length) {
-      const { data: have } = await db.from('deal_files').select('url').eq('deal_id', dealId).not('url', 'is', null);
-      const known = new Set((have ?? []).map((r) => r.url as string));
-      const rows = links.filter((l) => !known.has(l.url)).map((l) => ({ workspace_id: ws, deal_id: dealId, source: SOURCE, ...l }));
-      if (rows.length) await db.from('deal_files').insert(rows);
+    const submittedAt = env.occurred_at ?? new Date().toISOString();
+    // dm_cloud_land_deal (migration 341): the deal lookup, its update or insert
+    // and the new links in one call, under a lock on the source_id.
+    const { data: d, error: dErr } = await db.rpc('dm_cloud_land_deal', {
+      p_ws: ws, p_source_id: env.source_id, p_property_id: applied.property_id, p_seller_id: applied.seller_id ?? null,
+      p_submitted_at: submittedAt, p_cols: cols, p_links: links,
+    });
+    if (!dErr) {
+      dealId = Number((d as { deal_id: number }).deal_id);
+      created = (d as { created?: boolean }).created === true;
+    } else if (!missingFn(dErr)) {
+      throw new Error(`dm_cloud_land_deal: ${dErr.message}`);
+    } else {
+      // Before migration 341: the same steps one call each. A failed read throws, never inserts a second deal.
+      const { data: found, error: fErr } = await db.from('deals').select('id, seller_id').eq('workspace_id', ws).eq('source', SOURCE).eq('source_id', env.source_id).order('id').limit(1);
+      if (fErr) throw new Error(`deal read: ${fErr.message}`);
+      if (found?.length) {
+        dealId = found[0].id as number;
+        const { error: upErr } = await db.from('deals').update({ ...cols, ...(found[0].seller_id ? {} : { seller_id: applied.seller_id ?? null }), updated_at: new Date().toISOString() }).eq('id', dealId);
+        if (upErr) throw new Error(`deal update: ${upErr.message}`);
+      } else {
+        const { data: made, error: insErr } = await db.from('deals').insert({
+          workspace_id: ws, property_id: applied.property_id, seller_id: applied.seller_id ?? null, stage: 'Prospect', source: SOURCE,
+          source_id: env.source_id, submitted_at: submittedAt, ...cols,
+        }).select('id').single();
+        if (insErr) throw new Error(`deal insert: ${insErr.message}`);
+        dealId = made.id as number;
+        created = true;
+      }
+      if (links.length) {
+        const { data: have, error: hErr } = await db.from('deal_files').select('url').eq('deal_id', dealId).not('url', 'is', null);
+        if (hErr) throw new Error(`deal files read: ${hErr.message}`);
+        const known = new Set((have ?? []).map((r) => r.url as string));
+        const rows = links.filter((l) => !known.has(l.url)).map((l) => ({ workspace_id: ws, deal_id: dealId, source: SOURCE, ...l }));
+        if (rows.length) await db.from('deal_files').insert(rows);
+      }
     }
     const keyAllows = (src.settings as { auto_compr?: string } | null)?.auto_compr !== 'off';
     if (created && env.options?.run_compr === true && keyAllows && applied.seller_id) EdgeRuntime.waitUntil(queueCompr(ws, applied.seller_id, dealId));
@@ -544,7 +563,9 @@ function scheduleSlot(now = new Date()): string | null {
 }
 
 async function activeRun(db: Db, ws: number): Promise<Run | null> {
-  const { data } = await db.from('dm_runs').select('*').eq('workspace_id', ws).eq('device_id', DEVICE).in('status', ACTIVE).order('started_at', { ascending: false }).limit(1);
+  const { data, error } = await db.from('dm_runs').select('*').eq('workspace_id', ws).eq('device_id', DEVICE).in('status', ACTIVE).order('started_at', { ascending: false }).limit(1);
+  // A failed read is not "no run": that would start a second one beside it.
+  if (error) throw new Error(`active run read: ${error.message}`);
   return data?.length ? mapRun(data[0]) : null;
 }
 
@@ -553,7 +574,9 @@ async function finishCommand(db: Db, id: number, ok: boolean, result: unknown) {
 }
 
 async function workspaceTick(db: Db, ws: number, deadline: number) {
-  const { data: srow } = await db.from('dm_settings').select('settings, version').eq('workspace_id', ws).maybeSingle();
+  const { data: srow, error: sErr } = await db.from('dm_settings').select('settings, version').eq('workspace_id', ws).maybeSingle();
+  // Defaults in place of a failed read would judge and land a run against the wrong buy box.
+  if (sErr) throw new Error(`settings read: ${sErr.message}`);
   const s = settingsOf(srow?.settings);
   let run = await activeRun(db, ws);
 

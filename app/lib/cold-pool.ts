@@ -37,12 +37,16 @@ export type WarmupSync = {
 export type ColdStep = { id?: number; position: number; delay_business_days: number; subject: string; body: string; variants: { key: string; subject: string; body: string; weight: number }[] };
 export type ColdCampaign = {
   id: number; name: string; status: string; audience_kind: 'tag' | 'saved_view'; audience_tag: string | null;
+  /** Autopilot (migration 268): while it sends, newly tagged buyers are enrolled every 30 minutes. */
+  auto_enroll?: boolean;
   saved_view_id: number | null; window_start: number; window_end: number; window_days: number[];
   fallback_timezone: string; steps: ColdStep[]; enrolled: number;
 };
 export type ColdHealthRow = { email?: string; domain?: string; sent_7d: number; bounced_7d: number; replied_7d: number; complaints_7d: number; bounceRate: number; replyRate: number; complaintRate: number; paused?: boolean };
 export type ColdOverview = {
   admin: boolean;
+  /** The workspace runs cold autopilot (a Compr workspace), so auto_enroll does something. */
+  autopilot?: boolean;
   locked_domains: string[];
   blocked: string[];
   blocked_extra: string[];

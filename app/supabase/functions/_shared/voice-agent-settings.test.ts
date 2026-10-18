@@ -42,8 +42,8 @@ eq('empty languages fall back to en', n({ identity: { languages: [] } }).setting
 eq('voice id invalid', n({ voice: { voice_id: 'a/b' } }).errors, ['voice.voice_id is not a valid voice id']);
 eq('voice id blank is the default', n({ voice: { voice_id: ' ' } }).settings.voice.voice_id, DEFAULT_VOICE_ID);
 eq('tts model enum', n({ voice: { tts_model: 'eleven_v3' } }).errors, ['voice.tts_model must be one of eleven_v4_turbo, eleven_v4, eleven_flash_v2_5, eleven_multilingual_v2, eleven_v3_conversational']);
-eq('llm enum', n({ voice: { llm: 'gpt-2' } }).errors, ['voice.llm must be one of gemini-3.8-flash, claude-sonnet-5-5, claude-opus-5-5, claude-haiku-4-5']);
-eq('saved settings without a brain get the default', [n({ voice: {} }).settings.voice.llm, n({ voice: {} }).settings.voice.thinking], ['gemini-3.8-flash', 'light']);
+eq('llm enum', n({ voice: { llm: 'gpt-2' } }).errors, ['voice.llm must be one of qwen35-397b-a17b, gemini-3.8-flash, claude-sonnet-5-5, claude-haiku-5-5, claude-opus-5-5, claude-haiku-4-5']);
+eq('saved settings without a brain get the default', [n({ voice: {} }).settings.voice.llm, n({ voice: {} }).settings.voice.thinking], ['qwen35-397b-a17b', 'off']);
 eq('default tts model is v4 Turbo', D.voice.tts_model, 'eleven_v4_turbo');
 eq('v3 Conversational is a model', n({ voice: { tts_model: 'eleven_v3_conversational' } }).settings.voice.tts_model, 'eleven_v3_conversational');
 eq('expressiveness defaults to natural', D.personality.expressiveness, 'natural');
@@ -191,6 +191,7 @@ eq('settingsFromRow of junk', settingsFromRow('junk'), D);
 // ---- text helpers ----
 eq('cleanText keeps a lone brace', cleanText('a { b } c', 50), 'a { b } c');
 eq('cleanText multiline', cleanText('a\n\n\n\nb', 50, true), 'a\n\nb');
+eq('a prompt cannot read the lookup-only variables', sanitizeVars('{{record_id}} {{record_token}} {{record_kind}}'), 'record_id record_token {{record_kind}}');
 eq('sanitizeVars keeps real and system variables, defuses the rest', sanitizeVars('{{first_name}} {{system__time}} {{ company }} {{nope}} {{'), '{{first_name}} {{system__time}} {{company}} nope ');
 eq('cleanVarText caps after sanitising', cleanVarText('{{first_name}}' + 'x'.repeat(50), 20), '{{first_name}}xxxxxx');
 

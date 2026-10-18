@@ -5,28 +5,28 @@
 import React from 'react';
 import { Mark } from '@/components/ds/mark';
 
-export const INK = '#18181b';
-export const MUTED = '#71717a';
-export const FAINT = '#a1a1aa';
-export const LINE = '#e4e4e7';
+export const INK = 'var(--ink, #18181b)';
+export const MUTED = 'var(--meta, #71717a)';
+export const FAINT = 'var(--subtle, #a1a1aa)';
+export const LINE = 'var(--divider, #e4e4e7)';
 export const MINT = '#0A8560';
-export const MINT_BG = '#E7F8F1';
+export const MINT_BG = 'var(--mint-dim, #e7f8f1)';
 
 export const label: React.CSSProperties = {
   display: 'block', fontSize: '11.5px', color: MUTED, fontWeight: 600, marginBottom: '5px',
 };
 export const input: React.CSSProperties = {
   width: '100%', height: '34px', padding: '0 10px', border: `1px solid ${LINE}`, borderRadius: '8px', fontSize: '13px', outline: 0,
-  background: '#fafafa', color: INK, fontFamily: 'inherit', boxSizing: 'border-box',
+  background: 'var(--canvas, #fafafa)', color: INK, fontFamily: 'inherit', boxSizing: 'border-box',
 };
 export const smallInput: React.CSSProperties = { ...input, height: '28px', fontSize: '12.5px', padding: '0 8px', borderRadius: '7px' };
 export const select: React.CSSProperties = { ...input, cursor: 'pointer' };
 export const smallSelect: React.CSSProperties = { ...smallInput, cursor: 'pointer' };
 export const textarea: React.CSSProperties = {
   width: '100%', padding: '8px 10px', border: `1px solid ${LINE}`, borderRadius: '8px', resize: 'vertical', fontSize: '12.5px', outline: 0,
-  background: '#fafafa', color: '#27272a', lineHeight: 1.5, fontFamily: 'inherit', boxSizing: 'border-box',
+  background: 'var(--canvas, #fafafa)', color: 'var(--ink-2, #27272a)', lineHeight: 1.5, fontFamily: 'inherit', boxSizing: 'border-box',
 };
-export const card: React.CSSProperties = { background: '#fff', border: `1px solid ${LINE}`, borderRadius: '12px', padding: '14px 16px' };
+export const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', padding: '14px 16px' };
 
 function PlayIcon() {
   return (
@@ -59,7 +59,7 @@ export function PlayPause({ playing, onClick, disabled, label }: { playing: bool
       style={{
         height: '28px', padding: '0 10px', borderRadius: '8px',
         border: `1px solid ${playing ? MINT : LINE}`,
-        background: playing ? MINT_BG : '#fff', color: playing ? MINT : INK,
+        background: playing ? MINT_BG : 'var(--surface, #fff)', color: playing ? MINT : INK,
         display: 'inline-flex', alignItems: 'center', gap: '6px',
         cursor: disabled ? 'default' : 'pointer', fontSize: '12px', fontWeight: 650,
         fontFamily: 'inherit', opacity: disabled ? 0.5 : 1,
@@ -78,11 +78,11 @@ export function Btn({ kind = 'plain', small = false, style, ...rest }: React.But
     display: 'inline-flex', alignItems: 'center', gap: '6px',
   };
   const look: Record<string, React.CSSProperties> = {
-    plain: { border: `1px solid ${LINE}`, background: '#fff', color: INK, fontWeight: 500 },
-    primary: { border: `1px solid ${MINT}`, background: MINT, color: '#fff' },
-    dark: { border: `1px solid ${INK}`, background: INK, color: '#fff' },
-    danger: { border: `1px solid ${LINE}`, background: '#fff', color: '#b91c1c', fontWeight: 500 },
-    ghost: { border: `1px dashed #d4d4d8`, background: '#fff', color: INK, fontWeight: 500 },
+    plain: { border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', color: INK, fontWeight: 500 },
+    primary: { border: `1px solid ${MINT}`, background: MINT, color: 'var(--on-dark, #fff)' },
+    dark: { border: `1px solid ${INK}`, background: INK, color: 'var(--on-dark, #fff)' },
+    danger: { border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', color: 'var(--tx-red, #b91c1c)', fontWeight: 500 },
+    ghost: { border: `1px dashed var(--line, #d4d4d8)`, background: 'var(--surface, #fff)', color: INK, fontWeight: 500 },
   };
   const cls = kind === 'primary' ? 'dc3' : kind === 'dark' ? 'dc10' : 'dc2';
   return <button type="button" className={cls} style={{ ...base, ...look[kind], ...style }} {...rest} />;
@@ -94,9 +94,9 @@ export function Toggle({ on, onChange, label: text, hint }: { on: boolean; onCha
       <span
         role="switch" aria-checked={on}
         onClick={(e) => { e.preventDefault(); onChange(!on); }}
-        style={{ flex: 'none', marginTop: '1px', width: '30px', height: '18px', borderRadius: '999px', background: on ? MINT : '#d4d4d8', position: 'relative', transition: 'background .15s' }}
+        style={{ flex: 'none', marginTop: '1px', width: '30px', height: '18px', borderRadius: '999px', background: on ? MINT : 'var(--line, #d4d4d8)', position: 'relative', transition: 'background .15s' }}
       >
-        <span style={{ position: 'absolute', top: '2px', left: on ? '14px' : '2px', width: '14px', height: '14px', borderRadius: '999px', background: '#fff', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,.2)' }} />
+        <span style={{ position: 'absolute', top: '2px', left: on ? '14px' : '2px', width: '14px', height: '14px', borderRadius: '999px', background: 'var(--surface, #fff)', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,.2)' }} />
       </span>
       <span style={{ minWidth: 0 }}>
         <span style={{ display: 'block', fontSize: '12.5px', fontWeight: 500, color: INK }}>{text}</span>
@@ -131,7 +131,7 @@ export function Section({ title, aside, children, style }: { title: string; asid
 export function Toast({ msg }: { msg: string | null }) {
   if (!msg) return null;
   return (
-    <div style={{ position: 'fixed', left: '50%', bottom: 'calc(24px + var(--clozr-callbar, 0px))', transform: 'translateX(-50%)', background: INK, color: '#fff', fontSize: '12.5px', fontWeight: 500, padding: '9px 14px', borderRadius: '9px', boxShadow: '0 8px 24px rgba(0,0,0,.18)', zIndex: 60, maxWidth: 'min(92vw, 520px)' }}>
+    <div style={{ position: 'fixed', left: '50%', bottom: 'calc(24px + var(--clozr-callbar, 0px))', transform: 'translateX(-50%)', background: INK, color: 'var(--on-dark, #fff)', fontSize: '12.5px', fontWeight: 500, padding: '9px 14px', borderRadius: '9px', boxShadow: '0 8px 24px rgba(0,0,0,.18)', zIndex: 60, maxWidth: 'min(92vw, 520px)' }}>
       {msg}
     </div>
   );

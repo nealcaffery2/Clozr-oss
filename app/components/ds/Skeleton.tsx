@@ -2,12 +2,12 @@
 // missing rows shimmer in place of a blank screen or a "Loading…" line.
 'use client';
 
-export function SkeletonRows({ count = 6, label = 'Loading' }: { count?: number; label?: string }) {
+export function SkeletonRows({ count = 6, label = 'Loading', face = true }: { count?: number; label?: string; /** The leading mark. Inbox and the dialer pass false: those rows have no contact bubble. */ face?: boolean }) {
   return (
     <div className="clozr-skel-rows" aria-busy="true" aria-label={label}>
       {Array.from({ length: count }, (_, i) => (
         <span key={i} className="clozr-skel-row">
-          <span className="clozr-skel-avatar" />
+          {face ? <span className="clozr-skel-avatar" /> : null}
           <span className="clozr-skel-lines">
             <span className="clozr-skel-line" />
             <span className="clozr-skel-line clozr-skel-line-sm" />

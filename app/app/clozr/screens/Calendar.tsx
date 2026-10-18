@@ -121,14 +121,14 @@ export function Calendar({ V }: { V: ClozrView }) {
   const openSeller = (sellerId: number) => V.openPerson('s' + sellerId);
 
   return (
-    <section data-screen-label="Calendar" className="clozr-cal" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0, background: '#fff' }}>
+    <section data-screen-label="Calendar" className="clozr-cal" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--surface, #fff)' }}>
       {/* Google Calendar–style top bar */}
       <div data-head style={{
         display: 'flex', alignItems: 'center', gap: V.isMobile ? 6 : 10,
         padding: V.isMobile ? '8px 12px' : '8px 16px 8px 12px',
-        background: '#fff', borderBottom: `1px solid ${LINE}`, flexWrap: 'wrap', minHeight: 64,
+        background: 'var(--surface, #fff)', borderBottom: `1px solid ${LINE}`, flexWrap: 'wrap', minHeight: 64,
       }}>
-        <h1 style={{ margin: 0, font: '400 22px/1.2 var(--font-sans)', letterSpacing: 0, color: '#3c4043', paddingLeft: V.isMobile ? 0 : 4 }}>
+        <h1 style={{ margin: 0, font: '400 22px/1.2 var(--font-sans)', letterSpacing: 0, color: 'var(--ink-4, #3c4043)', paddingLeft: V.isMobile ? 0 : 4 }}>
           Calendar
         </h1>
 
@@ -138,14 +138,14 @@ export function Calendar({ V }: { V: ClozrView }) {
 
         <div style={{ display: 'inline-flex', alignItems: 'center' }}>
           <button type="button" className="cz-icon-btn" onClick={() => step(-1)} aria-label="Previous">
-            <Chevron dir="left" size={18} color="#3c4043" />
+            <Chevron dir="left" size={18} color="var(--ink-4, #3c4043)" />
           </button>
           <button type="button" className="cz-icon-btn" onClick={() => step(1)} aria-label="Next">
-            <Chevron dir="right" size={18} color="#3c4043" />
+            <Chevron dir="right" size={18} color="var(--ink-4, #3c4043)" />
           </button>
         </div>
 
-        <span style={{ font: '400 22px/1.2 var(--font-sans)', color: '#3c4043', letterSpacing: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ font: '400 22px/1.2 var(--font-sans)', color: 'var(--ink-4, #3c4043)', letterSpacing: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {title}
         </span>
 
@@ -167,7 +167,7 @@ export function Calendar({ V }: { V: ClozrView }) {
               </button>
             </span>
           ) : google ? (
-            <button type="button" className="dc2 cz-btn" onClick={() => setConnectOpen((v) => !v)} style={{ ...ghostBtn, height: 32, borderColor: '#f59e0b', color: '#b45309' }}>
+            <button type="button" className="dc2 cz-btn" onClick={() => setConnectOpen((v) => !v)} style={{ ...ghostBtn, height: 32, borderColor: '#f59e0b', color: 'var(--tx-amber, #b45309)' }}>
               Connect Google
             </button>
           ) : null
@@ -187,7 +187,7 @@ export function Calendar({ V }: { V: ClozrView }) {
       </div>
 
       {syncNote ? (
-        <div style={{ padding: '6px 16px', font: '500 12px/1.3 var(--font-sans)', color: syncNote.startsWith('Synced') || syncNote === 'Up to date' ? MINT : '#b45309', background: '#fff', borderBottom: `1px solid ${SOFT}` }}>
+        <div style={{ padding: '6px 16px', font: '500 12px/1.3 var(--font-sans)', color: syncNote.startsWith('Synced') || syncNote === 'Up to date' ? MINT : '#b45309', background: 'var(--surface, #fff)', borderBottom: `1px solid ${SOFT}` }}>
           {syncNote}
         </div>
       ) : null}
@@ -200,7 +200,7 @@ export function Calendar({ V }: { V: ClozrView }) {
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         {!V.isMobile ? (
-          <aside style={{ width: 256, flex: 'none', background: '#fff', borderRight: `1px solid ${LINE}`, padding: '12px 14px', overflow: 'auto' }}>
+          <aside style={{ width: 256, flex: 'none', background: 'var(--surface, #fff)', borderRight: `1px solid ${LINE}`, padding: '12px 14px', overflow: 'auto' }}>
             <button type="button" className="dc10" onClick={addNow} style={{ ...darkBtn, width: '100%', height: 48, borderRadius: 24, marginBottom: 12, boxShadow: '0 1px 2px rgba(60,64,67,.3), 0 1px 3px 1px rgba(60,64,67,.15)', justifyContent: 'flex-start', padding: '0 18px', gap: 12 }}>
               <span style={{ fontSize: 22, fontWeight: 300, lineHeight: 1 }}>+</span> Create
             </button>
@@ -222,18 +222,18 @@ export function Calendar({ V }: { V: ClozrView }) {
                 }}>
                   <span style={{
                     width: 14, height: 14, borderRadius: 2, flex: 'none', boxSizing: 'border-box',
-                    background: repOn(t.user_id) ? t.color : '#fff',
+                    background: repOn(t.user_id) ? t.color : 'var(--surface, #fff)',
                     border: `2px solid ${t.color}`,
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                   }}>
                     {repOn(t.user_id) ? (
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--on-dark, #fff)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                     ) : null}
                   </span>
                   <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {t.user_id === userId ? 'My calendar' : t.full_name}
                   </span>
-                  <Avatar initials={t.initials} color={repOn(t.user_id) ? t.color : '#dadce0'} size={20} />
+                  <Avatar initials={t.initials} color={repOn(t.user_id) ? t.color : 'var(--line-2, #dadce0)'} size={20} />
                 </button>
               )) : (
                 <p style={{ margin: 0, font: '400 12px/1.4 var(--font-sans)', color: CZ.faint }}>
@@ -258,7 +258,7 @@ export function Calendar({ V }: { V: ClozrView }) {
             </div>
           ) : null}
           {!cal.ok ? (
-            <div style={{ padding: 20, textAlign: 'center', font: '400 12.5px/1.4 var(--font-sans)', color: '#b91c1c' }}>
+            <div style={{ padding: 20, textAlign: 'center', font: '400 12.5px/1.4 var(--font-sans)', color: 'var(--tx-red, #b91c1c)' }}>
               Couldn&rsquo;t load the calendar{cal.message ? ` — ${/column .* does not exist/i.test(cal.message) ? 'the database is missing the calendar sync columns (apply migration 35)' : cal.message}` : ''}.{' '}
               <button type="button" onClick={cal.reload} style={{ ...ghost, height: 28, marginLeft: 8 }}>Retry</button>
             </div>
@@ -281,12 +281,12 @@ export function Calendar({ V }: { V: ClozrView }) {
             // it was changed; with an unsaved appointment it asks first, since a
             // stray tap used to throw the new appointment away without a word.
             <div onClick={() => (sheetDirty.current ? setAskDiscard(true) : closeSheet())} style={{ position: 'fixed', inset: 0, background: 'rgba(24,24,27,.35)', zIndex: 40, display: 'flex', alignItems: 'flex-end' }}>
-              <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: '14px 14px 0 0', overflow: 'hidden' }}>
+              <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', background: 'var(--surface, #fff)', borderRadius: '14px 14px 0 0', overflow: 'hidden' }}>
                 {askDiscard ? (
-                  <div role="alert" style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#fef3c7', borderBottom: `1px solid ${LINE}`, font: '500 13px/1.35 var(--font-sans)', color: INK }}>
+                  <div role="alert" style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: 'var(--caution-soft, #fef3c7)', borderBottom: `1px solid ${LINE}`, font: '500 13px/1.35 var(--font-sans)', color: INK }}>
                     <span style={{ flex: 1, minWidth: 0 }}>Discard your changes to this appointment?</span>
                     <button type="button" onClick={() => setAskDiscard(false)} style={{ ...ghost, height: 32 }}>Keep editing</button>
-                    <button type="button" onClick={closeSheet} style={{ ...ghost, height: 32, color: '#b91c1c' }}>Discard</button>
+                    <button type="button" onClick={closeSheet} style={{ ...ghost, height: 32, color: 'var(--tx-red, #b91c1c)' }}>Discard</button>
                   </div>
                 ) : null}
                 <EventPanel key={open.key} workspaceId={workspaceId} userId={userId} reps={team} canWrite={canWrite} event={open.event} draft={open.draft} onClose={closeSheet} onChanged={cal.reload} onToast={V.showToast} onOpenSeller={openSeller} onDirty={(d) => { sheetDirty.current = d; if (!d) setAskDiscard(false); }} inline />

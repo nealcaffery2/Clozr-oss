@@ -7,8 +7,8 @@
 import React, { useEffect, useState } from 'react';
 import { findBuyerAddresses, planTrace, runTrace, type TracePlan, type TraceRecord, type TraceSummary } from '@/lib/bulk-skip-trace';
 
-const btn: React.CSSProperties = { height: 28, padding: '0 10px', borderRadius: 8, border: '1px solid #e4e4e7', background: '#fff', fontSize: 12.5, color: '#18181b', cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap' };
-const primary: React.CSSProperties = { ...btn, background: '#18181b', color: '#fff', border: '1px solid #18181b', fontWeight: 600 };
+const btn: React.CSSProperties = { height: 28, padding: '0 10px', borderRadius: 8, border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: 12.5, color: 'var(--ink, #18181b)', cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap' };
+const primary: React.CSSProperties = { ...btn, background: 'var(--ink, #18181b)', color: 'var(--surface, #fff)', border: '1px solid var(--ink, #18181b)', fontWeight: 600 };
 const plural = (n: number, one: string, many = one + 's') => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
 
 type Phase =
@@ -58,17 +58,17 @@ export function BulkSkipTrace({ kind, records, workspaceId, canWrite, userId, to
 
   const n = records.length;
   return (
-    <div role="region" aria-label="Skip trace" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 16px', background: '#fff', borderBottom: '1px solid #e4e4e7' }}>
+    <div role="region" aria-label="Skip trace" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 16px', background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 13, fontWeight: 650, color: '#18181b' }}>Skip trace {plural(n, who)}</span>
+        <span style={{ fontSize: 13, fontWeight: 650, color: 'var(--ink, #18181b)' }}>Skip trace {plural(n, who)}</span>
         <span style={{ flex: 1 }} />
-        {phase.at !== 'running' ? <button type="button" onClick={onClose} style={{ ...btn, border: 0, color: '#71717a' }}>{phase.at === 'done' ? 'Close' : 'Cancel'}</button> : null}
+        {phase.at !== 'running' ? <button type="button" onClick={onClose} style={{ ...btn, border: 0, color: 'var(--meta, #71717a)' }}>{phase.at === 'done' ? 'Close' : 'Cancel'}</button> : null}
       </div>
       {phase.at === 'planning' ? (
-        <div role="status" style={{ fontSize: 12.5, color: '#71717a' }}>Checking addresses and the 90-day trace cache…</div>
+        <div role="status" style={{ fontSize: 12.5, color: 'var(--meta, #71717a)' }}>Checking addresses and the 90-day trace cache…</div>
       ) : phase.at === 'ready' ? (
         <>
-          <div role="status" style={{ fontSize: 12.5, color: '#3f3f46', lineHeight: 1.5, fontVariantNumeric: 'tabular-nums' }}>
+          <div role="status" style={{ fontSize: 12.5, color: 'var(--ink-3, #3f3f46)', lineHeight: 1.5, fontVariantNumeric: 'tabular-nums' }}>
             {phase.plan.targets.length
               ? <>Traces <b>{phase.plan.targets.length}</b> of {n} at {kind === 'seller' ? 'their property address' : 'their mailing address or a property they bought from you'}. </>
               : <>None of these {who}s have an address to trace at. </>}
@@ -80,20 +80,20 @@ export function BulkSkipTrace({ kind, records, workspaceId, canWrite, userId, to
             <button type="button" disabled={!phase.plan.targets.length} onClick={() => run(phase.plan)} style={{ ...primary, opacity: phase.plan.targets.length ? 1 : 0.5, cursor: phase.plan.targets.length ? 'pointer' : 'not-allowed' }}>
               Skip trace {phase.plan.targets.length}{phase.plan.credits ? ` · ${plural(phase.plan.credits, 'credit')}` : ''}
             </button>
-            <span style={{ fontSize: 12, color: '#71717a' }}>Blank phone and email are filled. Other numbers are kept{kind === 'seller' ? ' in a note on the lead' : ' on the buyer'}; nothing is overwritten.</span>
+            <span style={{ fontSize: 12, color: 'var(--meta, #71717a)' }}>Blank phone and email are filled. Other numbers are kept{kind === 'seller' ? ' in a note on the lead' : ' on the buyer'}; nothing is overwritten.</span>
           </div>
         </>
       ) : phase.at === 'running' ? (
-        <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, color: '#3f3f46', fontVariantNumeric: 'tabular-nums' }}>
+        <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, color: 'var(--ink-3, #3f3f46)', fontVariantNumeric: 'tabular-nums' }}>
           <span>Tracing {phase.done} of {phase.plan.targets.length}…</span>
-          <span style={{ width: 160, height: 4, borderRadius: 999, background: '#f0f0f1', overflow: 'hidden' }}>
-            <span style={{ display: 'block', height: '100%', width: `${Math.round((phase.done / Math.max(1, phase.plan.targets.length)) * 100)}%`, background: '#18181b' }} />
+          <span style={{ width: 160, height: 4, borderRadius: 999, background: 'var(--divider-2, #f0f0f1)', overflow: 'hidden' }}>
+            <span style={{ display: 'block', height: '100%', width: `${Math.round((phase.done / Math.max(1, phase.plan.targets.length)) * 100)}%`, background: 'var(--ink, #18181b)' }} />
           </span>
         </div>
       ) : (
-        <div role="status" style={{ fontSize: 12.5, color: '#3f3f46', lineHeight: 1.5, fontVariantNumeric: 'tabular-nums' }}>
+        <div role="status" style={{ fontSize: 12.5, color: 'var(--ink-3, #3f3f46)', lineHeight: 1.5, fontVariantNumeric: 'tabular-nums' }}>
           Found contacts for <b>{phase.sum.found}</b> of {phase.sum.traced}. {plural(phase.sum.phones, 'phone')} and {plural(phase.sum.emails, 'email')} written back. {plural(phase.sum.credits, 'credit')} used.
-          {phase.sum.failed ? <span style={{ color: '#b91c1c' }}> {phase.sum.failed} failed{phase.sum.message ? `: ${phase.sum.message}` : '.'}</span> : null}
+          {phase.sum.failed ? <span style={{ color: 'var(--tx-red, #b91c1c)' }}> {phase.sum.failed} failed{phase.sum.message ? `: ${phase.sum.message}` : '.'}</span> : null}
         </div>
       )}
     </div>

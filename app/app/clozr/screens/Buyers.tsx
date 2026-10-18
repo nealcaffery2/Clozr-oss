@@ -9,7 +9,7 @@
 'use client';
 
 import { ContractsButton } from '@/components/ContractsHub';
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { keepInView } from '@/components/ds/keepInView';
 import { useReveal } from '@/components/ds/useReveal';
 import { useDebouncedText } from '@/components/ds/useDebouncedText';
@@ -43,6 +43,7 @@ import { NewSmartListDialog, PlusIcon, SavedRailRow, useBuyerSmartLists, useRemo
 import { buyersNavAction, isArchiveChord, isOpenKey, isTypingTarget, listNavBlocked } from '@/lib/people-keys';
 import { PickLabel } from '@/components/ds/PickBox';
 import { FilterPanel } from '@/app/components/filters/FilterPanel';
+import { DateRangeFields } from '@/app/components/filters/RangeFilters';
 
 /** Every field the buyers table can show. Buyer is always on. */
 const BUYER_FIELDS: ColumnDef[] = [
@@ -95,7 +96,7 @@ function buyerSortValue(b: BuyerRow, key: string, ai?: BuyerAiScore): string | n
   const v = (b as unknown as Record<string, unknown>)[key];
   return v == null ? '' : typeof v === 'number' ? v : String(v);
 }
-const NO_BUYER_FILTERS = { buyerState: 'Any', buyerCity: 'Any', buyerEntity: 'Any', buyerType: 'Any', buyerStatus: 'Any', buyerPhone: 'Any', buyerEmail: 'Any', buyerOwner: 'Any', buyerDeal: 'Any' };
+const NO_BUYER_FILTERS = { buyerState: 'Any', buyerCity: 'Any', buyerEntity: 'Any', buyerType: 'Any', buyerStatus: 'Any', buyerPhone: 'Any', buyerEmail: 'Any', buyerOwner: 'Any', buyerDeal: 'Any', buyerTag: 'Any' };
 
 /** What a saved Buyers view keeps (lib/saved-views.ts). */
 type BuyersConfig = { cols: string[]; filters: typeof NO_BUYER_FILTERS; geniusOnly: boolean };
@@ -103,17 +104,17 @@ type BuyersConfig = { cols: string[]; filters: typeof NO_BUYER_FILTERS; geniusOn
 /** Filters with long option lists get a type-ahead box. */
 const SEARCHABLE = new Set(['buyerState', 'buyerCity']);
 
-const INK = '#18181b';
-const MUTED = '#71717a';
-const FAINT = '#a1a1aa';
-const LINE = '#e4e4e7';
-const HAIR = '#f0f0f1';
+const INK = 'var(--ink, #18181b)';
+const MUTED = 'var(--meta, #71717a)';
+const FAINT = 'var(--subtle, #a1a1aa)';
+const LINE = 'var(--divider, #e4e4e7)';
+const HAIR = 'var(--divider-2, #f0f0f1)';
 /** The buyer side is Genius purple (tokens.css --c-genius). */
 const GREEN = '#0A8560';
 /** A ghost control that can be switched on: Genius only, Automations, Refresh scores. */
 const toggleStyle = (on: boolean): React.CSSProperties => ({
   height: '32px', padding: '0 10px', borderRadius: '8px', border: `1px solid ${on ? GREEN : 'var(--c-btn-line)'}`,
-  background: on ? '#F0FAF5' : 'var(--c-btn-bg)', fontSize: '12.5px', cursor: 'pointer', color: on ? '#08694C' : '#27272a',
+  background: on ? 'var(--c-genius-soft, #f0faf5)' : 'var(--c-btn-bg)', fontSize: '12.5px', cursor: 'pointer', color: on ? 'var(--tx-mint-deep, #08694c)' : 'var(--ink-2, #27272a)',
   fontWeight: on ? 600 : 500, whiteSpace: 'nowrap',
 });
 
@@ -124,7 +125,7 @@ function Fact({ label, value, color, strong }: { label: string; value: React.Rea
       <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: MUTED }}>
         {label}
       </span>
-      <span style={{ display: 'block', fontSize: '12.5px', fontWeight: strong ? 600 : 500, color: color || '#27272a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ display: 'block', fontSize: '12.5px', fontWeight: strong ? 600 : 500, color: color || 'var(--ink-2, #27272a)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {value || '—'}
       </span>
     </span>
@@ -204,14 +205,14 @@ function Markets({ list, fallback }: { list?: string[]; fallback: string }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexWrap: 'nowrap' }}>
       {shown.map((m) => (
-        <span key={m} style={{ fontSize: '11px', color: '#3f3f46', background: '#f4f4f5', border: `1px solid ${HAIR}`, borderRadius: '6px', padding: '2px 6px', whiteSpace: 'nowrap', maxWidth: '110px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m}</span>
+        <span key={m} style={{ fontSize: '11px', color: 'var(--ink-3, #3f3f46)', background: 'var(--surface-2, #f4f4f5)', border: `1px solid ${HAIR}`, borderRadius: '6px', padding: '2px 6px', whiteSpace: 'nowrap', maxWidth: '110px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m}</span>
       ))}
       {rest > 0 ? <span style={{ fontSize: '11px', color: FAINT, whiteSpace: 'nowrap' }}>+{rest}</span> : null}
     </span>
   );
 }
 
-const cell: React.CSSProperties = { padding: '0 14px', borderBottom: `1px solid ${HAIR}`, whiteSpace: 'nowrap', color: '#52525b' };
+const cell: React.CSSProperties = { padding: '0 14px', borderBottom: `1px solid ${HAIR}`, whiteSpace: 'nowrap', color: 'var(--muted, #52525b)' };
 
 type BuyerRow = ClozrView['buyerRows'][number];
 
@@ -237,11 +238,11 @@ function BuyerCell({ k, b, onCall, ai }: { k: string; b: BuyerRow; onCall: (phon
             <span style={{minWidth: 0}}>
               <span style={{display: 'flex', alignItems: 'center', gap: '6px', maxWidth: '260px'}}>
                 <span style={{fontWeight: 650, color: INK, overflow: 'hidden', textOverflow: 'ellipsis'}}>{b.company}</span>
-                {foundHow(b) ? <span style={{ flex: 'none', fontSize: '11px', fontWeight: 600, color: '#3f3f46', background: '#f4f4f5', borderRadius: '6px', padding: '1px 6px' }}>{foundHow(b)}</span> : null}
+                {foundHow(b) ? <span style={{ flex: 'none', fontSize: '11px', fontWeight: 600, color: 'var(--ink-3, #3f3f46)', background: 'var(--surface-2, #f4f4f5)', borderRadius: '6px', padding: '1px 6px' }}>{foundHow(b)}</span> : null}
               </span>
               <span style={{display: 'flex', alignItems: 'center', gap: '6px', maxWidth: '260px', fontSize: '11px', color: MUTED}}>
                 <span style={{overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0}}>{b.name}</span>
-                {ai?.source === 'ai' ? <span style={{ flex: 'none', fontSize: 11, fontWeight: 600, color: '#08694C', background: '#E7F5EF', borderRadius: 6, padding: '0 4px' }}>AI</span> : null}
+                {ai?.source === 'ai' ? <span style={{ flex: 'none', fontSize: 11, fontWeight: 600, color: 'var(--tx-mint-deep, #08694c)', background: 'var(--c-action-soft, #e7f5ef)', borderRadius: 6, padding: '0 4px' }}>AI</span> : null}
               </span>
             </span>
           </div>
@@ -264,12 +265,37 @@ function BuyerCell({ k, b, onCall, ai }: { k: string; b: BuyerRow; onCall: (phon
   }
 }
 
+/**
+ * One buyer in the table. Memoized on the row object (useClozr rebuilds
+ * those only when the list, the filters or the data change) and on stable
+ * handlers, so a keystroke elsewhere in the shell no longer redraws the page.
+ */
+const BuyerTableRow = React.memo(function BuyerTableRow({ b, index, focused, selected, shown, ai, onOpen, onToggle, callPhone }: {
+  b: BuyerRow; index: number; focused: boolean; selected: boolean; shown: ColumnDef[]; ai?: BuyerAiScore;
+  onOpen: (index: number, b: BuyerRow) => void; onToggle: (id: string) => void; callPhone: (phone: string) => void;
+}) {
+  return (
+    <tr className="dc2" data-buyer-focus={focused || undefined} onClick={() => onOpen(index, b)} style={{cursor: "pointer", background: selected || focused ? "var(--c-genius-soft, #f0faf5)" : undefined, outline: focused ? `2px solid ${GREEN}` : undefined, outlineOffset: focused ? '-2px' : undefined}}>
+      <td onClick={(e) => e.stopPropagation()} style={{padding: "0 14px", borderBottom: `1px solid ${HAIR}`}}>
+        <input type="checkbox" aria-label={'Select ' + b.company} checked={selected} onChange={() => onToggle(b.id)} style={{width: "14px", height: "14px", accentColor: GREEN, cursor: "pointer"}} />
+      </td>
+      {shown.map((f) => <BuyerCell key={f.key} k={f.key} b={b} onCall={callPhone} ai={ai} />)}
+    </tr>
+  );
+});
+
 export function Buyers({ V }: { V: ClozrView }) {
   const [sel, setSel] = React.useState<Record<string, boolean>>({});
   const [mode, setMode] = useListOrMap('clozr.buyers.view');
   // Realtors lassoed on the map, by market: they are not rows the list holds.
   const [realtorPicks, setRealtorPicks] = React.useState<Record<string, RealtorPick[]>>({});
   const [automations, setAutomations] = React.useState(false);
+  const toggleSel = useCallback((id: string) => setSel((x) => ({ ...x, [id]: !x[id] })), []);
+  // The rows get stable handlers (the view-model's are new functions on every rebuild), so BuyerTableRow's memo holds.
+  const vRef = useRef(V);
+  useEffect(() => { vRef.current = V; });
+  const openRow = useCallback((index: number, b: BuyerRow) => { vRef.current.setBuyerCursor(index); b.open(); }, []);
+  const callPhone = useCallback((phone: string) => vRef.current.callPhone(phone), []);
   const [railOpen, toggleRail] = useRailOpen('buyers');
   // Kept for the session (lib/screen-memory), like the search in V: the list
   // unmounts while a buyer is open and should come back as it was left.
@@ -294,11 +320,11 @@ export function Buyers({ V }: { V: ClozrView }) {
     setSel({});
   };
   const sv = useSavedViews<BuyersConfig>('buyers', V.liveIds?.workspaceId ?? null, V.liveIds?.userId ?? null, apply, { oncePerSession: true });
-  const current: BuyersConfig = { cols, geniusOnly, filters: { buyerState: V.gf.buyerState, buyerCity: V.gf.buyerCity, buyerEntity: V.gf.buyerEntity, buyerType: V.gf.buyerType, buyerStatus: V.gf.buyerStatus, buyerPhone: V.gf.buyerPhone, buyerEmail: V.gf.buyerEmail, buyerOwner: V.gf.buyerOwner ?? 'Any', buyerDeal: V.gf.buyerDeal ?? 'Any' } };
+  const current: BuyersConfig = { cols, geniusOnly, filters: { buyerState: V.gf.buyerState, buyerCity: V.gf.buyerCity, buyerEntity: V.gf.buyerEntity, buyerType: V.gf.buyerType, buyerStatus: V.gf.buyerStatus, buyerPhone: V.gf.buyerPhone, buyerEmail: V.gf.buyerEmail, buyerOwner: V.gf.buyerOwner ?? 'Any', buyerDeal: V.gf.buyerDeal ?? 'Any', buyerTag: V.gf.buyerTag ?? 'Any' } };
   const base: BuyersConfig = sv.active?.config ?? { cols: BUYER_DEFAULT, geniusOnly: false, filters: NO_BUYER_FILTERS };
   const dirty = !sameList(cols, colsOf(base)) || geniusOnly !== !!base.geniusOnly
     || (Object.keys(NO_BUYER_FILTERS) as (keyof typeof NO_BUYER_FILTERS)[]).some((k) => current.filters[k] !== (base.filters?.[k] ?? 'Any'));
-  const shown = cols.map((k) => BUYER_FIELDS.find((f) => f.key === k)).filter((f): f is ColumnDef => !!f);
+  const shown = useMemo(() => cols.map((k) => BUYER_FIELDS.find((f) => f.key === k)).filter((f): f is ColumnDef => !!f), [cols]);
   const navRows = V.buyerNavRows || [];
   // Score what is on screen first; realtors are a 127k corpus and are scored only on Refresh.
   const autoIds = list === 'realtors' ? [] : navRows.slice(0, 25).map((b) => dbId(b.id));
@@ -394,7 +420,7 @@ export function Buyers({ V }: { V: ClozrView }) {
   const listItems: RailItem[] = V.buyerListNames.map((id) => {
     const listed = (V.buyerRows || []).filter((b) => inBuyerList(id, b)).length;
     return {
-      id, label: buyerListLabelOf(id) ?? id, on: list === id && !openSaved, dot: RAIL_DOT[id] ?? '#a1a1aa',
+      id, label: buyerListLabelOf(id) ?? id, on: list === id && !openSaved, dot: RAIL_DOT[id] ?? 'var(--subtle, #a1a1aa)',
       count: id === 'realtors' ? (V.realtorCorpusTotal || listed) : listed,
       go: () => { V.setBuyerList(id); setOpenSavedId(null); clearSel(); },
     };
@@ -403,13 +429,13 @@ export function Buyers({ V }: { V: ClozrView }) {
   const savedItems = smart.lists.map((l) => ({
     l,
     item: {
-      id: 'saved:' + l.id, label: l.name, on: openSaved?.id === l.id, dot: RAIL_DOT[baseOf(l)] ?? '#a1a1aa',
+      id: 'saved:' + l.id, label: l.name, on: openSaved?.id === l.id, dot: RAIL_DOT[baseOf(l)] ?? 'var(--subtle, #a1a1aa)',
       count: openSaved?.id === l.id ? rows.length : null,
       title: l.mine === false ? `${l.name}, shared by a teammate` : l.name,
       go: () => openSavedList(l),
     } satisfies RailItem,
   }));
-  const pill = (on: boolean): React.CSSProperties => ({ flex: 'none', height: '32px', padding: '0 10px', borderRadius: '999px', border: `1px solid ${on ? GREEN : 'var(--c-btn-line)'}`, background: on ? '#F0FAF5' : 'var(--c-btn-bg)', color: on ? '#08694C' : '#27272a', fontSize: '12px', fontWeight: on ? 650 : 500, cursor: 'pointer', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' });
+  const pill = (on: boolean): React.CSSProperties => ({ flex: 'none', height: '32px', padding: '0 10px', borderRadius: '999px', border: `1px solid ${on ? GREEN : 'var(--c-btn-line)'}`, background: on ? 'var(--c-genius-soft, #f0faf5)' : 'var(--c-btn-bg)', color: on ? 'var(--tx-mint-deep, #08694c)' : 'var(--ink-2, #27272a)', fontSize: '12px', fontWeight: on ? 650 : 500, cursor: 'pointer', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' });
   const listSwitcher = (
     <span style={{ display: 'inline-flex', gap: '6px', flex: 'none' }}>
       {[...listItems, ...savedItems.map((x) => x.item)].map((item) => (
@@ -422,7 +448,7 @@ export function Buyers({ V }: { V: ClozrView }) {
         New list
       </button>
       {openSaved && openSaved.mine !== false ? (
-        <button type="button" className="dc2" onClick={() => void askRemove(openSaved)} style={{ ...pill(false), color: '#b91c1c' }}>
+        <button type="button" className="dc2" onClick={() => void askRemove(openSaved)} style={{ ...pill(false), color: 'var(--tx-red, #b91c1c)' }}>
           Delete list
         </button>
       ) : null}
@@ -443,7 +469,25 @@ export function Buyers({ V }: { V: ClozrView }) {
   const buyerFilterMenus = V.buyerMenus || [];
   const activeBuyerFilters = buyerFilterMenus.filter((m) => m.on).length;
   // Each menu's own "Any" is its reset, so realtors' server-side state and city clear the same way.
-  const resetBuyerFilters = () => { for (const m of buyerFilterMenus) if (m.on) m.options.find((o) => o.label === 'Any')?.go(); setSel({}); };
+  const buyerDateOn = (V.gf.buyerAdded ?? 'Any') !== 'Any';
+  const resetBuyerFilters = () => {
+    for (const m of buyerFilterMenus) if (m.on) m.options.find((o) => o.label === 'Any')?.go();
+    V.setGf({ buyerAdded: 'Any', buyerAddedFrom: 'Any', buyerAddedTo: 'Any' });
+    setSel({});
+  };
+  const buyerFilters = (
+    <FilterPanel
+      menus={buyerFilterMenus}
+      active={activeBuyerFilters + (buyerDateOn ? 1 : 0)}
+      onReset={resetBuyerFilters}
+      onClose={V.closeFilterMenus}
+      showLabel={`Show ${rows.length.toLocaleString('en-US')} ${list === 'realtors' ? 'realtors' : 'buyers'}`}>
+      <div className="cz-fp-more">
+        <DateRangeFields when={V.gf.buyerAdded} from={V.gf.buyerAddedFrom} to={V.gf.buyerAddedTo}
+          onChange={(patch) => V.setGf({ buyerAdded: patch.when, ...(patch.from != null ? { buyerAddedFrom: patch.from } : {}), ...(patch.to != null ? { buyerAddedTo: patch.to } : {}) })} />
+      </div>
+    </FilterPanel>
+  );
   const viewSwitch = <ListMapSwitch value={mode} onChange={setMode} pill={V.isMobile} />;
   const allSelected = rows.length > 0 && selectedIds.length === rows.length;
   // Refresh re-scores the selection, or the first 25 on screen when nothing is selected.
@@ -506,7 +550,7 @@ export function Buyers({ V }: { V: ClozrView }) {
             wrapped into three stacked rows and ate half the screen, so the
             phone gets a title line, a full-width search, and a single
             sideways-scrolling control strip. */}
-        <div style={{flex: "none", background: "#fff", borderBottom: `1px solid ${LINE}`, padding: "10px 0 10px 12px"}}>
+        <div style={{flex: "none", background: "var(--surface, #fff)", borderBottom: `1px solid ${LINE}`, padding: "10px 0 10px 12px"}}>
           <div style={{display: "flex", alignItems: "baseline", gap: "8px", paddingRight: "12px", minWidth: "0"}}>
             <span style={{fontSize: "19px", fontWeight: "700", letterSpacing: "-0.03em", flex: "none"}}>
               {listTitle}
@@ -515,7 +559,7 @@ export function Buyers({ V }: { V: ClozrView }) {
               {list === 'realtors' ? `${rows.length} of ${V.realtorMatchTotal.toLocaleString('en-US')}` : `${rows.length} showing · ${V.buyerTotal} in database`}
             </span>
           </div>
-          <input type="search" value={qText} onChange={(e) => setQText(e.target.value)} placeholder="Search name, company, market…" aria-label="Search buyers" style={{height: "38px", width: "calc(100% - 12px)", marginTop: "9px", borderRadius: "9px", border: `1px solid ${LINE}`, padding: "0 11px", fontSize: "16px", background: "#fafafa", color: INK, minWidth: "0"}} />
+          <input type="search" value={qText} onChange={(e) => setQText(e.target.value)} placeholder="Search name, company, market…" aria-label="Search buyers" style={{height: "38px", width: "calc(100% - 12px)", marginTop: "9px", borderRadius: "9px", border: `1px solid ${LINE}`, padding: "0 11px", fontSize: "16px", background: "var(--canvas, #fafafa)", color: INK, minWidth: "0"}} />
           <div data-tabs style={{display: "flex", gap: "6px", overflowX: "auto", marginTop: "9px", paddingRight: "12px", paddingBottom: "2px"}}>
             {viewSwitch}
             {listSwitcher}
@@ -524,19 +568,20 @@ export function Buyers({ V }: { V: ClozrView }) {
             </button>
             <ViewMenu sv={sv} current={current} dirty={dirty} onApply={apply} onToast={V.showToast} pill align="left" />
             {sortMenu}
+            {buyerFilters}
             <ContractsButton V={V} pill />
             {V.can.import ? (
             <button className="dc2" onClick={() => V.openImport('buyers')} style={{flex: "none", height: "34px", padding: "0 13px", borderRadius: "999px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", color: INK, fontSize: "12.5px", fontWeight: "500", cursor: "pointer", whiteSpace: "nowrap"}}>
               Import
             </button>
             ) : null}
-            <button className="dc2" onClick={() => { V.setBuyerGeniusOnly(!geniusOnly); setSel({}); }} style={{flex: "none", height: "34px", padding: "0 13px", borderRadius: "999px", border: `1px solid ${geniusOnly ? GREEN : 'var(--c-btn-line)'}`, background: geniusOnly ? '#F0FAF5' : 'var(--c-btn-bg)', color: geniusOnly ? '#08694C' : '#27272a', fontSize: "12.5px", fontWeight: geniusOnly ? "600" : "500", cursor: "pointer", whiteSpace: "nowrap"}}>
+            <button className="dc2" onClick={() => { V.setBuyerGeniusOnly(!geniusOnly); setSel({}); }} style={{flex: "none", height: "34px", padding: "0 13px", borderRadius: "999px", border: `1px solid ${geniusOnly ? GREEN : 'var(--c-btn-line)'}`, background: geniusOnly ? 'var(--c-genius-soft, #f0faf5)' : 'var(--c-btn-bg)', color: geniusOnly ? 'var(--tx-mint-deep, #08694c)' : 'var(--ink-2, #27272a)', fontSize: "12.5px", fontWeight: geniusOnly ? "600" : "500", cursor: "pointer", whiteSpace: "nowrap"}}>
               Genius
             </button>
             <button className="dc2" disabled={!!ai.progress || !rows.length} onClick={() => ai.refresh(rescoreIds)} title={rescoreTitle} style={{flex: "none", height: "34px", padding: "0 13px", borderRadius: "999px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", color: INK, fontSize: "12.5px", fontWeight: "500", cursor: "pointer", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums"}}>
               {rescoreLabel}
             </button>
-            <button className="dc2" onClick={() => setAutomations(!automations)} style={{flex: "none", height: "34px", padding: "0 13px", borderRadius: "999px", border: `1px solid ${automations ? GREEN : 'var(--c-btn-line)'}`, background: automations ? '#F0FAF5' : 'var(--c-btn-bg)', color: automations ? '#08694C' : '#27272a', fontSize: "12.5px", fontWeight: automations ? "600" : "500", cursor: "pointer", whiteSpace: "nowrap"}}>
+            <button className="dc2" onClick={() => setAutomations(!automations)} style={{flex: "none", height: "34px", padding: "0 13px", borderRadius: "999px", border: `1px solid ${automations ? GREEN : 'var(--c-btn-line)'}`, background: automations ? 'var(--c-genius-soft, #f0faf5)' : 'var(--c-btn-bg)', color: automations ? 'var(--tx-mint-deep, #08694c)' : 'var(--ink-2, #27272a)', fontSize: "12.5px", fontWeight: automations ? "600" : "500", cursor: "pointer", whiteSpace: "nowrap"}}>
               Automations
             </button>
             {(V.buyerMenus || []).map((f, f__i) => (
@@ -575,7 +620,7 @@ export function Buyers({ V }: { V: ClozrView }) {
           something on one; everything that narrows or arranges the table on
           the next, left-aligned. One wrapping row used to scatter fourteen
           controls across two ragged lines. */}
-      <div data-head style={{display: V.isMobile ? "none" : "block", position: "relative", zIndex: 3, background: "#fff", borderBottom: `1px solid ${LINE}`}}>
+      <div data-head style={{display: V.isMobile ? "none" : "block", position: "relative", zIndex: 3, background: "var(--surface, #fff)", borderBottom: `1px solid ${LINE}`}}>
       <div style={{display: "flex", alignItems: "center", gap: "10px", padding: "12px 16px 8px"}}>
         {!railOpen ? <RailToggle open={false} onToggle={toggleRail} /> : null}
         <h1 style={{margin: "0", fontSize: "18px", fontWeight: "700", letterSpacing: "-0.02em", whiteSpace: "nowrap"}}>
@@ -585,7 +630,7 @@ export function Buyers({ V }: { V: ClozrView }) {
           {list === 'realtors' ? `${rows.length.toLocaleString('en-US')} of ${V.realtorMatchTotal.toLocaleString('en-US')}` : `${rows.length.toLocaleString('en-US')} showing · ${V.buyerTotal} in database`}
         </span>
         <div style={{flex: "1"}}></div>
-        <label style={{display: "flex", alignItems: "center", gap: "8px", height: "32px", padding: "0 10px", border: `1px solid ${LINE}`, borderRadius: "8px", background: "#fafafa", width: "min(300px, 28vw)", minWidth: "160px"}}>
+        <label style={{display: "flex", alignItems: "center", gap: "8px", height: "32px", padding: "0 10px", border: `1px solid ${LINE}`, borderRadius: "8px", background: "var(--canvas, #fafafa)", width: "min(300px, 28vw)", minWidth: "160px"}}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={MUTED} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
           <input type="search" value={qText} onChange={(e) => setQText(e.target.value)} placeholder="Search name, company, phone, market, tag" aria-label="Search buyers" style={{border: "0", background: "none", outline: "0", fontSize: "13px", width: "100%", minWidth: 0, color: INK}} />
         </label>
@@ -607,14 +652,8 @@ export function Buyers({ V }: { V: ClozrView }) {
         <ColumnPicker all={BUYER_FIELDS} value={cols} onChange={setCols} defaults={BUYER_DEFAULT} title="Fields in the buyers table" />
         {sortMenu}
         <span aria-hidden style={{width: "1px", height: "20px", background: LINE, margin: "0 2px"}}></span>
-        {/* Eleven filter menus wrapped this row onto three lines; one panel, as on People. */}
-        <FilterPanel
-          menus={buyerFilterMenus}
-          active={activeBuyerFilters}
-          onReset={resetBuyerFilters}
-          onClose={V.closeFilterMenus}
-          showLabel={`Show ${rows.length.toLocaleString('en-US')} ${list === 'realtors' ? 'realtors' : 'buyers'}`} />
-        {activeBuyerFilters ? (
+        {buyerFilters}
+        {activeBuyerFilters || buyerDateOn ? (
           <button type="button" className="dc12" onClick={resetBuyerFilters} style={{height: "32px", padding: "0 8px", background: "none", border: "0", fontSize: "12px", color: GREEN, cursor: "pointer", whiteSpace: "nowrap"}}>
             Reset
           </button>
@@ -653,12 +692,12 @@ export function Buyers({ V }: { V: ClozrView }) {
         {/* The table is 1100px wide by design. On a phone that put everything
             from MARKETS rightwards off the screen, so the phone gets a card
             carrying the same facts stacked. */}
-        <div style={{flex: "1", overflow: "auto", background: "#fafafa", padding: "10px 12px calc(96px + env(safe-area-inset-bottom, 0px))", display: "flex", flexDirection: "column", gap: "8px"}}>
+        <div style={{flex: "1", overflow: "auto", background: "var(--canvas, #fafafa)", padding: "10px 12px calc(96px + env(safe-area-inset-bottom, 0px))", display: "flex", flexDirection: "column", gap: "8px"}}>
           {visible.map((b, b__i) => {
             const focused = b__i === V.buyerCursor;
             return (
             <React.Fragment key={b.id}>
-            <div data-buyer-focus={focused || undefined} onClick={b.open} onDoubleClick={b.open} style={{background: sel[b.id] || focused ? "#F0FAF5" : "#fff", border: `1px solid ${sel[b.id] || focused ? GREEN : LINE}`, borderRadius: "12px", padding: "11px 12px", display: "flex", flexDirection: "column", gap: "8px", cursor: "pointer", minWidth: "0", outline: focused ? `2px solid ${GREEN}` : undefined, outlineOffset: focused ? '-2px' : undefined}}>
+            <div data-buyer-focus={focused || undefined} onClick={() => { V.setBuyerCursor(b__i); b.open(); }} onDoubleClick={b.open} style={{background: sel[b.id] || focused ? "var(--c-genius-soft, #f0faf5)" : "var(--surface, #fff)", border: `1px solid ${sel[b.id] || focused ? GREEN : LINE}`, borderRadius: "12px", padding: "11px 12px", display: "flex", flexDirection: "column", gap: "8px", cursor: "pointer", minWidth: "0", outline: focused ? `2px solid ${GREEN}` : undefined, outlineOffset: focused ? '-2px' : undefined}}>
               <div style={{display: "flex", alignItems: "center", gap: "10px", minWidth: "0"}}>
                 <input type="checkbox" aria-label={'Select ' + b.company} checked={!!sel[b.id]} onClick={(e) => e.stopPropagation()} onChange={() => setSel((x) => ({ ...x, [b.id]: !x[b.id] }))} style={{width: "18px", height: "18px", flex: "none", accentColor: GREEN, cursor: "pointer"}} />
                 <ScoreRing b={b} ai={aiOf(b)} size={38} />
@@ -668,7 +707,7 @@ export function Buyers({ V }: { V: ClozrView }) {
                   </span>
                   <span style={{display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: MUTED, minWidth: 0}}>
                     <span style={{overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0}}>{b.name}{foundHow(b) ? ` · ${foundHow(b)}` : ''}</span>
-                    {aiOf(b)?.source === 'ai' ? <span style={{ flex: 'none', fontSize: 11, fontWeight: 600, color: '#08694C', background: '#E7F5EF', borderRadius: 6, padding: '0 4px' }}>AI</span> : null}
+                    {aiOf(b)?.source === 'ai' ? <span style={{ flex: 'none', fontSize: 11, fontWeight: 600, color: 'var(--tx-mint-deep, #08694c)', background: 'var(--c-action-soft, #e7f5ef)', borderRadius: 6, padding: '0 4px' }}>AI</span> : null}
                   </span>
                 </span>
                 <span style={{flex: "none"}}>
@@ -691,7 +730,7 @@ export function Buyers({ V }: { V: ClozrView }) {
             );
           })}
           {more ? (
-            <button type="button" ref={sentinel} onClick={showMore} className="dc2" style={{flex: "none", height: "40px", borderRadius: "10px", border: `1px dashed ${LINE}`, background: "#fff", color: MUTED, fontSize: "12.5px", cursor: "pointer", fontVariantNumeric: "tabular-nums"}}>
+            <button type="button" ref={sentinel} onClick={showMore} className="dc2" style={{flex: "none", height: "40px", borderRadius: "10px", border: `1px dashed ${LINE}`, background: "var(--surface, #fff)", color: MUTED, fontSize: "12.5px", cursor: "pointer", fontVariantNumeric: "tabular-nums"}}>
               {moreNote}
             </button>
           ) : null}
@@ -708,7 +747,7 @@ export function Buyers({ V }: { V: ClozrView }) {
         </div>
         </>
       ) : (
-      <div className="clozr-scroll-well" style={{flex: "1", overflow: "auto", background: "#fff"}}>
+      <div className="clozr-scroll-well" style={{flex: "1", overflow: "auto", background: "var(--surface, #fff)"}}>
         <table style={{width: "100%", borderCollapse: "separate", borderSpacing: "0", fontSize: "12.5px", minWidth: `${Math.max(720, shown.length * 112)}px`}}>
           <thead>
             <tr>
@@ -728,23 +767,14 @@ export function Buyers({ V }: { V: ClozrView }) {
             </tr>
           </thead>
           <tbody>
-            {visible.map((b, b__i) => {
-              const focused = b__i === V.buyerCursor;
-              return (
-              <React.Fragment key={b.id}>
-              <tr className="dc2" data-buyer-focus={focused || undefined} onClick={b.open} style={{cursor: "pointer", background: sel[b.id] || focused ? "#F0FAF5" : undefined, outline: focused ? `2px solid ${GREEN}` : undefined, outlineOffset: focused ? '-2px' : undefined}}>
-                <td onClick={(e) => e.stopPropagation()} style={{padding: "0 14px", borderBottom: `1px solid ${HAIR}`}}>
-                  <input type="checkbox" aria-label={'Select ' + b.company} checked={!!sel[b.id]} onChange={() => setSel((x) => ({ ...x, [b.id]: !x[b.id] }))} style={{width: "14px", height: "14px", accentColor: GREEN, cursor: "pointer"}} />
-                </td>
-                {shown.map((f) => <BuyerCell key={f.key} k={f.key} b={b} onCall={V.callPhone} ai={aiOf(b)} />)}
-              </tr>
-              </React.Fragment>
-              );
-            })}
+            {visible.map((b, b__i) => (
+              <BuyerTableRow key={b.id} b={b} index={b__i} focused={b__i === V.buyerCursor} selected={!!sel[b.id]} shown={shown}
+                ai={aiOf(b)} onOpen={openRow} onToggle={toggleSel} callPhone={callPhone} />
+            ))}
               {more ? (
                 <tr ref={sentinel}>
                   <td colSpan={shown.length + 1} style={{padding: "0"}}>
-                    <button type="button" onClick={showMore} className="dc2" style={{width: "100%", height: "40px", border: 0, background: "#fafafa", color: MUTED, fontSize: "12px", cursor: "pointer", fontVariantNumeric: "tabular-nums"}}>
+                    <button type="button" onClick={showMore} className="dc2" style={{width: "100%", height: "40px", border: 0, background: "var(--canvas, #fafafa)", color: MUTED, fontSize: "12px", cursor: "pointer", fontVariantNumeric: "tabular-nums"}}>
                       {moreNote}
                     </button>
                   </td>
@@ -765,12 +795,12 @@ export function Buyers({ V }: { V: ClozrView }) {
         </table>
       </div>
       )}
-      <div style={{ flex: 'none', display: mode === 'map' && V.isMobile ? 'none' : 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '10px 16px', borderTop: `1px solid ${LINE}`, background: '#fff' }}>
+      <div style={{ flex: 'none', display: mode === 'map' && V.isMobile ? 'none' : 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '10px 16px', borderTop: `1px solid ${LINE}`, background: 'var(--surface, #fff)' }}>
         {list === 'realtors' && mode !== 'map' ? (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: MUTED }}>
-            <button type="button" className="dc2" disabled={V.realtorOffset <= 0 || V.realtorLoading} onClick={V.realtorPrev} style={{ height: '30px', padding: '0 10px', borderRadius: '8px', border: `1px solid ${LINE}`, background: '#fff', color: INK, fontSize: '12px', cursor: V.realtorOffset <= 0 ? 'default' : 'pointer', opacity: V.realtorOffset <= 0 ? 0.45 : 1 }}>Previous</button>
+            <button type="button" className="dc2" disabled={V.realtorOffset <= 0 || V.realtorLoading} onClick={V.realtorPrev} style={{ height: '30px', padding: '0 10px', borderRadius: '8px', border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', color: INK, fontSize: '12px', cursor: V.realtorOffset <= 0 ? 'default' : 'pointer', opacity: V.realtorOffset <= 0 ? 0.45 : 1 }}>Previous</button>
             <span style={{ fontVariantNumeric: 'tabular-nums' }}>{V.realtorMatchTotal ? `${(V.realtorOffset + 1).toLocaleString('en-US')}–${Math.min(V.realtorOffset + rows.length, V.realtorMatchTotal).toLocaleString('en-US')} of ${V.realtorMatchTotal.toLocaleString('en-US')}` : '—'}</span>
-            <button type="button" className="dc2" disabled={V.realtorLoading || V.realtorOffset + V.realtorPageSize >= V.realtorMatchTotal} onClick={V.realtorNext} style={{ height: '30px', padding: '0 10px', borderRadius: '8px', border: `1px solid ${LINE}`, background: '#fff', color: INK, fontSize: '12px', cursor: V.realtorOffset + V.realtorPageSize >= V.realtorMatchTotal ? 'default' : 'pointer', opacity: V.realtorOffset + V.realtorPageSize >= V.realtorMatchTotal ? 0.45 : 1 }}>Next</button>
+            <button type="button" className="dc2" disabled={V.realtorLoading || V.realtorOffset + V.realtorPageSize >= V.realtorMatchTotal} onClick={V.realtorNext} style={{ height: '30px', padding: '0 10px', borderRadius: '8px', border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', color: INK, fontSize: '12px', cursor: V.realtorOffset + V.realtorPageSize >= V.realtorMatchTotal ? 'default' : 'pointer', opacity: V.realtorOffset + V.realtorPageSize >= V.realtorMatchTotal ? 0.45 : 1 }}>Next</button>
           </span>
         ) : <span />}
         <BlacklistButton

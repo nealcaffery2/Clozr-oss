@@ -23,7 +23,7 @@ export function ToolsTab({ form, canEdit, goTo }: TabCtx) {
           const meta = TOOL_META[k];
           const soon = !t.available;
           return (
-            <li key={k} id={`va-f-tools-${k}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 14px', borderTop: i ? '1px solid #f0f0f1' : 'none', background: soon ? '#fafafa' : '#fff' }}>
+            <li key={k} id={`va-f-tools-${k}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 14px', borderTop: i ? '1px solid var(--divider-2, #f0f0f1)' : 'none', background: soon ? 'var(--canvas, #fafafa)' : 'var(--surface, #fff)' }}>
               <span aria-hidden="true" style={{ width: 30, height: 30, borderRadius: 8, flex: 'none', display: 'grid', placeItems: 'center', background: soon ? 'var(--inset)' : 'var(--chip-ok)', boxShadow: `inset 0 0 0 1px ${soon ? 'var(--inset-line)' : 'var(--ok-line)'}`, color: soon ? '#71717a' : 'var(--ok-ink)' }}><Wrench size={15} /></span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -33,7 +33,7 @@ export function ToolsTab({ form, canEdit, goTo }: TabCtx) {
                 </div>
                 <p style={{ margin: '2px 0 0', fontSize: 12, color: MUTED, lineHeight: 1.5 }}>{meta.hint}</p>
                 {k === 'transfer' && t.available && transferNeedsSetup ? (
-                  <p style={{ margin: '6px 0 0', fontSize: 12, color: '#92400e', lineHeight: 1.5 }}>
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--tx-amber-deep, #92400e)', lineHeight: 1.5 }}>
                     Needs live transfer switched on with a destination. <button type="button" className="va-btn" style={linkBtn} onClick={() => goTo('transfer')}>Set it up</button>
                   </p>
                 ) : null}

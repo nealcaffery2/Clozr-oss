@@ -36,6 +36,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { supabase } from './supabase';
 import { talkrUrl } from './talkr';
+import { everyWhileVisible } from './visible-timer';
 
 /** The extension looks for this on <html> before it says anything at all. */
 const MARKER_ATTR = 'data-talkr-bridge';
@@ -101,7 +102,7 @@ function tryOpen(): void {
  *    ping (`talkr.pong`) and then stops is taken to be gone.
  */
 const DIAL_ACK_MS = 12_000;
-const PING_EVERY_MS = 20_000;
+const PING_EVERY_MS = 30_000;
 const PING_GRACE_MS = 8_000;
 let answersPings = false;
 let lastPong = 0;
@@ -253,18 +254,26 @@ export function installTalkrExtensionBridge(): () => void {
     }
   });
 
-  const ping = setInterval(() => {
+  // Bumped on every hide and show: a ping whose wait spanned one proves nothing.
+  let visEpoch = 0;
+  const onVis = () => { visEpoch += 1; };
+  document.addEventListener('visibilitychange', onVis);
+  const stopPing = everyWhileVisible(() => {
     if (!state.holdingSoftphone) return;
     const sent = Date.now();
+    const epoch = visEpoch;
     post({ type: 'clozr.ping' });
     setTimeout(() => {
+      // A tab hidden during the wait missed the pong because it was not looking, not because the extension left.
+      if (document.hidden || epoch !== visEpoch) return;
       if (answersPings && state.holdingSoftphone && lastPong < sent) extensionGone();
     }, PING_GRACE_MS);
   }, PING_EVERY_MS);
 
   return () => {
     installed = false;
-    clearInterval(ping);
+    stopPing();
+    document.removeEventListener('visibilitychange', onVis);
     if (pendingDial) clearTimeout(pendingDial.timer);
     pendingDial = null;
     window.removeEventListener('message', onMessage);

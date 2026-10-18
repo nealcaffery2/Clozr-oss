@@ -21,7 +21,7 @@ export function ViewAsBanner({ who, onExit }: { who: ViewAs; onExit?: () => void
         Viewing as <b>{who.name}</b> · {ROLE_LABEL[who.role] ?? who.role} · read-only
       </span>
       <button type="button" onClick={() => { stopViewAs(); onExit?.(); }}
-        style={{ height: '28px', padding: '0 12px', borderRadius: '999px', border: 0, background: '#fff', color: '#7c2d12', fontSize: '12px', fontWeight: 700, cursor: 'pointer', flex: 'none' }}>
+        style={{ height: '28px', padding: '0 12px', borderRadius: '999px', border: 0, background: 'var(--surface, #fff)', color: '#7c2d12', fontSize: '12px', fontWeight: 700, cursor: 'pointer', flex: 'none' }}>
         Exit
       </button>
     </div>
@@ -32,7 +32,7 @@ export function ViewAsButton({ userId, role, name, onStart }: { userId: string; 
   return (
     <button type="button" className="dc2" title={`See CLOZR the way ${name} does — their screens and their lists, read-only`}
       onClick={() => { startViewAs({ userId, role, name }); onStart?.(); }}
-      style={{ height: '30px', padding: '0 10px', borderRadius: '8px', border: '1px solid #fed7aa', background: '#fff7ed', fontSize: '12px', fontWeight: 600, color: '#c2410c', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+      style={{ height: '30px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--tint-orange-3, #fed7aa)', background: 'var(--tint-orange, #fff7ed)', fontSize: '12px', fontWeight: 600, color: 'var(--tx-orange, #c2410c)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
       View as
     </button>
   );
@@ -48,7 +48,7 @@ export function ReadOnlyNote({ style }: { style?: React.CSSProperties }) {
   return (
     <div role="note" style={{
       display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 12px', padding: '8px 12px', borderRadius: '9px',
-      border: '1px solid #fed7aa', background: '#fff7ed', color: '#9a3412', fontSize: '12.5px', fontWeight: 500, ...style,
+      border: '1px solid var(--tint-orange-3, #fed7aa)', background: 'var(--tint-orange, #fff7ed)', color: 'var(--tx-orange-deep, #9a3412)', fontSize: '12.5px', fontWeight: 500, ...style,
     }}>
       <span style={{ width: '7px', height: '7px', borderRadius: '999px', background: '#fb923c', flex: 'none' }} />
       Read-only preview · changes here are not saved.

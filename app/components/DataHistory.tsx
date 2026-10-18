@@ -6,18 +6,18 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { type DataRun, listRuns } from '@/lib/data-runs';
 import { listTeam, type Teammate } from '@/lib/team';
 
-const INK = '#18181b';
-const MUTED = '#71717a';
-const LINE = '#e4e4e7';
-const HAIR = '#f0f0f1';
+const INK = 'var(--ink, #18181b)';
+const MUTED = 'var(--meta, #71717a)';
+const LINE = 'var(--divider, #e4e4e7)';
+const HAIR = 'var(--divider-2, #f0f0f1)';
 const GREEN = '#0A8560';
 
 const chip = (on: boolean): React.CSSProperties => ({
   height: '30px', padding: '0 11px', borderRadius: '999px', fontSize: '12px', fontWeight: on ? 650 : 500, cursor: 'pointer', whiteSpace: 'nowrap',
-  border: `1px solid ${on ? GREEN : LINE}`, background: on ? '#E7F8F1' : '#fff', color: on ? GREEN : '#27272a', fontFamily: 'inherit',
+  border: `1px solid ${on ? GREEN : LINE}`, background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: on ? GREEN : 'var(--ink-2, #27272a)', fontFamily: 'inherit',
 });
-const th: React.CSSProperties = { textAlign: 'left', fontSize: '11px', fontWeight: 700, color: '#71717a', padding: '0 12px', height: '34px', borderBottom: `1px solid ${LINE}`, whiteSpace: 'nowrap', background: '#fafafa' };
-const td: React.CSSProperties = { padding: '9px 12px', borderBottom: `1px solid ${HAIR}`, fontSize: '12.5px', color: '#3f3f46', verticalAlign: 'top' };
+const th: React.CSSProperties = { textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--meta, #71717a)', padding: '0 12px', height: '34px', borderBottom: `1px solid ${LINE}`, whiteSpace: 'nowrap', background: 'var(--canvas, #fafafa)' };
+const td: React.CSSProperties = { padding: '9px 12px', borderBottom: `1px solid ${HAIR}`, fontSize: '12.5px', color: 'var(--ink-3, #3f3f46)', verticalAlign: 'top' };
 const when = (s: string) => new Date(s).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 const n = (x: unknown) => (typeof x === 'number' ? x.toLocaleString('en-US') : '0');
 
@@ -50,7 +50,7 @@ export function DataHistory({ workspaceId, isMobile }: { workspaceId: number | n
 
   if (!workspaceId) return <div style={{ fontSize: '13px', color: MUTED }}>History lives on a signed-in workspace.</div>;
   return (
-    <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'hidden' }}>
+    <div style={{ background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', padding: '12px 14px', borderBottom: `1px solid ${LINE}` }}>
         <button type="button" onClick={() => setKind('all')} style={chip(kind === 'all')}>All · {runs?.length ?? 0}</button>
         <button type="button" onClick={() => setKind('skiptrace')} style={chip(kind === 'skiptrace')}>Skip traces · {counts.skiptrace}</button>
@@ -66,7 +66,7 @@ export function DataHistory({ workspaceId, isMobile }: { workspaceId: number | n
               <div key={r.id} style={{ padding: '10px 14px', borderBottom: `1px solid ${HAIR}` }}>
                 <div style={{ fontSize: '13px', fontWeight: 650, color: INK }}>{r.label || (r.kind === 'import' ? 'Import' : 'Skip trace')}</div>
                 <div style={{ fontSize: '12px', color: MUTED }}>{when(r.created_at)} · {r.created_by ? who.get(r.created_by) ?? 'Teammate' : 'System'}</div>
-                <div style={{ fontSize: '12px', color: '#3f3f46', marginTop: '3px' }}>{results(r)}</div>
+                <div style={{ fontSize: '12px', color: 'var(--ink-3, #3f3f46)', marginTop: '3px' }}>{results(r)}</div>
               </div>
             ))}
           </div>
@@ -83,7 +83,7 @@ export function DataHistory({ workspaceId, isMobile }: { workspaceId: number | n
                       <td style={td}>
                         <span style={{ fontSize: '11px', fontWeight: 700, borderRadius: '999px', padding: '2px 7px', marginRight: '6px', background: r.kind === 'import' ? '#eef2ff' : '#E7F8F1', color: r.kind === 'import' ? '#4338ca' : GREEN }}>{r.kind === 'import' ? 'Import' : 'Skip trace'}</span>
                         <span style={{ color: INK, fontWeight: 600 }}>{r.label}</span>
-                        {err ? <div style={{ fontSize: '11.5px', color: '#b91c1c', marginTop: '2px' }}>{err}</div> : null}
+                        {err ? <div style={{ fontSize: '11.5px', color: 'var(--tx-red, #b91c1c)', marginTop: '2px' }}>{err}</div> : null}
                       </td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>{n(r.total)} {r.entity ?? ''}{r.total === 1 ? '' : r.entity ? 's' : ''}</td>
                       <td style={td}>{results(r)}</td>

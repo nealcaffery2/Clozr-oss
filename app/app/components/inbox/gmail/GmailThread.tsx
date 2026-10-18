@@ -3,7 +3,7 @@
 // A thread, open.
 //
 // A document rather than a chat: the subject once at the top, then each
-// message as a header (avatar, sender, address, date, "to …") over a plain
+// message as a header (sender, address, date, "to …") over a plain
 // body, with quoted text behind the "•••" toggle and older messages folded to
 // one line. Sent and received messages are drawn alike; the name in the header
 // says who wrote it.
@@ -13,8 +13,8 @@
 // spam score and the send itself — is useEmailComposer, the same code the
 // original pane runs, so there is one send path and not two.
 //
-// Type, colour and controls are the inbox's own (gmail-inbox.css): the shared
-// Avatar, the accent Button for Send, ghost Buttons for Reply and Forward.
+// Type, colour and controls are the inbox's own (gmail-inbox.css): the accent
+// Button for Send, ghost Buttons for Reply and Forward.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { emailAttachment } from '@/lib/google';
@@ -26,7 +26,7 @@ import { supabase } from '@/lib/supabase';
 import { SpamRiskBadge } from '@/app/components/deliverability/SpamRiskBadge';
 import { GoogleConnect } from '@/components/GoogleConnect';
 import { Icon } from '@/app/components/talkr/Icon';
-import { Avatar, Button } from '@/app/components/talkr/ui';
+import { Button } from '@/app/components/talkr/ui';
 import { type DealRef, type EmailRow, type EmailThread, type RecordFor, type useEmail, useThreadBodies } from '../data';
 import type { MergeFor, PickerRender } from '../types';
 import { splitQuoted } from '../quoted';
@@ -93,7 +93,6 @@ function Message({ row, open, onToggle, mine, single, files, receipt, fileProps 
     return (
       <div className="em-msg em-msg--shut" role="button" tabIndex={0}
         onClick={onToggle} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}>
-        <Avatar name={from} size={28} />
         <span className="em-msg-who">{from}</span>
         <span className="em-msg-peek">{fresh.replace(/\s+/g, ' ').trim().slice(0, 140)}</span>
         {files.length ? <GmailIcon name="attach_file" size={14} /> : null}
@@ -104,7 +103,6 @@ function Message({ row, open, onToggle, mine, single, files, receipt, fileProps 
 
   return (
     <article className="em-msg">
-      <Avatar name={from} size={36} />
       <div className="em-msg-body">
         <div className="em-msg-head">
           <span className="em-msg-who">{from}</span>
@@ -265,6 +263,8 @@ export function GmailThread({
 
       {preview ? (
         <div className="em-connect"><p>Read-only preview · replying is off while you view as a teammate.</p></div>
+      ) : readOnly && !workspaceId ? (
+        <div className="em-connect"><p>Sample data: replying is off. Connect Gmail in a workspace to answer from your own address.</p></div>
       ) : readOnly ? (
         <div className="em-connect"><p>You are reading a teammate’s mailbox. Replies go out from your own Gmail — open the thread from your own inbox to answer it.</p></div>
       ) : !email.canSend ? (
@@ -422,3 +422,6 @@ export function GmailThread({
     </div>
   );
 }
+
+/** One message of a thread, for a reader outside the Email tab (the dialer's Email card). */
+export { Message as GmailMessage };

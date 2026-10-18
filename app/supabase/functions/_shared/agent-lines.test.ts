@@ -3,7 +3,7 @@
 // Telnyx and ElevenLabs. Run:
 //   npx tsx supabase/functions/_shared/agent-lines.test.ts
 import {
-  AREA_CODE_STATE, EL_SIP_HOST, TelnyxError, areaCodeOf, cleanAreaCode, cleanCovers, cleanLabel, defaultLabel, pickLocalNumber, elImportBody, ensureSipConnection, fqdnConnectionBody, importToEleven, orderNumber,
+  AREA_CODE_STATE, EL_SIP_HOST, TelnyxError, connectionMedia, mediaCurrent, areaCodeOf, cleanAreaCode, cleanCovers, cleanLabel, defaultLabel, pickLocalNumber, elImportBody, ensureSipConnection, fqdnConnectionBody, importToEleven, orderNumber,
   pickOutboundProfile, sipCredentials,
 } from './agent-lines.ts';
 
@@ -74,7 +74,8 @@ eq('el import', [ib.provider, ib.phone_number, ib.label, ib.agent_id, ib.outboun
 eq('el import ACL has no credentials', 'credentials' in (elImportBody('+1', 'l', null, null) as any).outbound_trunk_config, false);
 
 // ---- The connection -------------------------------------------------------------------------------
-type Conn = { id: string; connection_name: string; user_name: string | null; outbound: { outbound_voice_profile_id: string | null } };
+type Conn = { id: string; connection_name: string; user_name: string | null; outbound: { outbound_voice_profile_id: string | null }; inbound?: { codecs?: unknown }; jitter_buffer?: Record<string, unknown> };
+const MEDIA = connectionMedia();
 function telnyxWorld(start: Conn[] = [], fqdnsOn: string[] = []) {
   const conns = new Map(start.map((c) => [c.id, c]));
   const fqdns = new Set(fqdnsOn);
@@ -89,7 +90,7 @@ function telnyxWorld(start: Conn[] = [], fqdnsOn: string[] = []) {
     }
     if (path === '/fqdn_connections' && c.method === 'POST') {
       if ((c.body as any).outbound) return { status: 422, body: { errors: [{ detail: 'must be fully configured before assigning an outbound profile' }] } };
-      const id = `c${++n}`; const conn = { id, connection_name: (c.body as any).connection_name, user_name: null, outbound: { outbound_voice_profile_id: null } };
+      const id = `c${++n}`; const conn = { id, connection_name: (c.body as any).connection_name, user_name: null, outbound: { outbound_voice_profile_id: null }, inbound: (c.body as any).inbound, jitter_buffer: (c.body as any).jitter_buffer };
       conns.set(id, conn); return { body: { data: conn } };
     }
     const m = path.match(/^\/fqdn_connections\/(.+)$/);
@@ -99,6 +100,8 @@ function telnyxWorld(start: Conn[] = [], fqdnsOn: string[] = []) {
       if (c.method === 'PATCH') {
         const b = c.body as any;
         if (b.user_name) conn.user_name = b.user_name;
+        if (b.inbound) conn.inbound = b.inbound;
+        if (b.jitter_buffer) conn.jitter_buffer = b.jitter_buffer;
         if (b.outbound?.outbound_voice_profile_id) {
           if (!fqdns.has(conn.id) || !conn.user_name) return { status: 422, body: { errors: [{ detail: 'must be fully configured before assigning an outbound profile' }] } };
           conn.outbound.outbound_voice_profile_id = b.outbound.outbound_voice_profile_id;
@@ -132,10 +135,16 @@ function telnyxWorld(start: Conn[] = [], fqdnsOn: string[] = []) {
 }
 {
   // Stored and intact: reused with nothing changed.
-  const w = telnyxWorld([{ id: 'old', connection_name: 'CLOZR AI agents (ElevenLabs)', user_name: 'u1', outbound: { outbound_voice_profile_id: 'p1' } }], ['old']);
+  const w = telnyxWorld([{ id: 'old', connection_name: 'CLOZR AI agents (ElevenLabs)', user_name: 'u1', outbound: { outbound_voice_profile_id: 'p1' }, ...MEDIA }], ['old']);
   const r = await ensureSipConnection({ apiKey: 'k', fetchFn: w.t.fn }, 11, { sip_connection_id: 'old', sip_username: 'u1', sip_password: 'pw' });
   eq('reused', [r.state, r.creds], [{ sip_connection_id: 'old', sip_username: 'u1', sip_password: 'pw' }, { username: 'u1', password: 'pw' }]);
   eq('reuse writes nothing', w.t.calls.filter((c) => c.method !== 'GET').length, 0);
+}
+{
+  // Stored but made before the current codecs and jitter buffer: patched, nothing else touched.
+  const w = telnyxWorld([{ id: 'old', connection_name: 'CLOZR AI agents (ElevenLabs)', user_name: 'u1', outbound: { outbound_voice_profile_id: 'p1' }, inbound: { codecs: ['G729', 'G711U'] } }], ['old']);
+  await ensureSipConnection({ apiKey: 'k', fetchFn: w.t.fn }, 11, { sip_connection_id: 'old', sip_username: 'u1', sip_password: 'pw' });
+  eq('old audio settings patched once', [w.t.calls.filter((c) => c.method !== 'GET').map((c) => c.body), mediaCurrent(w.conns.get('old'))], [[MEDIA], true]);
 }
 {
   // Stored but deleted in the portal: a new one.

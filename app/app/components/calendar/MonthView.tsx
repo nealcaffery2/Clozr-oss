@@ -16,7 +16,7 @@ export function MonthView({ month, events, reps, selectedId, onOpen, onCreate, c
   const colorOf = (ev: CalEvent) => reps.find((r) => r.user_id === ev.repId)?.color ?? typeColor(ev.type);
   const maxShown = compact ? 2 : 4;
   return (
-    <div className="cal-grid" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1, background: '#fff', borderTop: `1px solid ${LINE}`, overflow: 'hidden' }}>
+    <div className="cal-grid" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1, background: 'var(--surface, #fff)', borderTop: `1px solid ${LINE}`, overflow: 'hidden' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: `1px solid ${SOFT}` }}>
         {DOW.map((d) => (
           <div key={d} style={{ padding: '8px 4px', font: '500 11px/1 var(--font-sans)', color: '#70757a', textAlign: 'center' }}>
@@ -44,7 +44,7 @@ export function MonthView({ month, events, reps, selectedId, onOpen, onCreate, c
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 2 }}>
                 <span style={{
                   font: `${today ? 700 : 500} 12px/1 var(--font-sans)`,
-                  color: today ? '#fff' : inMonth ? '#3c4043' : '#dadce0',
+                  color: today ? 'var(--on-dark, #fff)' : inMonth ? 'var(--ink-4, #3c4043)' : 'var(--line-2, #dadce0)',
                   background: today ? MINT : 'transparent',
                   borderRadius: '50%', width: 24, height: 24,
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -67,7 +67,7 @@ export function MonthView({ month, events, reps, selectedId, onOpen, onCreate, c
                       border: 0, cursor: 'pointer', padding: '1px 6px', marginBottom: 1,
                       borderRadius: 4,
                       background: sel ? INK : c,
-                      color: '#fff',
+                      color: 'var(--on-dark, #fff)',
                       font: '500 11px/1.3 var(--font-sans)',
                       overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
                       textDecoration: ev.done ? 'line-through' : 'none',

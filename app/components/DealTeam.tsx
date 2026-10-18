@@ -36,8 +36,8 @@ type Props = {
   /** Click a buyer, title rep or other vendor on the team to open where their contact lives. */
   onOpenBuyer?: (buyerId: number) => void;
   onOpenVendor?: (vendor: { id: number; name: string; role: string }) => void;
-  /** After the team changes — the deal's rep/buyer/title columns may have changed with it. */
-  onChanged?: () => void;
+  /** After the team changes, with the party role (or rep column) that changed: the deal's rep/buyer/title columns may have changed with it. */
+  onChanged?: (role: string) => void;
   /** No card chrome — for the record screens' narrow side columns. */
   bare?: boolean;
 };
@@ -86,11 +86,11 @@ type Form = {
   had?: { position: boolean; poc: boolean };
 };
 
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
-const cap: React.CSSProperties = { fontSize: '11.5px', color: '#71717a', fontWeight: 500 };
-const act: React.CSSProperties = { fontSize: '11.5px', color: '#0A8560', background: 'none', border: 0, cursor: 'pointer', padding: 0, fontWeight: 500, textDecoration: 'none' };
-const input: React.CSSProperties = { width: '100%', height: '30px', padding: '0 8px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12.5px', outline: 0, background: '#fff', color: '#18181b', minWidth: 0 };
-const btn: React.CSSProperties = { height: '28px', padding: '0 12px', borderRadius: '7px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12px', cursor: 'pointer', color: '#18181b' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
+const cap: React.CSSProperties = { fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 500 };
+const act: React.CSSProperties = { fontSize: '11.5px', color: 'var(--tx-mint, #0a8560)', background: 'none', border: 0, cursor: 'pointer', padding: 0, fontWeight: 500, textDecoration: 'none' };
+const input: React.CSSProperties = { width: '100%', height: '30px', padding: '0 8px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '7px', fontSize: '12.5px', outline: 0, background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)', minWidth: 0 };
+const btn: React.CSSProperties = { height: '28px', padding: '0 12px', borderRadius: '7px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px', cursor: 'pointer', color: 'var(--ink, #18181b)' };
 
 /** Vendor service types that fit a team role, so picking a title company is not a scroll through every wholesaler. */
 const VENDOR_KIND_FOR_ROLE: Partial<Record<PartyInput['role'], RegExp>> = {
@@ -100,8 +100,8 @@ const VENDOR_KIND_FOR_ROLE: Partial<Record<PartyInput['role'], RegExp>> = {
 
 const blank = (role: PartyInput['role'] = 'other'): Form => ({ role, who: '', name: '', company: '', email: '', phone: '', position: '', poc: false });
 
-const chip: React.CSSProperties = { display: 'inline-block', marginTop: '3px', padding: '0 6px', borderRadius: '999px', background: '#F0FAF5', color: '#08694C', fontSize: '10.5px', fontWeight: 700, letterSpacing: '.04em', lineHeight: '17px' };
-const star = (on: boolean): React.CSSProperties => ({ background: 'none', border: 0, padding: '0 4px 0 0', fontSize: '14px', lineHeight: 1, color: on ? '#f59e0b' : '#d4d4d8', verticalAlign: '-1px' });
+const chip: React.CSSProperties = { display: 'inline-block', marginTop: '3px', padding: '0 6px', borderRadius: '999px', background: 'var(--c-genius-soft, #f0faf5)', color: 'var(--tx-mint-deep, #08694c)', fontSize: '10.5px', fontWeight: 700, letterSpacing: '.04em', lineHeight: '17px' };
+const star = (on: boolean): React.CSSProperties => ({ background: 'none', border: 0, padding: '0 4px 0 0', fontSize: '14px', lineHeight: 1, color: on ? '#f59e0b' : 'var(--line, #d4d4d8)', verticalAlign: '-1px' });
 
 export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSeller, onOpenDeal, onOpenBareDeal, onOpenBuyer, onOpenVendor, onChanged, bare }: Props) {
   const session = useSession();
@@ -211,7 +211,9 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
     if (e) return setErr(e);
     setForm(null);
     setNonce((n) => n + 1);
-    onChanged?.();
+    // An edit that moved a buyer (or seller) to another role still changed that one.
+    const was = form.id ? cur?.rows.find((r) => r.id === form.id)?.role : undefined;
+    onChanged?.(was === 'buyer' || was === 'seller' ? was : p.role);
   }
   // A rep seat saves to the deal's own column; the database names them and syncs the team rows (migrations 46, 239).
   async function saveRep(col: RepCol, userId: string | null) {
@@ -224,7 +226,7 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
     if (!r.ok) { setReps({ dealId: teamDeal, v: before }); return setErr(r.message); }
     setErr(null);
     setNonce((n) => n + 1);
-    onChanged?.();
+    onChanged?.(col);
   }
   async function addTitle(t: TitleSuggestion) {
     if (!teamDeal || !workspaceId) return;
@@ -233,7 +235,7 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
     setBusy(false);
     if (e) return setErr(e);
     setNonce((n) => n + 1);
-    onChanged?.();
+    onChanged?.('title');
   }
   async function togglePoc(r: DealPartyWithDeal) {
     const e = await setDealPartyPoc(r.id, !r.is_poc);
@@ -246,11 +248,11 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
     const e = await removeDealParty(r.id);
     if (e) return setErr(e);
     setNonce((n) => n + 1);
-    onChanged?.();
+    onChanged?.(r.role);
   }
 
   const formEl = form ? (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '6px', padding: '10px 0', borderBottom: '1px solid #f0f0f1' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '6px', padding: '10px 0', borderBottom: '1px solid var(--divider-2, #f0f0f1)' }}>
       <select aria-label="Role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Form['role'] })} style={input}>
         {(addableRoles.includes(form.role) ? addableRoles : [form.role, ...addableRoles]).map((r) => <option key={r} value={r}>{PARTY_ROLE_LABEL[r] ?? r}</option>)}
       </select>
@@ -274,7 +276,7 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
         {CHAIN_POSITIONS.map((c) => <option key={c.code} value={c.code}>{c.code} · {c.label}</option>)}
       </select>
       <button type="button" aria-pressed={form.poc} onClick={() => setForm({ ...form, poc: !form.poc })}
-        style={{ ...input, cursor: 'pointer', textAlign: 'left', color: form.poc ? '#92400e' : '#71717a', background: form.poc ? '#fffbeb' : '#fff', borderColor: form.poc ? '#fcd34d' : '#e4e4e7' }}>
+        style={{ ...input, cursor: 'pointer', textAlign: 'left', color: form.poc ? 'var(--tx-amber-deep, #92400e)' : 'var(--meta, #71717a)', background: form.poc ? 'var(--tint-amber, #fffbeb)' : 'var(--surface, #fff)', borderColor: form.poc ? '#fcd34d' : 'var(--divider, #e4e4e7)' }}>
         <span style={star(form.poc)}>{form.poc ? '★' : '☆'}</span>{form.poc ? 'Point of contact' : 'Mark as point of contact'}
       </button>
       <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -287,13 +289,13 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
   const body = (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <h2 style={{ margin: 0, fontSize: '13.5px', fontWeight: 650, color: '#18181b', flex: 1 }}>{onDeals ? 'On deals' : 'Deal team'}</h2>
+        <h2 style={{ margin: 0, fontSize: '13.5px', fontWeight: 650, color: 'var(--ink, #18181b)', flex: 1 }}>{onDeals ? 'On deals' : 'Deal team'}</h2>
         {!onDeals && !form ? <button style={{ ...act, opacity: canEdit ? 1 : 0.4, cursor: canEdit ? 'pointer' : 'default' }} disabled={!canEdit} title={canWrite ? undefined : READ_ONLY_TITLE} onClick={() => open(blank())}>+ Add</button> : null}
       </div>
-      {!onDeals && cur && !teamDeal ? <div style={{ fontSize: '12px', color: '#a1a1aa', marginTop: '6px' }}>No deal yet.</div> : null}
-      {err ? <div role="alert" style={{ fontSize: '12px', color: '#b91c1c', marginTop: '6px' }}>{err}</div> : null}
+      {!onDeals && cur && !teamDeal ? <div style={{ fontSize: '12px', color: 'var(--subtle, #a1a1aa)', marginTop: '6px' }}>No deal yet.</div> : null}
+      {err ? <div role="alert" style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)', marginTop: '6px' }}>{err}</div> : null}
       {!onDeals && teamDeal && pickers ? (
-        <div data-testid="deal-reps" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px 10px', padding: '10px 0', borderBottom: '1px solid #f0f0f1' }}>
+        <div data-testid="deal-reps" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px 10px', padding: '10px 0', borderBottom: '1px solid var(--divider-2, #f0f0f1)' }}>
           {REP_SEATS.map((seat) => (
             <RepPicker key={seat.col} label={seat.label} team={rosterTeam(pickers.team)} roles={seat.roles} disabled={busy}
               value={reps?.dealId === teamDeal ? reps.v[seat.col] ?? null : null}
@@ -304,27 +306,27 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
       ) : null}
       {form && !form.id ? formEl : null}
       {!onDeals && chainOf(rows).length ? (
-        <div data-testid="deal-chain" style={{ margin: '8px 0 2px', padding: '7px 10px', borderRadius: '9px', background: '#F0FAF5', border: '1px solid #A7DCC5', fontSize: '12px', color: '#08694C', lineHeight: 1.6 }}>
-          <span style={{ ...cap, color: '#08694C', marginRight: '6px' }}>Chain</span>
+        <div data-testid="deal-chain" style={{ margin: '8px 0 2px', padding: '7px 10px', borderRadius: '9px', background: 'var(--c-genius-soft, #f0faf5)', border: '1px solid var(--c-action-line, #a7dcc5)', fontSize: '12px', color: 'var(--tx-mint-deep, #08694c)', lineHeight: 1.6 }}>
+          <span style={{ ...cap, color: 'var(--tx-mint-deep, #08694c)', marginRight: '6px' }}>Chain</span>
           {chainOf(rows).map((r, i) => (
             <React.Fragment key={r.id}>
-              {i ? <span style={{ color: '#A7DCC5', margin: '0 5px' }}>→</span> : null}
+              {i ? <span style={{ color: 'var(--c-action-line, #a7dcc5)', margin: '0 5px' }}>→</span> : null}
               <b>{r.chain_position}</b> {r.is_poc ? <span style={{ color: '#f59e0b' }} title="Point of contact">★</span> : null}{r.name || r.company || '—'}
             </React.Fragment>
           ))}
         </div>
       ) : null}
       {!onDeals && canEdit && !form && titleSug?.key === `${key}:${nonce}` ? (
-        <div style={{ margin: '8px 0 2px', padding: '9px 10px', borderRadius: '9px', background: '#fffbeb', border: '1px solid #fde68a' }}>
-          <div style={{ fontSize: '12px', fontWeight: 600, color: '#92400e' }}>
+        <div style={{ margin: '8px 0 2px', padding: '9px 10px', borderRadius: '9px', background: 'var(--tint-amber, #fffbeb)', border: '1px solid var(--tint-amber-2, #fde68a)' }}>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--tx-amber-deep, #92400e)' }}>
             No title company on this deal{titleSug.state ? ` · ${titleSug.state}` : ''}
           </div>
-          {titleSug.decide ? <div data-testid="title-decide" style={{ fontSize: '12px', color: '#92400e', marginTop: '4px' }}>{titleSug.decide}</div> : null}
+          {titleSug.decide ? <div data-testid="title-decide" style={{ fontSize: '12px', color: 'var(--tx-amber-deep, #92400e)', marginTop: '4px' }}>{titleSug.decide}</div> : null}
           {titleSug.list.map((t) => (
             <div key={t.vendor_id} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', fontSize: '12px' }}>
               <span style={{ minWidth: 0, flex: 1 }}>
-                <b style={{ color: '#18181b' }}>{t.company}</b>
-                {t.name ? <span style={{ color: '#52525b' }}> · {t.name}</span> : null}
+                <b style={{ color: 'var(--ink, #18181b)' }}>{t.company}</b>
+                {t.name ? <span style={{ color: 'var(--muted, #52525b)' }}> · {t.name}</span> : null}
                 <span style={{ display: 'block', fontSize: '11px', color: '#a16207' }}>{t.main ? '★ ' : ''}{t.why}{t.phone ? ` · ${t.phone}` : ''}</span>
               </span>
               <button style={{ ...btn, height: '24px', padding: '0 9px', fontSize: '11.5px' }} disabled={busy} onClick={() => void addTitle(t)}>Add</button>
@@ -336,8 +338,8 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
         </div>
       ) : null}
       {onDeals ? rows.map((r) => (
-        <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 0', borderBottom: '1px solid #f0f0f1', fontSize: '12.5px' }}>
-          <span style={{ color: '#71717a', flex: 'none' }}>{PARTY_ROLE_LABEL[r.role] ?? r.role}</span>
+        <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 0', borderBottom: '1px solid var(--divider-2, #f0f0f1)', fontSize: '12.5px' }}>
+          <span style={{ color: 'var(--meta, #71717a)', flex: 'none' }}>{PARTY_ROLE_LABEL[r.role] ?? r.role}</span>
           {r.deal_seller_id && openSeller
             ? <button style={{ ...act, flex: 1, minWidth: 0, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => (onOpenDeal ? onOpenDeal(r.deal_seller_id!, r.deal_id) : openSeller(r.deal_seller_id!))}>{r.deal_address ?? `Deal ${r.deal_id}`} →</button>
             : onOpenBareDeal
@@ -345,8 +347,8 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
               : <span style={{ fontWeight: 500, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.deal_address ?? `Deal ${r.deal_id}`}</span>}
         </div>
       )) : rows.map((r) => form?.id === r.id ? <React.Fragment key={r.id}>{formEl}</React.Fragment> : (
-        <div key={r.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 100px) 1fr', gap: '10px', alignItems: 'start', padding: '7px 0', borderBottom: '1px solid #f0f0f1', fontSize: '12.5px' }}>
-          <span style={{ color: '#71717a' }}>
+        <div key={r.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 100px) 1fr', gap: '10px', alignItems: 'start', padding: '7px 0', borderBottom: '1px solid var(--divider-2, #f0f0f1)', fontSize: '12.5px' }}>
+          <span style={{ color: 'var(--meta, #71717a)' }}>
             {PARTY_ROLE_LABEL[r.role] ?? r.role}
             {r.chain_position ? <span style={{ display: 'block' }}><span style={chip} title={CHAIN_POSITIONS.find((c) => c.code === r.chain_position)?.label}>{r.chain_position}</span></span> : null}
           </span>
@@ -355,20 +357,20 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
               ? <button type="button" aria-pressed={!!r.is_poc} title={r.is_poc ? 'Point of contact · tap to unstar' : 'Mark as point of contact'} onClick={() => void togglePoc(r)} style={{ ...star(!!r.is_poc), cursor: 'pointer' }}>{r.is_poc ? '★' : '☆'}</button>
               : r.is_poc ? <span style={star(true)} title="Point of contact">★</span> : null}
             {r.seller_id && openSeller && r.seller_id !== sellerId
-              ? <button style={{ ...act, color: '#18181b', fontWeight: 600, textDecoration: 'underline', textDecorationColor: '#d4d4d8', textUnderlineOffset: '2px' }} title="Open their record" onClick={() => openSeller(r.seller_id!)}>{r.name}</button>
+              ? <button style={{ ...act, color: 'var(--ink, #18181b)', fontWeight: 600, textDecoration: 'underline', textDecorationColor: 'var(--line, #d4d4d8)', textUnderlineOffset: '2px' }} title="Open their record" onClick={() => openSeller(r.seller_id!)}>{r.name}</button>
               : r.buyer_id && openBuyer && r.buyer_id !== buyerId
-                ? <button style={{ ...act, color: '#18181b', fontWeight: 600, textDecoration: 'underline', textDecorationColor: '#d4d4d8', textUnderlineOffset: '2px' }} title="Open the buyer record" onClick={() => openBuyer(r.buyer_id!)}>{r.name || r.company || 'Buyer'}</button>
+                ? <button style={{ ...act, color: 'var(--ink, #18181b)', fontWeight: 600, textDecoration: 'underline', textDecorationColor: 'var(--line, #d4d4d8)', textUnderlineOffset: '2px' }} title="Open the buyer record" onClick={() => openBuyer(r.buyer_id!)}>{r.name || r.company || 'Buyer'}</button>
                 : r.vendor_id && openVendor && r.vendor_id !== vendorId
-                  ? <button style={{ ...act, color: '#18181b', fontWeight: 600, textDecoration: 'underline', textDecorationColor: '#d4d4d8', textUnderlineOffset: '2px' }} title="Open their contact" onClick={() => openVendor({ id: r.vendor_id!, name: r.name || r.company || '', role: r.role })}>{r.name || r.company || '—'}</button>
+                  ? <button style={{ ...act, color: 'var(--ink, #18181b)', fontWeight: 600, textDecoration: 'underline', textDecorationColor: 'var(--line, #d4d4d8)', textUnderlineOffset: '2px' }} title="Open their contact" onClick={() => openVendor({ id: r.vendor_id!, name: r.name || r.company || '', role: r.role })}>{r.name || r.company || '—'}</button>
                   : <span style={{ fontWeight: 600 }}>{r.name || r.company || '—'}</span>}
-            {r.company && r.company !== r.name ? <span style={{ color: '#71717a' }}> · {r.company}</span> : null}
-            {r.phone || r.email ? <span style={{ display: 'block', color: '#71717a', fontSize: '11.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[r.phone, r.email].filter(Boolean).join(' · ')}</span> : null}
+            {r.company && r.company !== r.name ? <span style={{ color: 'var(--meta, #71717a)' }}> · {r.company}</span> : null}
+            {r.phone || r.email ? <span style={{ display: 'block', color: 'var(--meta, #71717a)', fontSize: '11.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[r.phone, r.email].filter(Boolean).join(' · ')}</span> : null}
             <span style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '2px' }}>
               {r.phone ? (onCall ? <button style={act} onClick={() => onCall(r.name || r.company || r.phone!, r.phone!)}>Call</button> : <a style={act} href={`tel:${r.phone}`}>Call</a>) : null}
               {r.phone ? <a style={act} href={`sms:${r.phone}`} onClick={(e) => reachClick(e, 'text', { name: r.name || r.company || '', phone: r.phone, email: r.email })}>Text</a> : null}
               {r.email ? <a style={act} href={`mailto:${r.email}`} onClick={(e) => reachClick(e, 'email', { name: r.name || r.company || '', phone: r.phone, email: r.email })}>Email</a> : null}
-              {canEdit ? <button style={{ ...act, color: '#71717a' }} onClick={() => edit(r)}>Edit</button> : null}
-              {canEdit ? <button style={{ ...act, color: '#71717a' }} onClick={() => void remove(r)}>Remove</button> : null}
+              {canEdit ? <button style={{ ...act, color: 'var(--meta, #71717a)' }} onClick={() => edit(r)}>Edit</button> : null}
+              {canEdit ? <button style={{ ...act, color: 'var(--meta, #71717a)' }} onClick={() => void remove(r)}>Remove</button> : null}
             </span>
           </span>
         </div>

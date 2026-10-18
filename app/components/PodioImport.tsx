@@ -16,16 +16,16 @@ import {
 } from '@/lib/podio';
 import { PARTY_ROLE_LABEL } from '@/lib/deal-parties';
 
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
 const h2: React.CSSProperties = { margin: '0 0 4px', fontSize: '14px', fontWeight: 600 };
-const sub: React.CSSProperties = { margin: '0 0 12px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.5 };
-const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: '#71717a', fontWeight: 600, marginBottom: '5px' };
-const field: React.CSSProperties = { width: '100%', height: '34px', padding: '0 10px', border: '1px solid #e4e4e7', borderRadius: '9px', fontSize: '13px', outline: 0, background: '#fafafa', color: '#18181b' };
-const btn: React.CSSProperties = { height: '32px', padding: '0 12px', borderRadius: '9px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', color: '#18181b', whiteSpace: 'nowrap' };
+const sub: React.CSSProperties = { margin: '0 0 12px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 };
+const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600, marginBottom: '5px' };
+const field: React.CSSProperties = { width: '100%', height: '34px', padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', fontSize: '13px', outline: 0, background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)' };
+const btn: React.CSSProperties = { height: '32px', padding: '0 12px', borderRadius: '9px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', color: 'var(--ink, #18181b)', whiteSpace: 'nowrap' };
 const primary: React.CSSProperties = { ...btn, border: '1px solid #0A8560', background: '#0A8560', color: '#fff' };
-const badge = (ok: boolean): React.CSSProperties => ({ display: 'inline-block', fontSize: '11px', fontWeight: 700, padding: '1px 6px', borderRadius: '5px', background: ok ? '#dcfce7' : '#fff7ed', color: ok ? '#15803d' : '#c2410c', border: `1px solid ${ok ? '#bbf7d0' : '#fed7aa'}` });
+const badge = (ok: boolean): React.CSSProperties => ({ display: 'inline-block', fontSize: '11px', fontWeight: 700, padding: '1px 6px', borderRadius: '5px', background: ok ? 'var(--positive-soft, #dcfce7)' : 'var(--tint-orange, #fff7ed)', color: ok ? 'var(--tx-green, #15803d)' : '#c2410c', border: `1px solid ${ok ? 'var(--tint-green-3, #bbf7d0)' : 'var(--tint-orange-3, #fed7aa)'}` });
 const Note = ({ ok, text }: { ok: boolean; text: string }) => (
-  <div role="status" style={{ marginTop: '10px', padding: '9px 11px', borderRadius: '9px', fontSize: '12.5px', lineHeight: 1.5, background: ok ? '#dcfce7' : '#fee2e2', border: `1px solid ${ok ? '#bbf7d0' : '#fecaca'}`, color: ok ? '#15803d' : '#b91c1c' }}>{text}</div>
+  <div role="status" style={{ marginTop: '10px', padding: '9px 11px', borderRadius: '9px', fontSize: '12.5px', lineHeight: 1.5, background: ok ? 'var(--positive-soft, #dcfce7)' : 'var(--negative-soft, #fee2e2)', border: `1px solid ${ok ? 'var(--tint-green-3, #bbf7d0)' : 'var(--tint-red-2, #fecaca)'}`, color: ok ? 'var(--tx-green, #15803d)' : '#b91c1c' }}>{text}</div>
 );
 
 const EXTRA_KEYS: [PodioAppKey, string][] = [
@@ -90,8 +90,8 @@ export function PodioCard({ workspaceId, admin, demo, isMobile, onOpenSeller, on
       </p>
       {enabled ? (
         <>
-          <details style={{ marginBottom: '12px', fontSize: '12.5px', color: '#52525b', lineHeight: 1.55 }}>
-            <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#18181b' }}>Where to find these in Podio</summary>
+          <details style={{ marginBottom: '12px', fontSize: '12.5px', color: 'var(--muted, #52525b)', lineHeight: 1.55 }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--ink, #18181b)' }}>Where to find these in Podio</summary>
             <p style={{ margin: '6px 0' }}><b>Client ID and secret:</b> podio.com → your avatar → Account settings → API keys (podio.com/settings/api). Enter an app name and any domain, click Generate API key, and copy the Client ID and Client Secret.</p>
             <p style={{ margin: '6px 0' }}><b>App ID and token:</b> open the Deals app → the wrench (app settings) menu → Developer. Copy App ID and App Token. Podio app tokens only read their own app, so add the apps your deal fields point at (Contacts/Sellers, Buyers, Vendors, Team) the same way to bring their phone numbers and emails; without them people come over by name.</p>
           </details>
@@ -116,7 +116,7 @@ export function PodioCard({ workspaceId, admin, demo, isMobile, onOpenSeller, on
             <button type="button" disabled={busy || !draft} onClick={() => void run('save')} style={{ ...primary, opacity: busy || !draft ? 0.6 : 1 }}>{busy ? 'Working…' : 'Save'}</button>
             <button type="button" disabled={busy} onClick={() => void run('test')} style={btn}>Test connection</button>
             <button type="button" disabled={busy || !s?.connected} onClick={() => setFlow(true)} style={{ ...btn, opacity: s?.connected ? 1 : 0.5 }}>Import deals</button>
-            {s?.connected ? <button type="button" disabled={busy} onClick={() => void run('disconnect')} style={{ ...btn, color: '#b91c1c' }}>Disconnect</button> : null}
+            {s?.connected ? <button type="button" disabled={busy} onClick={() => void run('disconnect')} style={{ ...btn, color: 'var(--tx-red, #b91c1c)' }}>Disconnect</button> : null}
           </div>
           {s?.sync?.available && s.client_id_hint ? <SyncPanel workspaceId={workspaceId!} sync={s.sync} onChanged={() => { setNonce((n) => n + 1); onImported?.(); }} /> : null}
         </>
@@ -159,7 +159,7 @@ function SyncPanel({ workspaceId, sync, onChanged }: { workspaceId: number; sync
   }
 
   return (
-    <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #f4f4f5' }}>
+    <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid var(--surface-2, #f4f4f5)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
         <span style={{ ...h2, margin: 0 }}>Live sync</span>
         <span style={badge(sync.enabled && (has('submissions') || has('deals')))}>{!sync.enabled ? 'paused' : sync.running ? 'running' : 'every 10 min'}</span>
@@ -171,31 +171,31 @@ function SyncPanel({ workspaceId, sync, onChanged }: { workspaceId: number; sync
         {' '}Apps: Submissions {has('submissions') ? '✓' : '— add it under Extra apps'} · Deals {has('deals') ? '✓' : '— not saved'}.
         {' '}Last sync: {when(sync.last_sync_at)}{sync.linked ? ` · ${sync.linked.toLocaleString('en-US')} Podio items linked` : ''}.
       </p>
-      {sync.last_run?.counts ? <div style={{ fontSize: '12.5px', color: '#3f3f46', marginBottom: '6px' }}>Last run ({when(sync.last_run.at)}): {syncSummary(sync.last_run)}</div> : null}
-      {(sync.warnings?.length ? sync.warnings : sync.last_run?.warnings ?? []).map((w) => <div key={w} style={{ fontSize: '12.5px', color: '#9a3412', marginBottom: '6px' }}>{w}</div>)}
-      {progress.length ? <div style={{ fontSize: '12.5px', color: '#3f3f46', marginBottom: '6px' }}>In progress: {progress.join(' · ')}. Each run picks up where the last stopped.</div> : null}
+      {sync.last_run?.counts ? <div style={{ fontSize: '12.5px', color: 'var(--ink-3, #3f3f46)', marginBottom: '6px' }}>Last run ({when(sync.last_run.at)}): {syncSummary(sync.last_run)}</div> : null}
+      {(sync.warnings?.length ? sync.warnings : sync.last_run?.warnings ?? []).map((w) => <div key={w} style={{ fontSize: '12.5px', color: 'var(--tx-orange-deep, #9a3412)', marginBottom: '6px' }}>{w}</div>)}
+      {progress.length ? <div style={{ fontSize: '12.5px', color: 'var(--ink-3, #3f3f46)', marginBottom: '6px' }}>In progress: {progress.join(' · ')}. Each run picks up where the last stopped.</div> : null}
       {sync.last_error ? <Note ok={false} text={`Last run stopped: ${sync.last_error}`} /> : null}
       {sync.push && (sync.push.waiting || sync.push.sent || sync.push.skipped || sync.push.failed) ? (
-        <div data-testid="podio-push" style={{ fontSize: '12.5px', color: '#3f3f46', marginBottom: '6px' }}>
+        <div data-testid="podio-push" style={{ fontSize: '12.5px', color: 'var(--ink-3, #3f3f46)', marginBottom: '6px' }}>
           Changes sent to Podio: {sync.push.sent.toLocaleString('en-US')}
           {sync.push.waiting ? ` · ${sync.push.waiting.toLocaleString('en-US')} waiting for the next run` : ''}
           {sync.push.skipped ? ` · ${sync.push.skipped.toLocaleString('en-US')} not sent (no such stage or field in Podio, or Podio changed it later)` : ''}
           {sync.push.failed ? ` · ${sync.push.failed.toLocaleString('en-US')} failed` : ''}
           {sync.push.recent.length ? (
-            <ul style={{ margin: '4px 0 0', paddingLeft: '18px', color: '#71717a' }}>
+            <ul style={{ margin: '4px 0 0', paddingLeft: '18px', color: 'var(--meta, #71717a)' }}>
               {sync.push.recent.slice(0, 5).map((r) => <li key={`${r.item_id}-${r.done_at}`}>Item {r.item_id}{r.to_stage ? ` → ${r.to_stage}` : ' · offer amounts'}: {r.result}</li>)}
             </ul>
           ) : null}
         </div>
       ) : null}
       {unmapped.length ? (
-        <div style={{ marginTop: '8px', fontSize: '12.5px', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '9px', padding: '8px 11px', lineHeight: 1.5 }}>
+        <div style={{ marginTop: '8px', fontSize: '12.5px', color: 'var(--tx-amber-deep, #92400e)', background: 'var(--tint-amber, #fffbeb)', border: '1px solid var(--tint-amber-2, #fde68a)', borderRadius: '9px', padding: '8px 11px', lineHeight: 1.5 }}>
           Podio stages CLOZR has no stage for. These records got their other updates and kept their CLOZR stage:
           {' '}{unmapped.map(([l, n]) => `${l} (${n})`).join(' · ')}
         </div>
       ) : null}
       {sync.unmatched ? (
-        <div style={{ marginTop: '8px', fontSize: '12.5px', color: '#52525b' }}>
+        <div style={{ marginTop: '8px', fontSize: '12.5px', color: 'var(--muted, #52525b)' }}>
           {sync.unmatched.toLocaleString('en-US')} Podio item{sync.unmatched === 1 ? '' : 's'} left alone: a test entry, no street address, or more than one CLOZR submission it could be (each is noted in the sync log, table podio_items).
         </div>
       ) : null}
@@ -276,15 +276,15 @@ function ImportFlow({ workspaceId, isMobile, onClose, onOpenSeller, onImported }
     setLoading(null); setResult({ ...sum }); onImported?.();
   }
 
-  const shell: React.CSSProperties = { position: 'fixed', inset: 0, zIndex: 60, background: '#fafafa', display: 'flex', flexDirection: 'column' };
-  const td: React.CSSProperties = { padding: '9px 10px', borderBottom: '1px solid #f0f0f1', verticalAlign: 'top', fontSize: '12.5px' };
+  const shell: React.CSSProperties = { position: 'fixed', inset: 0, zIndex: 60, background: 'var(--canvas, #fafafa)', display: 'flex', flexDirection: 'column' };
+  const td: React.CSSProperties = { padding: '9px 10px', borderBottom: '1px solid var(--divider-2, #f0f0f1)', verticalAlign: 'top', fontSize: '12.5px' };
 
   return (
     <div role="dialog" aria-label="Import deals from Podio" style={shell}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', background: '#fff', borderBottom: '1px solid #e4e4e7', flex: 'none', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)', flex: 'none', flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em' }}>Import from Podio</h1>
         {(['map', 'preview', 'import'] as Step[]).map((k, i) => (
-          <span key={k} style={{ fontSize: '12.5px', color: step === k ? '#18181b' : '#a1a1aa', fontWeight: step === k ? 600 : 400 }}>{i + 1} · {k === 'map' ? 'Stages and mapping' : k === 'preview' ? 'Preview' : 'Import'}</span>
+          <span key={k} style={{ fontSize: '12.5px', color: step === k ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)', fontWeight: step === k ? 600 : 400 }}>{i + 1} · {k === 'map' ? 'Stages and mapping' : k === 'preview' ? 'Preview' : 'Import'}</span>
         ))}
         <span style={{ flex: 1 }} />
         <button onClick={onClose} disabled={!!loading && step === 'import'} style={btn}>Close</button>
@@ -292,7 +292,7 @@ function ImportFlow({ workspaceId, isMobile, onClose, onOpenSeller, onImported }
 
       <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? '14px' : '18px 22px' }}>
         <div style={{ maxWidth: '1100px' }}>
-          {err ? <div style={{ ...card, background: '#fee2e2', borderColor: '#fecaca', color: '#b91c1c', fontSize: '12.5px' }}>{err}</div> : null}
+          {err ? <div style={{ ...card, background: 'var(--negative-soft, #fee2e2)', borderColor: 'var(--tint-red-2, #fecaca)', color: 'var(--tx-red, #b91c1c)', fontSize: '12.5px' }}>{err}</div> : null}
           {!spec && !err ? <div style={card}><p style={sub}>Reading the Podio app’s fields…</p></div> : null}
 
           {spec && step === 'map' ? (
@@ -308,14 +308,14 @@ function ImportFlow({ workspaceId, isMobile, onClose, onOpenSeller, onImported }
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 18px', marginTop: '12px' }}>
                   {(stageField?.options ?? []).map((o) => (
                     <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={stageIds.includes(o.id)} onChange={(e) => setStageIds(e.target.checked ? [...stageIds, o.id] : stageIds.filter((x) => x !== o.id))} style={{ accentColor: '#0A8560' }} />
-                      {o.text} <span style={{ color: o.clozr ? '#71717a' : '#c2410c', fontSize: '12px' }}>→ {o.clozr ?? 'no CLOZR stage (skipped)'}</span>
+                      <input type="checkbox" checked={stageIds.includes(o.id)} onChange={(e) => setStageIds(e.target.checked ? [...stageIds, o.id] : stageIds.filter((x) => x !== o.id))} style={{ accentColor: 'var(--tx-mint, #0a8560)' }} />
+                      {o.text} <span style={{ color: o.clozr ? 'var(--meta, #71717a)' : '#c2410c', fontSize: '12px' }}>→ {o.clozr ?? 'no CLOZR stage (skipped)'}</span>
                     </label>
                   ))}
                 </div>
               </div>
               {spec.referenced_apps.some((a) => !a.has_token) ? (
-                <div style={{ ...card, background: '#fff7ed', borderColor: '#fed7aa', fontSize: '12.5px', color: '#9a3412', lineHeight: 1.5 }}>
+                <div style={{ ...card, background: 'var(--tint-orange, #fff7ed)', borderColor: 'var(--tint-orange-3, #fed7aa)', fontSize: '12.5px', color: 'var(--tx-orange-deep, #9a3412)', lineHeight: 1.5 }}>
                   The Deals app points at Podio apps with no token saved ({spec.referenced_apps.filter((a) => !a.has_token).map((a) => a.app_id).join(', ')}). People in those apps come over by name only — add their app ID and token under Extra apps for phones and emails.
                 </div>
               ) : null}
@@ -330,7 +330,7 @@ function ImportFlow({ workspaceId, isMobile, onClose, onOpenSeller, onImported }
                         const opts = spec.fields.filter((f) => t.types.includes(f.type));
                         return (
                           <label key={t.key} style={{ display: 'grid', gridTemplateColumns: '170px 1fr', gap: '8px', alignItems: 'center', fontSize: '12.5px' }}>
-                            <span style={{ color: '#3f3f46' }}>{t.label}{mapping[t.key] && mapping[t.key] === spec.guess[t.key] ? <span style={{ color: '#a1a1aa' }}> · guessed</span> : null}</span>
+                            <span style={{ color: 'var(--ink-3, #3f3f46)' }}>{t.label}{mapping[t.key] && mapping[t.key] === spec.guess[t.key] ? <span style={{ color: 'var(--subtle, #a1a1aa)' }}> · guessed</span> : null}</span>
                             <select value={mapping[t.key] ?? ''} onChange={(e) => { const next = { ...mapping }; if (e.target.value) next[t.key] = e.target.value; else delete next[t.key]; setMapping(next); }} style={{ ...field, height: '30px', fontSize: '12.5px' }}>
                               <option value="">—</option>
                               {opts.map((f) => <option key={f.external_id} value={f.external_id}>{f.label} ({f.type})</option>)}
@@ -355,10 +355,10 @@ function ImportFlow({ workspaceId, isMobile, onClose, onOpenSeller, onImported }
                 <button onClick={() => setPicked(picked.size ? new Set() : new Set(deals.filter((d) => d.stage).map((d) => d.item_id)))} disabled={!!loading} style={btn}>{picked.size ? 'Select none' : 'Select all'}</button>
                 <button onClick={() => void runImport()} disabled={!!loading || !picked.size} style={{ ...primary, opacity: loading || !picked.size ? 0.6 : 1 }}>Import {picked.size} deals</button>
               </div>
-              {warnings.length ? <div style={{ ...card, background: '#fff7ed', borderColor: '#fed7aa', fontSize: '12.5px', color: '#9a3412', lineHeight: 1.5 }}>{warnings.map((w) => <div key={w}>{w}</div>)}</div> : null}
+              {warnings.length ? <div style={{ ...card, background: 'var(--tint-orange, #fff7ed)', borderColor: 'var(--tint-orange-3, #fed7aa)', fontSize: '12.5px', color: 'var(--tx-orange-deep, #9a3412)', lineHeight: 1.5 }}>{warnings.map((w) => <div key={w}>{w}</div>)}</div> : null}
               <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '820px' }}>
-                  <thead><tr style={{ textAlign: 'left', background: '#fafafa' }}>
+                  <thead><tr style={{ textAlign: 'left', background: 'var(--canvas, #fafafa)' }}>
                     <th style={{ ...td, width: '30px' }} />
                     <th style={{ ...td, ...label, margin: 0 }}>Deal</th>
                     <th style={{ ...td, ...label, margin: 0 }}>Stage</th>
@@ -367,23 +367,23 @@ function ImportFlow({ workspaceId, isMobile, onClose, onOpenSeller, onImported }
                   <tbody>
                     {deals.map((d) => (
                       <tr key={d.item_id} style={{ opacity: d.stage ? 1 : 0.55 }}>
-                        <td style={td}><input type="checkbox" disabled={!d.stage} checked={picked.has(d.item_id)} onChange={(e) => { const n = new Set(picked); if (e.target.checked) n.add(d.item_id); else n.delete(d.item_id); setPicked(n); }} style={{ accentColor: '#0A8560' }} /></td>
+                        <td style={td}><input type="checkbox" disabled={!d.stage} checked={picked.has(d.item_id)} onChange={(e) => { const n = new Set(picked); if (e.target.checked) n.add(d.item_id); else n.delete(d.item_id); setPicked(n); }} style={{ accentColor: 'var(--tx-mint, #0a8560)' }} /></td>
                         <td style={td}>
                           <div style={{ fontWeight: 600 }}>{d.address ?? d.title}</div>
-                          <div style={{ color: '#71717a', fontSize: '11.5px' }}>{d.link ? <a href={d.link} target="_blank" rel="noreferrer" style={{ color: '#71717a' }}>Podio #{d.item_id}</a> : `Podio #${d.item_id}`} · <span style={badge(!!d.existing_deal_id)}>{d.existing_deal_id ? 'Update' : 'New deal'}</span></div>
-                          {d.warnings.map((w) => <div key={w} style={{ color: '#c2410c', fontSize: '11.5px', marginTop: '3px' }}>{w}</div>)}
+                          <div style={{ color: 'var(--meta, #71717a)', fontSize: '11.5px' }}>{d.link ? <a href={d.link} target="_blank" rel="noreferrer" style={{ color: 'var(--meta, #71717a)' }}>Podio #{d.item_id}</a> : `Podio #${d.item_id}`} · <span style={badge(!!d.existing_deal_id)}>{d.existing_deal_id ? 'Update' : 'New deal'}</span></div>
+                          {d.warnings.map((w) => <div key={w} style={{ color: 'var(--tx-orange, #c2410c)', fontSize: '11.5px', marginTop: '3px' }}>{w}</div>)}
                         </td>
-                        <td style={{ ...td, whiteSpace: 'nowrap' }}>{d.podio_stage ?? '—'}<div style={{ color: '#71717a', fontSize: '11.5px' }}>→ {d.stage ?? 'skipped'}</div></td>
+                        <td style={{ ...td, whiteSpace: 'nowrap' }}>{d.podio_stage ?? '—'}<div style={{ color: 'var(--meta, #71717a)', fontSize: '11.5px' }}>→ {d.stage ?? 'skipped'}</div></td>
                         <td style={td}>
                           {d.parties.length ? d.parties.map((p, i) => (
                             <div key={i} style={{ display: 'flex', gap: '6px', alignItems: 'baseline', flexWrap: 'wrap', padding: '1px 0' }}>
-                              <span style={{ color: '#71717a', minWidth: '96px' }}>{p.target === 'title_contact' ? 'Title contact' : PARTY_ROLE_LABEL[p.role] ?? p.role}</span>
+                              <span style={{ color: 'var(--meta, #71717a)', minWidth: '96px' }}>{p.target === 'title_contact' ? 'Title contact' : PARTY_ROLE_LABEL[p.role] ?? p.role}</span>
                               <span style={{ fontWeight: 500 }}>{p.name || p.company || '—'}</span>
-                              {p.company && p.company !== p.name ? <span style={{ color: '#71717a' }}>{p.company}</span> : null}
-                              {p.phone || p.email ? <span style={{ color: '#a1a1aa', fontSize: '11.5px' }}>{[p.phone, p.email].filter(Boolean).join(' · ')}</span> : null}
+                              {p.company && p.company !== p.name ? <span style={{ color: 'var(--meta, #71717a)' }}>{p.company}</span> : null}
+                              {p.phone || p.email ? <span style={{ color: 'var(--subtle, #a1a1aa)', fontSize: '11.5px' }}>{[p.phone, p.email].filter(Boolean).join(' · ')}</span> : null}
                               {p.target !== 'title_contact' ? <span style={badge(!!p.match)} title={p.match ? `Matches ${p.match.table}: ${p.match.label}` : undefined}>{p.match ? (p.match.table === 'team' ? 'Teammate' : 'Match') : p.role === 'tc' || p.role === 'acquisitions' || p.role === 'dispositions' ? 'Unmatched' : 'New'}</span> : null}
                             </div>
-                          )) : <span style={{ color: '#a1a1aa' }}>No parties mapped</span>}
+                          )) : <span style={{ color: 'var(--subtle, #a1a1aa)' }}>No parties mapped</span>}
                         </td>
                       </tr>
                     ))}
@@ -397,23 +397,23 @@ function ImportFlow({ workspaceId, isMobile, onClose, onOpenSeller, onImported }
           {step === 'import' ? (
             <div style={card}>
               <h2 style={h2}>{loading ? `Importing ${loading.done} of ${loading.total}…` : 'Import finished'}</h2>
-              <div style={{ height: '6px', borderRadius: '3px', background: '#f0f0f1', overflow: 'hidden', margin: '8px 0 14px' }}>
+              <div style={{ height: '6px', borderRadius: '3px', background: 'var(--divider-2, #f0f0f1)', overflow: 'hidden', margin: '8px 0 14px' }}>
                 <div style={{ height: '100%', width: `${loading ? Math.round((loading.done / Math.max(loading.total, 1)) * 100) : 100}%`, background: '#0A8560', transition: 'width .3s' }} />
               </div>
               {result ? (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, minmax(0, 1fr))', gap: '8px', marginBottom: '12px' }}>
                     {(['deals', 'sellers', 'buyers', 'vendors', 'properties', 'transactions'] as const).map((k) => (
-                      <div key={k} style={{ padding: '10px 12px', borderRadius: '10px', background: '#fafafa', border: '1px solid #f0f0f1' }}>
+                      <div key={k} style={{ padding: '10px 12px', borderRadius: '10px', background: 'var(--canvas, #fafafa)', border: '1px solid var(--divider-2, #f0f0f1)' }}>
                         <div style={label}>{k === 'transactions' ? 'TC files' : k}</div>
                         <div style={{ fontSize: '13px' }}><b>{result.counts[k].created}</b> new · <b>{result.counts[k].updated}</b> updated</div>
                       </div>
                     ))}
-                    <div style={{ padding: '10px 12px', borderRadius: '10px', background: '#fafafa', border: '1px solid #f0f0f1' }}><div style={label}>Deal team rows</div><div style={{ fontSize: '13px' }}><b>{result.counts.parties}</b> · {result.counts.skipped} skipped</div></div>
+                    <div style={{ padding: '10px 12px', borderRadius: '10px', background: 'var(--canvas, #fafafa)', border: '1px solid var(--divider-2, #f0f0f1)' }}><div style={label}>Deal team rows</div><div style={{ fontSize: '13px' }}><b>{result.counts.parties}</b> · {result.counts.skipped} skipped</div></div>
                   </div>
-                  {result.errors.map((e) => <div key={e.item_id} style={{ color: '#b91c1c', fontSize: '12.5px' }}>Podio #{e.item_id}: {e.message}</div>)}
+                  {result.errors.map((e) => <div key={e.item_id} style={{ color: 'var(--tx-red, #b91c1c)', fontSize: '12.5px' }}>Podio #{e.item_id}: {e.message}</div>)}
                   {result.imported.map((r) => (
-                    <div key={r.item_id} style={{ display: 'flex', gap: '10px', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f0f0f1', fontSize: '12.5px' }}>
+                    <div key={r.item_id} style={{ display: 'flex', gap: '10px', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--divider-2, #f0f0f1)', fontSize: '12.5px' }}>
                       <span style={{ flex: 1, fontWeight: 500 }}>{r.address}</span>
                       {r.seller_id && onOpenSeller ? <button onClick={() => onOpenSeller(r.seller_id!)} style={{ ...btn, height: '28px' }}>Open seller and deal</button> : null}
                     </div>

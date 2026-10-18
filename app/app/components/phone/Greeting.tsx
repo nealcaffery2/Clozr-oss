@@ -110,7 +110,7 @@ export function GreetingEditor({ value, onChange, allowDefault, defaultLabel = '
           ) : (
             <Btn disabled={Boolean(busy)} onClick={() => void startRecording()}>● Record</Btn>
           )}
-          <label className="dc2" style={{ height: '30px', padding: '0 11px', borderRadius: '8px', border: '1px solid #e4e4e7', fontSize: '12px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', cursor: 'pointer', background: '#fff' }}>
+          <label className="dc2" style={{ height: '30px', padding: '0 11px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', fontSize: '12px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', cursor: 'pointer', background: 'var(--surface, #fff)' }}>
             Upload MP3/WAV
             <input
               type="file"
@@ -126,10 +126,10 @@ export function GreetingEditor({ value, onChange, allowDefault, defaultLabel = '
             />
           </label>
           {busy && busy !== 'recording' ? <span style={{ fontSize: '12px', color: MUTED }}>{busy}</span> : null}
-          {busy === 'recording' ? <span style={{ fontSize: '12px', color: '#b91c1c' }}>Recording…</span> : null}
+          {busy === 'recording' ? <span style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)' }}>Recording…</span> : null}
         </div>
       ) : null}
-      {error ? <div style={{ fontSize: '12px', color: '#b91c1c' }}>{error}</div> : null}
+      {error ? <div style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)' }}>{error}</div> : null}
     </div>
   );
 }

@@ -9,7 +9,9 @@
  * is how iOS draws it, and why the cut-out must be told the background color
  * rather than assuming white.
  *
- * Outbound uses Talkr red rather than iOS blue, to stay in brand.
+ * The colours are iMessage's, everywhere SMS shows (DESIGN.md §2): ours a
+ * deeper iOS blue with white text, theirs light grey with near-black text, on
+ * a white thread. tokens.css holds them (--sms-out, --sms-in, --sms-thread).
  */
 
 import type { ReactNode } from 'react';
@@ -17,7 +19,7 @@ import type { ReactNode } from 'react';
 export function Bubble({
   mine,
   tail = true,
-  background = 'var(--thread, var(--panel))',
+  background = 'var(--thread, var(--sms-thread, #fff))',
   children,
   receipt,
   faded = false,
@@ -34,8 +36,8 @@ export function Bubble({
   faded?: boolean;
   maxWidth?: string;
 }) {
-  const fill = mine ? 'var(--accent)' : 'var(--bubble-in, #e9e9eb)';
-  const color = mine ? '#fff' : 'var(--text)';
+  const fill = mine ? 'var(--sms-out, #0B6FE6)' : 'var(--sms-in, #e9e9eb)';
+  const color = mine ? 'var(--sms-out-text, #fff)' : 'var(--sms-in-text, #18181b)';
   const side = mine ? 'right' : 'left';
 
   return (
@@ -116,7 +118,7 @@ export function TypingBubble({ inbound = false }: { inbound?: boolean }) {
   return (
     <div
       className="flex items-center gap-1.5"
-      style={{ alignSelf: inbound ? 'flex-start' : 'flex-end', padding: '12px 16px', borderRadius: 18, background: 'var(--bubble-in, #e9e9eb)', marginBottom: 10 }}
+      style={{ alignSelf: inbound ? 'flex-start' : 'flex-end', padding: '12px 16px', borderRadius: 18, background: 'var(--sms-in, #e9e9eb)', marginBottom: 10 }}
       aria-label={inbound ? 'Typing' : 'Sending'}
     >
       {[0, 0.18, 0.36].map((delay) => (

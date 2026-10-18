@@ -59,9 +59,12 @@ const digits10 = (v: unknown) => {
 export function eventFacts(e: TalkrEvent): EventFacts {
   const top = e.data ?? {};
   const inner = (top.data && typeof top.data === 'object' ? top.data : {}) as Record<string, unknown>;
+  // A message event can carry the message itself, ids and all, under `message`.
+  const nested = (o: Record<string, unknown>) => (o.message && typeof o.message === 'object' ? o.message : {}) as Record<string, unknown>;
+  const msg = { ...nested(top), ...nested(inner) };
   const pick = (...keys: string[]) => {
     for (const k of keys) {
-      const v = str(inner[k]) ?? str(top[k]);
+      const v = str(inner[k]) ?? str(top[k]) ?? str(msg[k]);
       if (v) return v;
     }
     return null;
@@ -79,6 +82,48 @@ export function eventFacts(e: TalkrEvent): EventFacts {
     sessionId: pick('sessionId', 'session_id', 'dialSessionId'),
     numbers: [...new Set(numbers)],
   };
+}
+
+/** The message an event carries, enough to draw it before the thread is read again. */
+export type EventMessage = {
+  id: string; conversation_id: string; direction: 'inbound' | 'outbound'; status: string; body: string;
+  media_urls: string[]; created_at: string; sent_at: string | null;
+};
+
+/**
+ * The text a `message.received` (or `message.updated`) event carries, when it
+ * carries one: id, thread, direction and words. The open thread draws it at
+ * once and the re-read that follows replaces it, so a reply shows the moment
+ * the stream says it arrived instead of a round trip later. Null when the
+ * event names no message body (a bare nudge, a receipt).
+ */
+export function messageFromEvent(e: TalkrEvent): EventMessage | null {
+  const top = e.data ?? {};
+  const inner = (top.data && typeof top.data === 'object' ? top.data : {}) as Record<string, unknown>;
+  const nested = (o: Record<string, unknown>) => (o.message && typeof o.message === 'object' ? o.message : null) as Record<string, unknown> | null;
+  const m = nested(inner) ?? nested(top) ?? (typeof inner.body === 'string' ? inner : typeof top.body === 'string' ? top : null);
+  if (!m) return null;
+  const id = str(m.id) ?? str(m.messageId) ?? str(m.message_id);
+  const conv = str(m.conversation_id) ?? str(m.conversationId) ?? str(inner.conversationId) ?? str(inner.conversation_id) ?? str(top.conversationId) ?? str(top.conversation_id);
+  const body = typeof m.body === 'string' ? m.body : typeof m.text === 'string' ? m.text : null;
+  const media = Array.isArray(m.media_urls) ? m.media_urls.filter((u): u is string => typeof u === 'string') : [];
+  if (!id || !conv || (body == null && !media.length)) return null;
+  const dir = str(m.direction) ?? (e.type === 'message.received' ? 'inbound' : null);
+  if (dir !== 'inbound' && dir !== 'outbound') return null;
+  const at = str(m.created_at) ?? str(m.createdAt) ?? str(m.sent_at) ?? new Date().toISOString();
+  return {
+    id, conversation_id: conv, direction: dir, status: str(m.status) ?? (dir === 'inbound' ? 'received' : 'sent'),
+    body: body ?? '', media_urls: media, created_at: at, sent_at: str(m.sent_at) ?? str(m.sentAt),
+  };
+}
+
+/** `list` with `m` added (once, by id) when it belongs to `conversationId`, in time order. */
+export function withEventMessage<T extends { id: string; created_at: string; sent_at?: string | null }>(
+  list: readonly T[], m: EventMessage | null, conversationId: string | null, make: (m: EventMessage) => T,
+): readonly T[] {
+  if (!m || !conversationId || m.conversation_id !== conversationId || list.some((x) => x.id === m.id)) return list;
+  const at = (x: { created_at: string; sent_at?: string | null }) => Date.parse(x.sent_at ?? x.created_at) || 0;
+  return [...list, make(m)].sort((a, b) => at(a) - at(b));
 }
 
 /**

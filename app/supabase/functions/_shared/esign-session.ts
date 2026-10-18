@@ -110,6 +110,28 @@ export function signedBody(p: { name?: string | null; email?: string | null; vie
   return [who, viewed, when].filter(Boolean).join(' · ');
 }
 
+/**
+ * The bell line for whoever sent a document, the first time an outside
+ * signer opens their link (often from a text, which has no read receipt of
+ * its own). Null for a teammate's own link (an approver or the company
+ * signer has a user id) and for a document nobody is recorded as sending.
+ */
+export function firstViewNotice(
+  contract: { name?: string | null; created_by?: string | null },
+  signer: { name?: string | null; role?: string | null; user_id?: string | null; recipient_type?: string | null },
+  at: string,
+): { user_id: string; title: string; body: string } | null {
+  if (!contract.created_by || signer.user_id) return null;
+  if (['cc', 'viewer', 'approver'].includes(String(signer.recipient_type ?? 'signer'))) return null;
+  const who = String(signer.name ?? '').trim() || partyLabel(signer.role);
+  const what = String(contract.name ?? '').trim() || 'the document';
+  return {
+    user_id: contract.created_by,
+    title: `${who} opened ${what}`.slice(0, 120),
+    body: `First opened ${formatWhen(at)}. They have not signed yet.`,
+  };
+}
+
 export function viewedBody(p: { name?: string | null; email?: string | null; at: string }): string {
   const who = [p.name, p.email].filter(Boolean).join(' · ');
   return [who, `opened ${formatWhen(p.at)}`].filter(Boolean).join(' · ');

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { docVars } from '../supabase/functions/_shared/doc-vars';
 import {
-  bindToSigners, bindValue, clampRect, displaySize, displayValue, fieldAllowedFor, missingRequired, newField, normalizeField, planFlatten,
+  bindToSigners, bindValue, clampRect, displaySize, displayValue, effectiveReadOnly, fieldAllowedFor, missingRequired, newField, normalizeField, planFlatten,
   recipientColor, signingDay, toPdfPoint, validateValue, type PageBox,
 } from '../supabase/functions/_shared/pdf-fields';
 
@@ -111,7 +111,11 @@ const bindSigners = [
 const b = bindToSigners(tplFields, bindSigners, vars, { fromTemplate: true });
 assert.equal(bindToSigners(tplFields, bindSigners, vars).rows[0].template_field_id, null, 'editor ids are not template ids');
 assert.deepEqual(b.rows.map((r) => [r.template_field_id, r.signer_id]), [[11, 101], [12, 102], [13, 103], [17, 101]]);
-assert.equal(b.rows[1].value, '85000'); assert.equal(b.rows[1].read_only, true, 'bound and answered: locked');
+assert.equal(b.rows[1].value, '85000'); assert.equal(b.rows[1].read_only, true, 'bound currency: locked');
+const dateBound = bindToSigners([{ id: 20, role: 'seller', type: 'date', page: 1, x: 0, y: 0, w: 0.1, h: 0.02, variable_key: 'deal.close_date' }], bindSigners.slice(0, 1), vars, { fromTemplate: true });
+assert.equal(dateBound.rows[0].read_only, false, 'bound date stays editable');
+assert.equal(effectiveReadOnly({ type: 'date', read_only: true, variable_key: 'deal.close_date' }), false);
+assert.equal(effectiveReadOnly({ type: 'currency', read_only: true, variable_key: 'deal.purchase_price' }), true);
 assert.equal(b.rows[2].value, null); assert.equal(b.rows[2].read_only, false, 'bound but unanswered: the filler types it');
 assert.deepEqual(b.unresolved, ['deal.assignment_fee']);
 assert.equal(b.rows[3].value, 'Cash', 'default value');

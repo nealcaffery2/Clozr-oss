@@ -5,6 +5,7 @@
 
 import React from 'react';
 import type { Block } from '@/lib/reporting';
+import { DiagramBlock } from './diagrams';
 
 const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '12px', minWidth: 0 };
 const head: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '2px', padding: '12px 16px', borderBottom: '1px solid #f0f0f1' };
@@ -22,6 +23,7 @@ export function ReportBlocks({ blocks, isMobile, bank }: { blocks: Block[]; isMo
       {blocks.map((b, i) => {
         const span = { gridColumn: !isMobile && !('half' in b && b.half) ? '1 / -1' : undefined };
         if (b.kind === 'bank') return <div key={i} style={span}>{bank}</div>;
+        if (b.kind === 'diagram') return <div key={i} style={{ ...span, minWidth: 0 }}><DiagramBlock b={b} /></div>;
         if (b.kind === 'kpis') {
           return (
             <div key={i} style={{ ...card, ...span, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', overflow: 'hidden' }}>

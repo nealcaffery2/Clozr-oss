@@ -169,7 +169,7 @@ export function DialSessionStart({ V }: { V: ClozrView }) {
 function UpNext({ next, dark = false }: { next: NonNullable<NonNullable<ClozrView['queueSession']>['upNext']>; dark?: boolean }) {
   return (
     <span data-testid="session-up-next" className="truncate" style={{ font: '500 11px/1.35 var(--sans)', color: dark ? 'rgba(255,255,255,.6)' : 'var(--muted)' }}>
-      Up next: <b style={{ fontWeight: 600, color: dark ? '#fff' : 'var(--text)' }}>{next.name}</b>
+      Up next: <b style={{ fontWeight: 600, color: dark ? 'var(--on-dark, #fff)' : 'var(--text)' }}>{next.name}</b>
       {[next.kind, next.stage, next.line].filter(Boolean).map((x) => ` · ${x}`).join('')}
     </span>
   );
@@ -297,7 +297,7 @@ function CompactSessionBar({
       <div className="flex items-center gap-2">
         <span aria-hidden className={paused ? undefined : 'talkr-rec-dot'} style={{ width: 8, height: 8, borderRadius: 999, flex: 'none', background: paused ? 'rgba(255,255,255,.4)' : '#3DDC97' }} />
         <span className="min-w-0 flex-1 truncate" style={{ font: '400 13px/1.3 var(--sans)', color: 'rgba(255,255,255,.6)' }}>
-          <b style={{ fontWeight: 600, color: '#fff' }}>{title}</b> · {stats}
+          <b style={{ fontWeight: 600, color: 'var(--on-dark, #fff)' }}>{title}</b> · {stats}
         </span>
         <button type="button" className="phone-iconbtn" aria-label="Session options" onClick={() => setMenu(true)}>
           <Icon name="more" size={22} strokeWidth={3} />

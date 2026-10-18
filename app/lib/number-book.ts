@@ -81,7 +81,12 @@ export function buildNumberBook(input: BookInput): NumberBook {
   const talkrByUser = new Map<string, BookTalkrMember>();
   const userByTalkr = new Map<string, string>();
   for (const t of input.talkrMembers) {
-    const m = byEmail.get(lower(t.email));
+    let m = byEmail.get(lower(t.email));
+    // Same person, different mailbox on CLOZR vs Talkr — match a unique name.
+    if (!m && t.display_name) {
+      const hits = members.filter((x) => lower(x.full_name) === lower(t.display_name));
+      if (hits.length === 1) m = hits[0];
+    }
     if (!m) continue;
     talkrByUser.set(m.user_id, t);
     userByTalkr.set(t.id, m.user_id);

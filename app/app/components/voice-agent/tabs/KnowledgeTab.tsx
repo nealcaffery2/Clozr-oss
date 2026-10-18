@@ -56,9 +56,9 @@ export function KnowledgeTab({ form, canEdit }: TabCtx) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <input id={fieldId(`knowledge.company_facts[${i}]`)} aria-label={`Company fact ${i + 1}`} className="va-field" value={fact} disabled={off} placeholder="We buy houses as-is, for cash."
                     aria-invalid={!!errors[`knowledge.company_facts[${i}]`]}
-                    style={{ width: '100%', height: 36, padding: '0 11px', border: `1px solid ${errors[`knowledge.company_facts[${i}]`] ? '#f87171' : LINE}`, borderRadius: 9, fontSize: 13, outline: 0, background: '#fafafa', color: INK, fontFamily: 'inherit', boxSizing: 'border-box' }}
+                    style={{ width: '100%', height: 36, padding: '0 11px', border: `1px solid ${errors[`knowledge.company_facts[${i}]`] ? '#f87171' : LINE}`, borderRadius: 9, fontSize: 13, outline: 0, background: 'var(--canvas, #fafafa)', color: INK, fontFamily: 'inherit', boxSizing: 'border-box' }}
                     onChange={(e) => set(['knowledge', 'company_facts', i], e.target.value)} />
-                  {errors[`knowledge.company_facts[${i}]`] ? <p role="alert" style={{ margin: '4px 0 0', fontSize: 12, color: '#b91c1c' }}>{errors[`knowledge.company_facts[${i}]`]}</p> : null}
+                  {errors[`knowledge.company_facts[${i}]`] ? <p role="alert" style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--tx-red, #b91c1c)' }}>{errors[`knowledge.company_facts[${i}]`]}</p> : null}
                 </div>
                 {canEdit ? <ItemControls i={i} count={k.company_facts.length} what={`fact ${i + 1}`} onMove={(d) => set(['knowledge', 'company_facts'], moveItem(k.company_facts, i, d))} onRemove={() => set(['knowledge', 'company_facts'], removeAt(k.company_facts, i))} /> : null}
               </div>

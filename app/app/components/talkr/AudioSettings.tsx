@@ -596,7 +596,7 @@ export function AudioSettings({ who, workspaceId = null, userId = null }: { who:
             catch (err) { setAlertError(err instanceof Error ? err.message : 'Upload failed'); }
           }}
         />
-        {alertError ? <span style={{ ...HELP, color: '#b91c1c' }}>{alertError}</span> : null}
+        {alertError ? <span style={{ ...HELP, color: 'var(--tx-red, #b91c1c)' }}>{alertError}</span> : null}
         <div className="flex flex-col">
           {(Object.keys(NOTIFY_EVENTS) as NotifyEvent[]).map((ev) => {
             const cur = p.events[ev];
@@ -628,8 +628,8 @@ export function AudioSettings({ who, workspaceId = null, userId = null }: { who:
         </div>
         <p style={HELP}>
           Browsers only play sound after you have clicked somewhere in CLOZR once, so the first alert after a fresh load
-          may be silent. Desktop notifications use the same switches: an event turned off here raises neither a sound
-          nor a notification, and none appear while CLOZR is the window you are looking at. Saved in this browser
+          may be silent. Each switch is the same one the bell uses: Mute on a row turns these off for an hour and
+          Unmute turns them back on. Desktop notifications use the same switches. Saved in this browser
           {who ? ` for ${who}` : ''}.
         </p>
       </Card>

@@ -74,3 +74,56 @@ export function subscribePrefs(cb: () => void) {
 export function serverPrefs(): Prefs {
   return DEFAULTS;
 }
+
+// ---- Try new design (the top of Settings) ----------------------------------
+//
+// Per user, in this browser: the new People record (the deal page) and the
+// new desk Dialer. Off by default, so everyone keeps the classic layouts until
+// they turn it on. CLOZR has no per-user settings table that follows a user
+// across devices, so it lives here with the other display preferences, keyed
+// by user id (the demo has one key). The snapshot is a boolean, so
+// useSyncExternalStore needs no cached object.
+
+const DESIGN_KEY_PREFIX = 'clozr.design.new.';
+const designKey = (userId: string | null | undefined) => DESIGN_KEY_PREFIX + (userId || 'demo');
+const designListeners = new Set<() => void>();
+/** What the switch says when storage would not take it (private mode), for this tab. */
+const designOverride = new Map<string, boolean>();
+
+export function readNewDesign(userId: string | null | undefined): boolean {
+  try {
+    return localStorage.getItem(designKey(userId)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function writeNewDesign(userId: string | null | undefined, on: boolean) {
+  try {
+    if (on) localStorage.setItem(designKey(userId), '1');
+    else localStorage.removeItem(designKey(userId));
+  } catch {
+    // Private mode or blocked storage: the switch still flips for this tab.
+    designOverride.set(designKey(userId), on);
+  }
+  designListeners.forEach((l) => l());
+}
+
+/** The switch as this tab sees it: storage, or the in-tab value when storage refused it. */
+export function newDesignOn(userId: string | null | undefined): boolean {
+  const k = designKey(userId);
+  return designOverride.has(k) ? designOverride.get(k)! : readNewDesign(userId);
+}
+
+/** Also follows another tab flipping the switch (the storage event). */
+export function subscribeNewDesign(cb: () => void) {
+  designListeners.add(cb);
+  const onStorage = (e: StorageEvent) => {
+    if (e.key == null || e.key.startsWith(DESIGN_KEY_PREFIX)) cb();
+  };
+  window.addEventListener('storage', onStorage);
+  return () => {
+    designListeners.delete(cb);
+    window.removeEventListener('storage', onStorage);
+  };
+}

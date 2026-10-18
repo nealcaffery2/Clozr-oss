@@ -10,11 +10,11 @@ import { type ContractRecipient, type ContractRow, addContractRecipient, deliver
 import { type Contact, type ContactLink, isLinked, linkOf } from '@/lib/contact-search';
 import { linkLabel, saveRecipientToCrm } from '@/lib/contract-recipients';
 
-const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: '#71717a', fontWeight: 600, marginBottom: '5px' };
-const field: React.CSSProperties = { width: '100%', height: '34px', padding: '0 10px', border: '1px solid #e4e4e7', borderRadius: '9px', fontSize: '13px', outline: 0, background: '#fafafa', color: '#18181b' };
+const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600, marginBottom: '5px' };
+const field: React.CSSProperties = { width: '100%', height: '34px', padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', fontSize: '13px', outline: 0, background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)' };
 const chip = (on: boolean): React.CSSProperties => ({
   height: '30px', padding: '0 12px', borderRadius: '999px', fontSize: '12.5px', fontWeight: on ? 650 : 500, cursor: 'pointer',
-  border: `1px solid ${on ? '#0A8560' : '#e4e4e7'}`, background: on ? '#E7F8F1' : '#fff', color: on ? '#0A8560' : '#27272a', fontFamily: 'inherit',
+  border: `1px solid ${on ? '#0A8560' : 'var(--divider, #e4e4e7)'}`, background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: on ? 'var(--tx-mint, #0a8560)' : 'var(--ink-2, #27272a)', fontFamily: 'inherit',
 });
 
 type Kind = 'signer' | 'cc' | 'viewer' | 'approver';
@@ -85,7 +85,7 @@ export function AddRecipientDialog({ workspaceId, contract, recipients, userId, 
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
             {kinds.map((k) => <button key={k} type="button" onClick={() => setKind(k)} style={chip(kind === k)}>{k === 'cc' ? 'CC' : k[0].toUpperCase() + k.slice(1)}</button>)}
           </div>
-          <div style={{ fontSize: '12px', color: '#71717a', marginTop: '5px' }}>{KIND_HELP[kind]}</div>
+          <div style={{ fontSize: '12px', color: 'var(--meta, #71717a)', marginTop: '5px' }}>{KIND_HELP[kind]}</div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px' }}>
           <div>
@@ -112,9 +112,9 @@ export function AddRecipientDialog({ workspaceId, contract, recipients, userId, 
             </div>
           </div>
         ) : null}
-        {out && kind === 'signer' ? <div style={{ fontSize: '12px', color: '#52525b', background: '#fff', border: '1px solid #e4e4e7', borderRadius: '9px', padding: '9px 11px' }}>Signatures already on the document stay valid. The new signer signs on the signature certificate.</div> : null}
+        {out && kind === 'signer' ? <div style={{ fontSize: '12px', color: 'var(--muted, #52525b)', background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', padding: '9px 11px' }}>Signatures already on the document stay valid. The new signer signs on the signature certificate.</div> : null}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-          <button type="button" onClick={onClose} style={{ height: '34px', padding: '0 14px', borderRadius: '8px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+          <button type="button" onClick={onClose} style={{ height: '34px', padding: '0 14px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
           <button type="button" disabled={!valid || busy} onClick={() => void submit()} style={{ height: '34px', padding: '0 14px', borderRadius: '8px', border: '1px solid #0A8560', background: !valid || busy ? '#7fcbb2' : '#0A8560', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: !valid || busy ? 'not-allowed' : 'pointer' }}>{busy ? 'Adding…' : out ? 'Add and send' : 'Add recipient'}</button>
         </div>
       </div>

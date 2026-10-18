@@ -45,7 +45,15 @@ export type WorkspaceSettings = {
    * this workspace. The org id on the row in `talkr_connections` is what the
    * sync trusts; this copy is for the settings screen.
    */
-  talkr?: { enabled?: boolean; org_id?: string };
+  talkr?: {
+    enabled?: boolean; org_id?: string;
+    /**
+     * Migration 275: other workspaces (same owner) on this Talkr org whose
+     * contacts' calls and texts are filed there and kept out of this one
+     * (lib/talkr-elsewhere). Settings → Talkr → Account edits it.
+     */
+    elsewhere?: number[];
+  };
   /** What contracts print for the buying entity, and who signs for it. */
   company?: { name?: string; legal?: string; address?: string; signer?: string; title?: string; email?: string; phone?: string;
     /** Who holds the earnest money on the purchase agreement; defaults to the legal entity. */
@@ -96,18 +104,39 @@ export type WorkspaceSettings = {
 
 export type { RvmPoolSettings };
 
-export async function loadSettings(workspaceId: number): Promise<WorkspaceSettings> {
-  if (!supabase) return {};
-  const { data } = await supabase.from('workspaces').select('settings').eq('id', workspaceId).maybeSingle();
-  return ((data?.settings as WorkspaceSettings | null) ?? {});
+/**
+ * Boot asks for the settings from several places at once (the workspace
+ * load, the floor, Talkr). One read serves them all for SETTINGS_MEMO_MS, for
+ * one workspace at a time; saveSettings and a failed read drop it. Each
+ * caller gets its own copy, as each got its own read before.
+ */
+const SETTINGS_MEMO_MS = 10_000;
+let settingsMemo: { ws: number; at: number; p: Promise<WorkspaceSettings> } | null = null;
+
+export function loadSettings(workspaceId: number): Promise<WorkspaceSettings> {
+  const sb = supabase;
+  if (!sb) return Promise.resolve({});
+  let m = settingsMemo;
+  if (!m || m.ws !== workspaceId || Date.now() - m.at >= SETTINGS_MEMO_MS) {
+    const p = Promise.resolve(sb.from('workspaces').select('settings').eq('id', workspaceId).maybeSingle()).then(({ data, error }) => {
+      if (error) settingsMemo = null;
+      return (data?.settings as WorkspaceSettings | null) ?? {};
+    });
+    p.catch(() => { settingsMemo = null; });
+    m = settingsMemo = { ws: workspaceId, at: Date.now(), p };
+  }
+  return m.p.then((s) => structuredClone(s));
 }
 
 export async function saveSettings(workspaceId: number, patch: WorkspaceSettings): Promise<{ ok: boolean; message?: string }> {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
+  // Merged onto a fresh read, not the memo; the next load reads what was saved.
+  settingsMemo = null;
   const current = await loadSettings(workspaceId);
   const next: WorkspaceSettings = { ...current, ...patch };
   for (const k of Object.keys(next) as (keyof WorkspaceSettings)[]) if (!next[k]) delete next[k];
   const { error } = await supabase.from('workspaces').update({ settings: next }).eq('id', workspaceId);
+  settingsMemo = null;
   return error ? { ok: false, message: error.message } : { ok: true };
 }
 

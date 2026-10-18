@@ -15,6 +15,7 @@ import type { LinkMap } from '@/lib/dispo';
 import type { ResendStatus } from '@/lib/deliverability';
 import type { MeDto } from '@/lib/talkr';
 import { type ClosedDealRow, milesBetween } from '@/supabase/functions/_shared/dispo-rules';
+import { SAMPLE_EMAIL_HTML, SAMPLE_EMAIL_SUBJECT, SAMPLE_EMAIL_TEXT } from './sample-email';
 
 export const DEMO_WORKSPACE_ID = 0;
 export const DEMO_DEAL_ID = 6;
@@ -184,26 +185,7 @@ const TEMPLATES: CampaignData['templates'] = [
     id: 13, name: 'Intro · flip follow-on', channel: 'sms', category: 'dispo-intro', subject: null, body_html: null,
     body_text: "Hey {{first_name}} - {{rep_first_name}} here. Saw you wrapped up {{last_purchase_address}} about {{last_purchase_ago}} ago. I've got a {{property_type}} {{deal_distance}} from it. Interested?",
   },
-  {
-    id: 21, name: 'Acme Homes deal blast', channel: 'email', category: 'dispo-blast', subject: 'Off-market: {{address}}, {{city}} · {{price}}',
-    body_text: 'Hi {{first_name}},\n\n{{address}}, {{city}} is under contract at {{price}} (ARV {{arv}}). {{beds}} bd / {{baths}} ba, {{sqft}} sf.\n\n{{purchase_note}}\n\nPhotos, numbers and the offer form: {{listing_url}}\n\n{{rep_name}} · Acme Homes',
-    body_html: `<!doctype html><html><body style="margin:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#18181b">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:24px 0"><tr><td align="center">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border:1px solid #e4e4e7;border-radius:14px;overflow:hidden">
-<tr><td style="padding:18px 28px;background:#0A8560;color:#ffffff;font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase">Acme Homes · New deal</td></tr>
-<tr><td><img src="{{photo_url}}" width="600" alt="" style="display:block;width:100%;height:auto;max-height:300px;object-fit:cover"></td></tr>
-<tr><td style="padding:24px 28px 8px"><div style="font-size:24px;font-weight:700;letter-spacing:-.02em">{{address}}</div><div style="font-size:14px;color:#71717a;margin-top:4px">{{city}}, {{state}} {{zip}} · {{beds}} bd · {{baths}} ba · {{sqft}} sf</div></td></tr>
-<tr><td style="padding:12px 28px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-<td style="padding:12px;border:1px solid #e4e4e7;border-radius:10px"><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#71717a;font-weight:600">Price</div><div style="font-size:20px;font-weight:700">{{price}}</div></td><td width="10"></td>
-<td style="padding:12px;border:1px solid #e4e4e7;border-radius:10px"><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#71717a;font-weight:600">ARV</div><div style="font-size:20px;font-weight:700">{{arv}}</div></td><td width="10"></td>
-<td style="padding:12px;border:1px solid #e4e4e7;border-radius:10px"><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#71717a;font-weight:600">Rehab</div><div style="font-size:20px;font-weight:700">{{rehab}}</div></td>
-</tr></table></td></tr>
-<tr><td style="padding:8px 28px;font-size:15px;line-height:1.55">Hi {{first_name}},</td></tr>
-<tr><td style="padding:0 28px;font-size:15px;line-height:1.55"><p style="margin:0 0 12px">{{purchase_note}}</p><p style="margin:0 0 12px">It's vacant, needs a full rehab, and closes {{close_date}}. Walkthroughs this week.</p></td></tr>
-<tr><td style="padding:8px 28px 28px"><a href="{{listing_url}}" style="display:inline-block;background:#0A8560;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 20px;border-radius:9px">See photos and make an offer</a></td></tr>
-<tr><td style="padding:16px 28px;border-top:1px solid #f0f0f1;font-size:12px;color:#71717a">{{rep_name}} · Acme Homes · reply to this email to reach me</td></tr>
-</table></td></tr></table></body></html>`,
-  },
+  { id: 21, name: 'Dispo blast · Acme Homes deal', channel: 'email', category: 'dispo-blast', subject: SAMPLE_EMAIL_SUBJECT, body_text: SAMPLE_EMAIL_TEXT, body_html: SAMPLE_EMAIL_HTML },
   {
     id: 22, name: 'New deal email (plain)', channel: 'email', category: 'dispo', subject: 'New deal: {{address}} · {{price}}', body_html: null,
     body_text: 'Hi {{first_name}},\n\nWe just got {{address}}, {{city}} under contract at {{price}} ({{beds}} bd / {{baths}} ba). {{purchase_note}}\n\nPhotos and numbers: {{listing_url}}\n\nReply if you want a walkthrough.',

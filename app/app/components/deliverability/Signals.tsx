@@ -21,7 +21,10 @@ import { Badge, Copy, Icon, Note, NotSetUp, Section, danger, fieldLabel, ghost, 
 const REP_TONE = { HIGH: 'good', MEDIUM: 'warn', LOW: 'bad', BAD: 'bad' } as const;
 const REP_COLOR: Record<string, string> = { HIGH: '#0A8560', MEDIUM: '#d97706', LOW: '#dc2626', BAD: '#7f1d1d' };
 
-/** 30 days as small squares coloured by reputation, with the spam rate as bar height. */
+/** Postmaster v2 has no reputation: a day is coloured by its spam rate against Gmail's 0.1% / 0.3% lines. */
+const spamColor = (spam: number | null) => (spam == null ? 'var(--subtle, #a1a1aa)' : spam > 0.003 ? '#dc2626' : spam > 0.001 ? '#d97706' : '#0A8560');
+
+/** 30 days as small squares coloured by reputation (or spam rate, on v2), with the spam rate as bar height. */
 function Trend({ days }: { days: PostmasterDay[] }) {
   const byDate = new Map(days.map((d) => [d.date, d]));
   // The 30 days up to Postmaster's latest day (it lags a day or two behind today).
@@ -33,7 +36,7 @@ function Trend({ days }: { days: PostmasterDay[] }) {
       {cells.map((date) => {
         const d = byDate.get(date);
         const h = d?.spam != null ? 6 + 28 * (d.spam / max) : 6;
-        return <span key={date} title={d ? `${date} · reputation ${d.reputation ?? 'none'} · spam ${pct(d.spam, 2)} · DMARC pass ${pct(d.dmarc, 0)}` : `${date} · no data (too little Gmail volume that day)`} style={{ flex: 1, height: `${h}px`, borderRadius: '2px', background: d ? REP_COLOR[d.reputation ?? ''] ?? '#a1a1aa' : '#f0f0f1' }} />;
+        return <span key={date} title={d ? `${date}${d.reputation ? ` · reputation ${d.reputation}` : ''} · spam ${pct(d.spam, 2)} · DMARC pass ${pct(d.dmarc, 0)}` : `${date} · no data (too little Gmail volume that day)`} style={{ flex: 1, height: `${h}px`, borderRadius: '2px', background: d ? (d.reputation ? REP_COLOR[d.reputation] : spamColor(d.spam)) : 'var(--divider-2, #f0f0f1)' }} />;
       })}
     </div>
   );
@@ -47,27 +50,37 @@ const VERIFY_LABEL: Record<DomainVerification['status'], { tone: 'good' | 'warn'
   unchecked: { tone: 'muted', text: 'Not checked yet' },
 };
 const HOST_LABEL = { inboxkit: 'InboxKit DNS', vercel: 'Vercel DNS' } as const;
+const PM_LABEL: Record<NonNullable<DomainVerification['postmaster']>, { tone: 'good' | 'warn' | 'bad' | 'muted'; text: string }> = {
+  ready: { tone: 'good', text: 'In Postmaster' },
+  added: { tone: 'warn', text: 'Added to Postmaster' },
+  manual: { tone: 'muted', text: 'Add at postmaster.google.com' },
+  error: { tone: 'bad', text: 'Not added to Postmaster' },
+};
 /** While a domain waits on DNS the card re-checks every minute, up to this many times. */
 const MAX_POLLS = 15;
 
 /** One domain Postmaster does not list yet: where verification stands, and the record when it has to be added by hand. */
 function VerifyRow({ v }: { v: DomainVerification }) {
   const label = VERIFY_LABEL[v.status] ?? VERIFY_LABEL.unchecked;
+  const pm = v.postmaster ? PM_LABEL[v.postmaster] : null;
+  const pmDetail = textValue(v.postmaster_detail);
   return (
     <div style={{ ...row, padding: '8px 0', fontSize: '12.5px' }}>
       <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{textValue(v.domain)}</span>
         <Badge tone={label.tone}>{label.text}</Badge>
-        {v.dns_host ? <span style={{ fontSize: '11.5px', color: '#71717a' }}>TXT written at {HOST_LABEL[v.dns_host]}</span> : null}
-        {v.checked_at ? <span style={{ fontSize: '11.5px', color: '#71717a' }}>checked {relDays(v.checked_at)}</span> : null}
+        {pm ? <Badge tone={pm.tone}>{pm.text}</Badge> : null}
+        {v.dns_host ? <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>TXT written at {HOST_LABEL[v.dns_host]}</span> : null}
+        {v.checked_at ? <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>checked {relDays(v.checked_at)}</span> : null}
       </div>
       {v.status === 'verified'
-        ? <p style={{ margin: '4px 0 0', color: '#52525b', lineHeight: 1.5 }}>Add it once at postmaster.google.com. Google already counts it as verified, so it is accepted straight away.</p>
-        : textValue(v.detail) ? <p style={{ margin: '4px 0 0', color: v.status === 'error' ? '#b91c1c' : '#52525b', lineHeight: 1.5 }}>{textValue(v.detail)}</p> : null}
+        ? <p style={{ margin: '4px 0 0', color: v.postmaster === 'error' ? '#b91c1c' : 'var(--muted, #52525b)', lineHeight: 1.5 }}>{pmDetail || 'Add it once at postmaster.google.com. Google already counts it as verified, so it is accepted straight away.'}</p>
+        : textValue(v.detail) ? <p style={{ margin: '4px 0 0', color: v.status === 'error' ? '#b91c1c' : 'var(--muted, #52525b)', lineHeight: 1.5 }}>{textValue(v.detail)}</p> : null}
+      {v.status !== 'verified' && pmDetail && v.postmaster === 'error' ? <p style={{ margin: '4px 0 0', color: v.postmaster === 'error' ? '#b91c1c' : 'var(--muted, #52525b)', lineHeight: 1.5 }}>{pmDetail}</p> : null}
       {v.status === 'needs_dns' && textValue(v.txt) ? (
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: '6px' }}>
-          <span style={{ fontSize: '11.5px', color: '#71717a' }}>TXT on {textValue(v.domain)}</span>
-          <span style={{ flex: '1 1 220px', minWidth: 0, padding: '6px 8px', border: '1px solid #e4e4e7', borderRadius: '8px', background: '#fafafa', ...mono }}>{textValue(v.txt)}</span>
+          <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>TXT on {textValue(v.domain)}</span>
+          <span style={{ flex: '1 1 220px', minWidth: 0, padding: '6px 8px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', background: 'var(--canvas, #fafafa)', ...mono }}>{textValue(v.txt)}</span>
           <Copy text={textValue(v.txt)} />
         </div>
       ) : null}
@@ -88,7 +101,8 @@ export function PostmasterCard({ workspaceId, me, data, onLoad }: { workspaceId:
   };
   const refresh = async (verify = false) => { setBusy(true); await onLoad(verify); setBusy(false); };
   const verification = data?.verification ?? [];
-  const waiting = verification.some((v) => v.status === 'pending');
+  const remaining = data?.remaining ?? 0;
+  const waiting = remaining > 0 || verification.some((v) => v.status === 'pending' || v.postmaster === 'added');
   // DNS takes minutes to reach Google: re-check while anything is pending, a bounded number of times.
   useEffect(() => {
     if (!waiting || polls >= MAX_POLLS) return;
@@ -96,8 +110,8 @@ export function PostmasterCard({ workspaceId, me, data, onLoad }: { workspaceId:
     return () => window.clearTimeout(t);
   }, [waiting, polls, onLoad]);
 
-  const how = <>Gmail&apos;s own numbers for your domain: reputation, the spam-complaint rate (the one signal a mailbox cannot see), and authentication pass rates. Read-only, from your Google connection; optional. Gmail only reports days with enough mail to Gmail users (roughly a few hundred a day). CLOZR verifies each of this workspace&apos;s domains for your Google account: it asks Google for the TXT record, writes it at InboxKit or Vercel DNS, and checks again until Google sees it. Google has no API for the last step, so a verified domain is added once at postmaster.google.com.</>;
-  const why = 'Gmail’s own report card for your domain: how much it trusts your mail and how often people press Report spam. Optional.';
+  const how = <>Gmail&apos;s own numbers for your domain: the spam-complaint rate (the one signal a mailbox cannot see), authentication pass rates and delivery errors. Google&apos;s current Postmaster API no longer reports domain reputation. Read-only, from your Google connection; optional. Gmail only reports days with enough mail to Gmail users (roughly a few hundred a day). CLOZR verifies each of this workspace&apos;s domains for your Google account: it asks Google for the TXT record, writes it at InboxKit or Vercel DNS, and checks again until Google sees it. Then it adds the domain to Postmaster for you. Where Google does not let it do that yet, add the domain once at postmaster.google.com; it is already verified, so it is accepted straight away.</>;
+  const why = 'Gmail’s own report card for your domain: how often people press Report spam and how much of your mail passes SPF, DKIM and DMARC. Optional.';
 
   if (!me) {
     return <NotSetUp title="Gmail Postmaster" why={why} how={how} action={<button type="button" style={ghost} onClick={() => requestSettingsTab({ main: 'outbound', tab: 'google' })}>Connect Google first</button>} />;
@@ -125,21 +139,21 @@ export function PostmasterCard({ workspaceId, me, data, onLoad }: { workspaceId:
         </>
       )}
     >
-      {!data && !busy ? <p style={{ fontSize: '12px', color: '#71717a', margin: 0 }}>Press Load to read the last 30 days from Gmail and check your domains.</p> : null}
-      {textValue(data?.error) ? <p role="alert" style={{ fontSize: '12.5px', color: '#b91c1c', margin: 0 }}>{textValue(data?.error)}</p> : null}
-      {data && !data.error && !data.domains.length ? <p style={{ fontSize: '12px', color: '#71717a', margin: 0 }}>None of this workspace&apos;s domains are in Postmaster yet.</p> : null}
+      {!data && !busy ? <p style={{ fontSize: '12px', color: 'var(--meta, #71717a)', margin: 0 }}>Press Load to read the last 30 days from Gmail and check your domains.</p> : null}
+      {textValue(data?.error) ? <p role="alert" style={{ fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)', margin: 0 }}>{textValue(data?.error)}</p> : null}
+      {data && !data.error && !data.domains.length ? <p style={{ fontSize: '12px', color: 'var(--meta, #71717a)', margin: 0 }}>None of this workspace&apos;s domains are in Postmaster yet.</p> : null}
       {data?.domains.map((d) => {
         const last = [...d.days].reverse().find((x) => x.reputation || x.spam != null) ?? null;
         return (
           <div key={textValue(d.domain)} style={row}>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '13px', fontWeight: 600 }}>{textValue(d.domain)}</span>
-              {last?.reputation ? <Badge tone={REP_TONE[last.reputation]}>reputation {last.reputation.toLowerCase()}</Badge> : <Badge tone="muted">no reputation yet</Badge>}
+              {last?.reputation ? <Badge tone={REP_TONE[last.reputation]}>reputation {last.reputation.toLowerCase()}</Badge> : null}
               {last?.spam != null && <Badge tone={last.spam > 0.003 ? 'bad' : last.spam > 0.001 ? 'warn' : 'good'}>spam {pct(last.spam, 2)}</Badge>}
-              {last && <span style={{ fontSize: '11.5px', color: '#71717a' }}>SPF {pct(last.spf, 0)} · DKIM {pct(last.dkim, 0)} · DMARC {pct(last.dmarc, 0)} · delivery errors {pct(last.errors, 2)}</span>}
+              {last && <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>SPF {pct(last.spf, 0)} · DKIM {pct(last.dkim, 0)} · DMARC {pct(last.dmarc, 0)} · delivery errors {pct(last.errors, 2)}</span>}
             </div>
-            {d.days.length ? <Trend days={d.days} /> : <p style={{ fontSize: '12px', color: '#71717a', margin: '4px 0 0' }}>No data in the last 30 days. Gmail only reports days with enough mail to Gmail users (roughly a few hundred a day).</p>}
-            {last?.error_types.length ? <p style={{ fontSize: '11.5px', color: '#b91c1c', margin: '4px 0 0' }}>{last.error_types.map(textValue).filter(Boolean).join(' · ')}</p> : null}
+            {d.days.length ? <Trend days={d.days} /> : <p style={{ fontSize: '12px', color: 'var(--meta, #71717a)', margin: '4px 0 0' }}>No data in the last 30 days. Gmail only reports days with enough mail to Gmail users (roughly a few hundred a day).</p>}
+            {last?.error_types.length ? <p style={{ fontSize: '11.5px', color: 'var(--tx-red, #b91c1c)', margin: '4px 0 0' }}>{last.error_types.map(textValue).filter(Boolean).join(' · ')}</p> : null}
           </div>
         );
       })}
@@ -148,14 +162,14 @@ export function PostmasterCard({ workspaceId, me, data, onLoad }: { workspaceId:
           <div style={{ fontSize: '12.5px', fontWeight: 600 }}>Not in Postmaster yet ({data.unverified.length})</div>
           {!data.site_verification ? (
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', margin: '6px 0 4px' }}>
-              <p style={{ margin: 0, fontSize: '12.5px', color: '#52525b', lineHeight: 1.5, flex: '1 1 260px' }}>Reconnect Postmaster once so CLOZR can verify these for {textValue(me.email)} and write the DNS records itself. Google asks for one more permission (verify your sites).</p>
+              <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--muted, #52525b)', lineHeight: 1.5, flex: '1 1 260px' }}>Reconnect Postmaster once so CLOZR can verify these for {textValue(me.email)} and write the DNS records itself. Google asks for one more permission (verify your sites).</p>
               <button type="button" style={primary} disabled={busy} onClick={() => void connect()}>{busy ? 'Connecting…' : 'Reconnect Postmaster'}</button>
             </div>
           ) : null}
           {verification.length
             ? verification.map((v) => <VerifyRow key={textValue(v.domain)} v={v} />)
-            : <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: '#52525b' }}>{data.unverified.map(textValue).filter(Boolean).join(', ')}</p>}
-          {waiting ? <p role="status" style={{ margin: '8px 0 0', fontSize: '12px', color: '#71717a' }}>{polls < MAX_POLLS ? 'Re-checking every minute while DNS catches up.' : 'Still waiting on DNS. Press Verify domains now to check again.'}</p> : null}
+            : <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: 'var(--muted, #52525b)' }}>{data.unverified.map(textValue).filter(Boolean).join(', ')}</p>}
+          {waiting ? <p role="status" style={{ margin: '8px 0 0', fontSize: '12px', color: 'var(--meta, #71717a)' }}>{remaining > 0 ? `${remaining} more ${remaining === 1 ? 'domain is' : 'domains are'} checked on the next pass. ` : ''}{polls < MAX_POLLS ? 'Re-checking every minute while DNS catches up.' : 'Still waiting on DNS. Press Verify domains now to check again.'}</p> : null}
         </div>
       )}
       <Note note={note} />
@@ -190,7 +204,7 @@ function WarmupKeysForm({ workspaceId, keys, onSaved }: { workspaceId: number; k
           <button type="submit" style={ghost} disabled={busy || !inst.trim()}>{busy ? 'Checking…' : keys?.instantly_own ? 'Replace key' : 'Save key'}</button>
           {keys?.instantly_own ? <button type="button" style={danger} disabled={busy} onClick={() => { if (window.confirm('Remove the Instantly key? The cold pool warm-up gate reads the same key.')) void save({ instantly_key: null }, 'Instantly key removed.'); }}>Remove</button> : null}
         </div>
-        <p style={{ margin: '4px 0 0', fontSize: '11.5px', color: '#71717a' }}>{source(keys?.instantly_own, keys?.instantly, 'INSTANTLY_API_KEY')} The cold pool&apos;s warm-up gate uses the same key.</p>
+        <p style={{ margin: '4px 0 0', fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>{source(keys?.instantly_own, keys?.instantly, 'INSTANTLY_API_KEY')} The cold pool&apos;s warm-up gate uses the same key.</p>
       </form>
       <form onSubmit={(e) => { e.preventDefault(); void save({ inboxkit_key: kit }, 'InboxKit key saved.'); }}>
         <label htmlFor={`dlv-inboxkit-key-${workspaceId}`} style={fieldLabel}>InboxKit API key (InboxKit, Settings, API)</label>
@@ -199,7 +213,7 @@ function WarmupKeysForm({ workspaceId, keys, onSaved }: { workspaceId: number; k
           <button type="submit" style={ghost} disabled={busy || !kit.trim()}>{busy ? 'Checking…' : keys?.inboxkit_own ? 'Replace key' : 'Save key'}</button>
           {keys?.inboxkit_own ? <button type="button" style={danger} disabled={busy} onClick={() => { if (window.confirm('Remove the InboxKit key?')) void save({ inboxkit_key: null }, 'InboxKit key removed.'); }}>Remove</button> : null}
         </div>
-        <p style={{ margin: '4px 0 0', fontSize: '11.5px', color: '#71717a' }}>{source(keys?.inboxkit_own, keys?.inboxkit, 'INBOXKIT_API_KEY')} Also used to write DNS records for Postmaster and to import inboxes.</p>
+        <p style={{ margin: '4px 0 0', fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>{source(keys?.inboxkit_own, keys?.inboxkit, 'INBOXKIT_API_KEY')} Also used to write DNS records for Postmaster and to import inboxes.</p>
       </form>
       <Note note={note} />
     </div>
@@ -230,7 +244,7 @@ export function WarmupCard({ workspaceId, admin, keys, data, onLoad, onChange }:
         title={title}
         why="Add your Instantly key to see warm-up scores and where warm-up mail lands, and your InboxKit key to see mailbox health."
         how={how}
-        action={admin ? (adding ? <WarmupKeysForm workspaceId={workspaceId} keys={keys} onSaved={saved} /> : <button type="button" style={ghost} onClick={() => setAdding(true)}>Add your keys</button>) : <p style={{ margin: 0, fontSize: '12.5px', color: '#71717a' }}>An owner or admin adds the Instantly and InboxKit keys.</p>}
+        action={admin ? (adding ? <WarmupKeysForm workspaceId={workspaceId} keys={keys} onSaved={saved} /> : <button type="button" style={ghost} onClick={() => setAdding(true)}>Add your keys</button>) : <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>An owner or admin adds the Instantly and InboxKit keys.</p>}
       />
     );
   }
@@ -242,13 +256,13 @@ export function WarmupCard({ workspaceId, admin, keys, data, onLoad, onChange }:
       how={how}
       actions={<button type="button" style={ghost} disabled={busy} onClick={load}>{busy ? 'Loading…' : data ? 'Refresh' : 'Load status'}</button>}
     >
-      {!data && !busy ? <p style={{ fontSize: '12px', color: '#71717a', margin: 0 }}>Press Load status to read {keys.instantly && keys.inboxkit ? 'Instantly and InboxKit' : keys.instantly ? 'Instantly' : 'InboxKit'}.</p> : null}
-      {textValue(data?.instantly.error) ? <p role="alert" style={{ fontSize: '12.5px', color: '#b91c1c', margin: '0 0 6px' }}>{textValue(data?.instantly.error)}</p> : null}
-      {textValue(data?.inboxkit.error) ? <p role="alert" style={{ fontSize: '12.5px', color: '#b91c1c', margin: '0 0 6px' }}>{textValue(data?.inboxkit.error)}</p> : null}
-      {data && !keys.instantly ? <p style={{ fontSize: '12px', color: '#92400e', margin: '0 0 6px' }}>Add your Instantly key below to see warm-up scores and inbox vs spam.</p> : null}
-      {data && !keys.inboxkit ? <p style={{ fontSize: '12px', color: '#92400e', margin: '0 0 6px' }}>Add your InboxKit key below to see mailbox health.</p> : null}
-      {data && !boxes.length && !data.instantly.error && !data.inboxkit.error ? <p style={{ fontSize: '12px', color: '#71717a', margin: 0 }}>No mailboxes on this workspace&apos;s domains in Instantly or InboxKit yet.</p> : null}
-      {boxes.length ? <p role="status" style={{ margin: '0 0 4px', fontSize: '11.5px', color: '#71717a', fontVariantNumeric: 'tabular-nums' }}>{boxes.length} mailbox{boxes.length === 1 ? '' : 'es'} · {boxes.filter((b) => b.warming).length} warming · {boxes.filter((b) => b.score != null && b.score < 90).length} under score 90</p> : null}
+      {!data && !busy ? <p style={{ fontSize: '12px', color: 'var(--meta, #71717a)', margin: 0 }}>Press Load status to read {keys.instantly && keys.inboxkit ? 'Instantly and InboxKit' : keys.instantly ? 'Instantly' : 'InboxKit'}.</p> : null}
+      {textValue(data?.instantly.error) ? <p role="alert" style={{ fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)', margin: '0 0 6px' }}>{textValue(data?.instantly.error)}</p> : null}
+      {textValue(data?.inboxkit.error) ? <p role="alert" style={{ fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)', margin: '0 0 6px' }}>{textValue(data?.inboxkit.error)}</p> : null}
+      {data && !keys.instantly ? <p style={{ fontSize: '12px', color: 'var(--tx-amber-deep, #92400e)', margin: '0 0 6px' }}>Add your Instantly key below to see warm-up scores and inbox vs spam.</p> : null}
+      {data && !keys.inboxkit ? <p style={{ fontSize: '12px', color: 'var(--tx-amber-deep, #92400e)', margin: '0 0 6px' }}>Add your InboxKit key below to see mailbox health.</p> : null}
+      {data && !boxes.length && !data.instantly.error && !data.inboxkit.error ? <p style={{ fontSize: '12px', color: 'var(--meta, #71717a)', margin: 0 }}>No mailboxes on this workspace&apos;s domains in Instantly or InboxKit yet.</p> : null}
+      {boxes.length ? <p role="status" style={{ margin: '0 0 4px', fontSize: '11.5px', color: 'var(--meta, #71717a)', fontVariantNumeric: 'tabular-nums' }}>{boxes.length} mailbox{boxes.length === 1 ? '' : 'es'} · {boxes.filter((b) => b.warming).length} warming · {boxes.filter((b) => b.score != null && b.score < 90).length} under score 90</p> : null}
       {boxes.map((w) => (
         <div key={textValue(w.email)} style={{ ...row, padding: '8px 0', fontSize: '12.5px' }}>
           <div style={{ display: 'flex', gap: '4px 6px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -259,7 +273,7 @@ export function WarmupCard({ workspaceId, admin, keys, data, onLoad, onChange }:
             {w.score != null ? <Badge tone={w.score >= 90 ? 'good' : w.score >= 70 ? 'warn' : 'bad'}>score {Math.round(w.score)}</Badge> : null}
             {w.inboxkit ? <Badge tone={HEALTH_TONE[w.health ?? ''] ?? 'muted'} title={w.last_event_at ? `InboxKit, last activity ${new Date(w.last_event_at).toLocaleString()}` : 'InboxKit, no activity in 7 days'}>{(w.health ?? 'inactive').replace('_', ' ')}</Badge> : null}
           </div>
-          <div style={{ display: 'flex', gap: '2px 14px', flexWrap: 'wrap', marginTop: '3px', color: '#71717a', fontSize: '11.5px', fontVariantNumeric: 'tabular-nums' }}>
+          <div style={{ display: 'flex', gap: '2px 14px', flexWrap: 'wrap', marginTop: '3px', color: 'var(--meta, #71717a)', fontSize: '11.5px', fontVariantNumeric: 'tabular-nums' }}>
             {w.instantly ? <span>Warm-up, 14 days: {w.sent14 ? `${w.sent14} sent · ${pct(w.inbox_pct, 0)} inbox · ${pct(w.spam_pct)} spam` : 'none sent yet'}</span> : null}
             {w.inboxkit && w.sent7 != null ? <span>InboxKit, 7 days: {w.sent7} sent{w.bounce_pct != null ? ` · ${w.bounce_pct.toFixed(1)}% bounced` : ''}</span> : null}
           </div>
@@ -267,7 +281,7 @@ export function WarmupCard({ workspaceId, admin, keys, data, onLoad, onChange }:
       ))}
       {admin ? (
         <details style={{ marginTop: '10px' }} open={!keys.instantly || !keys.inboxkit ? true : undefined}>
-          <summary style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', minHeight: '24px', fontSize: '12px', fontWeight: 600, color: '#0A8560' }}><Icon name="chevron" size={13} />API keys</summary>
+          <summary style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', minHeight: '24px', fontSize: '12px', fontWeight: 600, color: 'var(--tx-mint, #0a8560)' }}><Icon name="chevron" size={13} />API keys</summary>
           <div style={{ marginTop: '8px' }}><WarmupKeysForm workspaceId={workspaceId} keys={keys} onSaved={saved} /></div>
         </details>
       ) : null}
@@ -280,13 +294,13 @@ function CheckRow({ i }: { i: { label: string; ok: boolean; blocking: boolean; d
   return (
     <div style={{ ...row, padding: '7px 0', display: 'flex', gap: '4px 8px', alignItems: 'flex-start', flexWrap: 'wrap', fontSize: '12.5px' }}>
       <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: '8px', flex: '1 1 240px', minWidth: 0 }}>
-        <span style={{ color: i.ok ? '#0A8560' : i.blocking ? '#b91c1c' : '#b45309', display: 'inline-flex', marginTop: '1px' }}><Icon name={i.ok ? 'check' : i.blocking ? 'x' : 'alert'} /></span>
+        <span style={{ color: i.ok ? 'var(--tx-mint, #0a8560)' : i.blocking ? '#b91c1c' : '#b45309', display: 'inline-flex', marginTop: '1px' }}><Icon name={i.ok ? 'check' : i.blocking ? 'x' : 'alert'} /></span>
         <span style={{ fontWeight: 500 }}>
           {textValue(i.label)}
           <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>{i.ok ? ', passes' : i.blocking ? ', blocks sending' : ', advice'}</span>
         </span>
       </span>
-      <span style={{ color: '#71717a', flex: '1 1 220px', minWidth: 0, paddingLeft: '22px', overflowWrap: 'anywhere' }}>{textValue(i.detail)}</span>
+      <span style={{ color: 'var(--meta, #71717a)', flex: '1 1 220px', minWidth: 0, paddingLeft: '22px', overflowWrap: 'anywhere' }}>{textValue(i.detail)}</span>
     </div>
   );
 }
@@ -308,7 +322,7 @@ export function ChecklistCard({ overview, postmaster, accountId, setAccountId }:
       actions={(
         <>
           {!overview.resend?.configured && overview.mailboxes.length > 1 && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: '#71717a' }}>Mailbox
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>Mailbox
               <select style={input} value={accountId ?? ''} onChange={(e) => setAccountId(Number(e.target.value))}>
                 {overview.mailboxes.map((m) => <option key={m.account_id} value={m.account_id}>{textValue(m.email)}</option>)}
               </select>
@@ -325,7 +339,7 @@ export function ChecklistCard({ overview, postmaster, accountId, setAccountId }:
       {/* Passing checks fold away: the owner only needs to see what is wrong. */}
       {sorted.some((i) => i.ok) ? (
         <details style={{ marginTop: sorted.some((i) => !i.ok) ? '8px' : 0 }}>
-          <summary style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', minHeight: '24px', fontSize: '12px', fontWeight: 600, color: '#0A8560' }}>
+          <summary style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', minHeight: '24px', fontSize: '12px', fontWeight: 600, color: 'var(--tx-mint, #0a8560)' }}>
             <Icon name="chevron" size={13} />Show the {sorted.filter((i) => i.ok).length} checks that pass
           </summary>
           <div style={{ marginTop: '6px' }}>{sorted.filter((i) => i.ok).map((i) => <CheckRow key={i.label} i={i} />)}</div>

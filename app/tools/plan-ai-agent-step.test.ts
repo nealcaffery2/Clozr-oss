@@ -34,6 +34,8 @@ eq('a new AI step decides once and may do all three', blankStep('ai_agent').allo
 eq('decide-once summary', stepSummary({ ...blankStep('ai_agent'), goal: 'Get a walkthrough booked' }), 'AI decides: Get a walkthrough booked');
 eq('allowed read from config, cleaned', stepFromRow(row('ai_agent', { goal: 'g', allowed: ['create_task', 'call', 'create_task'] })).allowed, ['create_task']);
 eq('no allowed in config is the hand-off', 'allowed' in stepFromRow(row('ai_agent', { goal: 'g' })), false);
+eq('hand-off channels read from config, cleaned and ordered', stepFromRow(row('ai_agent', { goal: 'g', channels: ['call', 'fax', 'sms'] })).channels, ['sms', 'call']);
+eq('an older hand-off has no channels (text and email at run time)', 'channels' in stepFromRow(row('ai_agent', { goal: 'g' })), false);
 
 // Where a lead goes when the plan ends.
 eq('route: a 34-era next plan reads as fixed', parseOnComplete({}, 12), { mode: 'fixed', plan_id: 12, candidate_ids: [], also_when_stopped: false });

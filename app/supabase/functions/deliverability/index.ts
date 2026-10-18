@@ -16,8 +16,11 @@
  *   postmaster     { verify? }        Gmail Postmaster Tools for the caller's connection, plus
  *                                     Site Verification for every workspace domain Postmaster
  *                                     does not list yet (token, TXT at InboxKit or Vercel DNS,
- *                                     verify; pending rows retry on the next load). verify: true
- *                                     retries now.
+ *                                     verify; pending rows retry on the next load), then adds
+ *                                     each one to Postmaster (domains.create) and verifies it
+ *                                     there. No cap on domains: BATCH at a time inside a time
+ *                                     budget; `remaining` counts the ones left for the next load.
+ *                                     verify: true retries now.
  *   warmup                            Instantly warm-up (score, inbox vs spam, 14 days) and
  *                                     InboxKit mailbox health for this workspace's mailboxes
  *   warmup_keys    { instantly_key?, inboxkit_key? }   store / clear (null) a key   owner/admin
@@ -61,7 +64,7 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { HARDENING, clientIp, corsFor, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import { type Account, SCOPE, accessFor, has, seal } from '../_shared/google.ts';
-import { FREE_MAIL, dailyAllowance, dayStartUtc, domainOf, isDomain, localParts, rampDay } from '../_shared/deliverability-rules.ts';
+import { FREE_MAIL, POSTMASTER_V2_METRICS, dailyAllowance, dayStartUtc, domainOf, isDomain, localParts, postmasterDaysV2, rampDay } from '../_shared/deliverability-rules.ts';
 import { SETTINGS_COLUMNS, SENDER_COLUMNS, type SenderRow, checkAutoPauseSender, ensureBlastSender, ensureRepBlastSenders, readUnsubscribeToken, senderById, settingsFor } from '../_shared/mailguard.ts';
 import { recordDocsDelivery } from '../_shared/parity/delivery.ts';
 import { type EnvLike, blastFrom, classifyResendEvent, ensureResendDomain, parseFrom, resendConnectPayload, resendKeyProblem, suggestBlastFrom, verifyResendWebhook } from '../_shared/resend.ts';
@@ -71,12 +74,13 @@ import { warmupKey } from '../_shared/cold-warmup.ts';
 import { InstantlyError, instantlyClient } from '../_shared/instantly.ts';
 import { inboxkitClient, listInboxkitWorkspaces } from '../_shared/inboxkit.ts';
 import { type DnsWriter, autoVerifyDomain, inboxkitDns, siteVerificationClient, vercelDns } from '../_shared/site-verification.ts';
+import { type PmDomain, type RegisterOutcome, mapLimit, pmReadable, postmasterClient, registerDomain } from '../_shared/postmaster.ts';
 import { checkDomain } from './dns.ts';
 
 type Any = any;
 
 const APP = () => String(Deno.env.get('APP_URL') || 'https://your-clozr-site.example.com').replace(/\/$/, '');
-const ACCOUNT_COLUMNS = 'id, workspace_id, user_id, email, scopes, calendar_id, calendar_sync, gmail_send, gmail_read, status, sync_token, last_calendar_sync_at, last_gmail_sync_at';
+const ACCOUNT_COLUMNS = 'id, workspace_id, user_id, email, scopes, calendar_id, calendar_sync, gmail_send, gmail_read, status, sync_token, last_calendar_sync_at, last_gmail_sync_at, connected_at';
 
 // ------------------------------------------------------------ unsubscribe
 async function unsubscribe(req: Request, admin: SupabaseClient, token: string, cors: Record<string, string>): Promise<Response> {
@@ -135,7 +139,7 @@ async function resendWebhook(req: Request, admin: SupabaseClient, cors: Record<s
   if (!email) return json({ ok: true, unmatched: true });
 
   if (kind === 'delivered') {
-    if (emailId) await admin.from('communications').update({ status: 'delivered' }).eq('source', 'resend').eq('source_id', emailId);
+    if (emailId) await admin.from('communications').update({ status: 'delivered' }).eq('source', 'resend').eq('source_id', emailId).or('status.is.null,status.neq.delivered');
     return json({ ok: true, delivered: true });
   }
 
@@ -147,7 +151,8 @@ async function resendWebhook(req: Request, admin: SupabaseClient, cors: Record<s
     workspace_id: send.workspace_id, email, reason,
     note: kind === 'complaint' ? 'Resend: recipient reported spam' : `Resend hard bounce${emailId ? ` (${emailId})` : ''}`,
   }, { onConflict: 'workspace_id,email', ignoreDuplicates: true });
-  if (emailId) await admin.from('communications').update({ status: kind === 'complaint' ? 'failed' : 'bounced' }).eq('source', 'resend').eq('source_id', emailId);
+  const bad = kind === 'complaint' ? 'failed' : 'bounced';
+  if (emailId) await admin.from('communications').update({ status: bad }).eq('source', 'resend').eq('source_id', emailId).or(`status.is.null,status.neq.${bad}`);
   let paused: string | null = null;
   if (send.sender_id) paused = await checkAutoPauseSender(admin, { id: send.sender_id, workspace_id: send.workspace_id });
   return json({ ok: true, reason, paused });
@@ -213,66 +218,82 @@ async function workspaceDomains(admin: SupabaseClient, ws: number, env?: EnvLike
 
 // -------------------------------------------------------------- postmaster
 /**
- * Postmaster Tools v1 trafficStats, last 30 days, for every domain the
- * connected account can see there. v1 is the version that still reports
- * domain reputation.
+ * Postmaster Tools v2, last 30 days, for every one of this workspace's
+ * domains the connected account sees there: domains.list (all pages), then
+ * domainStats:query (DAILY, BATCH at a time) for spam rate,
+ * SPF / DKIM / DMARC pass rates and the delivery-error rate. Google retired
+ * v1 (trafficStats), and v2 has no domain reputation, so `reputation` is
+ * always null. v2 needs postmaster.domain and postmaster.traffic.readonly;
+ * an account that only granted v1's postmaster.readonly reads as not
+ * granted, so the panel offers Connect Postmaster again.
  *
- * ponytail: v2 (scope postmaster.traffic.readonly, domainStats:query) drops
- * reputation but adds the bulk-sender compliance status (one-click
- * unsubscribe, DMARC alignment). Move to it when Google retires v1.
+ * A workspace domain Postmaster does not list (or lists unverified) goes
+ * through Site Verification, then registerDomain adds it to Postmaster and
+ * verifies it there (_shared/postmaster.ts). Each verification row says
+ * whether that worked (`postmaster`: ready, added, manual, error).
  */
 async function postmaster(admin: SupabaseClient, ws: number, account: Account, known: string[], force: boolean) {
   const siteOk = has(account, SCOPE.siteVerification);
-  if (!has(account, SCOPE.postmaster)) return { granted: false, site_verification: siteOk, domains: [], unverified: known, verification: await verificationRows(admin, ws, known) };
+  if (!has(account, SCOPE.postmaster) || !has(account, SCOPE.postmasterDomains)) return { granted: false, site_verification: siteOk, domains: [], unverified: known, verification: await verificationRows(admin, ws, known) };
   const token = await accessFor(admin, account);
   if (!token) return { granted: true, site_verification: siteOk, error: 'Google needs this connection approved again.', domains: [], unverified: known, verification: await verificationRows(admin, ws, known) };
-  const api = async (path: string) => {
-    const res = await fetch(`https://gmailpostmastertools.googleapis.com/v1/${path}`, { headers: { Authorization: `Bearer ${token}` } });
-    const body = await res.json().catch(() => ({})) as Any;
-    if (!res.ok) throw Object.assign(new Error(String(body?.error?.message ?? res.status)), { status: res.status });
-    return body;
-  };
-  let names: string[] = [];
+  const deadline = Date.now() + BUDGET_MS;
+  const pm = postmasterClient(token);
+  const listed = new Map<string, PmDomain>();
+  let listOk = false;
   let error: string | undefined;
   try {
-    const list = await api('domains?pageSize=100');
-    names = ((list.domains ?? []) as Any[]).map((d) => String(d.name).replace(/^domains\//, '').toLowerCase());
+    for (const d of await pm.listDomains()) listed.set(d.domain, d);
+    listOk = true;
   } catch (err) {
-    error = (err as Any).status === 403
-      ? 'Postmaster Tools refused this account. Check the Gmail Postmaster Tools API is enabled on the Google Cloud project, then reconnect Postmaster.'
-      : 'Postmaster Tools did not answer. Try again shortly.';
+    const status = Number((err as Any).status ?? 0);
+    const said = err instanceof Error ? err.message.slice(0, 200) : '';
+    console.error('postmaster domains.list', status, said);
+    error = status === 403
+      ? `Postmaster Tools refused this account (${said || '403'}). Check the Gmail Postmaster Tools API is enabled on the Google Cloud project, then press Connect Postmaster again.`
+      : status === 401
+        ? 'Google needs this connection approved again. Press Connect Postmaster.'
+        : `Postmaster Tools did not answer${said ? `: ${said}` : ''}. Try again shortly.`;
   }
-  const end = new Date();
-  const start = new Date(Date.now() - 30 * 86_400_000);
-  const d = (x: Date, p: string) => `${p}.year=${x.getUTCFullYear()}&${p}.month=${x.getUTCMonth() + 1}&${p}.day=${x.getUTCDate()}`;
-  const domains = [];
   // Only this workspace's domains, even when the Google account sees more.
-  for (const name of names.filter((n) => known.includes(n)).slice(0, 12)) {
-    const stats = await api(`domains/${name}/trafficStats?${d(start, 'startDate')}&${d(end, 'endDate')}&pageSize=40`).catch(() => ({ trafficStats: [] }));
-    const days = ((stats.trafficStats ?? []) as Any[]).map((s) => {
-      const id = String(s.name).split('/').pop() ?? '';
-      return {
-        date: `${id.slice(0, 4)}-${id.slice(4, 6)}-${id.slice(6, 8)}`,
-        reputation: (s.domainReputation as string | undefined) ?? null,
-        spam: typeof s.userReportedSpamRatio === 'number' ? s.userReportedSpamRatio : null,
-        spf: s.spfSuccessRatio ?? null, dkim: s.dkimSuccessRatio ?? null, dmarc: s.dmarcSuccessRatio ?? null,
-        errors: ((s.deliveryErrors ?? []) as Any[]).reduce((n, e) => n + Number(e.errorRatio ?? 0), 0),
-        error_types: ((s.deliveryErrors ?? []) as Any[]).map((e) => `${e.errorType} ${(100 * Number(e.errorRatio ?? 0)).toFixed(2)}%`),
-      };
-    }).sort((a, b) => a.date.localeCompare(b.date));
-    domains.push({ domain: name, days });
+  const notReadable = known.filter((k) => !pmReadable(listed.get(k)));
+  const writers = lazyWriters(admin, ws);
+  const site = siteOk
+    ? await runVerification(admin, ws, account, token, notReadable, force, deadline, writers)
+    : { rows: await verificationRows(admin, ws, notReadable), remaining: 0 };
+  // Add each missing domain to Postmaster and verify it there, after Site Verification had its go.
+  const added = new Map<string, RegisterOutcome>();
+  if (listOk && notReadable.length) {
+    const blocked = { reason: null as string | null };
+    const dns = await writers();
+    const outs = await mapLimit(notReadable, BATCH, (d) => registerDomain(d, { pm, writers: dns, listed: listed.get(d), blocked }), deadline);
+    notReadable.forEach((d, i) => { const o = outs[i]; if (o) added.set(d, o); });
   }
-  const unverified = known.filter((k) => !names.includes(k));
-  const verification = siteOk
-    ? await runVerification(admin, ws, account, token, unverified, force)
-    : await verificationRows(admin, ws, unverified);
-  return { granted: true, site_verification: siteOk, error, domains, unverified, verification };
+  const readable = known.filter((k) => pmReadable(listed.get(k)) || added.get(k)?.postmaster === 'ready');
+  const end = new Date(Date.now() - 86_400_000);
+  const start = new Date(Date.now() - 30 * 86_400_000);
+  const date = (x: Date) => ({ year: x.getUTCFullYear(), month: x.getUTCMonth() + 1, day: x.getUTCDate() });
+  const stats = await mapLimit(readable, BATCH, (name) => pm.queryStats(name, {
+    metricDefinitions: POSTMASTER_V2_METRICS,
+    timeQuery: { dateRanges: { dateRanges: [{ start: date(start), end: date(end) }] } },
+    aggregationGranularity: 'DAILY',
+    pageSize: 200,
+  }).catch((err) => { console.error('postmaster domainStats', name, (err as Any).status, err instanceof Error ? err.message : err); return { domainStats: [] }; }));
+  const domains = readable.map((name, i) => ({ domain: name, days: postmasterDaysV2(((stats[i] as Any)?.domainStats ?? []) as unknown[]) }));
+  const unverified = known.filter((k) => !readable.includes(k));
+  const verification = site.rows.filter((v) => unverified.includes(v.domain)).map((v) => ({
+    ...v, postmaster: added.get(v.domain)?.postmaster ?? null, postmaster_detail: added.get(v.domain)?.detail ?? null,
+  }));
+  return { granted: true, site_verification: siteOk, error, domains, unverified, verification, remaining: site.remaining };
 }
 
 // ------------------------------------------------------ domain verification
 const VERIFY_COLUMNS = 'domain, account_id, status, dns_host, token, detail, attempts, checked_at, verified_at';
 /** Retry a pending domain after 2 minutes, an error or no-DNS one after 30. */
 const RETRY_MS: Record<string, number> = { pending: 120_000, error: 1_800_000, needs_dns: 1_800_000 };
+/** Domains worked on at once (Google, InboxKit and Vercel calls), and how long one load may spend on them. */
+const BATCH = 4;
+const BUDGET_MS = 70_000;
 
 async function verificationRows(admin: SupabaseClient, ws: number, domains: string[]) {
   if (!domains.length) return [];
@@ -297,35 +318,51 @@ async function dnsWriters(admin: SupabaseClient, ws: number): Promise<DnsWriter[
   return out;
 }
 
-async function runVerification(admin: SupabaseClient, ws: number, account: Account, token: string, domains: string[], force: boolean) {
-  if (!domains.length) return [];
+/** dnsWriters once per request, only when something needs it. */
+function lazyWriters(admin: SupabaseClient, ws: number): () => Promise<DnsWriter[]> {
+  let p: Promise<DnsWriter[]> | null = null;
+  return () => (p ??= dnsWriters(admin, ws).catch((err) => { console.error('dns writers', err instanceof Error ? err.message : err); return []; }));
+}
+
+/**
+ * Site Verification for every due domain, BATCH at a time. Domains not
+ * started before `deadline` keep their row and stay due, so the next load
+ * (the card re-checks while any are left) picks them up.
+ */
+async function runVerification(admin: SupabaseClient, ws: number, account: Account, token: string, domains: string[], force: boolean, deadline: number, writers: () => Promise<DnsWriter[]>) {
+  if (!domains.length) return { rows: [], remaining: 0 };
   const { data } = await admin.from('email_domain_verifications').select(VERIFY_COLUMNS).eq('workspace_id', ws).in('domain', domains);
   const by = new Map(((data ?? []) as Any[]).map((r) => [r.domain as string, r]));
   const now = Date.now();
+  // A reconnect (new scopes, an API switched on since) makes every older row due, whatever its status said.
+  const reconnected = Date.parse(String((account as Any).connected_at ?? '')) || 0;
   const due = domains.filter((domain) => {
     const r = by.get(domain);
     if (!r) return true;
     if (r.status === 'verified' && r.account_id === account.id) return false;
     if (force || r.account_id !== account.id) return true;
-    return !r.checked_at || now - Date.parse(r.checked_at) > (RETRY_MS[r.status] ?? 0);
-  }).slice(0, 12);
+    if (!r.checked_at || Date.parse(r.checked_at) < reconnected) return true;
+    return now - Date.parse(r.checked_at) > (RETRY_MS[r.status] ?? 0);
+  });
+  let remaining = 0;
   if (due.length) {
     const google = siteVerificationClient(token);
     let verified = new Set<string>();
     let listError: string | null = null;
     try { verified = await google.verifiedDomains(); } catch (err) {
+      const said = err instanceof Error ? err.message.slice(0, 160) : 'unknown error';
       listError = (err as Any).status === 403
-        ? 'Google refused Site Verification. Reconnect Postmaster and allow domain verification, and check the Site Verification API is enabled on the Google Cloud project.'
-        : `Site Verification did not answer: ${err instanceof Error ? err.message.slice(0, 160) : 'unknown error'}.`;
+        ? `Google refused Site Verification (${said}). Reconnect Postmaster and allow domain verification, and check the Site Verification API is enabled on the Google Cloud project.`
+        : `Site Verification did not answer: ${said}.`;
     }
-    const writers = listError ? [] : await dnsWriters(admin, ws);
+    const dns = listError ? [] : await writers();
     const at = new Date().toISOString();
-    for (const domain of due) {
+    const done = await mapLimit(due, BATCH, async (domain) => {
       const prev = by.get(domain);
       const sameAccount = prev?.account_id === account.id;
       const outcome = listError
         ? { status: 'error' as const, dns_host: null, token: sameAccount ? prev?.token ?? null : null, detail: listError }
-        : await autoVerifyDomain(domain, { google, verified, writers, knownToken: sameAccount ? prev?.token ?? null : null });
+        : await autoVerifyDomain(domain, { google, verified, writers: dns, knownToken: sameAccount ? prev?.token ?? null : null });
       const row = {
         workspace_id: ws, domain, account_id: account.id, status: outcome.status, dns_host: outcome.dns_host ?? prev?.dns_host ?? null,
         token: outcome.token, detail: outcome.detail, attempts: (sameAccount ? Number(prev?.attempts ?? 0) : 0) + 1, checked_at: at,
@@ -333,9 +370,11 @@ async function runVerification(admin: SupabaseClient, ws: number, account: Accou
       };
       const { error } = await admin.from('email_domain_verifications').upsert(row, { onConflict: 'workspace_id,domain' });
       if (error) console.error('domain verification store', domain, error.message);
-    }
+      return true;
+    }, deadline);
+    remaining = done.filter((x) => !x).length;
   }
-  return verificationRows(admin, ws, domains);
+  return { rows: await verificationRows(admin, ws, domains), remaining };
 }
 
 // ----------------------------------------------------------------- warm-up
@@ -453,7 +492,7 @@ async function overview(admin: SupabaseClient, ws: number) {
     const today = localParts(now, m.timezone).date;
     mailboxes.push({
       account_id: a.id, email: a.email, owner: names.get(a.user_id) ?? null, user_id: a.user_id, status: a.status,
-      gmail_send: a.gmail_send, gmail_read: a.gmail_read && (a.scopes ?? []).includes(SCOPE.gmailRead), postmaster: (a.scopes ?? []).includes(SCOPE.postmaster),
+      gmail_send: a.gmail_send, gmail_read: a.gmail_read && (a.scopes ?? []).includes(SCOPE.gmailRead), postmaster: (a.scopes ?? []).includes(SCOPE.postmaster) && (a.scopes ?? []).includes(SCOPE.postmasterDomains),
       settings: m,
       sent_today: mine.filter((r) => r.sent_at >= dayStart).length,
       allowance: dailyAllowance(m, today), ramp_day: rampDay(m, today) + 1,

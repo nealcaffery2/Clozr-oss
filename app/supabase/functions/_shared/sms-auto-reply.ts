@@ -10,6 +10,7 @@ import { autoReplyFor, type SmsFlow } from '../../../lib/sms-flow.ts';
 import { activeTalkrBinding, gateTalkrWrite, readTalkrOrg } from './talkr-binding.ts';
 import { loadTalkrConnections } from './talkr-connect.ts';
 import { TALKR_DEFAULT_URL, partnerToken } from './talkr-outreach.ts';
+import { carrierCheck, carrierReport } from '../../../lib/carrier-safe.ts';
 
 const e164 = (raw: unknown): string | null => {
   const d = String(raw ?? '').replace(/\D/g, '');
@@ -68,9 +69,11 @@ export async function smsAutoReply(admin: SupabaseClient, ws: number, msg: Inbou
     };
     if (!gateTalkrWrite({ binding, observedOrgId: await readTalkrOrg((p) => call(p)) }).ok) return await done('failed', 'Talkr org does not match this workspace');
 
+    const carrier = carrierCheck(decision.body);
+    if (carrier.blocked) return await done('failed', `carrier would block it: ${carrierReport(carrier)}`);
     const res = await call('/v1/messages', {
       method: 'POST',
-      body: JSON.stringify({ to_number: theirs, body: decision.body, ...(flow.talkr_number_id ? { from_phone_number_id: flow.talkr_number_id } : {}) }),
+      body: JSON.stringify({ to_number: theirs, body: carrier.text, ...(flow.talkr_number_id ? { from_phone_number_id: flow.talkr_number_id } : {}) }),
     });
     return res.ok ? await done('sent', '') : await done('failed', `Talkr refused: ${String(res.body?.error ?? res.status)}`);
   } catch (err) {

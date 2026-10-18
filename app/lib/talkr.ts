@@ -16,6 +16,7 @@
 import type { VoiceTokenDto } from './softphone-engine';
 import { supabase } from './supabase';
 import { isReadOnly, isTalkrWrite, readOnlyResponse } from './read-only';
+import { withoutElsewhereConversations, withoutElsewhereHistory } from './talkr-elsewhere';
 
 /** The production Platform API. A workspace can point elsewhere in Settings → Integrations. */
 export const TALKR_DEFAULT_URL = 'https://talkr.example.com';
@@ -264,6 +265,11 @@ export type MessageDto = {
   created_at: string;
   sent_at: string | null;
   delivered_at: string | null;
+  /** The Talkr user who sent it (outbound, by a person); null for inbound and auto-replies. */
+  created_by?: string | null;
+  /** The thread's numbers, as this message saw them. Absent from a Talkr older than the from_number release. */
+  from_number?: string | null;
+  to_number?: string | null;
 };
 
 export type HistoryItemDto = {
@@ -429,8 +435,10 @@ export const talkr = {
   transfer: (id: string, input: { mode: 'warm' | 'blind'; user_id?: string; to_number?: string }) =>
     request<{ ok: boolean }>(`/v1/calls/${id}/transfer`, { method: 'POST', body: JSON.stringify(input) }),
   completeTransfer: (id: string) => request<{ ok: boolean }>(`/v1/calls/${id}/transfer/complete`, { method: 'POST', body: '{}' }),
+  /** Without the calls another workspace on this org owns (lib/talkr-elsewhere). */
   history: (q: { type?: 'calls' | 'sms' | 'all'; limit?: number } = {}) =>
-    request<{ items: HistoryItemDto[] }>(`/v1/history${qs({ type: q.type ?? 'calls', limit: q.limit ?? 30 })}`),
+    request<{ items: HistoryItemDto[] }>(`/v1/history${qs({ type: q.type ?? 'calls', limit: q.limit ?? 30 })}`)
+      .then(async (r) => ({ ...r, items: await withoutElsewhereHistory(r.items) })),
 
   // the smart surface
   transcriptionToken: () =>
@@ -446,10 +454,11 @@ export const talkr = {
   transcript: (callId: string) => request<TranscriptResponseDto>(`/v1/calls/${callId}/transcript`),
 
   // messaging
+  /** Without the threads another workspace on this org owns (lib/talkr-elsewhere). */
   conversations: (q: { unread?: boolean; limit?: number } = {}) =>
     request<{ conversations: ConversationDto[]; total: number; counts: { unread: number } }>(
-      `/v1/conversations${qs({ unread: q.unread ? 1 : undefined, limit: q.limit ?? 50 })}`,
-    ),
+      `/v1/conversations${qs({ unread: q.unread ? 'true' : undefined, limit: q.limit ?? 50 })}`,
+    ).then(withoutElsewhereConversations),
   messages: (conversationId: string) =>
     request<{ conversation_id: string; messages: MessageDto[] }>(`/v1/conversations/${conversationId}/messages`),
   markRead: (conversationId: string) =>

@@ -190,7 +190,7 @@ export function CopyButton({ value, label, size = 22, tone = 'light' }: CopyButt
             padding: '4px 7px',
             borderRadius: 6,
             background: 'var(--ink)',
-            color: '#fff',
+            color: 'var(--on-dark, #fff)',
             font: '600 10px/1.2 var(--sans)',
             whiteSpace: 'nowrap',
             pointerEvents: 'none',

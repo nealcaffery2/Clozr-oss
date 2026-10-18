@@ -1,13 +1,18 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+// Once, here, for every route. Imported from five pages it became a shared
+// CSS-only chunk whose JS half Vite never writes, and every page then preloaded
+// /_next/static/chunks/tokens-*.js and logged a 404 on each load.
+import './clozr/tokens.css';
 import { Inter } from 'next/font/google';
 import { SessionProvider } from '@/lib/session';
 import { ConfirmProvider } from '@/components/ds/Confirm';
 import { CHUNK_RELOAD_SCRIPT } from '@/lib/chunk-reload';
+import { THEME_BOOT } from '@/lib/theme';
 
-// SF (San Francisco) is Apple-only and not licensed for the web, so the stack
-// in tokens.css asks for it by name first — real SF on Mac/iPhone — and falls
-// back to Inter, the closest free look-alike, everywhere else.
+// Inter is CLOZR's face on every platform (tokens.css --font-sans,
+// globals.css): one look on Mac, Windows and phones, the reference design's.
+// SF Pro and the system sans are only fallbacks while it loads.
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
@@ -49,18 +54,25 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#ffffff',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: 'var(--on-dark, #ffffff)' },
+    { media: '(prefers-color-scheme: dark)', color: '#0a0a0a' },
+  ],
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   // One session for the whole app: the landing page, the login screens, the
   // route guard and the shell's account menu all read the same provider.
+  // suppressHydrationWarning: the theme script below sets data-theme on <html>
+  // before React hydrates.
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
       <head>
         {/* Inline and first, so a tab older than the live deploy reloads onto
             the new chunks instead of failing its first lazy import. */}
         <script dangerouslySetInnerHTML={{ __html: CHUNK_RELOAD_SCRIPT }} />
+        {/* The theme choice (lib/theme.ts) before first paint: no white flash on a dark tab. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
       </head>
       <body>
         <SessionProvider><ConfirmProvider>{children}</ConfirmProvider></SessionProvider>

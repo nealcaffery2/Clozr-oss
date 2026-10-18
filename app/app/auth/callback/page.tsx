@@ -11,7 +11,6 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { ClozrMark } from '@/components/ds/ClozrMark';
 import { useSession } from '@/lib/session';
-import '../../clozr/tokens.css';
 
 export default function AuthCallbackPage() {
   const s = useSession();
@@ -41,14 +40,14 @@ export default function AuthCallbackPage() {
   }, []);
 
   return (
-    <main style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: '#fafafa', padding: '24px' }}>
+    <main style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: 'var(--canvas, #fafafa)', padding: '24px' }}>
       <div style={{ textAlign: 'center' }}>
         <ClozrMark size={22} />
-        <p style={{ marginTop: '16px', fontSize: '13px', color: '#71717a' }}>
+        <p style={{ marginTop: '16px', fontSize: '13px', color: 'var(--meta, #71717a)' }}>
           {stuck ? 'That link has expired or was already used.' : 'Signing you in…'}
         </p>
         {stuck ? (
-          <a href="/login" style={{ display: 'inline-block', marginTop: '10px', fontSize: '13px', color: '#0A8560', fontWeight: 600 }}>
+          <a href="/login" style={{ display: 'inline-block', marginTop: '10px', fontSize: '13px', color: 'var(--tx-mint, #0a8560)', fontWeight: 600 }}>
             Back to sign in
           </a>
         ) : null}

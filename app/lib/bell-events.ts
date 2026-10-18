@@ -5,6 +5,7 @@
 // only after a sync — and not in the bell at all.
 
 import { commTab, type NotifLink } from './notif-target';
+import { replyTone, type ReplyTone } from './reply-tone';
 
 export type BellComm = {
   id: string;
@@ -41,6 +42,8 @@ export type BellItem = {
   phone?: string;
   /** How many calls or texts the row stands for, when more than one. */
   count?: number;
+  /** A text's tone (lib/reply-tone), read from its newest message. */
+  tone?: ReplyTone;
 };
 
 const MISSED = /^(no_answer|missed|busy|failed|canceled|cancelled|unanswered|rejected)$/i;
@@ -112,7 +115,7 @@ export function bellFromComms(comms: BellComm[], limit = 25): BellItem[] {
       const head = count > 1 ? `${count} texts from ${party}` : `Text from ${party}`;
       items.push({
         ts: c.ts,
-        item: { id: 'bell-sms-' + c.id, cat: 'SMS', text: preview && preview !== '—' ? `${head} — ${preview}` : head, link: at('SMS'), ...extra },
+        item: { id: 'bell-sms-' + c.id, cat: 'SMS', text: preview && preview !== '—' ? `${head} — ${preview}` : head, link: at('SMS'), tone: replyTone(preview), ...extra },
       });
     }
   }

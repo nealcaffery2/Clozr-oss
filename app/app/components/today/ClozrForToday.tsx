@@ -13,11 +13,11 @@ import { FOCUS_CHIPS, loadTodayFocus, partOfDay, type TodayFocus } from '@/lib/t
 import type { FocusRecord } from '@/lib/focus';
 import type { AskFocusItem } from '@/lib/ask-clozr';
 
-const INK = '#18181B';
-const INK2 = '#3F3F46';
-const MUTED = '#52525B';
-const SUBTLE = '#71717A';
-const LINE = '#E4E4E7';
+const INK = 'var(--ink, #18181b)';
+const INK2 = 'var(--ink-3, #3f3f46)';
+const MUTED = 'var(--muted, #52525b)';
+const SUBTLE = 'var(--meta, #71717a)';
+const LINE = 'var(--divider, #e4e4e7)';
 const MINT = '#0A8560';
 const MINT_TEXT = '#08694C';
 const AMBER = '#B45309';
@@ -30,8 +30,8 @@ export type FocusRow = { id: string; kind: string; title: string; why: string; t
 
 const CSS = `
 .cft-row { transition: background-color 120ms linear; }
-.cft-row:hover { background: #F4F4F5 !important; }
-.cft-chip:hover { background: #F4F4F5 !important; }
+.cft-row:hover { background: var(--surface-2, #f4f4f5) !important; }
+.cft-chip:hover { background: var(--surface-2, #f4f4f5) !important; }
 .cft-send:not(:disabled):hover { background: #08694C !important; }
 .cft :is(button, textarea):focus-visible { outline: 2px solid ${MINT}; outline-offset: 2px; }
 @keyframes cftPulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
@@ -42,9 +42,9 @@ function Skeleton({ cols }: { cols: number }) {
   return (
     <ol aria-label="Loading your focus list" style={{ margin: 0, padding: 0, listStyle: 'none', display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 8 }}>
       {[0, 1, 2, 3].map((i) => (
-        <li key={i} data-testid="today-focus-skeleton" className="cft-skel" style={{ height: 58, borderRadius: 10, border: `1px solid ${LINE}`, background: '#FFFFFF', padding: '10px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 8, animation: 'cftPulse 1.4s ease-in-out infinite' }}>
+        <li key={i} data-testid="today-focus-skeleton" className="cft-skel" style={{ height: 58, borderRadius: 10, border: `1px solid ${LINE}`, background: 'var(--surface, #ffffff)', padding: '10px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 8, animation: 'cftPulse 1.4s ease-in-out infinite' }}>
           <span style={{ width: `${40 + ((i * 17) % 30)}%`, height: 10, borderRadius: 4, background: '#EEEEF0' }} />
-          <span style={{ width: `${70 - ((i * 11) % 25)}%`, height: 8, borderRadius: 4, background: '#F4F4F5' }} />
+          <span style={{ width: `${70 - ((i * 11) % 25)}%`, height: 8, borderRadius: 4, background: 'var(--surface-2, #f4f4f5)' }} />
         </li>
       ))}
     </ol>
@@ -97,7 +97,7 @@ export function ClozrForToday({
   const line = demo ? 'Here is what to do first.' : focus?.greeting || (loading ? 'Reading your day…' : '');
 
   return (
-    <section data-testid="today-focus" aria-label="Clozr for today" className="cft" style={{ flexShrink: 0, boxSizing: 'border-box', padding: isMobile ? '12px 16px 4px' : '16px 24px 12px', background: '#FAFAFA', borderBottom: isMobile ? 0 : `1px solid ${LINE}`, color: INK }}>
+    <section data-testid="today-focus" aria-label="Clozr for today" className="cft" style={{ flexShrink: 0, boxSizing: 'border-box', padding: isMobile ? '12px 16px 4px' : '16px 24px 12px', background: 'var(--canvas, #fafafa)', borderBottom: isMobile ? 0 : `1px solid ${LINE}`, color: INK }}>
       <style>{CSS}</style>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
         <h2 style={{ margin: 0, fontSize: isMobile ? 17 : 19, fontWeight: 600, lineHeight: 1.3, letterSpacing: '-0.01em' }}>{greeting}</h2>
@@ -126,7 +126,7 @@ export function ClozrForToday({
                   <li key={r.id}>
                     <button
                       type="button" className="cft-row" data-testid={`today-focus-${i + 1}`} onClick={r.open}
-                      style={{ width: '100%', boxSizing: 'border-box', minHeight: 58, display: 'grid', gridTemplateColumns: '22px minmax(0, 1fr) auto', columnGap: 10, alignItems: 'start', padding: '10px 12px', borderRadius: 10, border: `1px solid ${LINE}`, background: '#FFFFFF', textAlign: 'left', cursor: 'pointer', color: INK, fontFamily: 'inherit' }}
+                      style={{ width: '100%', boxSizing: 'border-box', minHeight: 58, display: 'grid', gridTemplateColumns: '22px minmax(0, 1fr) auto', columnGap: 10, alignItems: 'start', padding: '10px 12px', borderRadius: 10, border: `1px solid ${LINE}`, background: 'var(--surface, #ffffff)', textAlign: 'left', cursor: 'pointer', color: INK, fontFamily: 'inherit' }}
                     >
                       <span aria-hidden style={{ fontSize: 12, fontWeight: 600, color: SUBTLE, lineHeight: '20px', fontVariantNumeric: 'tabular-nums' }}>{i + 1}</span>
                       <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -143,7 +143,7 @@ export function ClozrForToday({
 
           <form
             onSubmit={(e) => { e.preventDefault(); send(q); }}
-            style={{ marginTop: 12, display: 'flex', alignItems: 'flex-end', gap: 8, padding: 6, paddingLeft: 12, background: '#FFFFFF', border: `1px solid #D4D4D8`, borderRadius: 12 }}
+            style={{ marginTop: 12, display: 'flex', alignItems: 'flex-end', gap: 8, padding: 6, paddingLeft: 12, background: 'var(--surface, #ffffff)', border: `1px solid var(--line, #d4d4d8)`, borderRadius: 12 }}
           >
             <textarea
               ref={box} data-testid="today-composer" value={q} rows={1} aria-label="Ask Clozr"
@@ -153,14 +153,14 @@ export function ClozrForToday({
               style={{ flex: 1, minWidth: 0, resize: 'none', border: 0, outline: 0, background: 'transparent', color: INK, fontSize: 14, lineHeight: '20px', padding: '7px 0', fontFamily: 'inherit', maxHeight: 120 }}
             />
             <button type="submit" className="cft-send" data-testid="today-composer-send" disabled={!q.trim() || busy}
-              style={{ height: 34, padding: '0 14px', borderRadius: 8, border: 0, background: MINT, color: '#FFFFFF', fontSize: 13, fontWeight: 600, cursor: q.trim() && !busy ? 'pointer' : 'default', opacity: q.trim() && !busy ? 1 : 0.5, fontFamily: 'inherit' }}>
+              style={{ height: 34, padding: '0 14px', borderRadius: 8, border: 0, background: MINT, color: 'var(--on-dark, #ffffff)', fontSize: 13, fontWeight: 600, cursor: q.trim() && !busy ? 'pointer' : 'default', opacity: q.trim() && !busy ? 1 : 0.5, fontFamily: 'inherit' }}>
               {busy ? 'Answering…' : 'Ask'}
             </button>
           </form>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}>
             {FOCUS_CHIPS.map((c) => (
               <button key={c} type="button" className="cft-chip" data-testid="today-chip" onClick={() => send(c)} disabled={busy}
-                style={{ height: 28, padding: '0 10px', borderRadius: 999, border: `1px solid ${LINE}`, background: '#FFFFFF', color: INK2, fontSize: 12, fontWeight: 500, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                style={{ height: 28, padding: '0 10px', borderRadius: 999, border: `1px solid ${LINE}`, background: 'var(--surface, #ffffff)', color: INK2, fontSize: 12, fontWeight: 500, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
                 {c}
               </button>
             ))}

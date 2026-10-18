@@ -42,7 +42,7 @@ export function SearchSelect({ value, options, placeholder, onChange, ariaLabel,
     return () => document.removeEventListener('mousedown', away);
   }, [open]);
   const choose = (o: SearchOption) => { onChange(o.v); setQ(''); setOpen(false); };
-  const field: React.CSSProperties = { width: '100%', height: '34px', padding: '0 8px', border: '1px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', outline: 0, background: '#fafafa', color: '#18181b', fontFamily: 'inherit', boxSizing: 'border-box', ...fieldStyle };
+  const field: React.CSSProperties = { width: '100%', height: '34px', padding: '0 8px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', fontSize: '13px', outline: 0, background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)', fontFamily: 'inherit', boxSizing: 'border-box', ...fieldStyle };
   const sortName = dir === 'asc' ? 'Sorted A to Z' : dir === 'desc' ? 'Sorted Z to A' : 'Sorted by recent activity';
   return (
     <div ref={box} style={{ position: 'relative' }}>
@@ -61,20 +61,20 @@ export function SearchSelect({ value, options, placeholder, onChange, ariaLabel,
         <button type="button" onClick={() => setDir((d) => (d === 'asc' ? 'desc' : d === 'desc' && dated ? 'new' : 'asc'))}
           aria-label={`${sortName}. Change sort`}
           title={dir === 'asc' ? 'Sorted A to Z: click for Z to A' : dir === 'desc' ? (dated ? 'Sorted Z to A: click for recent activity' : 'Sorted Z to A: click for A to Z') : 'Recent activity: click for A to Z'}
-          style={{ ...field, width: field.height, padding: 0, cursor: 'pointer', display: 'inline-grid', placeItems: 'center', color: '#52525b', flex: 'none' }}>
+          style={{ ...field, width: field.height, padding: 0, cursor: 'pointer', display: 'inline-grid', placeItems: 'center', color: 'var(--muted, #52525b)', flex: 'none' }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={SORT_ICON[dir]} /></svg>
         </button>
       </div>
       {open ? (
-        <div role="listbox" id={listId} style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, top: '38px', maxHeight: '260px', overflow: 'auto', background: '#fff', border: '1px solid #e4e4e7', borderRadius: '9px', boxShadow: '0 10px 30px rgba(0,0,0,.12)' }}>
+        <div role="listbox" id={listId} style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, top: '38px', maxHeight: '260px', overflow: 'auto', background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', boxShadow: '0 10px 30px rgba(0,0,0,.12)' }}>
           {shown.map((o, i) => (
             <div key={o.v} role="option" aria-selected={o.v === value} onMouseDown={(e) => { e.preventDefault(); choose(o); }} onMouseEnter={() => setHi(i)}
               style={{ padding: '7px 10px', fontSize: '13px', cursor: 'pointer', background: i === hi ? '#F0FBF6' : o.v === value ? '#fafafa' : '#fff', fontWeight: o.v === value ? 650 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {o.label}
             </div>
           ))}
-          {!shown.length ? <div style={{ padding: '10px', fontSize: '12.5px', color: '#71717a' }}>No match for “{q}”.</div> : null}
-          {options.length > shown.length && shown.length === 200 ? <div style={{ padding: '6px 10px', fontSize: '11.5px', color: '#a1a1aa' }}>Showing 200 of {options.length}; type to narrow.</div> : null}
+          {!shown.length ? <div style={{ padding: '10px', fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>No match for “{q}”.</div> : null}
+          {options.length > shown.length && shown.length === 200 ? <div style={{ padding: '6px 10px', fontSize: '11.5px', color: 'var(--subtle, #a1a1aa)' }}>Showing 200 of {options.length}; type to narrow.</div> : null}
         </div>
       ) : null}
     </div>

@@ -53,11 +53,11 @@ export function RulesTab(ctx: TabCtx) {
       <Section id="va-words" title="Words" description="Topics and phrases, kept short.">
         <label htmlFor={fieldId('rules.never_mention')} style={eyebrow}>Never bring up</label>
         <ChipList id={fieldId('rules.never_mention')} items={r.never_mention} onChange={(n) => set(['rules', 'never_mention'], n)} add={(l, t) => addChip(l, t, LIMITS.neverMention, LIMITS.neverMentionCount)} placeholder="A topic, then Enter" disabled={off} max={LIMITS.neverMentionCount} />
-        <p style={{ margin: '5px 0 0', fontSize: 12, color: nmErr ? '#b91c1c' : MUTED }} role={nmErr ? 'alert' : undefined}>{nmErr ?? `Topics left alone unless the caller raises them. ${r.never_mention.length}/${LIMITS.neverMentionCount}`}</p>
+        <p style={{ margin: '5px 0 0', fontSize: 12, color: nmErr ? 'var(--tx-red, #b91c1c)' : MUTED }} role={nmErr ? 'alert' : undefined}>{nmErr ?? `Topics left alone unless the caller raises them. ${r.never_mention.length}/${LIMITS.neverMentionCount}`}</p>
         <div style={{ marginTop: 16 }}>
           <label htmlFor={fieldId('rules.forbidden_phrases')} style={eyebrow}>Never say</label>
           <ChipList id={fieldId('rules.forbidden_phrases')} items={r.forbidden_phrases} onChange={(n) => set(['rules', 'forbidden_phrases'], n)} add={(l, t) => addChip(l, t, LIMITS.forbidden, LIMITS.forbiddenCount)} placeholder="A phrase, then Enter" disabled={off} max={LIMITS.forbiddenCount} />
-          <p style={{ margin: '5px 0 0', fontSize: 12, color: fpErr ? '#b91c1c' : MUTED }} role={fpErr ? 'alert' : undefined}>{fpErr ?? `Exact words the agent never uses, like "guaranteed price". ${r.forbidden_phrases.length}/${LIMITS.forbiddenCount}`}</p>
+          <p style={{ margin: '5px 0 0', fontSize: 12, color: fpErr ? 'var(--tx-red, #b91c1c)' : MUTED }} role={fpErr ? 'alert' : undefined}>{fpErr ?? `Exact words the agent never uses, like "guaranteed price". ${r.forbidden_phrases.length}/${LIMITS.forbiddenCount}`}</p>
         </div>
       </Section>
 

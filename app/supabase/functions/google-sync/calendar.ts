@@ -48,6 +48,9 @@
  */
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { Account, Feed } from '../_shared/google.ts';
+import { conferenceFor, keepMeetLink, writeQuery } from '../_shared/meeting-invite.ts';
+
+export { writeQuery };
 
 type Any = any;
 
@@ -100,9 +103,35 @@ type ApptRow = {
   attendees: Attendee[]; source: string;
   google_event_id: string | null; google_calendar_id: string | null; google_etag: string | null; google_updated_at: string | null;
   sync_state: string; invites_requested_at: string | null; deleted_at: string | null; last_synced_at: string | null;
+  /** Migration 270. Absent on a database still waiting on it. */
+  meet?: boolean; meet_link?: string | null;
 };
 
 const APPT = 'id, workspace_id, seller_id, buyer_id, title, kind, starts_at, ends_at, all_day, location, notes, created_by, assigned_to, attendees, source, google_event_id, google_calendar_id, google_etag, google_updated_at, sync_state, invites_requested_at, deleted_at, last_synced_at';
+const APPT_MEET = `${APPT}, meet, meet_link`;
+
+/**
+ * Whether this database has migration 270's Meet columns. Functions deploy and
+ * migrations apply from the same merge, in either order; until the columns
+ * exist the sync reads and writes exactly what it did before instead of
+ * failing every select on a missing column.
+ */
+let meetCols: boolean | null = null;
+const missingMeet = (err: { message?: string } | null | undefined) => !!err && /meet(_link)?\b/.test(String(err.message ?? '')) && /column|does not exist|schema cache/i.test(String(err.message ?? ''));
+
+/** Select appointments with the Meet columns when the database has them. `q` builds the query from a column list. */
+async function selectAppts(q: (cols: string) => PromiseLike<{ data: unknown; error: { message?: string } | null }>): Promise<ApptRow[]> {
+  if (meetCols !== false) {
+    const r = await q(APPT_MEET);
+    if (!r.error) { meetCols = true; return (r.data ?? []) as ApptRow[]; }
+    if (!missingMeet(r.error)) throw new Error(String(r.error.message));
+    meetCols = false;
+  }
+  const r = await q(APPT);
+  if (r.error) throw new Error(String(r.error.message));
+  return (r.data ?? []) as ApptRow[];
+}
+
 
 type SellerLite = { id: number; name: string; property_address: string | null; email: string | null };
 
@@ -116,22 +145,33 @@ function homeAccount(row: ApptRow, accounts: Pick<Account, 'id' | 'user_id'>[]):
 const localDate = (isoStr: string) => new Date(isoStr).toISOString().slice(0, 10);
 const nextDate = (isoStr: string) => new Date(new Date(isoStr).getTime() + 24 * HOUR).toISOString().slice(0, 10);
 
-/** The event body for a row. Attendees carry `email` only; Google fills in the rest. */
-function eventBody(row: ApptRow, seller: SellerLite | null, origin: string): Any {
+/**
+ * The event body for a row. Attendees carry `email` only; Google fills in the rest.
+ *
+ * With Meet wanted and no link yet it carries conferenceData.createRequest
+ * (hangoutsMeet); the request must go with conferenceDataVersion=1 or Google
+ * ignores it. A row that already has a link sends no conferenceData at all,
+ * and a patch without it leaves the existing conference alone.
+ */
+export function eventBody(row: ApptRow, seller: SellerLite | null, origin: string): Any {
   const start = new Date(row.starts_at);
   const end = row.ends_at ? new Date(row.ends_at) : new Date(start.getTime() + HOUR);
   const who = seller ? `${seller.name}${seller.property_address ? ' — ' + seller.property_address : ''}` : '';
+  // A Meet invite is read by the person invited (a Compr prospect, a seller):
+  // only the notes go in, never the CRM's link or name.
+  const guestFacing = !!row.meet;
   return {
     summary: row.title || row.kind || 'Appointment',
-    description: [who, row.notes ?? '', `${origin}/clozr/`].filter(Boolean).join('\n\n'),
+    description: (guestFacing ? [row.notes ?? ''] : [who, row.notes ?? '', `${origin}/clozr/`]).filter(Boolean).join('\n\n'),
     location: row.location ?? seller?.property_address ?? undefined,
     start: row.all_day ? { date: localDate(row.starts_at) } : { dateTime: iso(start) },
     end: row.all_day ? { date: nextDate(row.ends_at ?? row.starts_at) } : { dateTime: iso(end > start ? end : new Date(start.getTime() + 30 * 60_000)) },
     attendees: (row.attendees ?? []).filter((a) => a?.email).map((a) => ({ email: a.email, displayName: a.name ?? undefined })),
     guestsCanInviteOthers: false,
     extendedProperties: { private: { clozr: '1', clozr_source: 'appointment', clozr_id: String(row.id), clozr_ws: String(row.workspace_id), clozr_kind: row.kind } },
-    source: { title: 'Open in CLOZR', url: `${origin}/clozr/` },
+    ...(guestFacing ? {} : { source: { title: 'Open in CLOZR', url: `${origin}/clozr/` } }),
     status: 'confirmed',
+    ...conferenceFor(row),
   };
 }
 
@@ -197,9 +237,9 @@ export async function pushAppointments(admin: SupabaseClient, account: Account, 
   // its own events and stays read-only on everything else.
   const writable = new Set<string>([calendarId, ...feeds.filter((f) => f.writable).map((f) => f.calendar_id)]);
 
-  const { data } = await admin.from('appointments').select(APPT).eq('workspace_id', ws)
-    .or('sync_state.neq.synced,deleted_at.not.is.null').order('starts_at').limit(500);
-  const rows = ((data ?? []) as ApptRow[]).filter((r) => homeAccount(r, accounts) === account.id);
+  const all = await selectAppts((cols) => admin.from('appointments').select(cols).eq('workspace_id', ws)
+    .or('sync_state.neq.synced,deleted_at.not.is.null').order('starts_at').limit(500));
+  const rows = all.filter((r) => homeAccount(r, accounts) === account.id);
   if (!rows.length) return out;
 
   const sellerIds = Array.from(new Set(rows.map((r) => r.seller_id).filter((x): x is number => x != null)));
@@ -264,24 +304,25 @@ export async function pushAppointments(admin: SupabaseClient, account: Account, 
           const guestsChanged = !prior || attendeeKey(prior.attendees?.filter((a: Any) => !a.self && !a.organizer)) !== attendeeKey(row.attendees);
           const invitesAsked = !!row.invites_requested_at && (!row.last_synced_at || row.invites_requested_at > row.last_synced_at);
           const sendUpdates = wantsMail && (timeChanged || guestsChanged || invitesAsked) ? 'all' : 'none';
-          ev = await api(accessToken, evUrl(cal, row.google_event_id, { sendUpdates }), { method: 'PATCH', body: JSON.stringify(body) });
+          ev = await api(accessToken, evUrl(cal, row.google_event_id, writeQuery(body, sendUpdates)), { method: 'PATCH', body: JSON.stringify(body) });
           if (sendUpdates === 'all') out.invited += (row.attendees ?? []).length;
           out.updated++;
         } catch (err) {
           if (!(err instanceof GoogleError && (err.status === 404 || err.status === 410))) throw err;
           // Gone on Google's side while we still wanted it: recreate.
-          ev = await api(accessToken, evUrl(calendarId, undefined, { sendUpdates: wantsMail ? 'all' : 'none' }), { method: 'POST', body: JSON.stringify(body) });
+          ev = await api(accessToken, evUrl(calendarId, undefined, writeQuery(body, wantsMail ? 'all' : 'none')), { method: 'POST', body: JSON.stringify(body) });
           if (wantsMail) out.invited += (row.attendees ?? []).length;
           out.created++;
         }
       } else {
-        ev = await api(accessToken, evUrl(calendarId, undefined, { sendUpdates: wantsMail ? 'all' : 'none' }), { method: 'POST', body: JSON.stringify(body) });
+        ev = await api(accessToken, evUrl(calendarId, undefined, writeQuery(body, wantsMail ? 'all' : 'none')), { method: 'POST', body: JSON.stringify(body) });
         if (wantsMail) out.invited += (row.attendees ?? []).length;
         out.created++;
       }
       await admin.from('appointments').update({
         google_event_id: ev.id, google_calendar_id: calendarId, google_etag: ev.etag ?? null, google_updated_at: ev.updated ?? now,
         attendees: mergeAnswers(row.attendees, ev.attendees),
+        ...(meetCols ? { meet_link: keepMeetLink(ev, row.meet_link) } : {}),
         sync_state: 'synced', sync_error: null, last_synced_at: now,
       }).eq('id', row.id);
     } catch (err) {
@@ -431,8 +472,8 @@ async function pullFeed(admin: SupabaseClient, account: Account, accessToken: st
   const byEventId = new Map<string, ApptRow>();
   const ids = work.map((ev) => String(ev.id ?? '')).filter(Boolean);
   for (let i = 0; i < ids.length; i += 200) {
-    const { data } = await admin.from('appointments').select(APPT).eq('workspace_id', ws).in('google_event_id', ids.slice(i, i + 200));
-    for (const r of (data ?? []) as ApptRow[]) if (r.google_event_id) byEventId.set(r.google_event_id, r);
+    const data = await selectAppts((cols) => admin.from('appointments').select(cols).eq('workspace_id', ws).in('google_event_id', ids.slice(i, i + 200)));
+    for (const r of data) if (r.google_event_id) byEventId.set(r.google_event_id, r);
   }
   // Legacy rows stamped before google_event_id was written, keyed by clozr_id.
   const legacyIds = work
@@ -442,8 +483,8 @@ async function pullFeed(admin: SupabaseClient, account: Account, accessToken: st
   const byLegacyId = new Map<number, ApptRow>();
   if (legacyIds.length) {
     for (let i = 0; i < legacyIds.length; i += 200) {
-      const { data } = await admin.from('appointments').select(APPT).eq('workspace_id', ws).in('id', legacyIds.slice(i, i + 200)).is('google_event_id', null);
-      for (const r of (data ?? []) as ApptRow[]) byLegacyId.set(r.id, r);
+      const data = await selectAppts((cols) => admin.from('appointments').select(cols).eq('workspace_id', ws).in('id', legacyIds.slice(i, i + 200)).is('google_event_id', null));
+      for (const r of data) byLegacyId.set(r.id, r);
     }
   }
 
@@ -500,6 +541,9 @@ async function pullFeed(admin: SupabaseClient, account: Account, accessToken: st
           location: ev.location ? String(ev.location).slice(0, 500) : r.location,
           notes: stripOurFooter(ev.description, r.notes),
           attendees: mergeAnswers(r.attendees, ev.attendees),
+          // Google's link when the event has one (a Meet added in Google
+          // Calendar comes in too), else the one we stored: never wiped.
+          ...(meetCols ? { meet_link: keepMeetLink(ev, r.meet_link), ...(ev.hangoutLink ? { meet: true } : {}) } : {}),
           google_event_id: ev.id, google_calendar_id: calendarId, google_etag: ev.etag ?? null, google_updated_at: ev.updated ?? now,
           sync_state: 'synced', sync_error: null, last_synced_at: now,
         }).eq('id', r.id);
@@ -518,6 +562,7 @@ async function pullFeed(admin: SupabaseClient, account: Account, accessToken: st
           location: ev.location ? String(ev.location).slice(0, 500) : null,
           notes: stripOurFooter(ev.description, null),
           attendees: mergeAnswers([], ev.attendees),
+          ...(meetCols && ev.hangoutLink ? { meet: true, meet_link: String(ev.hangoutLink) } : {}),
           created_by: account.user_id, assigned_to: account.user_id,
           source: 'google',
           google_event_id: ev.id, google_calendar_id: calendarId, google_etag: ev.etag ?? null, google_updated_at: ev.updated ?? now,
@@ -583,16 +628,28 @@ async function fingerprint(o: unknown): Promise<string> {
  * google_event_links exactly as before. Links left over from appointments
  * (which now carry their own event) are removed with their events, so a
  * calendar that held a copy of every rep's appointments is tidied up.
+ *
+ * Only the account owner's own tasks, and never an action plan step. Plan
+ * steps are the sequence engine's queue (texts, emails and drops it sends
+ * itself, plus a call per contact), thousands of rows in a Compr workspace;
+ * on the calendar they buried every real meeting, and they stay on the CLOZR
+ * task list. Both reads page past PostgREST's 1,000-row cap: the old single
+ * read saw only 1,000 links, so every sync re-created an event for each task
+ * past that, the link insert hit (account, source, source_id), and the new
+ * event was orphaned. sweepOrphanTaskEvents clears those up.
  */
 export async function pushTasks(admin: SupabaseClient, account: Account, accessToken: string, origin: string): Promise<{ created: number; updated: number; removed: number }> {
   const calendarId = account.calendar_id;
   if (!calendarId) return { created: 0, updated: 0, removed: 0 };
   const ws = account.workspace_id;
   const since = iso(new Date(Date.now() - 30 * 24 * HOUR));
-  const [{ data: tasks }, { data: links }] = await Promise.all([
-    admin.from('tasks').select('id, title, task_type, due_at, done, seller_id').eq('workspace_id', ws).eq('done', false).not('due_at', 'is', null).gte('due_at', since),
-    admin.from('google_event_links').select('id, source, source_id, event_id, pushed').eq('account_id', account.id),
+  const [tasks, links] = await Promise.all([
+    pageAll((from, to) => admin.from('tasks').select('id, title, task_type, due_at, done, seller_id').eq('workspace_id', ws).eq('done', false)
+      .eq('assigned_to', account.user_id).is('enrollment_id', null).not('due_at', 'is', null).gte('due_at', since).order('id').range(from, to)),
+    pageAll((from, to) => admin.from('google_event_links').select('id, source, source_id, event_id, pushed').eq('account_id', account.id).order('id').range(from, to)),
   ]);
+  // A partial read would look like tasks that stopped qualifying and take their events down.
+  if (!tasks || !links) throw new Error('task push: could not read tasks or links');
   // Only the sellers these tasks name. The whole workspace (13,000 rows) was
   // read on every calendar pass and PostgREST cut it at 1,000, so most task
   // events went out without the seller's name.
@@ -633,7 +690,13 @@ export async function pushTasks(admin: SupabaseClient, account: Account, accessT
         updated++;
       } else {
         const made = await api(accessToken, evUrl(calendarId), { method: 'POST', body: JSON.stringify(body) });
-        await admin.from('google_event_links').insert({ account_id: account.id, source: 'task', source_id: Number(key.slice(5)), event_id: made.id, pushed: print });
+        const { error: linkErr } = await admin.from('google_event_links').insert({ account_id: account.id, source: 'task', source_id: Number(key.slice(5)), event_id: made.id, pushed: print });
+        if (linkErr) {
+          // Without a link nothing would ever update or remove this event: take it back now.
+          console.error('task link not kept, removing its event', { key, err: linkErr.message });
+          await api(accessToken, evUrl(calendarId, made.id), { method: 'DELETE' }).catch(() => null);
+          continue;
+        }
         created++;
       }
     } catch (err) {
@@ -645,7 +708,74 @@ export async function pushTasks(admin: SupabaseClient, account: Account, accessT
     if (want.has(key)) continue;
     await api(accessToken, evUrl(calendarId, link.event_id), { method: 'DELETE' }).catch(() => null);
     await admin.from('google_event_links').delete().eq('id', link.id);
+    linkOf.delete(key);
     removed++;
   }
+  removed += await sweepOrphanTaskEvents(accessToken, calendarId, new Set([...linkOf.values()].map((l: Any) => String(l.event_id))));
   return { created, updated, removed };
 }
+
+/** Every row of a query, 1,000 at a time. Null when a page fails, so a partial read is never taken for the whole. */
+async function pageAll(page: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>): Promise<Any[] | null> {
+  const out: Any[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await page(from, from + 999);
+    if (error) { console.error('paged read failed', error.message); return null; }
+    out.push(...(data ?? []));
+    if (!data || data.length < 1000) return out;
+  }
+}
+
+/** Deletes per sync: drains a flooded calendar within a few hours and stays inside one run. */
+export const ORPHAN_SWEEP_BUDGET = 400;
+
+/**
+ * Task events on the CLOZR calendar that no link points at: the duplicates
+ * the capped read made, and any other task event CLOZR lost track of. Only
+ * events carrying our private clozr_source=task property are listed, so
+ * nothing a person put on the calendar is touched. Up to ORPHAN_SWEEP_BUDGET
+ * a run; the next sync carries on.
+ */
+async function sweepOrphanTaskEvents(accessToken: string, calendarId: string, keep: ReadonlySet<string>): Promise<number> {
+  const orphans: string[] = [];
+  let pageToken: string | undefined;
+  do {
+    const q: Record<string, string> = { privateExtendedProperty: 'clozr_source=task', maxResults: '2500', showDeleted: 'false', fields: 'items(id),nextPageToken' };
+    if (pageToken) q.pageToken = pageToken;
+    const page = await api(accessToken, evUrl(calendarId, undefined, q)).catch((err) => {
+      console.error('orphan sweep list failed', String(err));
+      return null;
+    });
+    if (!page) break;
+    for (const ev of (page.items ?? []) as { id: string }[]) {
+      if (orphans.length >= ORPHAN_SWEEP_BUDGET) break;
+      if (!keep.has(ev.id)) orphans.push(ev.id);
+    }
+    pageToken = orphans.length >= ORPHAN_SWEEP_BUDGET ? undefined : page.nextPageToken;
+  } while (pageToken);
+  // One at a time, paced, inside a time budget. Eight in parallel tripped
+  // Google's per-calendar write limit: 36 of 400 landed on the first run.
+  let removed = 0, limited = 0, lastError: string | null = null;
+  const until = Date.now() + SWEEP_MS;
+  for (const id of orphans) {
+    if (Date.now() > until) break;
+    try {
+      await api(accessToken, evUrl(calendarId, id), { method: 'DELETE' });
+      removed++;
+    } catch (err) {
+      if (err instanceof GoogleError && (err.status === 404 || err.status === 410)) { removed++; continue; }
+      lastError = String(err).slice(0, 200);
+      const rate = err instanceof GoogleError && (err.status === 429 || (err.status === 403 && /rate|limit|quota/i.test(`${err.reason ?? ''} ${err.message}`)));
+      if (!rate || ++limited >= 3) break; // not ours to push through; the next sync carries on
+      await new Promise((r) => setTimeout(r, 2000 * limited));
+      continue;
+    }
+    await new Promise((r) => setTimeout(r, SWEEP_GAP_MS));
+  }
+  if (orphans.length) console.log('orphan task events swept', { calendarId, removed, listed: orphans.length, limited, lastError });
+  return removed;
+}
+
+/** The sweep's share of a sync run, and the pause between deletes (about 6 a second). */
+const SWEEP_MS = 60_000;
+const SWEEP_GAP_MS = 150;

@@ -11,11 +11,11 @@ import { CenteredDialog } from '@/components/ContractsHub';
 import { TemplateLibrary } from '@/components/TemplateLibrary';
 import { parseDollars } from '@/lib/money';
 
-const card: React.CSSProperties = { background: '#fff', border: '1px solid #e4e4e7', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
-const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: '#71717a', fontWeight: 500, marginBottom: '5px' };
-const fieldBase: React.CSSProperties = { width: '100%', height: '34px', padding: '0 10px', border: '1px solid #e4e4e7', borderRadius: '9px', fontSize: '13px', outline: 0, background: '#fafafa', color: '#18181b' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
+const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 500, marginBottom: '5px' };
+const fieldBase: React.CSSProperties = { width: '100%', height: '34px', padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', fontSize: '13px', outline: 0, background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)' };
 const primary = (disabled: boolean): React.CSSProperties => ({ height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid #0A8560', background: disabled ? '#7fcbb2' : '#0A8560', color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer' });
-const ghost: React.CSSProperties = { height: '34px', padding: '0 12px', borderRadius: '9px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', color: '#18181b' };
+const ghost: React.CSSProperties = { height: '34px', padding: '0 12px', borderRadius: '9px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', color: 'var(--ink, #18181b)' };
 
 type Company = NonNullable<WorkspaceSettings['company']>;
 type Offers = NonNullable<WorkspaceSettings['offers']>;
@@ -41,7 +41,7 @@ export function ContractSettings({ workspaceId, admin, demo, isMobile }: { works
   const o: Offers = v.offers ?? {};
   const wantPd = o.engine === 'pandadoc';
   const ro = !admin || demo;
-  const field: React.CSSProperties = { ...fieldBase, background: ro ? '#f4f4f5' : '#fafafa' };
+  const field: React.CSSProperties = { ...fieldBase, background: ro ? 'var(--surface-2, #f4f4f5)' : 'var(--canvas, #fafafa)' };
   const setC = (k: keyof Company) => (e: React.ChangeEvent<HTMLInputElement>) => setDraft({ ...v, company: { ...c, [k]: e.target.value } });
   const setO = <K extends keyof Offers>(k: K, val: Offers[K]) => setDraft({ ...v, offers: { ...o, [k]: val } });
   const num = (e: React.ChangeEvent<HTMLInputElement>) => { const n = Number(e.target.value.replace(/[^0-9.]/g, '')); return Number.isFinite(n) && e.target.value !== '' ? n : undefined; };
@@ -63,7 +63,7 @@ export function ContractSettings({ workspaceId, admin, demo, isMobile }: { works
     <>
       <form onSubmit={save} style={card}>
         <h2 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 600 }}>Contracts and offers</h2>
-        <p style={{ margin: '0 0 12px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.5 }}>
+        <p style={{ margin: '0 0 12px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
           CLOZR fills the Acme Homes templates from the record, renders the PDF and gives each signer their own link. The details below are what those templates print and who signs for the company.
           {ro ? ' Only an owner or admin can change them.' : ''}
         </p>
@@ -78,9 +78,9 @@ export function ContractSettings({ workspaceId, admin, demo, isMobile }: { works
           <div style={{ gridColumn: '1 / -1' }}>
             <label style={label}>Letterhead logo (top of every document CLOZR lays out)</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <div style={{ width: '170px', height: '48px', border: '1px dashed #d4d4d8', borderRadius: '9px', display: 'grid', placeItems: 'center', background: '#fff', overflow: 'hidden' }}>
+              <div style={{ width: '170px', height: '48px', border: '1px dashed var(--line, #d4d4d8)', borderRadius: '9px', display: 'grid', placeItems: 'center', background: 'var(--surface, #fff)', overflow: 'hidden' }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                {c.logo ? <img src={c.logo} alt="Logo" style={{ maxWidth: '150px', maxHeight: '36px', objectFit: 'contain' }} /> : <span style={{ fontSize: '11.5px', color: '#a1a1aa' }}>No logo</span>}
+                {c.logo ? <img src={c.logo} alt="Logo" style={{ maxWidth: '150px', maxHeight: '36px', objectFit: 'contain' }} /> : <span style={{ fontSize: '11.5px', color: 'var(--subtle, #a1a1aa)' }}>No logo</span>}
               </div>
               {!ro ? (
                 <label style={{ ...ghost, display: 'inline-flex', alignItems: 'center' }}>
@@ -93,14 +93,14 @@ export function ContractSettings({ workspaceId, admin, demo, isMobile }: { works
                 </label>
               ) : null}
               {!ro && c.logo ? <button type="button" onClick={() => setDraft({ ...v, company: { ...c, logo: undefined } })} style={ghost}>Remove</button> : null}
-              <span style={{ fontSize: '12px', color: '#71717a' }}>Your uploaded PDFs keep their own; this is for CLOZR’s built-in letters and offers.</span>
+              <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>Your uploaded PDFs keep their own; this is for CLOZR’s built-in letters and offers.</span>
             </div>
           </div>
           <div style={{ gridColumn: '1 / -1' }}><label style={label}>Escrow holder named on the purchase agreement</label><input value={c.escrow ?? ''} onChange={setC('escrow')} disabled={ro} placeholder={c.legal || 'Acme Holdings, LLC'} style={field} /></div>
         </div>
 
         <h3 style={{ margin: '18px 0 4px', fontSize: '13px', fontWeight: 600 }}>Brokerage on TREC and state forms</h3>
-        <p style={{ margin: '0 0 10px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.5 }}>
+        <p style={{ margin: '0 0 10px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
           The agent block those forms print. Each rep&apos;s own license number is on their profile; these are the brokerage and supervising broker every form shares.
         </p>
         <div style={grid}>
@@ -113,7 +113,7 @@ export function ContractSettings({ workspaceId, admin, demo, isMobile }: { works
         </div>
 
         <h3 style={{ margin: '18px 0 4px', fontSize: '13px', fontWeight: 600 }}>Offers</h3>
-        <p style={{ margin: '0 0 10px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.5 }}>
+        <p style={{ margin: '0 0 10px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
           Generate offer prices the number from the underwriting, fills the offer letter and mints the seller’s signing link. With auto-offer on, every COMPR run that produces a MAO generates the first offer by itself.
         </p>
         <div style={grid}>
@@ -148,7 +148,7 @@ export function ContractSettings({ workspaceId, admin, demo, isMobile }: { works
               </select>
             </div>
           )}
-          <div style={{ gridColumn: '1 / -1', fontSize: '12px', color: '#71717a', lineHeight: 1.5 }}>
+          <div style={{ gridColumn: '1 / -1', fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
             {wantPd
               ? 'PandaDoc needs a PANDADOC_API_KEY on the project to fill and send a template. Without one there is nothing to send, so an offer generated here falls back to the CLOZR letter and says so on the record. On the PandaDoc webhook subscription, tick Tokens and Fields so we store what was filled, plus each recipient’s signing link.'
               : 'The template above is filled from the record — seller, property, price, earnest money, close date — and rendered to a PDF. The seller signs on their own link with no account, and the signed PDF and its certificate land back on the record.'}
@@ -173,7 +173,7 @@ export function ContractSettings({ workspaceId, admin, demo, isMobile }: { works
           <div><label style={label}>Earnest money on the letter</label><input value={o.emd ?? ''} onChange={(e) => setO('emd', dollars(e))} disabled={ro} placeholder="500" style={field} /></div>
           <div><label style={label}>Days to close on the letter</label><input value={o.close_days ?? ''} onChange={(e) => setO('close_days', num(e))} disabled={ro} placeholder="21" style={field} /></div>
         </div>
-        {note ? <div role="status" style={{ marginTop: '10px', padding: '9px 11px', borderRadius: '9px', fontSize: '12.5px', background: note.ok ? '#dcfce7' : '#fee2e2', border: `1px solid ${note.ok ? '#bbf7d0' : '#fecaca'}`, color: note.ok ? '#15803d' : '#b91c1c' }}>{note.text}</div> : null}
+        {note ? <div role="status" style={{ marginTop: '10px', padding: '9px 11px', borderRadius: '9px', fontSize: '12.5px', background: note.ok ? 'var(--positive-soft, #dcfce7)' : 'var(--negative-soft, #fee2e2)', border: `1px solid ${note.ok ? 'var(--tint-green-3, #bbf7d0)' : 'var(--tint-red-2, #fecaca)'}`, color: note.ok ? 'var(--tx-green, #15803d)' : '#b91c1c' }}>{note.text}</div> : null}
         {!ro ? <button type="submit" disabled={busy || !draft} style={{ ...primary(busy || !draft), marginTop: '12px' }}>{busy ? 'Saving…' : 'Save contracts and offers'}</button> : null}
       </form>
       <TemplatesCard workspaceId={workspaceId} />
@@ -188,11 +188,11 @@ function TemplatesCard({ workspaceId }: { workspaceId: number | null }) {
   return (
     <div style={card}>
       <h2 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 600 }}>Templates</h2>
-      <p style={{ margin: '0 0 10px', fontSize: '12.5px', color: '#71717a', lineHeight: 1.5 }}>
+      <p style={{ margin: '0 0 10px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
         Your own documents (PDFs from PandaDoc or anywhere) are sent exactly as they look, with their logo and design; drop a whole stack in at once and each gets its fields placed and is filed by type. CLOZR’s built-in text templates stay as fallbacks, laid out under the letterhead above.
       </p>
       <button type="button" disabled={!workspaceId} onClick={() => setOpen(true)} style={primary(!workspaceId)}>Open templates</button>
-      {note ? <div role="status" style={{ marginTop: '10px', fontSize: '12.5px', color: '#15803d' }}>{note}</div> : null}
+      {note ? <div role="status" style={{ marginTop: '10px', fontSize: '12.5px', color: 'var(--tx-green, #15803d)' }}>{note}</div> : null}
       {open && workspaceId ? (
         <CenteredDialog title="Templates" onClose={() => setOpen(false)} width={1320} z={80}>
           <TemplateLibrary workspaceId={workspaceId} onToast={setNote} />

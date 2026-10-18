@@ -7,8 +7,8 @@ import { type ContractKind, type DocFolder, type LibraryTemplate, type Template,
 import { isPdfTemplate } from '@/lib/pdf-docs';
 import { CenteredDialog } from '@/components/ContractsHub';
 
-const MUTED = '#71717a';
-const LINE = '#e4e4e7';
+const MUTED = 'var(--meta, #71717a)';
+const LINE = 'var(--divider, #e4e4e7)';
 
 export function ContractTemplatePicker({ workspaceId, who, onPick, onOther, onClose }: {
   workspaceId: number; who: string;
@@ -73,21 +73,21 @@ export function ContractTemplatePicker({ workspaceId, who, onPick, onOther, onCl
     <CenteredDialog title={`New contract · ${who}`} onClose={onClose} width={640} z={85}>
       <div style={{ display: 'grid', gap: '12px' }}>
         <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search templates" aria-label="Search templates"
-          style={{ height: '36px', padding: '0 12px', border: `1px solid ${LINE}`, borderRadius: '9px', fontSize: '13px', background: '#fff', width: '100%' }} />
+          style={{ height: '36px', padding: '0 12px', border: `1px solid ${LINE}`, borderRadius: '9px', fontSize: '13px', background: 'var(--surface, #fff)', width: '100%' }} />
         {panda === null || pandaShown.length || pandaError ? (
           <div>
             <div style={{ fontSize: '11px', color: MUTED, fontWeight: 600, padding: '0 2px 6px' }}>From PandaDoc · copied into CLOZR on first use</div>
             {panda === null ? <div style={{ fontSize: '12.5px', color: MUTED }}>Loading your PandaDoc templates…</div> : null}
-            {pandaError ? <div role="alert" style={{ fontSize: '12.5px', color: '#b91c1c' }}>{pandaError}</div> : null}
+            {pandaError ? <div role="alert" style={{ fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)' }}>{pandaError}</div> : null}
             <div style={{ display: 'grid', gap: '6px' }}>
               {pandaShown.map((t) => (
                 <button key={t.id} type="button" className="dc2" disabled={!!importing} onClick={() => void importOne(t)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left', padding: '11px 12px', border: `1px solid ${LINE}`, borderRadius: '10px', background: '#fff', cursor: 'pointer', color: '#18181b' }}>
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left', padding: '11px 12px', border: `1px solid ${LINE}`, borderRadius: '10px', background: 'var(--surface, #fff)', cursor: 'pointer', color: 'var(--ink, #18181b)' }}>
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'block', fontSize: '13.5px', fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
                     <span style={{ display: 'block', fontSize: '11.5px', color: MUTED }}>{importing === t.id ? 'Copying it into CLOZR…' : 'Copy into CLOZR and use it'}</span>
                   </span>
-                  <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0A8560" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><path d="m9 18 6-6-6-6" /></svg>
+                  <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tx-mint, #0a8560)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><path d="m9 18 6-6-6-6" /></svg>
                 </button>
               ))}
             </div>
@@ -101,14 +101,14 @@ export function ContractTemplatePicker({ workspaceId, who, onPick, onOther, onCl
             <div style={{ display: 'grid', gap: '6px' }}>
               {g.ts.map((t) => (
                 <button key={t.id} type="button" className="dc2" onClick={() => onPick(t.id)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left', padding: '11px 12px', border: `1px solid ${LINE}`, borderRadius: '10px', background: '#fff', cursor: 'pointer', color: '#18181b' }}>
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left', padding: '11px 12px', border: `1px solid ${LINE}`, borderRadius: '10px', background: 'var(--surface, #fff)', cursor: 'pointer', color: 'var(--ink, #18181b)' }}>
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'block', fontSize: '13.5px', fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
                     <span style={{ display: 'block', fontSize: '11.5px', color: MUTED }}>
                       {KIND_LABELS[t.kind as ContractKind] ?? t.kind}{t.signers?.length ? ` · ${t.signers.length} signer${t.signers.length === 1 ? '' : 's'}` : ''}
                     </span>
                   </span>
-                  <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0A8560" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><path d="m9 18 6-6-6-6" /></svg>
+                  <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tx-mint, #0a8560)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><path d="m9 18 6-6-6-6" /></svg>
                 </button>
               ))}
             </div>

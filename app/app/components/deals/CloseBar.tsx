@@ -11,12 +11,12 @@ import type { CloseBadge, CloseTone } from '@/lib/close-date';
 // Text on each fill is at least 4.5:1: white on #18181b 17:1, on #b45309 5:1,
 // on #b91c1c 6.5:1; #8a3f0a on #fff6df 7:1; #0b6045 on #eaf8f1 6.9:1.
 const TONE: Record<CloseTone, { bg: string; fg: string; border?: string }> = {
-  upcoming: { bg: '#18181b', fg: '#ffffff' },
-  soon: { bg: '#fff6df', fg: '#8a3f0a', border: '#f1d58a' },
-  today: { bg: '#b45309', fg: '#ffffff' },
-  late: { bg: '#b91c1c', fg: '#ffffff' },
-  closed: { bg: '#eaf8f1', fg: '#0b6045', border: '#b4e3cd' },
-  missing: { bg: '#fffbeb', fg: '#8a3f0a', border: '#f1d58a' },
+  upcoming: { bg: 'var(--ink, #18181b)', fg: 'var(--surface, #ffffff)' },
+  soon: { bg: 'var(--warn-bg, #fff6df)', fg: '#8a3f0a', border: 'var(--warn-line, #f1d58a)' },
+  today: { bg: '#b45309', fg: 'var(--surface, #ffffff)' },
+  late: { bg: '#b91c1c', fg: 'var(--surface, #ffffff)' },
+  closed: { bg: 'var(--ok-bg, #eaf8f1)', fg: '#0b6045', border: 'var(--ok-line, #b4e3cd)' },
+  missing: { bg: 'var(--tint-amber, #fffbeb)', fg: '#8a3f0a', border: 'var(--warn-line, #f1d58a)' },
 };
 
 function CalendarIcon() {

@@ -7,7 +7,6 @@ import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { ClozrMark } from '@/components/ds/ClozrMark';
 import { supabase } from '@/lib/supabase';
 import { SIGNING_CSS } from '../sign/signing.css';
-import '../clozr/tokens.css';
 
 type NotaryView = {
   locked?: boolean;

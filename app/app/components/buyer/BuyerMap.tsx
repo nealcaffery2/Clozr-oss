@@ -24,7 +24,7 @@ import { picksOf } from '@/lib/multi-filter';
 
 type BuyerRow = ClozrView['buyerRows'][number];
 
-const OTHER = '#71717a';
+const OTHER = 'var(--meta, #71717a)';
 const REALTOR = '#0d9488';
 
 /** Colour by what they buy, as Genius does: flippers orange, landlords blue, builders teal. */
@@ -82,7 +82,7 @@ function BuyersOnMap({ rows, height, sel, setSel, aiOf }: Props) {
     }
     const order = ['Flippers', 'Landlords', 'Builders', 'Other'];
     const legend: LegendItem[] = [...kinds.entries()].sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])).map(([label, color]) => ({ label, color }));
-    if (rows.some(isVip)) legend.push({ label: 'VIP or Genius', color: '#a1a1aa', ring: true });
+    if (rows.some(isVip)) legend.push({ label: 'VIP or Genius', color: 'var(--subtle, #a1a1aa)', ring: true });
     return { pins: fanOut(out), unplaced, onMap, legend };
   }, [rows, idx]);
 
@@ -102,11 +102,11 @@ function BuyersOnMap({ rows, height, sel, setSel, aiOf }: Props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
           <Ring value={n} color={t.color} size={40} label={t.label} />
           <span style={{ minWidth: 0 }}>
-            <span style={{ display: 'block', fontWeight: 650, fontSize: '13px', color: '#18181b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.company || b.name}</span>
-            <span style={{ display: 'block', fontSize: '11.5px', color: '#71717a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name} · {b.status}</span>
+            <span style={{ display: 'block', fontWeight: 650, fontSize: '13px', color: 'var(--ink, #18181b)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.company || b.name}</span>
+            <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name} · {b.status}</span>
           </span>
         </div>
-        <div style={{ fontSize: '11.5px', color: '#3f3f46', lineHeight: 1.45 }}>
+        <div style={{ fontSize: '11.5px', color: 'var(--ink-3, #3f3f46)', lineHeight: 1.45 }}>
           {b.markets || 'No market'}{b.price ? ` · ${b.price}` : ''}{b.exit ? ` · ${b.exit}` : ''}
         </div>
         <div style={{ display: 'flex', gap: '6px' }}>
@@ -185,8 +185,8 @@ function RealtorMap({ V, height, picks, setPicks, onList }: Props) {
     return (
       <div style={{ display: 'grid', gap: '8px', paddingRight: '18px' }}>
         <div>
-          <div style={{ fontWeight: 650, fontSize: '13px', color: '#18181b' }}>{key}</div>
-          <div style={{ fontSize: '11.5px', color: '#71717a' }}>{m.count.toLocaleString('en-US')} realtors in this market{on ? ' · selected' : ''}</div>
+          <div style={{ fontWeight: 650, fontSize: '13px', color: 'var(--ink, #18181b)' }}>{key}</div>
+          <div style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>{m.count.toLocaleString('en-US')} realtors in this market{on ? ' · selected' : ''}</div>
         </div>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           {on

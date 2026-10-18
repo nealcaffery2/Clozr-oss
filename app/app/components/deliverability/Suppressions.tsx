@@ -66,12 +66,12 @@ export function Suppressions({ workspaceId, rows, admin, onChange }: { workspace
           <div key={s.id} style={{ ...row, padding: '7px 0', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '12.5px' }}>
             <span style={{ fontWeight: 500, overflowWrap: 'anywhere', minWidth: 0 }}>{textValue(s.email)}</span>
             <Badge tone={s.reason === 'manual' ? 'muted' : 'bad'}>{REASON[s.reason]}</Badge>
-            <span style={{ color: '#71717a', fontSize: '11.5px', flex: 1, minWidth: 0 }}>{textValue(s.note) ? `${textValue(s.note)} · ` : ''}{new Date(s.created_at).toLocaleDateString()}</span>
+            <span style={{ color: 'var(--meta, #71717a)', fontSize: '11.5px', flex: 1, minWidth: 0 }}>{textValue(s.note) ? `${textValue(s.note)} · ` : ''}{new Date(s.created_at).toLocaleDateString()}</span>
             {admin && <button type="button" style={{ ...ghost, height: '26px', fontSize: '11.5px' }} onClick={() => void remove(s)}>Remove</button>}
           </div>
         ))}
-        {rows.length === 0 && <p style={{ fontSize: '12.5px', color: '#71717a', margin: '6px 0 0' }}>Nobody on the list yet. Bounces and unsubscribes are added here by themselves.</p>}
-        {rows.length > 0 && shown.length === 0 && <p style={{ fontSize: '12.5px', color: '#71717a', margin: '6px 0 0' }}>No address matches {filter}.</p>}
+        {rows.length === 0 && <p style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)', margin: '6px 0 0' }}>Nobody on the list yet. Bounces and unsubscribes are added here by themselves.</p>}
+        {rows.length > 0 && shown.length === 0 && <p style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)', margin: '6px 0 0' }}>No address matches {filter}.</p>}
       </div>
       <Note note={note} />
     </Section>

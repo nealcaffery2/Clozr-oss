@@ -76,43 +76,6 @@ export function Card({
   );
 }
 
-/** Round avatar with initials — the roster's identity mark throughout. */
-export function Avatar({
-  name,
-  size = 30,
-  dark = false,
-}: {
-  name: string;
-  size?: number;
-  dark?: boolean;
-}) {
-  return (
-    <span
-      className="inline-flex shrink-0 items-center justify-center rounded-full"
-      style={{
-        width: size,
-        height: size,
-        background: dark ? 'var(--dark-2)' : 'var(--panel-2)',
-        color: dark ? '#fff' : 'var(--muted)',
-        font: `600 ${Math.round(size * 0.37)}px/1 var(--sans)`,
-      }}
-      aria-hidden
-    >
-      {initials(name)}
-    </span>
-  );
-}
-
-/** Up to two initials, skipping tokens that do not start with a letter. */
-export function initials(name: string): string {
-  return name
-    .split(' ')
-    .filter((w) => w.length > 0 && /[A-Za-z]/.test(w[0]!))
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join('');
-}
-
 export type ButtonTone = 'accent' | 'dark' | 'ghost' | 'green' | 'red' | 'quiet';
 
 const TONES: Record<ButtonTone, CSSProperties> = {
@@ -213,7 +176,7 @@ export function Toggle({
           width: 18,
           height: 18,
           borderRadius: '50%',
-          background: '#fff',
+          background: 'var(--surface, #fff)',
           transition: 'left .16s cubic-bezier(.22,1,.36,1)',
         }}
       />

@@ -1,19 +1,20 @@
 'use client';
 
 // The right rail under Next action: the seller's action-plan enrollment
-// (start, open, stop) and the dark "CLOZR AI · recommended" card.
+// (start, open, stop) and the light "Suggested next stage" card.
 
 import React, { useEffect, useState } from 'react';
 import type { ClozrView } from '@/app/clozr/view';
 import { aiAgentApi, whenLabel, type RecordStatus } from '@/lib/ai-agent-client';
 import { RecordTextSequence } from '@/app/components/sequences/TextSequences';
+import { eyebrow } from './ui';
 
 export function RecordActionPlans({ V }: { V: ClozrView }) {
   const plan = V.personPlan;
   return (
     <div style={{ marginTop: '10px' }} data-testid="record-action-plans">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: '11.5px', color: '#71717a', fontWeight: 600 }}>
+        <span style={eyebrow}>
           Action plans
         </span>
         <button
@@ -107,26 +108,22 @@ export function AiRecommended({ V }: { V: ClozrView }) {
   if (!V.showAi || !V.aiStage?.stage) return null;
   const pick = V.aiStage;
   return (
-    <div data-testid="clozr-ai" style={{ marginTop: '12px', borderRadius: '10px', padding: '12px', background: '#141419', color: '#fff', position: 'relative', overflow: 'hidden' }}>
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'radial-gradient(120% 90% at 90% -10%, rgba(45,91,255,0.34), transparent 58%)' }} />
-      <div style={{ position: 'relative' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: '11.5px', color: 'rgba(255,255,255,.6)', fontWeight: 600 }}>
-            CLOZR AI · recommended
-          </span>
-          <span style={{ width: '6px', height: '6px', borderRadius: '999px', background: '#2d5bff', animation: 'clozrPulse 2.4s infinite' }} />
-        </div>
-        <div style={{ fontSize: '13px', lineHeight: 1.5, marginTop: '8px', color: 'rgba(255,255,255,.92)' }}>
-          {pick.reason}
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
-          <button type="button" className="dc3 rec-press" onClick={() => pick.go(pick.stage!)} style={{ height: '28px', padding: '0 12px', borderRadius: '7px', border: 0, background: '#2d5bff', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
-            {pick.stage}
-          </button>
-          <button type="button" className="rec-press" onClick={V.callPerson} style={{ height: '28px', padding: '0 12px', borderRadius: '7px', border: '1px solid rgba(255,255,255,.2)', background: 'transparent', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
-            Call now
-          </button>
-        </div>
+    // Light, like every card on the record: the dark card with a blue glow
+    // and a pulsing dot was a second accent (DESIGN.md §1).
+    <div data-testid="clozr-ai" style={{ borderRadius: '12px', padding: '12px 14px', background: '#fff', border: '1px solid #e4e4e7', color: '#18181b' }}>
+      <span style={eyebrow}>
+        Suggested next stage
+      </span>
+      <div style={{ fontSize: '13px', lineHeight: 1.5, marginTop: '6px', color: '#27272a' }}>
+        {pick.reason}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+        <button type="button" className="dc3 rec-press rec-primary" onClick={() => pick.go(pick.stage!)} title={`Move to ${pick.stage}`} style={{ height: '28px', padding: '0 12px', borderRadius: '8px', border: 0, background: '#0A8560', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+          Move to {pick.stage}
+        </button>
+        <button type="button" className="rec-press rec-ghost" onClick={V.callPerson} style={{ height: '28px', padding: '0 12px', borderRadius: '8px', border: 0, background: '#fff', color: '#18181b', fontSize: '12px', fontWeight: 600, cursor: 'pointer', boxShadow: 'var(--shadow-ring)' }}>
+          Call now
+        </button>
       </div>
     </div>
   );

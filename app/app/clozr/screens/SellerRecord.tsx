@@ -1,10 +1,18 @@
-// The seller record, as a composition of app/components/record/*.
+// The seller record, as a composition of app/components/record/*. Two
+// layouts: the classic three-column record (SellerRecordClassic.tsx, the
+// default) and the deal page below, which Settings › Try new design turns on.
 //
-// Desktop: a header toolbar (Call, Text, Email, More ▾); on the left who they
-// are, the stage, the property and what we know; in the middle one activity
-// stream and one composer; on the right Next action, tasks, the CLOZR AI card
-// and the offer. Everything else lives behind More ▾ in the Record details
-// sheet. Phone: one column with the composer docked above the tab bar.
+// Desktop, the deal page: a header toolbar (AI agent, Deal sheet, TC, Call,
+// Text, Email, More); the seller's name; a strip of key numbers; then two
+// columns. The wide one is the record's tabs (record-tabs.ts): the activity
+// feeds (Activity, Calls, Texts, Email, Notes) with the composer pinned to the
+// bottom of the screen, then Automations, History, Details (the house, who
+// works the deal, What we know) and Submission when the record came in as
+// one. The narrow one has Deal info (stage, Next action, how the offer went),
+// the photo, COMPR, the underwriting and the offer, then files, the deal team
+// and contracts. Everything else lives behind More in the Record details
+// sheet. Text and Email in the header open the floating quick box. Phone: one
+// column, the same tabs, the composer docked above the tab bar.
 //
 // Single keys, only on this screen and never while typing or with a sheet,
 // menu or dialog up: C call, T text, E email, O make offer, S move stage.
@@ -21,175 +29,40 @@ import { BlacklistButton } from '@/components/BlacklistButton';
 import { useSession } from '@/lib/session';
 import { NextActionCard } from '@/app/components/record/NextActionCard';
 import { RecordHeader } from '@/app/components/record/RecordHeader';
-import { Identity, PropertyCard } from '@/app/components/record/PropertyCard';
+import { openMeetingInvite } from '@/app/components/meeting/MeetingInvite';
+import { EditableName, PropertyCard } from '@/app/components/record/PropertyCard';
+import { TypeChip } from '@/components/TypeChip';
+import { KeyNumbers } from '@/app/components/record/DealOverview';
 import { StageCard } from '@/app/components/record/StageCard';
 import { OutcomeBar } from '@/app/components/record/OutcomeBar';
-import { WhatWeKnow } from '@/app/components/record/WhatWeKnow';
-import { ActivityChips, ActivityStream } from '@/app/components/record/ActivityStream';
+import { ActivityStream, RecordTabs } from '@/app/components/record/ActivityStream';
+import { AutomationsPanel, DetailsPanel, HistoryPanel, SubmissionPanel } from '@/app/components/record/RecordTabPanels';
+import { recordTabs, resolveRecordTab, TAB_TO_SECTION, tabOf, type RecordTabKey } from '@/app/components/record/record-tabs';
+import { Icon } from '@/app/components/talkr/Icon';
 import { Composer } from '@/app/components/record/Composer';
 import { OfferSheet } from '@/app/components/record/OfferSheet';
 import { RecordDetailsSheet, SECTION_LABELS, type SectionKey } from '@/app/components/record/RecordDetailsSheet';
-import { RecordActionPlans, AiRecommended } from '@/app/components/record/RailCards';
-import { ContractsCard } from '@/components/ContractsCard';
+import { AiRecommended } from '@/app/components/record/RailCards';
 import { ContractTemplatePicker } from '@/components/ContractTemplatePicker';
-import { DealTeam } from '@/components/DealTeam';
-import { DealFiles } from '@/components/DealFiles';
-import { InteractiveFolderGallery } from '@/components/ui/interactive-folder-gallery';
-import { eyebrow } from '@/app/components/record/ui';
+import { ContractsBlock, DealTeamBlock, FilesBlock, MORE_GROUPS } from '@/app/components/record/RecordBlocks';
+import { SellerRecordClassic } from './SellerRecordClassic';
 import type { MoreItem } from '@/app/components/record/MoreMenu';
 import { BulkSkipTrace } from '@/components/BulkSkipTrace';
 import { CenteredDialog } from '@/components/ContractsHub';
 import { shortcutAllowed } from '@/app/components/record/record-logic';
 import { isArchiveKey, isTypingTarget, peopleNavAction, recordNavBlocked } from '@/lib/people-keys';
-import { useRailPrefs } from '@/app/components/record/useRailPrefs';
 import '@/app/components/record/record.css';
 import { DEAL_SHEET_BTN } from '@/app/components/record/deal-sheet-style';
 
-const MORE_GROUPS: { group: string; keys: SectionKey[] }[] = [
-  { group: 'Deal', keys: ['contracts', 'team', 'deals'] },
-  { group: 'Follow-up', keys: ['plan', 'appointments', 'tags'] },
-  { group: 'Property', keys: ['records', 'files', 'sellers'] },
-];
-/** Old tab names another screen may still hand over, and where they live now. */
-const TAB_TO_SECTION: Record<string, SectionKey> = { TC: 'closing', 'Files & Links': 'files' };
-const CHIP_TABS = ['Activity', 'Calls', 'Texts', 'Emails', 'Notes'];
-
-function DealTeamBlock({ V }: { V: ClozrView }) {
-  const live = V.liveIds;
-  return (
-    <div style={{ marginTop: '16px' }}>
-      {live?.sellerId != null ? (
-        <DealTeam bare sellerId={live.sellerId} dealId={live.dealId} onCall={V.callParty} onOpenSeller={(id) => V.openPerson('s' + id)} onOpenBuyer={(id) => V.openBuyerRecord('b' + id)} onOpenVendor={V.openVendorContact} onChanged={V.reloadCrm} />
-      ) : (
-        <>
-          <div style={eyebrow}>Deal team</div>
-          <div style={{ marginTop: '6px', fontSize: '12.5px', color: '#71717a' }}>Title, agents and the rest of the team show here on a signed-in deal.</div>
-        </>
-      )}
-    </div>
-  );
-}
-
 /**
- * The record's contracts: "New contract" lists the templates only; picking one
- * opens the contract full size on that template, filled from this record.
- * "Open contracts full size" opens the same view with nothing picked.
+ * The seller record. Settings › Try new design picks the layout, per user:
+ * off (the default) is the classic three-column record, on is the deal page.
  */
-function ContractsBlock({ V }: { V: ClozrView }) {
-  const live = V.liveIds;
-  const [picking, setPicking] = useState(false);
-  // undefined: closed; null: open, nothing picked; a number: open on that template.
-  const [full, setFull] = useState<number | null | undefined>(undefined);
-  if (live?.sellerId == null) {
-    return (
-      <div style={{ marginTop: '16px', fontSize: '12.5px', color: '#71717a', padding: '10px 12px', border: '1px dashed #e4e4e7', borderRadius: '9px' }}>
-        Contracts fill from this record once you are signed in.
-      </div>
-    );
-  }
-  const seller = { id: live.sellerId, name: V.P.name, email: V.P.email || '', phone: V.P.phone || '', addr: V.P.addr, dealId: live.dealId };
-  return (
-    <div style={{ marginTop: '16px' }} data-testid="record-contracts">
-      <button type="button" className="dc2" onClick={() => setFull(null)} style={{ display: 'block', marginLeft: 'auto', marginBottom: '6px', height: '26px', padding: '0 10px', borderRadius: '7px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '11.5px', fontWeight: 600, color: '#0A8560', cursor: 'pointer' }}>
-        Open contracts full size
-      </button>
-      <ContractsCard
-        compact
-        workspaceId={live.workspaceId}
-        sellerId={live.sellerId}
-        dealId={live.dealId}
-        seller={{ name: V.P.name, email: V.P.email, phone: V.P.phone }}
-        canWrite={live.canWrite}
-        onToast={V.showToast}
-        onChanged={V.reloadCrm}
-        onNewContract={() => setPicking(true)}
-      />
-      {picking && live.workspaceId ? (
-        <ContractTemplatePicker
-          workspaceId={live.workspaceId}
-          who={V.P.name}
-          onPick={(id) => { setPicking(false); setFull(id); }}
-          onOther={() => { setPicking(false); setFull(-1); }}
-          onClose={() => setPicking(false)}
-        />
-      ) : null}
-      {full !== undefined ? (
-        <ContractPopup
-          key={full ?? 'all'}
-          V={V}
-          target={{ sellerId: live.sellerId, dealId: live.dealId, buyerId: null, title: `Contracts · ${V.P.name}`, seller }}
-          startTemplateId={full}
-          onClose={() => setFull(undefined)}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function FilesBlock({ V, compact }: { V: ClozrView; compact?: boolean }) {
-  const live = V.liveIds;
-  // The house the Property card shows (V.P.dealDbId), so its photos and files sit together.
-  const dealId = V.P.dealDbId ?? live?.dealId ?? null;
-  return (
-    <div style={{ marginTop: compact ? '10px' : '16px' }} data-testid="record-photos-files">
-      <div style={{ ...eyebrow, marginBottom: '8px' }}>Photos and files</div>
-      {live && dealId != null ? (
-        <DealFiles
-          key={dealId}
-          workspaceId={live.workspaceId}
-          dealId={dealId}
-          canWrite={live.canWrite}
-          onToast={V.showToast}
-          onOpenPhotos={(title, urls, start) => V.openPhotoShow(title, urls, dealId, start)}
-          fallbackPhotos={V.P.photos.length ? V.P.photos : [V.P.streetSafe].filter(Boolean)}
-        />
-      ) : (
-        <>
-          {V.P.photos.length ? (
-            <div style={{ marginBottom: '8px', padding: '6px 0', display: 'flex', justifyContent: 'center', background: 'transparent' }}>
-              <InteractiveFolderGallery
-                size="sm"
-                photos={V.P.photos.map((u, i) => ({ id: i, image: u, label: i === 0 ? 'Front' : undefined }))}
-                folderName={`${V.P.photos.length} photo${V.P.photos.length === 1 ? '' : 's'}`}
-                dragHintText="Tap a photo to view · drag down to close"
-                onPhotoClick={(i) => V.openPhotoShow(V.P.addr, V.P.photos, null, i)}
-              />
-            </div>
-          ) : null}
-          <div style={{ fontSize: '12.5px', color: '#71717a', padding: '10px 12px', border: '1px dashed #e4e4e7', borderRadius: '9px' }}>
-            Photos, docs and links attach to a deal, so they sit here once this record has one.
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function Disclosure({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <details style={{ border: '1px solid #e4e4e7', borderRadius: '10px', background: '#fff' }}>
-      <summary style={{ minHeight: '44px', display: 'flex', alignItems: 'center', padding: '0 12px', cursor: 'pointer', fontSize: '11px', color: '#71717a', fontWeight: 600 }}>
-        {title}
-      </summary>
-      <div style={{ padding: '0 12px 12px' }}>{children}</div>
-    </details>
-  );
-}
-
-function RailToggle({ side, open, onToggle }: { side: 'left' | 'right'; open: boolean; onToggle: () => void }) {
-  const label = side === 'left' ? (open ? 'Collapse left column' : 'Expand left column') : (open ? 'Collapse right column' : 'Expand right column');
-  return (
-    <button type="button" className={`rec-rail-toggle rec-rail-toggle-${side} rec-press`} data-testid={`rail-toggle-${side}`} aria-label={label} title={label} onClick={onToggle}>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-        {side === 'left'
-          ? (open ? <path d="M15 18 9 12l6-6" /> : <path d="m9 18 6-6-6-6" />)
-          : (open ? <path d="m9 18 6-6-6-6" /> : <path d="M15 18 9 12l6-6" />)}
-      </svg>
-    </button>
-  );
-}
-
 export function SellerRecord({ V }: { V: ClozrView }) {
+  return V.newDesign ? <SellerRecordNew V={V} /> : <SellerRecordClassic V={V} />;
+}
+
+function SellerRecordNew({ V }: { V: ClozrView }) {
   const me = useSession().user?.id ?? null;
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const stageRef = useRef<HTMLSelectElement | null>(null);
@@ -202,28 +75,33 @@ export function SellerRecord({ V }: { V: ClozrView }) {
   // false: closed; null: open, nothing picked; a number: open on that template (-1 for "other").
   const [contractsPop, setContractsPop] = useState<number | null | false>(false);
   const [pickingContract, setPickingContract] = useState(false);
-  const { prefs: rails, toggle: toggleRail, stretch } = useRailPrefs();
-  const [wide, setWide] = useState<'left' | 'right' | null>(null);
 
   // Pick a composer channel and put the cursor in it. Instant: used all day.
   const pick = useCallback((ch: 'Text' | 'Email' | 'Note') => {
     if (ch === 'Text') { V.openQuickReach('text'); return; }
     if (ch === 'Email') { V.openQuickReach('email'); return; }
+    if (!tabOf(resolveRecordTab(V.personTab, !!V.recordSubmission)).composer) V.setPersonTab('Activity');
     V.composerTabs.find((t) => t.label === ch)?.go();
     requestAnimationFrame(() => requestAnimationFrame(() => inputRef.current?.focus()));
   }, [V]);
 
   // A screen that still names an old tab (the TC screen, Lane) lands on the
-  // record with the matching section open; anything else shows All.
+  // record with the matching section open; any other name lands on the tab
+  // that holds it now (record-tabs.ts), and an unknown one on Activity.
   const [seenTab, setSeenTab] = useState<string | null>(null);
   if (V.personTab !== seenTab) {
     setSeenTab(V.personTab);
-    const sec = TAB_TO_SECTION[V.personTab];
+    const sec: SectionKey | undefined = TAB_TO_SECTION[V.personTab];
     if (sec && (sec !== 'closing' || V.hasTcFile)) setDetails(sec);
   }
-  const oldTab = !CHIP_TABS.includes(V.personTab);
+  const hasSubmission = !!V.recordSubmission;
+  const tabs = recordTabs(hasSubmission);
+  const tab: RecordTabKey = resolveRecordTab(V.personTab, hasSubmission);
+  const tabInfo = tabOf(tab);
   const setPersonTab = V.setPersonTab;
-  useEffect(() => { if (oldTab) setPersonTab('Activity'); }, [oldTab, setPersonTab]);
+  const needsFix = tab !== V.personTab;
+  useEffect(() => { if (needsFix) setPersonTab(tab); }, [needsFix, tab, setPersonTab]);
+  const pickTab = useCallback((k: RecordTabKey) => setPersonTab(k), [setPersonTab]);
 
   // The single-letter keys. Bubble phase on window, so the shell's capture
   // handler (⌘K, Escape) and anything that handles the key first win.
@@ -296,25 +174,44 @@ export function SellerRecord({ V }: { V: ClozrView }) {
 
   const sub = V.submissionFocus;
   const subKey = sub ? `${sub.partner}|${sub.addr}` : null;
-  // A small card at the top of the left rail (in the stack on mobile), not a band across the record.
+  // One line over the name (in the stack on mobile): whose submission this
+  // is, with the way to its details, its deal sheet and the partner's others.
   const subNote = sub && subKey !== subClosed ? (
-    <div role="status" style={{ position: 'relative', margin: '0 0 12px', padding: '8px 28px 8px 10px', borderRadius: '8px', background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: '12px', lineHeight: 1.35, color: '#1e3a8a' }}>
-      <button type="button" className="dc2" aria-label="Close submission note" title="Close" onClick={() => setSubClosed(subKey)}
-        style={{ position: 'absolute', top: '4px', right: '4px', width: '20px', height: '20px', padding: 0, border: 0, borderRadius: '5px', background: 'transparent', color: '#1e3a8a', fontSize: '14px', lineHeight: '20px', cursor: 'pointer' }}>
-        ×
-      </button>
-      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${sub.partner} submission · ${sub.addr}`}>
-        <strong>{sub.partner}</strong> submission
-      </div>
-      <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
-        <button type="button" className="dc2" onClick={sub.openDealSheet} style={{ ...DEAL_SHEET_BTN, height: '26px', padding: '0 10px', fontSize: '12px' }}>Deal sheet</button>
-        <button type="button" className="dc2" onClick={sub.showAll} style={{ height: '26px', padding: '0 8px', borderRadius: '7px', border: '1px solid #bfdbfe', background: '#fff', fontSize: '12px', fontWeight: 600, color: '#1d4ed8', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-          All{sub.others ? ` (+${sub.others})` : ''}
+    <div role="status" className="rec2-subnote">
+      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${sub.partner} submission · ${sub.addr}`}>
+        <strong style={{ color: 'var(--ink, #18181b)' }}>{sub.partner}</strong> submission
+      </span>
+      <span style={{ display: 'flex', gap: '6px', alignItems: 'center', flex: 'none', flexWrap: 'wrap' }}>
+        {tab !== 'Submission' ? <button type="button" className="rec2-chip rec-press" onClick={() => pickTab('Submission')}>Submission details</button> : null}
+        <button type="button" className="rec2-chip rec-press" onClick={sub.showAll}>All{sub.others ? ` (+${sub.others})` : ''}</button>
+        <button type="button" className="dc2 rec-press" onClick={sub.openDealSheet} style={{ ...DEAL_SHEET_BTN, height: '28px', padding: '0 10px', fontSize: '12px' }}>Deal sheet</button>
+        <button type="button" className="rec2-icon rec-press" aria-label="Close submission note" title="Close" onClick={() => setSubClosed(subKey)}>
+          <Icon name="x" size={14} />
         </button>
-      </div>
+      </span>
     </div>
   ) : null;
-  const header = <RecordHeader V={V} onText={() => pick('Text')} onEmail={() => pick('Email')} moreItems={moreItems} showBack={!rails.left} />;
+  const meet = () => openMeetingInvite({
+    name: V.P.name, email: V.P.email.includes('@') ? V.P.email : '', phone: V.P.phone && V.P.phone !== '—' ? V.P.phone : '',
+    sellerId: V.liveIds?.sellerId ?? null, address: V.P.addr !== '—' ? V.P.addr : null, typeKey: 'walkthrough',
+  });
+  const header = <RecordHeader V={V} onText={() => pick('Text')} onEmail={() => pick('Email')} onMeet={meet} moreItems={moreItems} showBack={false} />;
+  const tabRow = <RecordTabs V={V} tabs={tabs} current={tab} onPick={pickTab} idBase="rec-tabs" />;
+  const panel = tab === 'Automations' ? <AutomationsPanel V={V} me={me} />
+    : tab === 'History' ? <HistoryPanel V={V} me={me} />
+      : tab === 'Details' ? <DetailsPanel V={V} hasSubmission={hasSubmission} />
+        : tab === 'Submission' ? <SubmissionPanel V={V} />
+          : <ActivityStream V={V} me={me} />;
+  const panelProps = { role: 'tabpanel', id: 'rec-tabs-panel', 'aria-labelledby': `rec-tabs-tab-${tab}`, 'data-panel': tab } as const;
+  const archiveRow = (
+    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+      <button type="button" className="dc2" data-testid="record-archive" title="Archive this record (Shift+Delete). Asks first; nothing is deleted." onClick={() => V.archiveOpenRecord('seller')}
+        style={{ height: 32, padding: '0 12px', borderRadius: 8, border: '1px solid var(--line, #d4d4d8)', background: 'var(--surface, #fff)', color: 'var(--ink-3, #3f3f46)', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        Archive
+      </button>
+      <BlacklistButton count={1} names={[V.P.name]} onConfirm={V.blacklistPerson} />
+    </div>
+  );
   const overlays = (
     <>
       {V.offerSheetOpen ? <OfferSheet V={V} /> : null}
@@ -351,7 +248,7 @@ export function SellerRecord({ V }: { V: ClozrView }) {
     return (
       <section data-screen-label="Seller record" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
         {header}
-        <div data-record-scroll style={{ flex: 1, minHeight: 0, overflow: 'auto', background: '#fafafa' }}>
+        <div data-record-scroll style={{ flex: 1, minHeight: 0, overflow: 'auto', background: 'var(--canvas, #fafafa)' }}>
           <div style={{ display: 'grid', gap: '10px', padding: '12px' }}>
             {subNote}
             <NextActionCard V={V} />
@@ -360,27 +257,16 @@ export function SellerRecord({ V }: { V: ClozrView }) {
             <AiRecommended V={V} />
             <StageCard V={V} selectRef={stageRef} />
             <PropertyCard V={V} />
-            <Disclosure title="What we know">
-              <Identity V={V} compact />
-              <div style={{ marginTop: '8px' }}><WhatWeKnow V={V} bare /></div>
-            </Disclosure>
-            <div><RecordActionPlans V={V} /></div>
             <DealTeamBlock V={V} />
             <ContractsBlock V={V} />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button type="button" className="dc2" data-testid="record-archive" title="Archive this record (Shift+Delete). Asks first; nothing is deleted." onClick={() => V.archiveOpenRecord('seller')}
-                style={{ height: 32, padding: '0 12px', borderRadius: 8, border: '1px solid #d4d4d8', background: '#fff', color: '#3f3f46', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                Archive
-              </button>
-              <BlacklistButton count={1} names={[V.P.name]} onConfirm={V.blacklistPerson} />
-            </div>
+            {archiveRow}
           </div>
-          <ActivityChips V={V} />
-          <div style={{ padding: '12px' }}>
-            <ActivityStream V={V} me={me} />
+          {tabRow}
+          <div {...panelProps} className={'rec2-phone-panel' + (tabInfo.composer ? '' : ' rec2-phone-sheet')}>
+            {panel}
           </div>
         </div>
-        <Composer V={V} inputRef={inputRef} docked />
+        {tabInfo.composer ? <Composer V={V} inputRef={inputRef} docked /> : null}
         {overlays}
       </section>
     );
@@ -391,67 +277,61 @@ export function SellerRecord({ V }: { V: ClozrView }) {
   const listLabel = V.recordBack.fromList
     ? (V.recordListPos ? `${V.peopleList} · ${V.recordListPos}` : V.peopleList)
     : V.recordBack.label;
-  const frameClass = [
-    'rec-frame',
-    rails.left ? '' : 'rec-left-collapsed',
-    rails.right ? '' : 'rec-right-collapsed',
-    wide === 'left' ? 'rec-left-wide' : '',
-    wide === 'right' ? 'rec-right-wide' : '',
-  ].filter(Boolean).join(' ');
+  // The deal page: the header, the numbers across the top, then two columns.
+  // The wide one is the record's tabs, the activity first; the narrow one
+  // holds Deal info, the photos, COMPR and the underwriting, the deal team and
+  // the paperwork. Each column scrolls with the page.
   return (
     <section data-screen-label="Seller record" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-      <div className={frameClass}>
-        <aside className={`rec-rail rec-rail-left${rails.left ? '' : ' rec-rail-collapsed'}`}>
-          {rails.left ? (
-            <>
-              <span className="rec-head-back" data-testid="record-smart-list"><BackLink to={{ ...V.recordBack, label: listLabel }} /></span>
-              {subNote}
-              <Identity V={V} />
-              <div style={{ marginTop: '14px' }}><StageCard V={V} selectRef={stageRef} /></div>
-              <div style={{ marginTop: '14px' }}><PropertyCard V={V} /></div>
-              <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <button type="button" className="dc2" data-testid="record-archive" title="Archive this record (Shift+Delete). Asks first; nothing is deleted." onClick={() => V.archiveOpenRecord('seller')}
-                  style={{ height: 32, padding: '0 12px', borderRadius: 8, border: '1px solid #d4d4d8', background: '#fff', color: '#3f3f46', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                  Archive
-                </button>
-                <BlacklistButton count={1} names={[V.P.name]} onConfirm={V.blacklistPerson} />
+      <div className="rec2">
+        <div className="rec2-head">{header}</div>
+        <div className="rec2-scroll" data-record-scroll>
+          <div className="rec2-top">
+            <span className="rec-head-back" data-testid="record-smart-list"><BackLink to={{ ...V.recordBack, label: listLabel }} /></span>
+            {subNote}
+            {/* Who this is, as the page's heading: avatar, click-to-rename name, type and market. */}
+            <div className="rec2-who">
+              <span aria-hidden className="rec2-initials">{V.P.initials}</span>
+              <div style={{ minWidth: 0 }}>
+                <EditableName V={V} style={{ margin: 0, fontSize: '18px', fontWeight: 700, letterSpacing: '-0.02em' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', fontSize: '12px', color: 'var(--meta, #71717a)' }}>
+                  <TypeChip kind="Seller" />
+                  {V.P.market}
+                </div>
               </div>
-            </>
-          ) : null}
-        </aside>
-        <RailToggle side="left" open={rails.left} onToggle={() => { setWide(null); toggleRail('left'); }} />
-        <button type="button" className="rec-split rec-split-left" aria-label="Resize left column. Double-click to stretch."
-          title="Double-click to stretch / expand"
-          onDoubleClick={() => { setWide((w) => (w === 'left' ? null : 'left')); stretch('left'); }} />
-        {header}
-        <div className="rec-main">
-          <ActivityChips V={V} />
-          <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '16px 20px' }}>
-            <ActivityStream V={V} me={me} />
+            </div>
           </div>
-          <Composer V={V} inputRef={inputRef} />
-        </div>
-        <button type="button" className="rec-split rec-split-right" aria-label="Resize right column. Double-click to stretch."
-          title="Double-click to stretch / expand"
-          onDoubleClick={() => { setWide((w) => (w === 'right' ? null : 'right')); stretch('right'); }} />
-        <aside className={`rec-rail rec-rail-right${rails.right ? '' : ' rec-rail-collapsed'}`}>
-          {rails.right ? (
-            <>
-              <NextActionCard V={V} />
-              <div style={{ marginTop: '10px' }}><OutcomeBar V={V} /></div>
-              <FilesBlock V={V} compact />
+          <KeyNumbers V={V} />
+          <div className="rec2-grid">
+            <div className="rec2-main">
+              <section aria-label="Activity and record" className="rec2-card rec2-feed">
+                {tabRow}
+                <div {...panelProps} className={tabInfo.stream && tab !== 'Automations' && tab !== 'History' ? 'rec2-feed-scroll' : 'rec2-tab-body'}>
+                  {panel}
+                </div>
+                {tabInfo.composer ? <div className="rec2-composer"><Composer V={V} inputRef={inputRef} /></div> : null}
+              </section>
+            </div>
+            <aside className="rec2-side" aria-label="Deal info, photos, underwriting and the deal team">
+              {/* What has to stay in view whichever tab is open: the stage, the next action, how the offer went. */}
+              <section aria-labelledby="rec2-deal-title" className="rec2-stack" data-testid="deal-info">
+                <div className="rec2-stack-head">
+                  <h2 id="rec2-deal-title" className="rec2-title">Deal info</h2>
+                  {tab !== 'Details' ? <button type="button" className="rec2-link rec-press" onClick={() => pickTab('Details')}>Who works it</button> : null}
+                </div>
+                <StageCard V={V} selectRef={stageRef} />
+                <NextActionCard V={V} compact />
+                <OutcomeBar V={V} />
+              </section>
+              <PropertyCard V={V} side />
+              <div className="rec2-card rec2-block"><FilesBlock V={V} compact /></div>
+              <div className="rec2-card rec2-block"><DealTeamBlock V={V} /></div>
+              <div className="rec2-card rec2-block"><ContractsBlock V={V} /></div>
               <AiRecommended V={V} />
-              <div style={{ marginTop: '10px' }}><WhatWeKnow V={V} /></div>
-              <details style={{ marginTop: '10px' }}>
-                <summary style={{ cursor: 'pointer', fontSize: '11.5px', color: '#71717a', fontWeight: 600 }}>Tasks & plans</summary>
-                <RecordActionPlans V={V} />
-              </details>
-              <DealTeamBlock V={V} />
-              <ContractsBlock V={V} />
-            </>
-          ) : null}
-        </aside>
-        <RailToggle side="right" open={rails.right} onToggle={() => { setWide(null); toggleRail('right'); }} />
+              {archiveRow}
+            </aside>
+          </div>
+        </div>
       </div>
       {overlays}
     </section>

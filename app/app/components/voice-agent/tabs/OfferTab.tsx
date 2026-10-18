@@ -29,7 +29,7 @@ export function OfferTab({ form, canEdit }: TabCtx) {
             { id: 'range_only', label: 'Inside a range', hint: 'It may state a price inside the approved range.' },
             { id: 'range_with_approval', label: 'Range, a rep approves', hint: 'It may state a price inside the range, and a rep confirms and sends the agreement.' },
           ]} />
-        {errors['offer_authority.mode'] ? <p role="alert" style={{ margin: '8px 0 0', fontSize: 12, color: '#b91c1c' }}>{errors['offer_authority.mode']}</p> : null}
+        {errors['offer_authority.mode'] ? <p role="alert" style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--tx-red, #b91c1c)' }}>{errors['offer_authority.mode']}</p> : null}
         {!quoting ? <p style={{ margin: '10px 0 0', fontSize: 12.5, color: MUTED, lineHeight: 1.5 }}>The agent will say the team works out the number with them. Switch this on for acquisitions agents.</p> : null}
       </Section>
 
@@ -38,7 +38,7 @@ export function OfferTab({ form, canEdit }: TabCtx) {
           <Section id="va-range" title="The range" description="Where a quote may land, as a share of the deal's maximum allowable offer (MAO).">
             <RangeField id={fieldId('offer_authority.floor_pct_of_mao')} label="Lowest it may quote" value={o.floor_pct_of_mao} min={50} max={100} step={1} unit="% of MAO" disabled={off} error={errors['offer_authority.floor_pct_of_mao']}
               hint="The floor. The ceiling is always the MAO itself, from the seller's latest underwrite." onChange={(v) => set(['offer_authority', 'floor_pct_of_mao'], v)} />
-            <div style={{ marginTop: 14, padding: '12px 14px', borderRadius: 10, background: '#fafafa', border: '1px solid #e4e4e7' }}>
+            <div style={{ marginTop: 14, padding: '12px 14px', borderRadius: 10, background: 'var(--canvas, #fafafa)', border: '1px solid var(--divider, #e4e4e7)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <label htmlFor="va-example-mao" style={{ fontSize: 12.5, fontWeight: 600, color: INK }}>Try it with an MAO of</label>
                 <div style={{ width: 150 }}><TextField id="va-example-mao" value={mao} onChange={setMao} inputMode="numeric" placeholder="200000" /></div>
@@ -73,7 +73,7 @@ export function OfferTab({ form, canEdit }: TabCtx) {
             </SettingRow>
           </Section>
 
-          <Banner tone="info">The offer range tool (get_compr_offer) and the agreement tool are not built yet. Until they are, the agent quotes only from the range above, and a person sends the paperwork.</Banner>
+          <Banner tone="info">With the COMPR offer tool on, the agent quotes only after the tool returns a range inside the limits above. The range comes from the deal&apos;s MAO, or from a COMPR run that starts in the background when the call connects. The agreement tool is not built yet, so a person sends the paperwork.</Banner>
         </>
       ) : null}
     </>

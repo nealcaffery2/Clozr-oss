@@ -11,8 +11,8 @@ import { RULES, type RuleKey, loadRules, runRules, saveRule } from '@/lib/dispo-
 
 type Draft = Pick<BuyerAutomationRuleRow, 'rule' | 'enabled' | 'n' | 'pct' | 'tag' | 'remove_when_false'> & { last_run_at: string | null };
 
-const field: React.CSSProperties = { height: '28px', borderRadius: '7px', border: '1px solid #e4e4e7', padding: '0 8px', fontSize: '12.5px', background: '#fff' };
-const btn = (primary = false): React.CSSProperties => ({ height: '28px', padding: '0 10px', borderRadius: '7px', border: `1px solid ${primary ? '#0A8560' : '#e4e4e7'}`, background: primary ? '#0A8560' : '#fff', color: primary ? '#fff' : '#18181b', fontSize: '12px', fontWeight: 600, cursor: 'pointer' });
+const field: React.CSSProperties = { height: '28px', borderRadius: '7px', border: '1px solid var(--divider, #e4e4e7)', padding: '0 8px', fontSize: '12.5px', background: 'var(--surface, #fff)' };
+const btn = (primary = false): React.CSSProperties => ({ height: '28px', padding: '0 10px', borderRadius: '7px', border: `1px solid ${primary ? '#0A8560' : 'var(--divider, #e4e4e7)'}`, background: primary ? '#0A8560' : '#fff', color: primary ? '#fff' : '#18181b', fontSize: '12px', fontWeight: 600, cursor: 'pointer' });
 
 const HOW: Record<RuleKey, string> = {
   no_response: 'Their last N deals sent (deal matches with a sent date) all have no reply.',
@@ -62,29 +62,29 @@ export function BuyerAutomations({ workspaceId, canWrite, onToast, onChanged, on
   };
 
   return (
-    <div style={{ background: '#fff', borderBottom: '1px solid #e4e4e7', padding: '12px 20px', display: 'grid', gap: '10px' }}>
+    <div style={{ background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)', padding: '12px 20px', display: 'grid', gap: '10px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <span style={{ fontWeight: 600, fontSize: '14px' }}>Buyer automations</span>
-        <span style={{ fontSize: '12px', color: '#71717a' }}>Tag buyers when a trigger event is true. Runs daily and after sends, replies, marks and offers.</span>
+        <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>Tag buyers when a trigger event is true. Runs daily and after sends, replies, marks and offers.</span>
         <div style={{ flex: 1 }} />
-        <button onClick={onClose} style={{ border: 0, background: 'none', fontSize: '12px', cursor: 'pointer', color: '#71717a' }}>Close</button>
+        <button onClick={onClose} style={{ border: 0, background: 'none', fontSize: '12px', cursor: 'pointer', color: 'var(--meta, #71717a)' }}>Close</button>
       </div>
-      {!workspaceId ? <div style={{ fontSize: '12.5px', color: '#a1a1aa' }}>Sign in to set up buyer automations.</div> : !rules ? <div style={{ fontSize: '12.5px', color: '#a1a1aa' }}>Loading…</div> : (
+      {!workspaceId ? <div style={{ fontSize: '12.5px', color: 'var(--subtle, #a1a1aa)' }}>Sign in to set up buyer automations.</div> : !rules ? <div style={{ fontSize: '12.5px', color: 'var(--subtle, #a1a1aa)' }}>Loading…</div> : (
         <>
           {rules.map((r, i) => {
             const def = RULES.find((d) => d.rule === r.rule)!;
             return (
-              <div key={r.rule} style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr)', gap: '10px', alignItems: 'start', border: '1px solid #f0f0f1', borderRadius: '10px', padding: '10px' }}>
-                <input type="checkbox" checked={r.enabled} disabled={!canWrite} onChange={(e) => patch(i, { enabled: e.target.checked })} style={{ accentColor: '#0A8560', marginTop: '6px' }} aria-label={`Enable: ${def.label(r.n, r.pct)}`} />
+              <div key={r.rule} style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr)', gap: '10px', alignItems: 'start', border: '1px solid var(--divider-2, #f0f0f1)', borderRadius: '10px', padding: '10px' }}>
+                <input type="checkbox" checked={r.enabled} disabled={!canWrite} onChange={(e) => patch(i, { enabled: e.target.checked })} style={{ accentColor: 'var(--tx-mint, #0a8560)', marginTop: '6px' }} aria-label={`Enable: ${def.label(r.n, r.pct)}`} />
                 <div style={{ display: 'grid', gap: '6px' }}>
                   <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', fontSize: '12.5px' }}>
                     <b>{def.label(r.n, r.pct)}</b>
                     <label>N <input type="number" min={1} max={365} value={r.n} disabled={!canWrite} onChange={(e) => patch(i, { n: Number(e.target.value) || 1 })} style={{ ...field, width: '60px' }} /> {def.unit}</label>
                     {r.rule === 'lowball' ? <label>P <input type="number" min={1} max={100} value={r.pct} disabled={!canWrite} onChange={(e) => patch(i, { pct: Number(e.target.value) || 80 })} style={{ ...field, width: '60px' }} /> %</label> : null}
                     <label>Tag <input value={r.tag} disabled={!canWrite} onChange={(e) => patch(i, { tag: e.target.value })} style={{ ...field, width: '150px' }} /></label>
-                    <label style={{ display: 'inline-flex', gap: '5px', alignItems: 'center' }}><input type="checkbox" checked={r.remove_when_false} disabled={!canWrite} onChange={(e) => patch(i, { remove_when_false: e.target.checked })} style={{ accentColor: '#0A8560' }} /> Remove tag when no longer true</label>
+                    <label style={{ display: 'inline-flex', gap: '5px', alignItems: 'center' }}><input type="checkbox" checked={r.remove_when_false} disabled={!canWrite} onChange={(e) => patch(i, { remove_when_false: e.target.checked })} style={{ accentColor: 'var(--tx-mint, #0a8560)' }} /> Remove tag when no longer true</label>
                   </div>
-                  <div style={{ fontSize: '11.5px', color: '#71717a' }}>{HOW[r.rule]}{r.last_run_at ? ` Last run ${new Date(r.last_run_at).toLocaleString()}.` : ''}</div>
+                  <div style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>{HOW[r.rule]}{r.last_run_at ? ` Last run ${new Date(r.last_run_at).toLocaleString()}.` : ''}</div>
                 </div>
               </div>
             );
@@ -94,7 +94,7 @@ export function BuyerAutomations({ workspaceId, canWrite, onToast, onChanged, on
               <button style={btn()} disabled={busy} onClick={() => void save(false)}>Save</button>
               <button style={btn(true)} disabled={busy} onClick={() => void save(true)}>{busy ? 'Working…' : 'Save and run now'}</button>
             </div>
-          ) : <div style={{ fontSize: '12px', color: '#71717a' }}>Owners, admins and dispositions can change automations.</div>}
+          ) : <div style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>Owners, admins and dispositions can change automations.</div>}
         </>
       )}
     </div>

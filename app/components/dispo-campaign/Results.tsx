@@ -193,7 +193,7 @@ export function Results({ workspaceId, dealId, results, canWrite, isMobile, onTo
                   </div>
                   <div className="mk-num" style={{ fontSize: '12px', color: C.muted2, marginTop: '3px' }}>
                     {plural(rs.length, 'buyer')} · {done.toLocaleString('en-US')} of {plural(ms.length, 'message')} sent · {cf.replied} replied
-                    {' · '}{next ? <>next send {when(next.send_at, c.timezone)}{next.last_error ? <span style={{ color: '#92400e' }}> · {next.last_error}</span> : null}</> : 'nothing queued'}
+                    {' · '}{next ? <>next send {when(next.send_at, c.timezone)}{next.last_error ? <span style={{ color: 'var(--tx-amber-deep, #92400e)' }}> · {next.last_error}</span> : null}</> : 'nothing queued'}
                   </div>
                   <div className="mk-bar" style={{ height: '4px', marginTop: '8px', maxWidth: '420px' }}><span style={{ transform: `scaleX(${ms.length ? done / ms.length : 0})` }} /></div>
                 </div>

@@ -32,17 +32,17 @@ import { useSoftphone } from './softphoneAdapter';
 export type OutcomeTarget = NonNullable<ClozrView['outcomeTarget']>;
 type Variant = 'rail' | 'card' | 'phone' | 'sheet';
 
-const INK = '#18181B';
-const MUTED = '#52525B';
+const INK = 'var(--ink, #18181b)';
+const MUTED = 'var(--muted, #52525b)';
 const MINT = '#0A8560';
 const MINT_TEXT = '#08694C';
-const MINT_TINT = '#E7F8F1';
-const LINE = '#E4E4E7';
-const CONTROL = '#D4D4D8';
+const MINT_TINT = 'var(--mint-dim, #e7f8f1)';
+const LINE = 'var(--divider, #e4e4e7)';
+const CONTROL = 'var(--line, #d4d4d8)';
 
 const KBD: React.CSSProperties = {
   minWidth: 18, textAlign: 'center', fontSize: 11, fontWeight: 600, lineHeight: 1.4, fontFamily: 'inherit',
-  color: MUTED, background: '#F4F4F5', border: `1px solid ${LINE}`, borderRadius: 4, padding: '1px 5px',
+  color: MUTED, background: 'var(--surface-2, #f4f4f5)', border: `1px solid ${LINE}`, borderRadius: 4, padding: '1px 5px',
 };
 
 /** Set by a save, so the next picker (the next call, the next row) takes focus. */
@@ -237,8 +237,8 @@ export function OutcomePicker({
         style={{
           minHeight: btnH, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px',
           // Off (no call yet): quieter, but never lighter than the lightest text allowed.
-          borderRadius: radius, border: `1px solid ${on ? MINT : canPick ? CONTROL : LINE}`, background: on ? MINT_TINT : canPick ? '#FFFFFF' : '#FAFAFA',
-          color: on ? MINT_TEXT : canPick ? INK : '#71717A', fontSize: touch ? 15 : 13, fontWeight: 500, lineHeight: 1.3, fontFamily: 'inherit', textAlign: 'left',
+          borderRadius: radius, border: `1px solid ${on ? MINT : canPick ? CONTROL : LINE}`, background: on ? MINT_TINT : canPick ? 'var(--surface, #ffffff)' : 'var(--canvas, #fafafa)',
+          color: on ? MINT_TEXT : canPick ? INK : 'var(--meta, #71717a)', fontSize: touch ? 15 : 13, fontWeight: 500, lineHeight: 1.3, fontFamily: 'inherit', textAlign: 'left',
           cursor: canPick ? 'pointer' : 'default',
         }}
       >
@@ -275,7 +275,7 @@ export function OutcomePicker({
       data-testid="outcome-will"
       aria-live="polite"
       style={{
-        margin: variant === 'rail' ? '16px 20px 0' : '12px 0 0', padding: 14, borderRadius: 10, background: '#FAFAFA',
+        margin: variant === 'rail' ? '16px 20px 0' : '12px 0 0', padding: 14, borderRadius: 10, background: 'var(--canvas, #fafafa)',
         border: `1px solid ${LINE}`, display: 'flex', flexDirection: 'column', gap: 10,
       }}
     >
@@ -318,7 +318,7 @@ export function OutcomePicker({
                     onClick={() => setChip(c.id)}
                     style={{
                       minHeight: touch ? 44 : 32, padding: '0 10px', borderRadius: 999, border: `1px solid ${on ? INK : CONTROL}`,
-                      background: on ? INK : '#FFFFFF', color: on ? '#FFFFFF' : INK, fontSize: touch ? 13 : 12, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer',
+                      background: on ? INK : 'var(--surface, #ffffff)', color: on ? 'var(--surface, #ffffff)' : INK, fontSize: touch ? 13 : 12, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer',
                     }}
                   >
                     {c.label}
@@ -336,7 +336,7 @@ export function OutcomePicker({
                 value={reason ?? ''}
                 disabled={locked}
                 onChange={(e) => setReason(e.target.value || null)}
-                style={{ height: touch ? 44 : 36, border: `1px solid ${CONTROL}`, borderRadius: 6, padding: '0 10px', fontSize: touch ? 16 : 13, fontFamily: 'inherit', color: INK, background: '#FFFFFF' }}
+                style={{ height: touch ? 44 : 36, border: `1px solid ${CONTROL}`, borderRadius: 6, padding: '0 10px', fontSize: touch ? 16 : 13, fontFamily: 'inherit', color: INK, background: 'var(--surface, #ffffff)' }}
               >
                 <option value="">Pick a reason</option>
                 {plan.reasons.map((r) => <option key={r} value={r}>{r}</option>)}
@@ -351,7 +351,7 @@ export function OutcomePicker({
                 value={enrollId}
                 disabled={locked}
                 onChange={(e) => setEnrollId(e.target.value)}
-                style={{ height: touch ? 44 : 36, border: `1px solid ${CONTROL}`, borderRadius: 6, padding: '0 10px', fontSize: touch ? 16 : 13, fontFamily: 'inherit', color: INK, background: '#FFFFFF' }}
+                style={{ height: touch ? 44 : 36, border: `1px solid ${CONTROL}`, borderRadius: 6, padding: '0 10px', fontSize: touch ? 16 : 13, fontFamily: 'inherit', color: INK, background: 'var(--surface, #ffffff)' }}
               >
                 <option value="">No drip</option>
                 {plans.map((pl) => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
@@ -365,7 +365,7 @@ export function OutcomePicker({
                 type="datetime-local"
                 value={pickAt}
                 onChange={(e) => setPickAt(e.target.value)}
-                style={{ height: touch ? 44 : 36, border: `1px solid ${CONTROL}`, borderRadius: 6, padding: '0 10px', fontSize: touch ? 16 : 13, fontFamily: 'inherit', color: INK, background: '#FFFFFF' }}
+                style={{ height: touch ? 44 : 36, border: `1px solid ${CONTROL}`, borderRadius: 6, padding: '0 10px', fontSize: touch ? 16 : 13, fontFamily: 'inherit', color: INK, background: 'var(--surface, #ffffff)' }}
               />
             </label>
           )}
@@ -382,22 +382,22 @@ export function OutcomePicker({
                 style={{ alignSelf: 'flex-start', minHeight: touch ? 44 : 32, display: 'inline-flex', alignItems: 'center', gap: 8, padding: 0, border: 0, background: 'transparent', fontFamily: 'inherit', fontSize: 13, fontWeight: 500, color: INK, cursor: 'pointer' }}
               >
                 <span aria-hidden style={{ width: 28, height: 16, borderRadius: 999, background: plan.text.on ? MINT : CONTROL, position: 'relative', flexShrink: 0 }}>
-                  <span style={{ position: 'absolute', top: 2, left: plan.text.on ? 14 : 2, width: 12, height: 12, borderRadius: 999, background: '#FFFFFF' }} />
+                  <span style={{ position: 'absolute', top: 2, left: plan.text.on ? 14 : 2, width: 12, height: 12, borderRadius: 999, background: 'var(--surface, #ffffff)' }} />
                 </span>
                 Text {target.first}
                 {!touch && <kbd style={KBD}>T</kbd>}
               </button>
-              <p style={{ margin: 0, padding: '10px 12px', borderRadius: 6, background: '#FFFFFF', border: `1px solid ${LINE}`, fontSize: 13, fontWeight: 400, lineHeight: 1.55, color: plan.text.on ? '#3F3F46' : '#71717A', maxWidth: '72ch' }}>
+              <p style={{ margin: 0, padding: '10px 12px', borderRadius: 6, background: 'var(--surface, #ffffff)', border: `1px solid ${LINE}`, fontSize: 13, fontWeight: 400, lineHeight: 1.55, color: plan.text.on ? 'var(--ink-3, #3f3f46)' : 'var(--meta, #71717a)', maxWidth: '72ch' }}>
                 {plan.text.body}
               </p>
             </div>
           )}
           <p style={{ margin: 0, fontSize: 12, fontWeight: 500, lineHeight: 1.4, color: MUTED }}>{plan.talkrLine}</p>
-          {plan.blocked && <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#B45309' }}>{plan.blocked}</p>}
+          {plan.blocked && <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: 'var(--tx-amber, #b45309)' }}>{plan.blocked}</p>}
         </>
       )}
       {locked && ledger && (
-        <p role="alert" style={{ margin: 0, fontSize: 13, lineHeight: 1.45, fontWeight: 500, color: '#B91C1C' }}>
+        <p role="alert" style={{ margin: 0, fontSize: 13, lineHeight: 1.45, fontWeight: 500, color: 'var(--tx-red, #b91c1c)' }}>
           {(() => {
             const failed = new Set(ledger.failed.map((f) => f.step));
             const saved = Object.keys(ledger.ok).filter((k) => !failed.has(k) && k !== 'talkr');
@@ -417,14 +417,14 @@ export function OutcomePicker({
       disabled={!canSave}
       onClick={() => void save()}
       style={{
-        height: touch ? 50 : 44, borderRadius: touch ? 10 : 6, border: 0, background: canSave ? MINT : '#F4F4F5', color: canSave ? '#FFFFFF' : MUTED,
+        height: touch ? 50 : 44, borderRadius: touch ? 10 : 6, border: 0, background: canSave ? MINT : 'var(--surface-2, #f4f4f5)', color: canSave ? 'var(--surface, #ffffff)' : MUTED,
         fontSize: touch ? 15 : 13, fontWeight: 600, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
         cursor: canSave ? 'pointer' : 'default', ...style,
       }}
     >
       {label}
       {!touch && (
-        <kbd style={{ ...KBD, background: 'transparent', color: canSave ? '#FFFFFF' : MUTED, borderColor: canSave ? 'rgba(255,255,255,.7)' : CONTROL }}>⏎</kbd>
+        <kbd style={{ ...KBD, background: 'transparent', color: canSave ? 'var(--on-dark, #ffffff)' : MUTED, borderColor: canSave ? 'rgba(255,255,255,.7)' : CONTROL }}>⏎</kbd>
       )}
     </button>
   );
@@ -433,7 +433,7 @@ export function OutcomePicker({
       type="button"
       data-testid={testId}
       onClick={onClick}
-      style={{ height: touch ? 50 : 36, padding: '0 14px', borderRadius: touch ? 10 : 6, border: `1px solid ${CONTROL}`, background: '#FFFFFF', color: INK, fontSize: touch ? 15 : 13, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer', ...style }}
+      style={{ height: touch ? 50 : 36, padding: '0 14px', borderRadius: touch ? 10 : 6, border: `1px solid ${CONTROL}`, background: 'var(--surface, #ffffff)', color: INK, fontSize: touch ? 15 : 13, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer', ...style }}
     >
       {text}
     </button>
@@ -460,7 +460,7 @@ export function OutcomePicker({
           data-testid="wrap-footer"
           style={{
             position: 'sticky', bottom: 0, zIndex: 2, margin: '16px -16px 0', padding: '12px 16px max(env(safe-area-inset-bottom, 0px), 12px)',
-            background: '#FFFFFF', borderTop: `1px solid ${LINE}`, display: 'flex', gap: 8,
+            background: 'var(--surface, #ffffff)', borderTop: `1px solid ${LINE}`, display: 'flex', gap: 8,
           }}
         >
           {quiet('Skip', () => onSkip?.(), 'wrap-skip', { flex: 1 })}
@@ -477,7 +477,7 @@ export function OutcomePicker({
         {outcomeButtons}
         {willBox}
         {children}
-        <div style={{ marginTop: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid #F0F0F1' }}>
+        <div style={{ marginTop: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
           {saveButton('outcome-save')}
           {onCancel && quiet('Cancel', onCancel, 'outcome-cancel', { height: 32, border: 0, color: MUTED })}
           <p style={{ margin: 0, fontSize: 12, fontWeight: 500, color: MUTED, textAlign: 'center' }}>{caption}</p>
@@ -543,13 +543,13 @@ export function SellerWrapUp({
         onChange={(e) => setNotes(e.target.value)}
         placeholder="Asking price, timeline, condition, who decides"
         rows={3}
-        style={{ border: `1px solid ${CONTROL}`, borderRadius: 6, background: '#FFFFFF', padding: '10px 12px', fontFamily: 'inherit', fontSize: mobile ? 16 : 13, fontWeight: 400, lineHeight: 1.55, color: INK, resize: 'vertical', minHeight: mobile ? 96 : 72 }}
+        style={{ border: `1px solid ${CONTROL}`, borderRadius: 6, background: 'var(--surface, #ffffff)', padding: '10px 12px', fontFamily: 'inherit', fontSize: mobile ? 16 : 13, fontWeight: 400, lineHeight: 1.55, color: INK, resize: 'vertical', minHeight: mobile ? 96 : 72 }}
       />
     </label>
   );
   const extras = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
-      <div style={{ background: '#FFFFFF', border: `1px solid ${LINE}`, borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ background: 'var(--surface, #ffffff)', border: `1px solid ${LINE}`, borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
         <span style={{ fontSize: 12, fontWeight: 600, color: MUTED }}>Call summary</span>
         <p style={{ margin: 0, fontSize: 13, fontWeight: 400, lineHeight: 1.55, color: INK, maxWidth: '72ch' }}>{V.summaryText}</p>
       </div>
@@ -573,7 +573,7 @@ export function SellerWrapUp({
     <div className="flex flex-col gap-3" data-testid="seller-wrap">
       {/* The phone's own header already says who and how long; a desk wrap-up says it here. */}
       {!mobile && (
-      <div style={{ background: '#FFFFFF', border: `1px solid ${LINE}`, borderRadius: 10, padding: 16, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+      <div style={{ background: 'var(--surface, #ffffff)', border: `1px solid ${LINE}`, borderRadius: 10, padding: 16, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
           <span style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.3, color: INK }}>{target.name}</span>
           <span style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.4, color: MUTED }}>{target.stage}, {V.wrapStatusLine}</span>
@@ -582,7 +582,7 @@ export function SellerWrapUp({
           <button
             type="button"
             onClick={onOpenRecord ?? V.callRecord.open}
-            style={{ height: 32, padding: '0 12px', borderRadius: 6, border: `1px solid ${CONTROL}`, background: '#FFFFFF', color: INK, fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer', flexShrink: 0 }}
+            style={{ height: 32, padding: '0 12px', borderRadius: 6, border: `1px solid ${CONTROL}`, background: 'var(--surface, #ffffff)', color: INK, fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer', flexShrink: 0 }}
           >
             Open record
           </button>
@@ -610,7 +610,7 @@ export function SellerWrapUp({
         // On the phone the picker sits on the grouped background, so its
         // sticky footer can run edge to edge; on a desk it is a card.
         return mobile ? picker : (
-          <div style={{ background: '#FFFFFF', border: `1px solid ${LINE}`, borderRadius: 10, padding: 16 }}>{picker}</div>
+          <div style={{ background: 'var(--surface, #ffffff)', border: `1px solid ${LINE}`, borderRadius: 10, padding: 16 }}>{picker}</div>
         );
       })()}
     </div>

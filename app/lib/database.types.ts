@@ -20,6 +20,12 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
  * table) plus anything else optionally; `id` is `never` because it is
  * `generated always as identity` and Postgres rejects a supplied value.
  */
+/** meeting_types (migration 270). */
+export type MeetingTypeRow = {
+  id: number; workspace_id: number; key: string; name: string; minutes: number; title_pattern: string;
+  description: string; sort: number; active: boolean; created_at: string; updated_at: string;
+};
+
 type Table<Row, Required extends keyof Row> = {
   Row: Row;
   Insert: Pick<Row, Required> & Partial<Omit<Row, 'id' | Required>> & { id?: never };
@@ -422,7 +428,7 @@ export type ReportSchedule = {
   enabled: boolean; next_run_at: string | null; last_run_at: string | null; last_error: string | null;
   created_by: string | null; updated_at: string;
 };
-/** Migration 168: one Talkr org bound to one workspace. */
+/** Migration 276: one Talkr org bound to one workspace. */
 export type TalkrConnection = {
   workspace_id: number;
   talkr_org_id: string;
@@ -593,6 +599,14 @@ export type PhotoOrderRow = {
   ordered_by: string | null; created_at: string; checked_at: string | null; completed_at: string | null;
 };
 
+/** Someone on the team's mail who is not in CLOZR yet (migration 259). Written by the Gmail sync; resolved through contact_suggestion_resolve. */
+export type ContactSuggestionRow = {
+  id: number; workspace_id: number; email: string; name: string | null; company: string | null;
+  kind: 'agent' | 'title' | 'other'; deal_id: number | null; user_id: string | null; subject: string | null;
+  seen_count: number; first_seen_at: string; last_seen_at: string; status: 'open' | 'added' | 'dismissed' | 'auto';
+  vendor_id: number | null; resolved_by: string | null; resolved_at: string | null;
+};
+
 /** COMPR's public record for a property, written by compr-underwrite (migration 57). Missing is null. */
 export type PropertyRecordRow = {
   id: number; workspace_id: number; property_id: number; source: string;
@@ -633,6 +647,10 @@ export type TaskRow = {
   notes: string | null;
   enrollment_id: number | null;
   plan_step_id: number | null;
+  /** A buyer-plan step's buyer, or a buyer call's follow-up. */
+  buyer_id: number | null;
+  /** A step the plan sends by itself (migration 291): off the task lists. */
+  automated: boolean;
 };
 
 /** Someone invited to an appointment, and what they said. Google emails the invitation when the event is pushed. */
@@ -769,6 +787,8 @@ export type RvmDropRow = {
 
 export type EnrollmentRow = {
   id: number; workspace_id: number; plan_id: number; seller_id: number | null;
+  /** Migration 50: a buyer's run instead of a seller's; exactly one of the two is set. */
+  buyer_id?: number | null;
   status: string; step_index: number;
   enrolled_at: string; completed_at: string | null; created_by: string | null;
   /** reply | call | stage | manual when a smart stop ended it; null when it ran out. */
@@ -776,6 +796,33 @@ export type EnrollmentRow = {
   /** Migration 142: where the lead went when this run ended, and why. Optional: older databases lack them. */
   routed_enrollment_id?: number | null; routed_plan_id?: number | null; routed_reason?: string | null;
   routed_at?: string | null; route_state?: 'pending' | 'done' | null;
+};
+
+/** Migration 271: one lifecycle email, text or billing task compr-trial-sync claimed for a Compr contact. Function-written. */
+export type ComprLifecycleSendRow = {
+  id: number; workspace_id: number; buyer_id: number; stage: string; channel: 'email' | 'sms' | 'task'; cycle: string;
+  status: 'pending' | 'sent' | 'skipped' | 'held' | 'failed'; reason: string | null; provider_id: string | null;
+  rep_id: string | null; created_at: string; sent_at: string | null;
+};
+
+/** Migrations 166 and 268: a cold email campaign, and whether the Compr autopilot keeps it fed. */
+export type ColdCampaignRow = {
+  id: number; workspace_id: number; name: string; status: 'draft' | 'active' | 'paused' | 'done'; auto_enroll: boolean;
+};
+
+/** Migration 166: one contact on a cold campaign. */
+export type ColdEnrollmentRow = {
+  id: number; workspace_id: number; campaign_id: number; buyer_id: number | null; email: string;
+  status: 'active' | 'replied' | 'bounced' | 'unsubscribed' | 'suppressed' | 'completed' | 'stopped';
+};
+
+/** Migration 166: a polled cold-campaign reply and how it was classified. */
+export type ColdReplyRow = {
+  id: number; workspace_id: number; mailbox_id: number; enrollment_id: number | null; send_id: number | null;
+  buyer_id: number | null; provider_message_id: string; from_email: string | null; subject: string | null;
+  snippet: string | null;
+  classification: 'interested' | 'not_interested' | 'out_of_office' | 'unsubscribe' | 'bounce' | 'other';
+  complaint: boolean; assigned_to: string | null; communication_id: number | null; received_at: string;
 };
 
 /** Migration 142: one decide-once AI step on one lead — what the model chose, why, and what happened. Function-written. */
@@ -1038,6 +1085,7 @@ export type Database = {
       tasks: Table<TaskRow, 'workspace_id' | 'title'>;
       deal_files: Table<DealFileRow, 'workspace_id' | 'deal_id' | 'name'>;
       photo_orders: Table<PhotoOrderRow, 'workspace_id' | 'deal_id'>;
+      contact_suggestions: { Row: ContactSuggestionRow; Insert: never; Update: never; Relationships: [] };
       deal_price_changes: { Row: DealPriceChangeRow; Insert: never; Update: never; Relationships: [] };
       lane_updates: { Row: LaneUpdateRow; Insert: never; Update: Partial<Pick<LaneUpdateRow, 'status' | 'decided_by' | 'decided_at'>>; Relationships: [] };
       property_records: { Row: PropertyRecordRow; Insert: never; Update: never; Relationships: [] };
@@ -1087,6 +1135,10 @@ export type Database = {
       /** Migration 110: written only by the lead-memory function. */
       lead_memory: { Row: LeadMemoryRow; Insert: never; Update: never; Relationships: [] };
       plan_agent_runs: { Row: PlanAgentRunRow; Insert: never; Update: never; Relationships: [] };
+      compr_lifecycle_sends: { Row: ComprLifecycleSendRow; Insert: never; Update: never; Relationships: [] };
+      cold_campaigns: { Row: ColdCampaignRow; Insert: never; Update: never; Relationships: [] };
+      cold_enrollments: { Row: ColdEnrollmentRow; Insert: never; Update: never; Relationships: [] };
+      cold_replies: { Row: ColdReplyRow; Insert: never; Update: never; Relationships: [] };
       compr_outcomes: { Row: ComprOutcomeRow; Insert: never; Update: never; Relationships: [] };
       /** Migration 111: written only by the voice-agent-admin function and /post-call. */
       voice_agent_settings: { Row: VoiceAgentSettingsRow; Insert: never; Update: never; Relationships: [] };
@@ -1138,6 +1190,8 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      /** Migration 270: per-workspace meeting types for Google Meet invites. */
+      meeting_types: Table<MeetingTypeRow, 'workspace_id' | 'key' | 'name'>;
       sales_coach_settings: {
         Row: SalesCoachSettingsRow;
         Insert: Pick<SalesCoachSettingsRow, 'workspace_id'> & Partial<SalesCoachSettingsRow>;
@@ -1189,6 +1243,10 @@ export type Database = {
       set_investorbase_key: { Args: { p_workspace_id: number; p_key: string }; Returns: undefined };
       investorbase_connected: { Args: { p_workspace_id: number }; Returns: boolean };
       set_ivueit_keys: { Args: { p_workspace_id: number; p_key: string | null; p_secret: string | null; p_base_url: string | null; p_template_id: string | null }; Returns: undefined };
+      contact_suggestion_resolve: {
+        Args: { p_id: number; p_action: 'add' | 'dismiss'; p_kind: string | null; p_name: string | null; p_company: string | null };
+        Returns: { ok: boolean; status: string; vendor_id?: number };
+      };
       ivueit_settings: { Args: { p_workspace_id: number }; Returns: { connected: boolean; base_url: string | null; template_id: string | null } };
       webhook_subscribe: {
         Args: { p_workspace_id: number; p_url: string; p_events: string[]; p_description?: string | null };
@@ -1225,6 +1283,16 @@ export type Database = {
         Args: { p_line1: string; p_city: string; p_state: string; p_zip: string };
         Returns: string;
       };
+      /** Migration 266: read-only address match for an import batch. */
+      import_address_lookup: {
+        Args: { p_workspace: number; p_rows: Json };
+        Returns: Json;
+      };
+      /** Migration 266: find or create properties for an import batch. */
+      import_property_batch: {
+        Args: { p_workspace: number; p_rows: Json };
+        Returns: Json;
+      };
       /** Paged free-agent realtors (migration 96). The shell does not hydrate this corpus. */
       search_free_agent_buyers: {
         Args: { p_workspace_id: number; p_q?: string; p_limit?: number; p_offset?: number };
@@ -1239,6 +1307,8 @@ export type Database = {
       free_agent_markets: { Args: { p_workspace_id: number }; Returns: Json };
       /** Latest communication per live seller, one jsonb array. */
       seller_last_touch: { Args: { p_workspace: number }; Returns: Json };
+      /** Migration 276: the reporting read's communications (no subject or body), newest first, one jsonb array. */
+      report_comms: { Args: { p_ws: number; p_limit?: number }; Returns: Json };
       /** Migration 125: one record's stage moves, newest first (a seller with its deals', or a buyer). */
       /** Migration 126: realtors in any of these markets, for the Buyers map lasso. */
       free_agents_in_markets: {

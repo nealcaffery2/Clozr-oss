@@ -43,10 +43,12 @@ open-source phone platform.
   your own engine (ARV, rehab, offer, comps) by replacing that handler. Its
   header comment lists where the request and response shapes are defined
   (`app/lib/compr.ts`, `app/lib/deal-files.ts`, `app/lib/places.ts`).
-- **Data scrapers.** The deed scraper and the Facebook tooling behind Buyr and
-  Deal Machine (including the Deal Machine Chrome extension) are not in this
-  repository. The Buyr and Deal Machine screens and their edge functions remain
-  and expect you to bring the data.
+- **Data scrapers.** The deed scraper and the Facebook tooling behind
+  wholesale sniping and Deal Machine (including the Deal Machine Chrome
+  extension) are not in this repository. Those screens and their edge functions
+  remain and expect you to bring the data. Buyr's buyer search runs on your own
+  data API keys or a [Buyr](https://www.buyrs.app/) API key; see
+  [Buyr: your keys or ours](#buyr-your-keys-or-ours).
 - **Company data.** No customer records, scripts or branding from any company
   are included. All demo data is made up.
 
@@ -200,7 +202,7 @@ are `owner`, `admin`, `acquisitions`, `dispositions`, `tc`, `member`, plus
   (assign, skip trace, send to a Talkr campaign, enroll in automated texts).
 - **Round robin**: each ingest key names the rotation its new leads are dealt
   to; dispositions rotations deal deals by type.
-- **Bulk skip trace** for sellers and buyers through Genius Mode's
+- **Bulk skip trace** for sellers and buyers through Buyr's
   `skiptrace` (RealEstateAPI for individuals, BatchData for LLCs), with a
   monthly credit cap.
 - **Reactivation lists** and the nightly AI Autopilot pass over aged leads.
@@ -274,19 +276,34 @@ are `owner`, `admin`, `acquisitions`, `dispositions`, `tc`, `member`, plus
 
 - **Buyers**: the buyer database, and the buyer record with buy box,
   activity, engagement and an AI score (`buyer-score`).
-- **Genius** (`genius-discover`): every cash buyer around an address from
-  public records, labelled by the method that found them, with phones on
-  demand. Needs RealEstateAPI and BatchData keys.
+- **Buyr** (formerly Genius, `genius-discover`): every cash buyer around an
+  address from public records, labelled by the method that found them, with
+  phones on demand. See [Buyr: your keys or ours](#buyr-your-keys-or-ours).
 - **Wholesaler database** (`dispo-contracts`): assignment PDFs in the team's
-  Drive folder become wholesaler deals and entities, so Genius can answer "who
+  Drive folder become wholesaler deals and entities, so Buyr can answer "who
   does this wholesaler sell to".
 - **InvestorBase** (`investorbase-import`) and **DispoGenius**
   (`dispogenius-import`, `dispogenius-sync`) buyer imports.
-- **Buyr** (`buyr`): wholesale sniping and Facebook buyer comments over data
-  you bring.
+- **Wholesale sniping and Facebook buyer comments** (`buyr`): over data you
+  bring.
 - **Deal Machine** (`deal-machine`, `deal-machine-cloud`): the run controls,
   log, buyers lists, results and settings. The Chrome extension is not
   included; the cloud runner calls Apify actors with your own Apify token.
+
+#### Buyr: your keys or ours
+
+Buyr (the buyer finder that used to be called Genius) is free to run. Two ways
+to power it:
+
+- **Bring your own APIs (free).** Set `REAL_ESTATE_API_API_KEY` (property
+  records and individual skip tracing) and `BATCHDATA_API_KEY` (LLC skip
+  tracing), plus `ATTOM_API_KEY` if you want ATTOM. See
+  [Data providers](#environment-variables-and-secrets). You pay those vendors
+  directly at their rates; CLOZR adds nothing.
+- **Use a Buyr API key (cheaper).** No data contracts of your own? Sign up at
+  [Buyr](https://www.buyrs.app/), get an API key, and connect it to your
+  CLOZR. Runs go through Buyr's pooled data plans, which cost less per search
+  than most teams pay on a starter plan with each vendor.
 
 ### Transaction coordination
 
@@ -564,7 +581,7 @@ of them may be secret.
 | `NEXT_PUBLIC_TALKR_WEB_URL` | optional | Talkr's web app, for the few inbox links that open there |
 | `NEXT_PUBLIC_HCAPTCHA_SITE_KEY` | optional | turns on hCaptcha on the auth forms |
 | `NEXT_PUBLIC_GOOGLE_PLACES_KEY` | optional | address autocomplete (Maps JavaScript API with Places); restrict it to your domain in Google Cloud |
-| `NEXT_PUBLIC_MAPBOX_TOKEN` | optional | Mapbox tiles on the Genius map; without it, OpenStreetMap tiles |
+| `NEXT_PUBLIC_MAPBOX_TOKEN` | optional | Mapbox tiles on the Buyr map; without it, OpenStreetMap tiles |
 | `NEXT_PUBLIC_COMPR_URL` | optional | origin of an underwriting app framed in the record, if yours has one |
 
 ### Edge function secrets
@@ -638,9 +655,9 @@ reads).
 
 | Secret | Purpose |
 | --- | --- |
-| `REAL_ESTATE_API_API_KEY` | Genius: property records and individual skip tracing |
-| `BATCHDATA_API_KEY` | Genius: LLC skip tracing; geocoding fallback |
-| `ATTOM_API_KEY` | Genius and geocoding |
+| `REAL_ESTATE_API_API_KEY` | Buyr (your own keys): property records and individual skip tracing |
+| `BATCHDATA_API_KEY` | Buyr (your own keys): LLC skip tracing; geocoding fallback |
+| `ATTOM_API_KEY` | Buyr (your own keys) and geocoding |
 | `DISPOGENIUS_API_KEY`, `DISPOGENIUS_API_URL` | DispoGenius import and sync |
 | `INVESTORBASE_API_KEY` | InvestorBase import fallback |
 | `PANDADOC_API_KEY`, `PANDADOC_WEBHOOK_KEY` | PandaDoc |

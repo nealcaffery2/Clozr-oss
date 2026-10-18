@@ -14,8 +14,8 @@ import { Badge, FAINT, GREEN, HAIR, ICON, INK, Icon, LINE, MUTED, PURPLE, PURPLE
 type Props = { workspaceId: number; userId: string | null; canWrite: boolean; isMobile: boolean; onToast: (m: string) => void; onOpenBuyer?: (id: number) => void; onAdded?: () => void };
 
 const KIND_LABEL: Record<EntityKind, string> = { wholesaler: 'Wholesaler', buyer: 'Buyer', both: 'Wholesaler & buyer', title: 'Title', unknown: 'Unknown' };
-const KIND_TINT: Record<EntityKind, [string, string]> = { wholesaler: ['#9a3412', '#ffedd5'], buyer: ['#15803d', '#dcfce7'], both: ['#6d28d9', '#ede9fe'], title: ['#3f3f46', '#f4f4f5'], unknown: ['#52525b', '#f4f4f5'] };
-const card: React.CSSProperties = { background: '#fff', border: `1px solid ${LINE}`, borderRadius: '14px', overflow: 'hidden' };
+const KIND_TINT: Record<EntityKind, [string, string]> = { wholesaler: ['#9a3412', 'var(--tint-orange-2, #ffedd5)'], buyer: ['#15803d', 'var(--positive-soft, #dcfce7)'], both: ['#6d28d9', 'var(--tint-violet, #ede9fe)'], title: ['var(--ink-3, #3f3f46)', 'var(--surface-2, #f4f4f5)'], unknown: ['var(--muted, #52525b)', 'var(--surface-2, #f4f4f5)'] };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '14px', overflow: 'hidden' };
 
 export function Wholesalers({ workspaceId, userId, canWrite, isMobile, onToast, onOpenBuyer, onAdded }: Props) {
   const [book, setBook] = useState<WholesalerBook | null>(null);
@@ -83,7 +83,7 @@ export function Wholesalers({ workspaceId, userId, canWrite, isMobile, onToast, 
     <div style={{ ...card, padding: '14px 16px', display: 'grid', gap: '10px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '13.5px', fontWeight: 700, color: INK }}>Contracts in the Dispositions Drive</span>
-        {status ? <Badge color={status.drive_connected ? GREEN : RED} tint={status.drive_connected ? '#E7F8F1' : '#fef2f2'}>{status.drive_connected ? `Drive connected · ${status.email}` : 'Drive not connected'}</Badge> : null}
+        {status ? <Badge color={status.drive_connected ? GREEN : RED} tint={status.drive_connected ? 'var(--mint-dim, #e7f8f1)' : 'var(--tint-red, #fef2f2)'}>{status.drive_connected ? `Drive connected · ${status.email}` : 'Drive not connected'}</Badge> : null}
         <span style={{ flex: 1 }} />
         {canWrite ? <button type="button" onClick={() => void run()} disabled={running || !status?.drive_connected} style={{ ...btn('purple', true), opacity: running || !status?.drive_connected ? 0.6 : 1 }}>{running ? 'Reading the Drive…' : status?.config?.last_run_at ? 'Read new contracts now' : 'Read the Drive now'}</button> : null}
       </div>
@@ -164,10 +164,10 @@ export function Wholesalers({ workspaceId, userId, canWrite, isMobile, onToast, 
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '13px', fontWeight: 650, color: INK }}>{b.entity.name}</span>
-              <Badge color="#08694C" tint={PURPLE_TINT}>Contract</Badge>
+              <Badge color="var(--tx-mint-deep, #08694c)" tint={PURPLE_TINT}>Contract</Badge>
               <span style={{ fontSize: '12px', color: MUTED }}>{b.deals.length} deal{b.deals.length === 1 ? '' : 's'} from {b.wholesalers.join(', ') || 'us'}</span>
             </div>
-            <div style={{ fontSize: '12px', color: '#3f3f46', marginTop: '2px' }}>{contact(b.entity) || [b.deals[0]?.assignee_person, b.deals[0]?.assignee_email, b.deals[0]?.assignee_phone].filter(Boolean).join(' · ') || 'No contact on the contract'}</div>
+            <div style={{ fontSize: '12px', color: 'var(--ink-3, #3f3f46)', marginTop: '2px' }}>{contact(b.entity) || [b.deals[0]?.assignee_person, b.deals[0]?.assignee_email, b.deals[0]?.assignee_phone].filter(Boolean).join(' · ') || 'No contact on the contract'}</div>
             <div style={{ fontSize: '11.5px', color: FAINT, marginTop: '2px' }}>{b.deals.slice(0, 3).map((d) => `${d.property_address ?? '?'}${d.city ? `, ${d.city}` : ''}${d.state ? ` ${d.state}` : ''}${d.total_price ? ` · ${money(d.total_price)}` : ''}${d.closing_date ? ` · ${d.closing_date.slice(0, 7)}` : ''}`).join(' | ')}</div>
           </div>
           {b.entity.buyer_id ? <button type="button" onClick={() => onOpenBuyer?.(b.entity.buyer_id!)} style={{ ...btn('ghost', true), color: GREEN }}>In buyers</button>
@@ -182,8 +182,8 @@ export function Wholesalers({ workspaceId, userId, canWrite, isMobile, onToast, 
       {(book?.deals ?? []).filter((d) => hit([d.assignor_name, d.assignee_name, d.property_address, d.city, d.state, d.title_company])).slice(0, 300).map((d) => (
         <div key={d.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 150px', gap: '6px 12px', padding: '9px 14px', borderTop: `1px solid ${HAIR}`, fontSize: '12px', alignItems: 'center' }}>
           <div><span style={{ color: INK, fontWeight: 600 }}>{d.property_address ?? '?'}</span><span style={{ color: FAINT }}>{d.city ? `, ${d.city}` : ''}{d.state ? ` ${d.state}` : ''}</span> <Badge>{d.leg === 'deed' ? 'Deed' : d.leg}</Badge></div>
-          <div style={{ color: '#3f3f46' }}><span style={{ color: FAINT }}>From </span>{d.assignor_name ?? '?'}</div>
-          <div style={{ color: '#3f3f46' }}><span style={{ color: FAINT }}>To </span>{d.assignee_name ?? '?'}{d.assignee_person ? <span style={{ color: FAINT }}> · {d.assignee_person}</span> : null}</div>
+          <div style={{ color: 'var(--ink-3, #3f3f46)' }}><span style={{ color: FAINT }}>From </span>{d.assignor_name ?? '?'}</div>
+          <div style={{ color: 'var(--ink-3, #3f3f46)' }}><span style={{ color: FAINT }}>To </span>{d.assignee_name ?? '?'}{d.assignee_person ? <span style={{ color: FAINT }}> · {d.assignee_person}</span> : null}</div>
           <div style={{ color: MUTED, whiteSpace: 'nowrap' }}>{d.total_price ? money(d.total_price) : d.purchase_price ? money(d.purchase_price) : '—'}{d.assignment_fee ? ` (+${money(d.assignment_fee)})` : ''}{d.closing_date ? ` · ${d.closing_date.slice(0, 7)}` : ''}{d.source_url ? <> · <a href={d.source_url} target="_blank" rel="noreferrer" style={{ color: PURPLE }}>file</a></> : null}</div>
         </div>
       ))}
@@ -201,7 +201,7 @@ export function Wholesalers({ workspaceId, userId, canWrite, isMobile, onToast, 
           {canWrite ? <button type="button" onClick={() => setDraft(draft ? null : { name: '', kind: 'wholesaler', state: '', contact: '', email: '', phone: '' })} style={btn('ghost', true)}>{draft ? 'Cancel' : 'Add a wholesaler'}</button> : null}
         </div>
         {draft ? (
-          <div style={{ display: 'flex', gap: '6px', padding: '10px 14px', flexWrap: 'wrap', borderBottom: `1px solid ${HAIR}`, background: '#F0FAF5' }}>
+          <div style={{ display: 'flex', gap: '6px', padding: '10px 14px', flexWrap: 'wrap', borderBottom: `1px solid ${HAIR}`, background: 'var(--c-genius-soft, #f0faf5)' }}>
             <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Company (Goldline Investments LLC)" style={{ ...input, height: '30px', flex: 2, minWidth: '200px' }} />
             <select value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as EntityKind })} style={{ ...input, height: '30px' }}>{(['wholesaler', 'buyer', 'both'] as EntityKind[]).map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}</select>
             <input value={draft.state} onChange={(e) => setDraft({ ...draft, state: e.target.value.toUpperCase().slice(0, 2) })} placeholder="TX" style={{ ...input, height: '30px', width: '56px' }} />

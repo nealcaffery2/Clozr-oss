@@ -22,12 +22,13 @@ import { refreshBuyerRow } from '@/app/components/buyer/BuyerProfileFields';
 import { supabase } from '@/lib/supabase';
 import { STATE_NAMES, stateOfZip } from '@/lib/market-geo';
 import { citiesIn, countiesIn, formatPop, searchPlaces, type GeoPlace } from '@/lib/us-cities';
+import { fillBuyBoxGaps, type BuyerProfileSeed } from '@/lib/call-profile';
 
 const MINT = '#0A8560';
-const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: '#71717a', fontWeight: 600, marginBottom: '5px' };
-const field: React.CSSProperties = { width: '100%', height: '34px', padding: '0 10px', border: '1px solid #e4e4e7', borderRadius: '9px', fontSize: '13px', outline: 0, background: '#fafafa', color: '#18181b', boxSizing: 'border-box' };
+const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600, marginBottom: '5px' };
+const field: React.CSSProperties = { width: '100%', height: '34px', padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', fontSize: '13px', outline: 0, background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)', boxSizing: 'border-box' };
 const area: React.CSSProperties = { ...field, height: 'auto', minHeight: '70px', padding: '8px 10px', resize: 'vertical' };
-const btn = (primary: boolean, disabled = false): React.CSSProperties => ({ height: '34px', padding: '0 14px', borderRadius: '9px', border: `1px solid ${primary ? '#18181b' : '#e4e4e7'}`, background: disabled ? '#d4d4d8' : primary ? '#18181b' : '#fff', color: primary ? '#fff' : '#18181b', fontSize: '12.5px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer' });
+const btn = (primary: boolean, disabled = false): React.CSSProperties => ({ height: '34px', padding: '0 14px', borderRadius: '9px', border: `1px solid ${primary ? 'var(--ink, #18181b)' : 'var(--divider, #e4e4e7)'}`, background: disabled ? 'var(--line, #d4d4d8)' : primary ? 'var(--ink, #18181b)' : 'var(--surface, #fff)', color: primary ? 'var(--surface, #fff)' : 'var(--ink, #18181b)', fontSize: '12.5px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer' });
 // The 50 states + DC by full name (STATE_NAMES also carries PR, which the Census pick lists do not).
 const STATES = Object.keys(STATE_NAMES).filter((c) => c !== 'PR').sort((a, b) => STATE_NAMES[a].localeCompare(STATE_NAMES[b]));
 
@@ -37,6 +38,12 @@ type Form = {
   vetted: boolean; vip: boolean; blacklisted: boolean; active: boolean; tags: string; notes: string; box: BuyBox;
 };
 const blank = (): Form => ({ name: '', company: '', phone: '', email: '', buyer_type: 'investor', entity_type: 'llc', website: '', pof_url: '', pof_verified: false, preferred_channel: 'email_and_sms', wants_calls: true, wants_follow_ups: true, wants_sold_alerts: false, vetted: false, vip: false, blacklisted: false, active: true, tags: '', notes: '', box: emptyBuyBox() });
+/** A new buyer's form opened from a call (components/talkr/CallProfileCard): what was said, the rest left as a new form has it. */
+const seeded = (form: Form, seed: BuyerProfileSeed): Form => ({
+  ...form,
+  name: seed.name ?? form.name, company: seed.company ?? form.company, phone: seed.phone ?? form.phone, email: seed.email ?? form.email,
+  buyer_type: seed.buyer_type ?? form.buyer_type, notes: seed.notes ?? form.notes, box: seed.box ? normalizeBuyBox(seed.box) : form.box,
+});
 
 type Tab = 'Profile' | 'Buy box' | 'Economics' | 'Advanced' | 'Contact';
 const TABS: Tab[] = ['Profile', 'Buy box', 'Economics', 'Advanced', 'Contact'];
@@ -46,23 +53,32 @@ const TABS: Tab[] = ['Profile', 'Buy box', 'Economics', 'Advanced', 'Contact'];
 // anything the record changed while it was open.
 const EDIT_TABS: Tab[] = ['Buy box', 'Economics', 'Advanced', 'Contact'];
 
-export function BuyerProfileModal({ open, buyerId, workspaceId, userId, onClose, onSaved, onToast }: {
-  open: boolean; buyerId: number | null; workspaceId: number | null; userId: string | null;
+export function BuyerProfileModal({ open, buyerId, seed, workspaceId, userId, onClose, onSaved, onToast }: {
+  open: boolean; buyerId: number | null;
+  /**
+   * What a call said (the dialer's "From this call"). A new buyer's form opens
+   * filled with it; an existing buyer's buy box takes it only where it is empty.
+   * Nothing saves until the rep presses Save.
+   */
+  seed?: BuyerProfileSeed | null;
+  workspaceId: number | null; userId: string | null;
   onClose: () => void; onSaved: () => void; onToast: (msg: string) => void;
 }) {
   // Keyed on the buyer so opening a different profile starts from a clean form.
   if (!open) return null;
-  return <ProfileDialog key={buyerId ?? 'new'} buyerId={buyerId} workspaceId={workspaceId} userId={userId} onClose={onClose} onSaved={onSaved} onToast={onToast} />;
+  return <ProfileDialog key={buyerId ?? 'new'} buyerId={buyerId} seed={seed ?? null} workspaceId={workspaceId} userId={userId} onClose={onClose} onSaved={onSaved} onToast={onToast} />;
 }
 
-function ProfileDialog({ buyerId, workspaceId, userId, onClose, onSaved, onToast }: {
-  buyerId: number | null; workspaceId: number | null; userId: string | null;
+function ProfileDialog({ buyerId, seed, workspaceId, userId, onClose, onSaved, onToast }: {
+  buyerId: number | null; seed: BuyerProfileSeed | null; workspaceId: number | null; userId: string | null;
   onClose: () => void; onSaved: () => void; onToast: (msg: string) => void;
 }) {
-  const [f, setF] = useState<Form>(blank());
+  const [f, setF] = useState<Form>(() => (seed && !buyerId ? seeded(blank(), seed) : blank()));
   const [tab, setTab] = useState<Tab>(buyerId ? 'Buy box' : 'Profile');
   const tabs = buyerId ? EDIT_TABS : TABS;
-  const [dirty, setDirty] = useState(false);
+  // A form filled from a call is unsaved work: closing it asks first.
+  const [dirty, setDirty] = useState(!!seed);
+  const seedBox = useRef(seed?.box ?? null);
   // Number fields that hold something unreadable ("abc"): Save waits for them.
   const [bad, setBad] = useState<Record<string, boolean>>({});
   const badCount = Object.values(bad).filter(Boolean).length;
@@ -98,7 +114,9 @@ function ProfileDialog({ buyerId, workspaceId, userId, onClose, onSaved, onToast
         preferred_channel: String(r.preferred_channel ?? 'email_and_sms'), wants_calls: r.wants_calls !== false, wants_follow_ups: r.wants_follow_ups !== false, wants_sold_alerts: r.wants_sold_alerts === true,
         vetted: !!r.vetted_at, vip: r.vip === true, blacklisted: !!r.blacklisted_at, active: !/inactive/i.test(String(r.status ?? 'Active')),
         tags: visibleTags(rawTags).join(', '), notes: String(r.notes ?? ''),
-        box: normalizeBuyBox(r.criteria && typeof r.criteria === 'object' && Object.keys(r.criteria as object).length ? r.criteria : { locations: { cities: (r.markets as string[]) ?? [] }, price: { max: r.max_purchase_price } }),
+        box: ((stored: BuyBox) => (seedBox.current ? fillBuyBoxGaps(stored, seedBox.current) : stored))(
+          normalizeBuyBox(r.criteria && typeof r.criteria === 'object' && Object.keys(r.criteria as object).length ? r.criteria : { locations: { cities: (r.markets as string[]) ?? [] }, price: { max: r.max_purchase_price } }),
+        ),
       });
     });
     return () => { live = false; };
@@ -147,24 +165,29 @@ function ProfileDialog({ buyerId, workspaceId, userId, onClose, onSaved, onToast
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(24,24,27,.42)', display: 'grid', placeItems: 'center', padding: '16px' }}
       onClick={() => void requestClose()} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); void requestClose(); } }}>
-      <div role="dialog" aria-modal="true" aria-label={buyerId ? 'Buy box' : 'New buyer'} onClick={(e) => e.stopPropagation()} style={{ width: 'min(860px, 100%)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: '14px', boxShadow: '0 30px 80px -20px rgba(18,22,45,.4)', overflow: 'hidden' }}>
+      <div role="dialog" aria-modal="true" aria-label={buyerId ? 'Buy box' : 'New buyer'} onClick={(e) => e.stopPropagation()} style={{ width: 'min(860px, 100%)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', background: 'var(--surface, #fff)', borderRadius: '14px', boxShadow: '0 30px 80px -20px rgba(18,22,45,.4)', overflow: 'hidden' }}>
         <div style={{ padding: '16px 20px 0' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
             <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em' }}>{buyerId ? 'Buy box' : 'New buyer'}</h2>
-            <span style={{ fontSize: '12.5px', color: '#71717a' }}>{buyerId ? 'Saving re-matches this buyer against active inventory.' : 'Lands in Buyers and is matched against active dispo inventory right away.'}</span>
+            <span style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>{buyerId ? 'Saving re-matches this buyer against active inventory.' : 'Lands in Buyers and is matched against active dispo inventory right away.'}</span>
             <span style={{ flex: 1 }} />
-            <button type="button" aria-label="Close" onClick={() => void requestClose()} style={{ border: 0, background: 'none', cursor: 'pointer', color: '#71717a', width: '28px', height: '28px', display: 'grid', placeItems: 'center' }}>
+            <button type="button" aria-label="Close" onClick={() => void requestClose()} style={{ border: 0, background: 'none', cursor: 'pointer', color: 'var(--meta, #71717a)', width: '28px', height: '28px', display: 'grid', placeItems: 'center' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
             </button>
           </div>
-          <div style={{ display: 'flex', gap: '2px', borderBottom: '1px solid #e4e4e7', marginTop: '10px', overflowX: 'auto' }}>
+          {seed ? (
+            <p role="status" style={{ margin: '10px 0 0', padding: '8px 10px', borderRadius: '8px', background: 'var(--c-genius-soft, #f0faf5)', border: '1px solid var(--c-action-line, #a7dcc5)', fontSize: '12.5px', color: 'var(--ink, #18181b)' }}>
+              {buyerId ? 'The empty parts of this buy box are filled from the call.' : 'Filled from the call.'} Check each field, then save. Nothing is saved until you do.
+            </p>
+          ) : null}
+          <div style={{ display: 'flex', gap: '2px', borderBottom: '1px solid var(--divider, #e4e4e7)', marginTop: '10px', overflowX: 'auto' }}>
             {tabs.map((t) => (
-              <button key={t} onClick={() => setTab(t)} style={{ height: '36px', padding: '0 10px', border: 0, borderBottom: `2px solid ${tab === t ? '#18181b' : 'transparent'}`, background: 'none', fontSize: '13px', fontWeight: tab === t ? 600 : 500, color: tab === t ? '#18181b' : '#71717a', cursor: 'pointer', marginBottom: '-1px', whiteSpace: 'nowrap' }}>{t}</button>
+              <button key={t} onClick={() => setTab(t)} style={{ height: '36px', padding: '0 10px', border: 0, borderBottom: `2px solid ${tab === t ? 'var(--ink, #18181b)' : 'transparent'}`, background: 'none', fontSize: '13px', fontWeight: tab === t ? 600 : 500, color: tab === t ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)', cursor: 'pointer', marginBottom: '-1px', whiteSpace: 'nowrap' }}>{t}</button>
             ))}
           </div>
         </div>
         <div style={{ padding: '16px 20px', overflow: 'auto', flex: 1 }}>
-          {loading ? <p style={{ fontSize: '12.5px', color: '#71717a' }}>Loading…</p> : null}
+          {loading ? <p style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>Loading…</p> : null}
           {tab === 'Profile' && !buyerId ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
               <Text l="Buyer name *" v={f.name} on={(v) => set('name', v)} ph="Drew Collins" />
@@ -228,13 +251,13 @@ function ProfileDialog({ buyerId, workspaceId, userId, onClose, onSaved, onToast
             <div style={{ display: 'grid', gap: '16px' }}>
               <Chips l="Strict criteria · a miss is a hard no instead of a lower score" opts={STRICT_OPTIONS} v={f.box.strict} on={(v) => setBox({ strict: v })} tone="amber" />
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px' }}>
-                <div style={{ border: '1px solid #e4e4e7', borderRadius: '10px', padding: '12px', display: 'grid', gap: '10px' }}>
-                  <div style={{ fontSize: '13px', fontWeight: 600 }}>Property restrictions <span style={{ fontWeight: 400, color: '#71717a' }}>· buyer does not want</span></div>
+                <div style={{ border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px', padding: '12px', display: 'grid', gap: '10px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600 }}>Property restrictions <span style={{ fontWeight: 400, color: 'var(--meta, #71717a)' }}>· buyer does not want</span></div>
                   <Chips l="Location characteristics" opts={LOCATION_CHIPS} v={f.box.restrictions} on={(v) => setBox({ restrictions: v })} tone="red" />
                   <Chips l="Property characteristics" opts={PROPERTY_CHIPS} v={f.box.restrictions} on={(v) => setBox({ restrictions: v })} tone="red" />
                 </div>
-                <div style={{ border: '1px solid #e4e4e7', borderRadius: '10px', padding: '12px', display: 'grid', gap: '10px' }}>
-                  <div style={{ fontSize: '13px', fontWeight: 600 }}>Property requirements <span style={{ fontWeight: 400, color: '#71717a' }}>· buyer must have</span></div>
+                <div style={{ border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px', padding: '12px', display: 'grid', gap: '10px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600 }}>Property requirements <span style={{ fontWeight: 400, color: 'var(--meta, #71717a)' }}>· buyer must have</span></div>
                   <Chips l="Location characteristics" opts={LOCATION_CHIPS} v={f.box.requirements} on={(v) => setBox({ requirements: v })} tone="mint" />
                   <Chips l="Property characteristics" opts={PROPERTY_CHIPS} v={f.box.requirements} on={(v) => setBox({ requirements: v })} tone="mint" />
                 </div>
@@ -252,12 +275,12 @@ function ProfileDialog({ buyerId, workspaceId, userId, onClose, onSaved, onToast
                   <Toggle l="Wants sold alerts" v={f.wants_sold_alerts} on={(v) => set('wants_sold_alerts', v)} />
                 </div>
               </div>
-              <div style={{ border: '1px solid #e4e4e7', borderRadius: '10px', padding: '12px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px' }}>
+              <div style={{ border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px', padding: '12px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px' }}>
                 {buyerId ? null : <Toggle l="Active buyer" hint="Off = paused: never matched or sent deals" v={f.active} on={(v) => set('active', v)} />}
                 {buyerId ? (
                   <label style={{ display: 'grid', gap: '4px', fontSize: '12.5px' }}>
-                    <span>Inactive until <span style={{ color: '#71717a' }}>· optional, for the &ldquo;active again&rdquo; automation</span></span>
-                    <input type="date" value={activeAgain} onChange={(e) => { setDirty(true); setActiveAgain(e.target.value); }} style={{ height: '30px', borderRadius: '7px', border: '1px solid #e4e4e7', padding: '0 8px', fontSize: '12.5px' }} />
+                    <span>Inactive until <span style={{ color: 'var(--meta, #71717a)' }}>· optional, for the &ldquo;active again&rdquo; automation</span></span>
+                    <input type="date" value={activeAgain} onChange={(e) => { setDirty(true); setActiveAgain(e.target.value); }} style={{ height: '30px', borderRadius: '7px', border: '1px solid var(--divider, #e4e4e7)', padding: '0 8px', fontSize: '12.5px' }} />
                   </label>
                 ) : null}
                 {buyerId ? null : (
@@ -271,8 +294,8 @@ function ProfileDialog({ buyerId, workspaceId, userId, onClose, onSaved, onToast
             </div>
           ) : null}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', borderTop: '1px solid #e4e4e7', background: '#fafafa' }}>
-          <span style={{ fontSize: '12px', color: err || badCount ? '#b91c1c' : '#71717a', flex: 1 }}>{err ?? (badCount ? 'Fix the highlighted numbers first.' : !missing ? '' : !f.name.trim() ? 'Name, phone and email are required.' : contactProblem)}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', borderTop: '1px solid var(--divider, #e4e4e7)', background: 'var(--canvas, #fafafa)' }}>
+          <span style={{ fontSize: '12px', color: err || badCount ? 'var(--tx-red, #b91c1c)' : 'var(--meta, #71717a)', flex: 1 }}>{err ?? (badCount ? 'Fix the highlighted numbers first.' : !missing ? '' : !f.name.trim() ? 'Name, phone and email are required.' : contactProblem)}</span>
           <button type="button" onClick={() => void requestClose()} disabled={busy} style={btn(false)}>Cancel</button>
           <button type="button" onClick={submit} disabled={busy || missing || badCount > 0} style={btn(true, busy || missing || badCount > 0)}>{busy ? 'Saving…' : buyerId ? 'Save buy box' : 'Create buyer'}</button>
         </div>
@@ -319,11 +342,11 @@ function Num({ l, v, on, prefix, suffix, report = () => {} }: { l: string; v?: n
   return (
     <div><label htmlFor={id} style={label}>{l}</label>
       <div style={{ position: 'relative' }}>
-        {prefix ? <span style={{ position: 'absolute', left: '10px', top: '9px', fontSize: '12px', color: '#a1a1aa' }}>{prefix}</span> : null}
+        {prefix ? <span style={{ position: 'absolute', left: '10px', top: '9px', fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>{prefix}</span> : null}
         <input id={id} inputMode="decimal" value={d.text} aria-invalid={d.error ? true : undefined} onChange={(e) => d.change(e.target.value)} style={{ ...field, paddingLeft: prefix ? '22px' : '10px', paddingRight: suffix ? '26px' : '10px', ...(d.error ? { borderColor: '#dc2626' } : {}) }} />
-        {suffix ? <span style={{ position: 'absolute', right: '10px', top: '9px', fontSize: '12px', color: '#a1a1aa' }}>{suffix}</span> : null}
+        {suffix ? <span style={{ position: 'absolute', right: '10px', top: '9px', fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>{suffix}</span> : null}
       </div>
-      {d.error ? <div role="alert" style={{ fontSize: '11.5px', color: '#b91c1c', marginTop: '4px' }}>{d.error}</div> : null}
+      {d.error ? <div role="alert" style={{ fontSize: '11.5px', color: 'var(--tx-red, #b91c1c)', marginTop: '4px' }}>{d.error}</div> : null}
     </div>
   );
 }
@@ -343,15 +366,15 @@ function Range({ l, r, on, prefix, phMin, report = () => {} }: { l: string; r: {
     <div><label style={label}>{l}</label>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <input inputMode="decimal" aria-label={`${l}, low`} value={lo.text} placeholder={phMin ?? (prefix ? '$0' : '0')} onChange={(e) => lo.change(e.target.value)} style={{ ...field, ...(lo.error ? { borderColor: '#dc2626' } : {}) }} />
-        <span style={{ color: '#a1a1aa' }}>–</span>
+        <span style={{ color: 'var(--subtle, #a1a1aa)' }}>–</span>
         <input inputMode="decimal" aria-label={`${l}, high`} value={hi.text} placeholder="No max" onChange={(e) => hi.change(e.target.value)} style={{ ...field, ...(hi.error ? { borderColor: '#dc2626' } : {}) }} />
       </div>
-      {error ? <div role="alert" style={{ fontSize: '11.5px', color: '#b91c1c', marginTop: '4px' }}>{error}</div> : null}
+      {error ? <div role="alert" style={{ fontSize: '11.5px', color: 'var(--tx-red, #b91c1c)', marginTop: '4px' }}>{error}</div> : null}
     </div>
   );
 }
 function Seg({ l, v, steps, on }: { l: string; v: number | null; steps: number[]; on: (n: number | null) => void }) {
-  const pill = (on_: boolean): React.CSSProperties => ({ height: '30px', padding: '0 12px', borderRadius: '8px', border: `1px solid ${on_ ? MINT : '#e4e4e7'}`, background: on_ ? MINT : '#fff', color: on_ ? '#fff' : '#52525b', fontSize: '12.5px', cursor: 'pointer' });
+  const pill = (on_: boolean): React.CSSProperties => ({ height: '30px', padding: '0 12px', borderRadius: '8px', border: `1px solid ${on_ ? MINT : 'var(--divider, #e4e4e7)'}`, background: on_ ? MINT : 'var(--surface, #fff)', color: on_ ? 'var(--surface, #fff)' : 'var(--muted, #52525b)', fontSize: '12.5px', cursor: 'pointer' });
   return (
     <div><label style={label}>{l}</label>
       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
@@ -362,13 +385,13 @@ function Seg({ l, v, steps, on }: { l: string; v: number | null; steps: number[]
   );
 }
 function Chips({ l, opts, v, on, tone = 'mint' }: { l: string; opts: Opt; v: string[]; on: (v: string[]) => void; tone?: 'mint' | 'red' | 'amber' }) {
-  const onColor = tone === 'red' ? { bg: '#fee2e2', fg: '#991b1b', bd: '#fecaca' } : tone === 'amber' ? { bg: '#fef3c7', fg: '#92400e', bd: '#fde68a' } : { bg: '#dcfce7', fg: MINT, bd: '#bbf7d0' };
+  const onColor = tone === 'red' ? { bg: 'var(--negative-soft, #fee2e2)', fg: '#991b1b', bd: 'var(--tint-red-2, #fecaca)' } : tone === 'amber' ? { bg: 'var(--caution-soft, #fef3c7)', fg: '#92400e', bd: 'var(--tint-amber-2, #fde68a)' } : { bg: 'var(--positive-soft, #dcfce7)', fg: MINT, bd: 'var(--tint-green-3, #bbf7d0)' };
   return (
     <div><label style={label}>{l}</label>
       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
         {opts.map(([c, t]) => {
           const on_ = v.includes(c);
-          return <button key={c} type="button" onClick={() => on(on_ ? v.filter((x) => x !== c) : [...v, c])} style={{ height: '28px', padding: '0 11px', borderRadius: '999px', border: `1px solid ${on_ ? onColor.bd : '#e4e4e7'}`, background: on_ ? onColor.bg : '#fff', color: on_ ? onColor.fg : '#52525b', fontSize: '12px', cursor: 'pointer', fontWeight: on_ ? 600 : 400 }}>{t}</button>;
+          return <button key={c} type="button" onClick={() => on(on_ ? v.filter((x) => x !== c) : [...v, c])} style={{ height: '28px', padding: '0 11px', borderRadius: '999px', border: `1px solid ${on_ ? onColor.bd : 'var(--divider, #e4e4e7)'}`, background: on_ ? onColor.bg : 'var(--surface, #fff)', color: on_ ? onColor.fg : 'var(--muted, #52525b)', fontSize: '12px', cursor: 'pointer', fontWeight: on_ ? 600 : 400 }}>{t}</button>;
         })}
       </div>
     </div>
@@ -378,9 +401,9 @@ function Toggle({ l, hint, v, on, red }: { l: string; hint?: string; v: boolean;
   return (
     <label style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '13px' }}>
       <button type="button" role="switch" aria-checked={v} onClick={() => on(!v)} style={{ flex: 'none', width: '36px', height: '20px', borderRadius: '999px', border: 0, background: v ? (red ? '#dc2626' : MINT) : '#d4d4d8', position: 'relative', cursor: 'pointer', marginTop: '1px' }}>
-        <span style={{ position: 'absolute', top: '2px', left: v ? '18px' : '2px', width: '16px', height: '16px', borderRadius: '50%', background: '#fff', transition: 'left .15s' }} />
+        <span style={{ position: 'absolute', top: '2px', left: v ? '18px' : '2px', width: '16px', height: '16px', borderRadius: '50%', background: 'var(--surface, #fff)', transition: 'left .15s' }} />
       </button>
-      <span><span style={{ fontWeight: 600 }}>{l}</span>{hint ? <span style={{ display: 'block', fontSize: '11.5px', color: '#71717a' }}>{hint}</span> : null}</span>
+      <span><span style={{ fontWeight: 600 }}>{l}</span>{hint ? <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>{hint}</span> : null}</span>
     </label>
   );
 }
@@ -427,12 +450,12 @@ function Locations({ prefs, on }: { prefs: LocationPref[]; on: (p: LocationPref[
               placeholder={`Search ${kind === 'county' ? 'counties' : 'cities'} in ${STATE_NAMES[st]}…`} style={field}
             />
             {open ? (
-              <div id={listId} role="listbox" style={{ position: 'absolute', top: '38px', left: 0, right: 0, zIndex: 5, background: '#fff', border: '1px solid #e4e4e7', borderRadius: '9px', boxShadow: '0 12px 30px -10px rgba(18,22,45,.25)', maxHeight: '260px', overflowY: 'auto', padding: '4px' }}>
+              <div id={listId} role="listbox" style={{ position: 'absolute', top: '38px', left: 0, right: 0, zIndex: 5, background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', boxShadow: '0 12px 30px -10px rgba(18,22,45,.25)', maxHeight: '260px', overflowY: 'auto', padding: '4px' }}>
                 {hits.length ? hits.map((p, i) => (
-                  <div key={p.name} id={`${listId}-${i}`} role="option" aria-selected={i === hiC} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(p)} onMouseEnter={() => setHi(i)} style={{ padding: '7px 8px', borderRadius: '7px', fontSize: '13px', cursor: 'pointer', background: i === hiC ? '#f4f4f5' : 'transparent' }}>
-                    {p.name} <span style={{ color: '#a1a1aa', fontSize: '12px' }}>· {formatPop(p.pop)}</span>
+                  <div key={p.name} id={`${listId}-${i}`} role="option" aria-selected={i === hiC} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(p)} onMouseEnter={() => setHi(i)} style={{ padding: '7px 8px', borderRadius: '7px', fontSize: '13px', cursor: 'pointer', background: i === hiC ? 'var(--surface-2, #f4f4f5)' : 'transparent' }}>
+                    {p.name} <span style={{ color: 'var(--subtle, #a1a1aa)', fontSize: '12px' }}>· {formatPop(p.pop)}</span>
                   </div>
-                )) : <div style={{ padding: '7px 8px', fontSize: '12px', color: '#71717a' }}>{kind === 'city' ? `No city of 5,000+ in ${STATE_NAMES[st]} matches. Smaller towns: add their county.` : `No county in ${STATE_NAMES[st]} matches.`}</div>}
+                )) : <div style={{ padding: '7px 8px', fontSize: '12px', color: 'var(--meta, #71717a)' }}>{kind === 'city' ? `No city of 5,000+ in ${STATE_NAMES[st]} matches. Smaller towns: add their county.` : `No county in ${STATE_NAMES[st]} matches.`}</div>}
               </div>
             ) : null}
           </div>
@@ -445,21 +468,21 @@ function Locations({ prefs, on }: { prefs: LocationPref[]; on: (p: LocationPref[
           </>
         ) : null}
       </div>
-      {note || (kind === 'zip' && zip.length === 5 && !zipOk) ? <p style={{ margin: '6px 0 0', fontSize: '11.5px', color: '#b45309' }}>{note ?? `${zip} is not a ZIP in the 50 states or DC.`}</p> : null}
+      {note || (kind === 'zip' && zip.length === 5 && !zipOk) ? <p style={{ margin: '6px 0 0', fontSize: '11.5px', color: 'var(--tx-amber, #b45309)' }}>{note ?? `${zip} is not a ZIP in the 50 states or DC.`}</p> : null}
       {prefs.length ? (
-        <div style={{ marginTop: '8px', border: '1px solid #e4e4e7', borderRadius: '10px', overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 70px 40px', gap: '8px', padding: '6px 10px', fontSize: '11.5px', color: '#71717a', background: '#fafafa' }}><span>Name</span><span style={{ color: '#dc2626' }}>Restricted</span><span>Type</span><span /></div>
+        <div style={{ marginTop: '8px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px', overflow: 'hidden' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 70px 40px', gap: '8px', padding: '6px 10px', fontSize: '11.5px', color: 'var(--meta, #71717a)', background: 'var(--canvas, #fafafa)' }}><span>Name</span><span style={{ color: 'var(--tx-hot, #dc2626)' }}>Restricted</span><span>Type</span><span /></div>
           {prefs.map((p, i) => (
-            <div key={`${p.type}-${p.name}-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 70px 40px', gap: '8px', alignItems: 'center', padding: '6px 10px', borderTop: '1px solid #f0f0f1', fontSize: '12.5px' }}>
-              <span>{p.type === 'state' ? STATE_NAMES[p.name] ?? p.name : p.name}{p.state && p.type !== 'state' ? <span style={{ color: '#71717a' }}> ({p.state})</span> : null}</span>
+            <div key={`${p.type}-${p.name}-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 70px 40px', gap: '8px', alignItems: 'center', padding: '6px 10px', borderTop: '1px solid var(--divider-2, #f0f0f1)', fontSize: '12.5px' }}>
+              <span>{p.type === 'state' ? STATE_NAMES[p.name] ?? p.name : p.name}{p.state && p.type !== 'state' ? <span style={{ color: 'var(--meta, #71717a)' }}> ({p.state})</span> : null}</span>
               <Toggle l="" v={!!p.restricted} on={(v) => on(prefs.map((x, j) => (j === i ? { ...x, restricted: v } : x)))} red />
-              <span style={{ color: '#71717a', textTransform: 'capitalize' }}>{p.type}</span>
-              <button type="button" onClick={() => on(prefs.filter((_, j) => j !== i))} aria-label="Remove this location" title="Remove" style={{ border: 0, background: 'none', color: '#71717a', cursor: 'pointer', width: '24px', height: '24px', display: 'grid', placeItems: 'center' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg></button>
+              <span style={{ color: 'var(--meta, #71717a)', textTransform: 'capitalize' }}>{p.type}</span>
+              <button type="button" onClick={() => on(prefs.filter((_, j) => j !== i))} aria-label="Remove this location" title="Remove" style={{ border: 0, background: 'none', color: 'var(--meta, #71717a)', cursor: 'pointer', width: '24px', height: '24px', display: 'grid', placeItems: 'center' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg></button>
             </div>
           ))}
-          <div style={{ padding: '6px 10px', borderTop: '1px solid #f0f0f1', textAlign: 'right' }}><button type="button" onClick={() => on([])} style={{ border: 0, background: 'none', color: '#dc2626', fontSize: '11.5px', cursor: 'pointer' }}>Remove all locations</button></div>
+          <div style={{ padding: '6px 10px', borderTop: '1px solid var(--divider-2, #f0f0f1)', textAlign: 'right' }}><button type="button" onClick={() => on([])} style={{ border: 0, background: 'none', color: 'var(--tx-hot, #dc2626)', fontSize: '11.5px', cursor: 'pointer' }}>Remove all locations</button></div>
         </div>
-      ) : <p style={{ margin: '6px 0 0', fontSize: '11.5px', color: '#b45309' }}>Without a location this buyer only matches on price and type.</p>}
+      ) : <p style={{ margin: '6px 0 0', fontSize: '11.5px', color: 'var(--tx-amber, #b45309)' }}>Without a location this buyer only matches on price and type.</p>}
     </div>
   );
 }

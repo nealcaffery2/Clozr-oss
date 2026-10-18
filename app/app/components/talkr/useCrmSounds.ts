@@ -8,7 +8,7 @@
 
 import { useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { armNotificationAsk, installAudioUnlock, playEvent, setAudioUser } from '@/lib/phone-audio';
+import { armNotificationAsk, installAudioUnlock, isBellCategoryMuted, playEvent, setAudioUser } from '@/lib/phone-audio';
 
 /** How far ahead due tasks are armed; re-armed on every task change and every half hour. */
 const HORIZON_MS = 12 * 3600_000;
@@ -33,18 +33,24 @@ export function useCrmSounds(workspaceId: number | null, userId: string | null):
         .eq('workspace_id', workspaceId)
         .eq('assigned_to', userId)
         .eq('done', false)
+        // A step the plan sends by itself is nobody's to do (migration 291):
+        // a Compr plan queued hundreds due at the same minute, each a chime.
+        .eq('automated', false)
         .gt('due_at', new Date(now).toISOString())
         .lt('due_at', new Date(now + HORIZON_MS).toISOString());
       if (!live) return;
       timers.forEach(clearTimeout);
-      timers = (data ?? []).map((t) => setTimeout(() => playEvent('task'), Date.parse(t.due_at as string) - Date.now()));
+      timers = (data ?? []).map((t) => setTimeout(() => {
+        if (!isBellCategoryMuted('Task')) playEvent('task');
+      }, Date.parse(t.due_at as string) - Date.now()));
     };
     const rearm = () => {
       if (debounce) clearTimeout(debounce);
-      debounce = setTimeout(() => void arm(), 500);
+      debounce = setTimeout(() => void arm(), 3000);
     };
 
     void arm();
+    // Hidden too: a task that comes inside the horizon while the tab sits in the background still needs its timer.
     const every = setInterval(rearm, 30 * 60_000);
     // `notifications` joins the realtime publication in migration 56; until it
     // is applied only the task half of this channel delivers.
@@ -52,9 +58,15 @@ export function useCrmSounds(workspaceId: number | null, userId: string | null):
       .channel(`sounds:${workspaceId}:${userId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `workspace_id=eq.${workspaceId}` }, (m) => {
         const n = m.new as { user_id?: string | null; category?: string };
-        if (n.user_id === userId && n.category === 'Mention') playEvent('mention');
+        if (n.user_id === userId && n.category === 'Mention' && !isBellCategoryMuted('Mention')) playEvent('mention');
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `workspace_id=eq.${workspaceId}` }, rearm)
+      // Only this rep's tasks re-arm the reminders. Every task change in the
+      // workspace used to re-read the list in every tab of every rep.
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `workspace_id=eq.${workspaceId}` }, (m) => {
+        const n = m.new as { assigned_to?: string | null } | null;
+        const o = m.old as { assigned_to?: string | null } | null;
+        if (n?.assigned_to === userId || o?.assigned_to === userId || (!n?.assigned_to && !o?.assigned_to)) rearm();
+      })
       .subscribe();
 
     return () => {

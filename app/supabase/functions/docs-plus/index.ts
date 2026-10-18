@@ -41,6 +41,7 @@ import { safeOrigin } from '../_shared/parity/security.ts';
 import { notifyVoided } from '../_shared/parity/notify.ts';
 import { verifyContract } from '../_shared/parity/certificate.ts';
 import { PARITY_FIELD_META, type ParityFieldType } from '../_shared/parity/field-logic.ts';
+import { claimBulkItem } from './bulk.ts';
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': ALLOW_HEADERS, 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
@@ -432,7 +433,7 @@ function guessKind(name: string): string {
   return 'other';
 }
 
-/** Up to 20 queued rows per call: each becomes its own contract, created and sent. */
+/** Up to 20 queued rows per call: each is claimed, then becomes its own contract, created and sent. */
 async function bulkTick(admin: SupabaseClient, bulkId: number | null, origin: string, ws?: number) {
   let q = admin.from('bulk_send_items').select('id, bulk_send_id, workspace_id, row_index, input').eq('status', 'queued').order('id').limit(20);
   if (bulkId) q = q.eq('bulk_send_id', bulkId);
@@ -441,14 +442,18 @@ async function bulkTick(admin: SupabaseClient, bulkId: number | null, origin: st
   let sent = 0, failed = 0;
   const cache = new Map<number, Any>();
   for (const it of items ?? []) {
+    let bs = cache.get(it.bulk_send_id);
+    if (!bs) {
+      const { data, error } = await admin.from('bulk_sends').select('*, template:doc_templates(*)').eq('id', it.bulk_send_id).maybeSingle();
+      // A failed read is not "gone": the row stays queued for the next tick.
+      if (error) continue;
+      bs = data; cache.set(it.bulk_send_id, bs);
+      if (bs?.status === 'queued') await admin.from('bulk_sends').update({ status: 'running' }).eq('id', bs.id);
+    }
+    // Claimed before anything is created or sent (bulk.ts): a run that loses the claim sends nothing.
+    if (!(await claimBulkItem(admin, it.id))) continue;
     try {
-      let bs = cache.get(it.bulk_send_id);
-      if (!bs) {
-        const { data } = await admin.from('bulk_sends').select('*, template:doc_templates(*)').eq('id', it.bulk_send_id).single();
-        bs = data; cache.set(it.bulk_send_id, bs);
-        if (bs?.status === 'queued') await admin.from('bulk_sends').update({ status: 'running' }).eq('id', bs.id);
-      }
-      if (!bs || bs.status === 'cancelled') { await admin.from('bulk_send_items').update({ status: 'skipped' }).eq('id', it.id); continue; }
+      if (!bs || bs.status === 'cancelled') { await admin.from('bulk_send_items').update({ status: 'skipped', error: null }).eq('id', it.id); continue; }
       const r = it.input as BulkRow;
       const t = bs.template;
       const opts = bs.options ?? {};
@@ -477,7 +482,7 @@ async function bulkTick(admin: SupabaseClient, bulkId: number | null, origin: st
         : await createContract(admin, { ...common, template: t, tokens: r.tokens ?? [] });
       const contractId = (out as Any).contract?.id;
       if (contractId) await admin.from('contracts').update({ bulk_send_id: bs.id }).eq('id', contractId);
-      await admin.from('bulk_send_items').update({ status: 'sent', contract_id: contractId ?? null }).eq('id', it.id);
+      await admin.from('bulk_send_items').update({ status: 'sent', contract_id: contractId ?? null, error: null }).eq('id', it.id);
       sent++;
     } catch (e) {
       failed++;
@@ -485,7 +490,8 @@ async function bulkTick(admin: SupabaseClient, bulkId: number | null, origin: st
     }
   }
   for (const id of new Set((items ?? []).map((i) => i.bulk_send_id))) {
-    const { data: counts } = await admin.from('bulk_send_items').select('status').eq('bulk_send_id', id);
+    const { data: counts, error } = await admin.from('bulk_send_items').select('status').eq('bulk_send_id', id);
+    if (error) continue; // no counts is not zero counts: leave the batch as it stands
     const c = (s: string) => (counts ?? []).filter((x) => x.status === s).length;
     await admin.from('bulk_sends').update({
       sent: c('sent'), failed: c('failed'),

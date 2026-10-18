@@ -66,15 +66,15 @@ export function FlowEditor({ number, isMobile }: { number: PhoneNumberDto; isMob
   if (!loaded) return <div style={{ padding: '10px 12px', fontSize: '12px', color: MUTED }}>{note ? <NoteBox note={note} /> : 'Loading routing…'}</div>;
 
   return (
-    <div style={{ padding: '12px', background: '#fafafa', borderTop: `1px solid ${LINE}` }}>
-      {legacy && steps.length === 0 ? <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '8px' }}>This number has the older digit menu. Saving a flow here replaces it.</div> : null}
+    <div style={{ padding: '12px', background: 'var(--canvas, #fafafa)', borderTop: `1px solid ${LINE}` }}>
+      {legacy && steps.length === 0 ? <div style={{ fontSize: '12px', color: 'var(--tx-amber-deep, #92400e)', marginBottom: '8px' }}>This number has the older digit menu. Saving a flow here replaces it.</div> : null}
       {steps.length === 0 ? (
         <div style={{ fontSize: '12.5px', color: MUTED, marginBottom: '8px' }}>No flow yet — calls use the default routing (the seller&rsquo;s owner, the line&rsquo;s owner, then voicemail). Add a first step to take control.</div>
       ) : null}
 
       <StepList steps={steps} onChange={setSteps} ctx={ctx} depth={0} />
 
-      <div style={{ marginTop: '14px', padding: '12px', background: '#fff', border: `1px solid ${LINE}`, borderRadius: '10px', display: 'grid', gap: '10px' }}>
+      <div style={{ marginTop: '14px', padding: '12px', background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '10px', display: 'grid', gap: '10px' }}>
         <span style={label}>On every call to {formatPhone(number.phone_e164)}</span>
         <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '12.5px' }}>
           <input type="checkbox" checked={settings.recording} onChange={(e) => setSettings({ ...settings, recording: e.target.checked })} style={{ accentColor: GREEN }} />
@@ -187,7 +187,7 @@ function StepCard({ step, ctx, depth, onChange, onRemove, onUp, onDown }: {
   const who = (id: string | null | undefined) => ctx.members.find((m) => m.id === id)?.display_name ?? 'someone';
 
   return (
-    <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderLeft: `3px solid ${GREEN}`, borderRadius: '10px', padding: '10px 12px' }}>
+    <div style={{ background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderLeft: `3px solid ${GREEN}`, borderRadius: '10px', padding: '10px 12px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
         <span style={{ fontSize: '12.5px', fontWeight: 700, flex: 1 }}>{STEP_LABEL[node.type]}</span>
         {onUp ? <Btn small title="Move up" onClick={onUp}>↑</Btn> : null}
@@ -343,7 +343,7 @@ function TargetBox({ label: text, target, node, set }: { label: string; target: 
 function Branch({ title, steps, ctx, depth, onChange }: { title?: string; steps: Step[]; ctx: Ctx; depth: number; onChange: (s: Step[]) => void }) {
   return (
     <div style={{ marginLeft: '6px', paddingLeft: '10px', borderLeft: `2px dashed ${LINE}` }}>
-      {title ? <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#52525b', margin: '2px 0 4px' }}>{title}</div> : null}
+      {title ? <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--muted, #52525b)', margin: '2px 0 4px' }}>{title}</div> : null}
       <StepList steps={steps} onChange={onChange} ctx={ctx} depth={depth + 1} emptyText="Nothing here yet — goes to voicemail." />
     </div>
   );
@@ -384,7 +384,7 @@ function Simulator({ numberId, draft, ctx, isMobile }: { numberId: string; draft
   }
 
   return (
-    <div style={{ marginTop: '12px', padding: '12px', background: '#fff', border: `1px solid ${LINE}`, borderRadius: '10px' }}>
+    <div style={{ marginTop: '12px', padding: '12px', background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '10px' }}>
       <span style={label}>Test call</span>
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, minmax(0,1fr))', gap: '6px' }}>
         <input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} style={field} title="When the call comes in (your time)" />
@@ -408,7 +408,7 @@ function Simulator({ numberId, draft, ctx, isMobile }: { numberId: string; draft
         </div>
       ) : null}
       <div style={{ marginTop: '8px' }}><Btn disabled={busy} onClick={() => void simulate()}>{busy ? 'Running…' : 'Run test call'}</Btn></div>
-      {error ? <div style={{ fontSize: '12px', color: '#b91c1c', marginTop: '6px', whiteSpace: 'pre-wrap' }}>{error}</div> : null}
+      {error ? <div style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)', marginTop: '6px', whiteSpace: 'pre-wrap' }}>{error}</div> : null}
       {result ? (
         result.valid ? (
           <ol style={{ margin: '8px 0 0', paddingLeft: '18px', fontSize: '12.5px', lineHeight: 1.7 }}>
@@ -416,7 +416,7 @@ function Simulator({ numberId, draft, ctx, isMobile }: { numberId: string; draft
             <li style={{ listStyle: 'none', marginLeft: '-18px', marginTop: '4px', fontWeight: 700, color: GREEN }}>{OUTCOME[result.outcome ?? ''] ?? result.outcome}</li>
           </ol>
         ) : (
-          <div style={{ fontSize: '12px', color: '#b91c1c', marginTop: '6px' }}>This flow would be refused:<br />• {result.errors.join('\n• ')}</div>
+          <div style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)', marginTop: '6px' }}>This flow would be refused:<br />• {result.errors.join('\n• ')}</div>
         )
       ) : null}
     </div>

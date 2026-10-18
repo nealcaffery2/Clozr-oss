@@ -11,7 +11,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { CLAUDE_MODEL } from './models.ts';
 import { UNTRUSTED_RULE, fence } from './security.ts';
 import {
-  MEMORY_SCHEMA, fallbackMemory, historyText, parseModelMemory, rowToMemory,
+  MEMORY_SCHEMA, fallbackMemory, historyRows, historyText, ourSide, parseModelMemory, rowToMemory,
   TRANSCRIPT_FULL, type HistoryItem, type LeadFacts, type LeadHistory, type LeadMemory, type RecordKind,
 } from '../../../lib/lead-memory.ts';
 
@@ -23,6 +23,8 @@ const SYSTEM = `You keep the memory for one lead in a real estate wholesaling CR
 Write:
 - brief: at most 900 characters of plain sentences, what someone needs in 20 seconds before a call. Who they are and how they like to be addressed, the property, why they would sell (or, for a buyer, what they buy), the numbers said so far (asking price, our offers), timeline, condition, objections, what WE promised and whether it was done, the agreed next step, and anything to be careful about. Most important first. No headings, no bullet characters, never an em dash.
 - facts: the same, structured. Money as plain numbers of dollars. last_contact_at is the ISO time of the newest real conversation (call, text, email), last_contact_summary one sentence of what was said in it. promises_made are commitments our side made ("send the offer in writing by Friday"). do_not_mention lists topics the person asked us not to raise, or sensitive matters a caller must not open with (a death, a divorce, a foreclosure they are embarrassed about). open_questions are things we still need to learn. sentiment is how they feel about working with us now.
+
+Several people work one lead: reps and AI agents, each with their own name, and any of them may read this next. Always say who on our side said or promised something, by name ("Riley, our AI lead manager, called on Oct 3", "Sam offered 150,000"). Never write as "I", "you" or "the agent", and never let one name stand for the whole team.
 
 Rules: use only what the history and record say; never guess a number, a date or a name. When the history disagrees with itself, trust the newest. Leave a fact null or empty rather than invent it. Record fields can be stale, the newest conversation wins.${UNTRUSTED_RULE}${WRITING_RULE}`;
 
@@ -36,11 +38,11 @@ const trim = (v: unknown, max: number) => {
   return s.length > max ? s.slice(0, max) + '\u2026' : s;
 };
 
-function commText(c: Any, fullTranscript = false): string {
+function commText(c: Any, fullTranscript = false, agentNames: Record<string, string> = {}): string {
   const notes = c.ai_notes && typeof c.ai_notes === 'object' ? (c.ai_notes.summary ?? c.ai_notes.notes ?? '') : '';
   const coach = c.coaching_review && typeof c.coaching_review === 'object' ? c.coaching_review.keep ?? '' : '';
   const parts = [
-    c.call_origin === 'ai_agent' ? '(AI agent call)' : '',
+    ourSide(c, agentNames),
     c.subject ? `Subject: ${trim(c.subject, 160)}.` : '',
     c.summary ? `Summary: ${trim(c.summary, 500)}` : '',
     notes ? `Notes: ${trim(notes, 500)}` : '',
@@ -51,11 +53,15 @@ function commText(c: Any, fullTranscript = false): string {
   return parts.filter(Boolean).join(' ');
 }
 
-/** Everything on file for one record, read with whatever client the caller trusts. */
+/**
+ * Everything on file for one record, read with whatever client the caller
+ * trusts. Null when the record is not there. A failed read throws
+ * (historyRows) before anything is summarised or decided from it.
+ */
 export async function gatherHistory(db: SupabaseClient, ws: number, kind: RecordKind, id: number): Promise<LeadHistory | null> {
   const col = kind === 'seller' ? 'seller_id' : 'buyer_id';
   const table = kind === 'seller' ? 'sellers' : 'buyers';
-  const { data: rec } = await db.from(table).select('*').eq('id', id).eq('workspace_id', ws).maybeSingle();
+  const rec = historyRows(await db.from(table).select('*').eq('id', id).eq('workspace_id', ws).maybeSingle(), 'record');
   if (!rec) return null;
 
   const [comms, acts, deals, appts, tasks] = await Promise.all([
@@ -67,13 +73,18 @@ export async function gatherHistory(db: SupabaseClient, ws: number, kind: Record
     db.from('appointments').select('title, kind, starts_at, location').eq('workspace_id', ws).eq(col, id).order('starts_at', { ascending: false }).limit(10),
     kind === 'seller'
       ? db.from('tasks').select('title, due_at, done').eq('workspace_id', ws).eq('seller_id', id).eq('done', false).order('due_at').limit(10)
-      : Promise.resolve({ data: [] as Any[] }),
+      : Promise.resolve({ data: [] as Any[], error: null }),
   ]);
+  for (const [what, r] of [['messages and calls', comms], ['activity', acts], ['deals', deals], ['appointments', appts], ['tasks', tasks]] as [string, Any][]) historyRows(r, what);
+  const agentNames: Record<string, string> = {};
+  // Without the table every AI line reads "one of our AI agents".
+  const agents = historyRows(await db.from('voice_agent_settings').select('agent_key, name').eq('workspace_id', ws), 'agent names', true);
+  for (const a of (agents ?? []) as Any[]) if (a.agent_key && a.name) agentNames[String(a.agent_key)] = String(a.name);
   const dealIds = ((deals.data ?? []) as Any[]).map((d) => d.id);
   const offersQ = kind === 'seller' && dealIds.length
     ? db.from('offers').select('amount, status, direction, sent_at, notes').eq('workspace_id', ws).or(`seller_id.eq.${id},deal_id.in.(${dealIds.join(',')})`).limit(40)
     : db.from('offers').select('amount, status, direction, sent_at, notes').eq('workspace_id', ws).eq(col, id).limit(40);
-  const { data: offers } = await offersQ;
+  const offers = historyRows(await offersQ, 'offers');
 
   const items: HistoryItem[] = [];
   // The newest calls are read whole (comms come newest first): an agent picks
@@ -83,7 +94,7 @@ export async function gatherHistory(db: SupabaseClient, ws: number, kind: Record
     const isCall = (c.channel === 'call' || c.channel === 'voicemail') && !!c.transcript;
     const full = isCall && fullCalls < 3;
     if (full) fullCalls++;
-    const text = commText(c, full);
+    const text = commText(c, full, agentNames);
     if (!text) continue;
     items.push({ at: c.occurred_at ?? c.created_at, kind: String(c.channel ?? 'note'), direction: c.direction === 'inbound' ? 'inbound' : c.direction === 'outbound' ? 'outbound' : null, text, ...(full ? { full: true } : {}) });
   }
@@ -134,13 +145,12 @@ function fieldsOf(row: Any): Record<string, unknown> {
  * The rest of what is on file for one record: the property and its facts,
  * the person's other phones, RVMs left for them, the action plans and AI
  * agents that have worked them, and how often each channel reached them.
- * Every read is best effort: a table or column a database lacks is skipped.
+ * A table or column a database lacks is skipped; any other failed read
+ * throws, so the memory is not written with parts missing.
  */
 async function gatherExtras(db: SupabaseClient, ws: number, kind: RecordKind, id: number, rec: Any, comms: Any[]): Promise<{ items: HistoryItem[]; counts: Record<string, unknown>; context: Record<string, unknown> }> {
   const col = kind === 'seller' ? 'seller_id' : 'buyer_id';
-  const safe = async <T>(q: PromiseLike<{ data: T | null; error: unknown }>): Promise<T | null> => {
-    try { const r = await q; return r.error ? null : r.data; } catch { return null; }
-  };
+  const safe = async <T>(q: PromiseLike<{ data: T | null; error: { message: string } | null }>): Promise<T | null> => historyRows(await q, 'extras', true);
   const [property, phones, rvms, plans, agents, matches] = await Promise.all([
     kind === 'seller' && rec?.property_id ? safe<Any>(db.from('properties').select('*').eq('id', rec.property_id).maybeSingle()) : Promise.resolve(null),
     safe<Any[]>(db.from(kind === 'seller' ? 'seller_phones' : 'buyer_phones').select('kind, position, is_dnc, call_count').eq('workspace_id', ws).eq(col, id).order('position').limit(10)),

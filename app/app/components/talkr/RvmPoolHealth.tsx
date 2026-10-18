@@ -20,8 +20,8 @@ import { Button } from './ui';
 const small: React.CSSProperties = { font: '400 11.5px/1.4 var(--sans)', color: 'var(--muted)' };
 const chip = (tone: 'good' | 'warn' | 'bad' | 'off'): React.CSSProperties => ({
   font: '600 10.5px/1 var(--sans)', padding: '3px 6px', borderRadius: 6, whiteSpace: 'nowrap',
-  color: tone === 'good' ? '#0A8560' : tone === 'warn' ? '#b45309' : tone === 'bad' ? '#b91c1c' : '#52525b',
-  background: tone === 'good' ? '#dcfce7' : tone === 'warn' ? '#fef3c7' : tone === 'bad' ? '#fee2e2' : '#f4f4f5',
+  color: tone === 'good' ? '#0A8560' : tone === 'warn' ? '#b45309' : tone === 'bad' ? '#b91c1c' : 'var(--muted, #52525b)',
+  background: tone === 'good' ? 'var(--positive-soft, #dcfce7)' : tone === 'warn' ? 'var(--caution-soft, #fef3c7)' : tone === 'bad' ? 'var(--negative-soft, #fee2e2)' : 'var(--surface-2, #f4f4f5)',
 });
 
 const EVENT_LABEL: Record<RvmPoolEvent['action'], string> = {

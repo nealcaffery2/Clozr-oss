@@ -16,10 +16,10 @@ import { OptionTimers } from '@/components/OptionTimers';
 function DispoFact({ label, value, strong }: { label: string; value: React.ReactNode; strong?: boolean }) {
   return (
     <span style={{ minWidth: 0 }}>
-      <span style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#71717a' }}>
+      <span style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--meta, #71717a)' }}>
         {label}
       </span>
-      <span style={{ display: 'block', fontSize: '12.5px', fontWeight: strong ? 600 : 500, color: '#27272a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ display: 'block', fontSize: '12.5px', fontWeight: strong ? 600 : 500, color: 'var(--ink-2, #27272a)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {value || '—'}
       </span>
     </span>
@@ -27,11 +27,11 @@ function DispoFact({ label, value, strong }: { label: string; value: React.React
 }
 
 function DomCell({ dom, mls }: { dom: number | null; mls: boolean }) {
-  if (dom == null) return <span style={{ color: "#71717a" }}>Not yet</span>;
+  if (dom == null) return <span style={{ color: "var(--meta, #71717a)" }}>Not yet</span>;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontVariantNumeric: "tabular-nums" }}>
       {dom} day{dom === 1 ? "" : "s"}
-      {mls ? <span title="Unsold after 6 days on market: list it on the MLS" style={{ fontSize: "11px", fontWeight: 600, color: "#b91c1c", background: "#fee2e2", borderRadius: "6px", padding: "1px 7px" }}>MLS now</span> : null}
+      {mls ? <span title="Unsold after 6 days on market: list it on the MLS" style={{ fontSize: "11px", fontWeight: 600, color: "var(--tx-red, #b91c1c)", background: "var(--negative-soft, #fee2e2)", borderRadius: "6px", padding: "1px 7px" }}>MLS now</span> : null}
     </span>
   );
 }
@@ -40,41 +40,41 @@ export function Dispo({ V }: { V: ClozrView }) {
   return (
     <section data-screen-label="Dispo" style={{flex: "1", minWidth: "0", display: "flex", flexDirection: V.isMobile ? "column" : "row", overflow: V.isMobile ? "hidden" : "visible"}}>
       <aside style={V.isMobile
-        ? {display: "flex", alignItems: "center", gap: "6px", flex: "none", background: "#fff", borderBottom: "1px solid #e4e4e7", padding: "9px 12px", overflowX: "auto", overflowY: "hidden"}
-        : {width: "210px", flex: "none", background: "#fff", borderRight: "1px solid #e4e4e7", padding: "14px 10px", overflow: "auto"}}>
-        <div style={{display: V.isMobile ? "none" : "block", fontSize: "11.5px", fontWeight: "600", color: "#71717a", padding: "0 8px 8px"}}>
+        ? {display: "flex", alignItems: "center", gap: "6px", flex: "none", background: "var(--surface, #fff)", borderBottom: "1px solid var(--divider, #e4e4e7)", padding: "9px 12px", overflowX: "auto", overflowY: "hidden"}
+        : {width: "210px", flex: "none", background: "var(--surface, #fff)", borderRight: "1px solid var(--divider, #e4e4e7)", padding: "14px 10px", overflow: "auto"}}>
+        <div style={{display: V.isMobile ? "none" : "block", fontSize: "11.5px", fontWeight: "600", color: "var(--meta, #71717a)", padding: "0 8px 8px"}}>
           Disposition
         </div>
         {(V.dispoFilters || []).map((f, f__i) => (
           <React.Fragment key={f__i}>
-          <button className="dc2" onClick={f.go} style={{display: "flex", alignItems: "center", gap: V.isMobile ? "6px" : "0", justifyContent: V.isMobile ? "flex-start" : "space-between", width: V.isMobile ? "auto" : "100%", flex: "none", whiteSpace: "nowrap", height: "30px", padding: V.isMobile ? "0 11px" : "0 8px", border: V.isMobile ? "1px solid #e4e4e7" : "0", borderRadius: V.isMobile ? "999px" : "7px", cursor: "pointer", fontSize: "13px", textAlign: "left", background: f.bg, color: f.color, fontWeight: "500"}}>
+          <button className="dc2" onClick={f.go} style={{display: "flex", alignItems: "center", gap: V.isMobile ? "6px" : "0", justifyContent: V.isMobile ? "flex-start" : "space-between", width: V.isMobile ? "auto" : "100%", flex: "none", whiteSpace: "nowrap", height: "30px", padding: V.isMobile ? "0 11px" : "0 8px", border: V.isMobile ? "1px solid var(--divider, #e4e4e7)" : "0", borderRadius: V.isMobile ? "999px" : "7px", cursor: "pointer", fontSize: "13px", textAlign: "left", background: f.bg, color: f.color, fontWeight: "500"}}>
             <span>
               {f.label}
             </span>
-            <span style={{fontSize: "11.5px", color: "#71717a"}}>
+            <span style={{fontSize: "11.5px", color: "var(--meta, #71717a)"}}>
               {f.count}
             </span>
           </button>
           </React.Fragment>
         ))}
-        <div style={{display: V.isMobile ? "none" : "block", margin: "14px 8px 0", padding: "10px", border: "1px solid #e4e4e7", borderRadius: "9px"}}>
-          <div style={{fontSize: "11.5px", color: "#71717a", fontWeight: "600"}}>
+        <div style={{display: V.isMobile ? "none" : "block", margin: "14px 8px 0", padding: "10px", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "9px"}}>
+          <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600"}}>
             This month
           </div>
           <div style={{fontSize: "20px", fontWeight: "700", letterSpacing: "-0.03em", marginTop: "4px"}}>
             {V.dispoMonthFees}
           </div>
-          <div style={{fontSize: "11.5px", color: "#71717a"}}>
+          <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)"}}>
             assignment fees · {V.dispoMonthCount} deals
           </div>
         </div>
       </aside>
       <div style={{flex: "1", minWidth: "0", display: "flex", flexDirection: "column"}}>
-        <div data-head style={{display: "flex", alignItems: "center", gap: "10px", padding: "12px 16px", background: "#fff", borderBottom: "1px solid #e4e4e7"}}>
+        <div data-head style={{display: "flex", alignItems: "center", gap: "10px", padding: "12px 16px", background: "var(--surface, #fff)", borderBottom: "1px solid var(--divider, #e4e4e7)"}}>
           <h1 style={{margin: "0", fontSize: "16px", fontWeight: "700", letterSpacing: "-0.02em"}}>
             {V.dispoFilter}
           </h1>
-          <span style={{fontSize: "12px", color: "#71717a"}}>
+          <span style={{fontSize: "12px", color: "var(--meta, #71717a)"}}>
             {V.dispoSubtitle}
           </span>
           <div style={{flex: "1"}}></div>
@@ -117,16 +117,16 @@ export function Dispo({ V }: { V: ClozrView }) {
           {/* Twelve columns at 1100px: on a phone everything from SPREAD
               rightwards was off the screen and the money cells wrapped to
               three lines. The card carries the same figures stacked. */}
-          <div style={{flex: "1", overflow: "auto", background: "#fafafa", padding: "10px 12px calc(96px + env(safe-area-inset-bottom, 0px))", display: "flex", flexDirection: "column", gap: "8px"}}>
+          <div style={{flex: "1", overflow: "auto", background: "var(--canvas, #fafafa)", padding: "10px 12px calc(96px + env(safe-area-inset-bottom, 0px))", display: "flex", flexDirection: "column", gap: "8px"}}>
             {(V.inventory || []).map((i, i__i) => (
               <React.Fragment key={i__i}>
-              <div onClick={i.open} style={{background: "#fff", border: "1px solid #e4e4e7", borderRadius: "12px", padding: "11px 12px", display: "flex", flexDirection: "column", gap: "9px", cursor: "pointer", minWidth: "0"}}>
+              <div onClick={i.open} style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", padding: "11px 12px", display: "flex", flexDirection: "column", gap: "9px", cursor: "pointer", minWidth: "0"}}>
                 <div style={{display: "flex", alignItems: "flex-start", gap: "10px", minWidth: "0"}}>
                   <div style={{flex: "1", minWidth: "0"}}>
                     <div style={{fontWeight: "600", fontSize: "14px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
                       {i.addr}
                     </div>
-                    <div style={{fontSize: "12px", color: "#71717a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
+                    <div style={{fontSize: "12px", color: "var(--meta, #71717a)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
                       {i.market && i.market.includes(',') ? i.market : (i.market && i.market !== i.city ? `${i.city} · ${i.market}` : i.city)}
                     </div>
                   </div>
@@ -135,15 +135,15 @@ export function Dispo({ V }: { V: ClozrView }) {
                     {i.status}
                   </span>
                 </div>
-                <div style={{display: "flex", alignItems: "baseline", gap: "8px", flexWrap: "wrap", minWidth: "0", padding: "8px 10px", borderRadius: "9px", background: "#fafafa"}}>
-                  <span style={{fontSize: "16px", fontWeight: "700", color: "#0A8560", whiteSpace: "nowrap"}}>
+                <div style={{display: "flex", alignItems: "baseline", gap: "8px", flexWrap: "wrap", minWidth: "0", padding: "8px 10px", borderRadius: "9px", background: "var(--canvas, #fafafa)"}}>
+                  <span style={{fontSize: "16px", fontWeight: "700", color: "var(--tx-mint, #0a8560)", whiteSpace: "nowrap"}}>
                     {i.spread}
                   </span>
-                  <span style={{fontSize: "12px", color: "#71717a", whiteSpace: "nowrap"}}>
+                  <span style={{fontSize: "12px", color: "var(--meta, #71717a)", whiteSpace: "nowrap"}}>
                     {i.spreadPct} spread
                   </span>
                   <span style={{flex: "1"}}></span>
-                  <span style={{fontSize: "12px", color: "#52525b", whiteSpace: "nowrap"}}>
+                  <span style={{fontSize: "12px", color: "var(--muted, #52525b)", whiteSpace: "nowrap"}}>
                     {i.contract} · ARV {i.arv}
                   </span>
                 </div>
@@ -170,13 +170,13 @@ export function Dispo({ V }: { V: ClozrView }) {
           </div>
           </>
         ) : (
-        <div style={{flex: "1", overflow: "auto", background: "#fff"}}>
+        <div style={{flex: "1", overflow: "auto", background: "var(--surface, #fff)"}}>
           <table style={{width: "100%", borderCollapse: "separate", borderSpacing: "0", fontSize: "12.5px", minWidth: "1100px"}}>
             <thead>
               <tr>
                 {(V.inventoryCols || []).map((c, c__i) => (
                   <React.Fragment key={c__i}>
-                  <th style={{position: "sticky", top: "0", background: "var(--c-thead)", borderBottom: "1px solid var(--c-thead-line)", padding: "0 12px", height: "36px", textAlign: "left", fontSize: "11.5px", fontWeight: "600", color: "#71717a", whiteSpace: "nowrap"}}>
+                  <th style={{position: "sticky", top: "0", background: "var(--c-thead)", borderBottom: "1px solid var(--c-thead-line)", padding: "0 12px", height: "36px", textAlign: "left", fontSize: "11.5px", fontWeight: "600", color: "var(--meta, #71717a)", whiteSpace: "nowrap"}}>
                     {c}
                   </th>
                   </React.Fragment>
@@ -187,52 +187,52 @@ export function Dispo({ V }: { V: ClozrView }) {
               {(V.inventory || []).map((i, i__i) => (
                 <React.Fragment key={i__i}>
                 <tr className="dc2" onClick={i.open} style={{cursor: "pointer"}}>
-                  <td style={{padding: "0 12px", height: "46px", borderBottom: "1px solid #f0f0f1", whiteSpace: "nowrap"}}>
+                  <td style={{padding: "0 12px", height: "46px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap"}}>
                     <div style={{fontWeight: "600"}}>
                       {i.addr}
                     </div>
-                    <div style={{fontSize: "11px", color: "#71717a"}}>
+                    <div style={{fontSize: "11px", color: "var(--meta, #71717a)"}}>
                       {i.city}
                     </div>
                   </td>
-                  <td style={{padding: "0 12px", borderBottom: "1px solid #f0f0f1", whiteSpace: "nowrap", color: "#52525b"}}>
+                  <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", color: "var(--muted, #52525b)"}}>
                     {i.market}
                   </td>
-                  <td style={{padding: "0 12px", borderBottom: "1px solid #f0f0f1", whiteSpace: "nowrap", fontWeight: "500"}}>
+                  <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", fontWeight: "500"}}>
                     {i.contract}
                   </td>
-                  <td style={{padding: "0 12px", borderBottom: "1px solid #f0f0f1", whiteSpace: "nowrap"}}>
+                  <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap"}}>
                     {i.arv}
                   </td>
-                  <td style={{padding: "0 12px", borderBottom: "1px solid #f0f0f1", whiteSpace: "nowrap", fontWeight: "600", color: "#0A8560"}}>
+                  <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", fontWeight: "600", color: "var(--tx-mint, #0a8560)"}}>
                     {i.spread}
-                    <span style={{fontWeight: "400", color: "#71717a", marginLeft: "6px"}}>
+                    <span style={{fontWeight: "400", color: "var(--meta, #71717a)", marginLeft: "6px"}}>
                       {i.spreadPct}
                     </span>
                   </td>
-                  <td style={{padding: "0 12px", borderBottom: "1px solid #f0f0f1", whiteSpace: "nowrap"}}>
+                  <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap"}}>
                     <DomCell dom={i.dom} mls={i.mlsDue} />
                   </td>
-                  <td style={{padding: "0 12px", borderBottom: "1px solid #f0f0f1", whiteSpace: "nowrap"}}>
+                  <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap"}}>
                     {i.matches}
                   </td>
-                  <td style={{padding: "0 12px", borderBottom: "1px solid #f0f0f1", whiteSpace: "nowrap", color: "#52525b"}}>
+                  <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", color: "var(--muted, #52525b)"}}>
                     {i.campaign}
                   </td>
-                  <td style={{padding: "0 12px", borderBottom: "1px solid #f0f0f1", whiteSpace: "nowrap"}}>
+                  <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap"}}>
                     {i.offers}
                   </td>
-                  <td style={{padding: "0 12px", borderBottom: "1px solid #f0f0f1", whiteSpace: "nowrap", fontWeight: "600"}}>
+                  <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", fontWeight: "600"}}>
                     {i.best}
                   </td>
-                  <td style={{padding: "0 12px", borderBottom: "1px solid #f0f0f1", whiteSpace: "nowrap", maxWidth: "220px"}}>
+                  <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", maxWidth: "220px"}}>
                     <OptionTimers seller={i.optionSeller} buyer={i.optionBuyer} />
                     {i.optionSeller || i.optionBuyer ? null : i.daysLeft}
                   </td>
-                  <td style={{padding: "0 12px", borderBottom: "1px solid #f0f0f1", whiteSpace: "nowrap", color: "#52525b"}}>
+                  <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", color: "var(--muted, #52525b)"}}>
                     {i.rep}
                   </td>
-                  <td style={{padding: "0 12px", borderBottom: "1px solid #f0f0f1", whiteSpace: "nowrap"}}>
+                  <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap"}}>
                     <span style={{display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11.5px", fontWeight: "600", color: i.statusColor}}>
                       <Mark label={i.status} />
                       {i.status}

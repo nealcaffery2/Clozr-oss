@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import { Icon, type IconName } from './Icon';
 
 /**
@@ -13,16 +13,36 @@ export function IosSegmented<T extends string>({
   options,
   onChange,
   full = false,
+  idBase,
+  ariaLabel,
 }: {
   value: T;
   options: Array<{ value: T; label: string }>;
   onChange: (next: T) => void;
   /** Stretch to the container, segments equal width. */
   full?: boolean;
+  /**
+   * Wires the segments to panels as real tabs: each tab is `${idBase}-tab-<value>`
+   * and controls `${idBase}-panel-<value>`, only the selected one is in the Tab
+   * order, and the arrow keys (Home/End too) move between them.
+   */
+  idBase?: string;
+  ariaLabel?: string;
 }) {
+  const onKey = (e: KeyboardEvent<HTMLButtonElement>) => {
+    if (!idBase) return;
+    const i = options.findIndex((o) => o.value === value);
+    const next = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? options.length - 1 : null;
+    if (next === null) return;
+    e.preventDefault();
+    const o = options[(next + options.length) % options.length]!;
+    onChange(o.value);
+    document.getElementById(`${idBase}-tab-${o.value}`)?.focus();
+  };
   return (
     <div
       role="tablist"
+      aria-label={ariaLabel}
       // Marks it as a segmented control, so the phone's many-up grid reflow
       // (globals.css, max-width 820) leaves its one row of segments alone.
       data-seg=""
@@ -41,6 +61,12 @@ export function IosSegmented<T extends string>({
           type="button"
           role="tab"
           aria-selected={value === o.value}
+          {...(idBase ? {
+            id: `${idBase}-tab-${o.value}`,
+            'aria-controls': `${idBase}-panel-${o.value}`,
+            tabIndex: value === o.value ? 0 : -1,
+            onKeyDown: onKey,
+          } : {})}
           onClick={() => onChange(o.value)}
           className="truncate"
           style={{
@@ -49,7 +75,7 @@ export function IosSegmented<T extends string>({
             border: 'none',
             cursor: 'pointer',
             font: `${value === o.value ? 600 : 500} 12px/1.1 var(--sans)`,
-            background: value === o.value ? '#fff' : 'transparent',
+            background: value === o.value ? 'var(--surface, #fff)' : 'transparent',
             color: 'var(--text)',
             boxShadow: value === o.value ? '0 3px 8px rgba(0,0,0,.12), 0 1px 1px rgba(0,0,0,.04)' : 'none',
           }}

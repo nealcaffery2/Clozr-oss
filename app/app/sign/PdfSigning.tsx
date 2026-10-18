@@ -213,7 +213,7 @@ export function PdfSigning({ token, gate, api, upload, me, canAct, onDone, onDec
             {!data ? 'Opening the form…' : mine.length ? `${mine.length - mine.filter((f) => !valueOf(f).trim()).length} of ${mine.length} of your fields filled` : 'Nothing for you to fill on this form.'}
           </span>
         </div>
-        <div ref={hereRef} style={{ background: '#e4e4e7', padding: '10px 0', display: 'grid', gap: '10px', justifyItems: 'center' }}>
+        <div ref={hereRef} style={{ background: 'var(--divider, #e4e4e7)', padding: '10px 0', display: 'grid', gap: '10px', justifyItems: 'center' }}>
           {pdfErr ? <p className="cz-lede" style={{ padding: 20 }}>We could not open the form: {pdfErr}</p> : null}
           {doc && width > 0 ? sizes.map((s, i) => {
             const pw = w - 20;

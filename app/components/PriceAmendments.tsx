@@ -31,23 +31,23 @@ export function PriceAmendments({ workspaceId, dealId, reloadKey }: { workspaceI
     return () => { live = false; };
   }, [workspaceId, dealId, reloadKey]);
 
-  if (rows === null) return <div style={{ fontSize: '12px', color: '#a1a1aa' }}>Loading…</div>;
-  if (!rows.length) return <div style={{ fontSize: '12.5px', color: '#71717a' }}>No price has been amended on this deal.</div>;
+  if (rows === null) return <div style={{ fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>Loading…</div>;
+  if (!rows.length) return <div style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>No price has been amended on this deal.</div>;
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px', minWidth: '560px' }}>
         <thead>
-          <tr>{['Price', 'From', 'To', 'Change', 'By', 'When'].map((h) => <th key={h} style={{ textAlign: 'left', fontSize: '11px', color: '#71717a', padding: '6px 8px', borderBottom: '1px solid #e4e4e7' }}>{h}</th>)}</tr>
+          <tr>{['Price', 'From', 'To', 'Change', 'By', 'When'].map((h) => <th key={h} style={{ textAlign: 'left', fontSize: '11px', color: 'var(--meta, #71717a)', padding: '6px 8px', borderBottom: '1px solid var(--divider, #e4e4e7)' }}>{h}</th>)}</tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}>
-              <td style={{ padding: '7px 8px', borderBottom: '1px solid #f0f0f1', fontWeight: 600 }}>{PRICE_LABEL[r.field] ?? r.field}</td>
-              <td style={{ padding: '7px 8px', borderBottom: '1px solid #f0f0f1', color: '#71717a', textDecoration: 'line-through' }}>{usd(r.old_value)}</td>
-              <td style={{ padding: '7px 8px', borderBottom: '1px solid #f0f0f1', fontWeight: 600 }}>{usd(r.new_value)}</td>
-              <td style={{ padding: '7px 8px', borderBottom: '1px solid #f0f0f1', fontWeight: 600, color: Number(r.delta) < 0 ? '#b91c1c' : '#16a34a' }}>{Number(r.delta) > 0 ? '+' : ''}{usd(Number(r.delta))}</td>
-              <td style={{ padding: '7px 8px', borderBottom: '1px solid #f0f0f1' }}>{r.changed_by ? names[r.changed_by] ?? 'Teammate' : 'System / import'}</td>
-              <td style={{ padding: '7px 8px', borderBottom: '1px solid #f0f0f1', color: '#52525b', whiteSpace: 'nowrap' }}>{new Date(r.changed_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
+              <td style={{ padding: '7px 8px', borderBottom: '1px solid var(--divider-2, #f0f0f1)', fontWeight: 600 }}>{PRICE_LABEL[r.field] ?? r.field}</td>
+              <td style={{ padding: '7px 8px', borderBottom: '1px solid var(--divider-2, #f0f0f1)', color: 'var(--meta, #71717a)', textDecoration: 'line-through' }}>{usd(r.old_value)}</td>
+              <td style={{ padding: '7px 8px', borderBottom: '1px solid var(--divider-2, #f0f0f1)', fontWeight: 600 }}>{usd(r.new_value)}</td>
+              <td style={{ padding: '7px 8px', borderBottom: '1px solid var(--divider-2, #f0f0f1)', fontWeight: 600, color: Number(r.delta) < 0 ? 'var(--tx-red, #b91c1c)' : '#16a34a' }}>{Number(r.delta) > 0 ? '+' : ''}{usd(Number(r.delta))}</td>
+              <td style={{ padding: '7px 8px', borderBottom: '1px solid var(--divider-2, #f0f0f1)' }}>{r.changed_by ? names[r.changed_by] ?? 'Teammate' : 'System / import'}</td>
+              <td style={{ padding: '7px 8px', borderBottom: '1px solid var(--divider-2, #f0f0f1)', color: 'var(--muted, #52525b)', whiteSpace: 'nowrap' }}>{new Date(r.changed_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
             </tr>
           ))}
         </tbody>

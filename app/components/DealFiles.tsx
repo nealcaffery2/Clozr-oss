@@ -8,7 +8,7 @@ import { InteractiveFolderGallery } from '@/components/ui/interactive-folder-gal
 import { photoKey } from '@/lib/house-photos';
 import { PhotoOrderPanel } from '@/components/PhotoOrderPanel';
 
-const btn: React.CSSProperties = { height: '30px', padding: '0 11px', borderRadius: '8px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer', color: '#18181b', whiteSpace: 'nowrap' };
+const btn: React.CSSProperties = { height: '30px', padding: '0 11px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', color: 'var(--ink, #18181b)', whiteSpace: 'nowrap' };
 const isPhotoLink = (f: DealFile) => f.kind === 'link' && f.category === 'photos';
 const DRIVE = /drive\.google\.com/i;
 /** A shared folder or album, not one image: opened where it lives. */
@@ -104,7 +104,7 @@ export function DealFiles({ workspaceId, dealId, canWrite, mode = 'files', onToa
   }, [canWrite, rows, dealId, readDrive]);
 
   if (!workspaceId || !dealId) {
-    return <div style={{ fontSize: '12.5px', color: '#71717a', padding: '12px 0' }}>No deal on this record yet — files attach to a deal.</div>;
+    return <div style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)', padding: '12px 0' }}>No deal on this record yet — files attach to a deal.</div>;
   }
 
   const upload = async (files: File[]) => {
@@ -208,7 +208,7 @@ export function DealFiles({ workspaceId, dealId, canWrite, mode = 'files', onToa
       onDragOver={canWrite ? (e) => { e.preventDefault(); setDrag(true); } : undefined}
       onDragLeave={() => setDrag(false)}
       onDrop={canWrite ? (e) => { e.preventDefault(); setDrag(false); void upload(Array.from(e.dataTransfer.files)); } : undefined}
-      style={{ border: drag ? '2px dashed #0A8560' : '1px solid #e4e4e7', borderRadius: '12px', background: '#fff', padding: '12px 14px' }}
+      style={{ border: drag ? '2px dashed #0A8560' : '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', background: 'var(--surface, #fff)', padding: '12px 14px' }}
     >
       {canWrite ? (
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -232,7 +232,7 @@ export function DealFiles({ workspaceId, dealId, canWrite, mode = 'files', onToa
             </button>
           ) : null}
           {mode === 'files' ? <button type="button" style={btn} onClick={() => setPaste(paste === 'link' ? null : 'link')}>Add links</button> : null}
-          <span style={{ fontSize: '11.5px', color: '#a1a1aa' }}>or drop {mode === 'photos' ? 'photos' : 'files'} here · many at once</span>
+          <span style={{ fontSize: '11.5px', color: 'var(--subtle, #a1a1aa)' }}>or drop {mode === 'photos' ? 'photos' : 'files'} here · many at once</span>
         </div>
       ) : null}
       <PhotoOrderPanel workspaceId={workspaceId} dealId={dealId} canWrite={canWrite} open={canWrite && ordering}
@@ -241,21 +241,21 @@ export function DealFiles({ workspaceId, dealId, canWrite, mode = 'files', onToa
         <div style={{ marginTop: '10px', display: 'grid', gap: '6px' }}>
           <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} autoFocus
             placeholder={paste === 'photo' ? 'Paste photo links — one per line (Drive, Dropbox, CompanyCam, direct image links)' : 'Paste links — one per line'}
-            style={{ width: '100%', padding: '8px 10px', border: '1px solid #e4e4e7', borderRadius: '8px', fontSize: '12.5px', resize: 'vertical', background: '#fafafa' }} />
+            style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', fontSize: '12.5px', resize: 'vertical', background: 'var(--canvas, #fafafa)' }} />
           <div><button type="button" style={{ ...btn, background: 'var(--c-primary)', color: '#fff', borderColor: 'var(--c-primary)' }} disabled={busy || !text.trim()} onClick={() => void addLinks()}>Add</button></div>
         </div>
       ) : null}
 
-      {rows === null ? <div style={{ fontSize: '12px', color: '#a1a1aa', marginTop: '10px' }}>Loading…</div> : null}
+      {rows === null ? <div style={{ fontSize: '12px', color: 'var(--subtle, #a1a1aa)', marginTop: '10px' }}>Loading…</div> : null}
       {rows !== null && shown.length === 0 && !fallback.length ? (
-        <div style={{ fontSize: '12.5px', color: '#71717a', marginTop: '10px' }}>{mode === 'photos' ? 'No photos on this deal yet.' : 'No files on this deal yet.'}{canWrite ? ' Order photos sends a Vuer to shoot the house.' : ''}</div>
+        <div style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)', marginTop: '10px' }}>{mode === 'photos' ? 'No photos on this deal yet.' : 'No files on this deal yet.'}{canWrite ? ' Order photos sends a Vuer to shoot the house.' : ''}</div>
       ) : null}
 
       {hasPhotoSection ? (
         <div style={{ marginTop: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#18181b' }}>Property photos</span>
-            <span style={{ fontSize: '11.5px', color: '#71717a' }}>
+            <span style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--ink, #18181b)' }}>Property photos</span>
+            <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>
               {[photos.length ? `${photos.length} photo${photos.length === 1 ? '' : 's'}` : '', folders.length ? `${folders.length} folder${folders.length === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ') || 'front of the house'}
             </span>
           </div>
@@ -278,25 +278,25 @@ export function DealFiles({ workspaceId, dealId, canWrite, mode = 'files', onToa
           {folders.length ? (
             <div style={{ display: 'grid', gap: '6px', marginTop: '8px' }}>
               {folders.map((f) => (
-                <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', border: '1px solid #e4e4e7', borderRadius: '10px', background: '#fafafa' }}>
+                <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px', background: 'var(--canvas, #fafafa)' }}>
                   <span aria-hidden style={{ width: '30px', height: '24px', flex: '0 0 30px', position: 'relative' }}>
                     <span style={{ position: 'absolute', left: 0, top: 0, width: '13px', height: '6px', background: '#2a2a2a', borderRadius: '3px 3px 0 0' }} />
                     <span style={{ position: 'absolute', left: 0, right: 0, top: '4px', bottom: 0, background: 'linear-gradient(#2a2a2a,#111)', borderRadius: '0 4px 4px 4px' }} />
                   </span>
-                  <a href={f.url ?? '#'} target="_blank" rel="noopener noreferrer" style={{ flex: 1, minWidth: 0, textDecoration: 'none', color: '#18181b' }}>
+                  <a href={f.url ?? '#'} target="_blank" rel="noopener noreferrer" style={{ flex: 1, minWidth: 0, textDecoration: 'none', color: 'var(--ink, #18181b)' }}>
                     <div style={{ fontSize: '12.5px', fontWeight: 600 }}>{folderLabel(f.url)}</div>
-                    <div style={{ fontSize: '11px', color: '#71717a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--meta, #71717a)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {f.source === 'podio' ? 'From Podio' : 'Photo link'} · {new Date(f.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </div>
                   </a>
                   <a href={f.url ?? '#'} target="_blank" rel="noopener noreferrer" style={{ ...btn, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>Open ↗</a>
-                  {canWrite ? <button type="button" onClick={() => void remove(f)} title="Remove" style={{ border: 0, background: 'none', color: '#a1a1aa', cursor: 'pointer' }}>✕</button> : null}
+                  {canWrite ? <button type="button" onClick={() => void remove(f)} title="Remove" style={{ border: 0, background: 'none', color: 'var(--subtle, #a1a1aa)', cursor: 'pointer' }}>✕</button> : null}
                 </div>
               ))}
             </div>
           ) : null}
           {!photos.length && (fallback.length || folders.length) ? (
-            <div style={{ fontSize: '11.5px', color: '#71717a', marginTop: '6px' }}>
+            <div style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', marginTop: '6px' }}>
               {driveReading ? 'Reading the Google Drive folder, subfolders included…'
                 : <>{fallback.length ? 'Front of the house on file. ' : ''}Pull COMPR photos for the full set{folders.length ? ', or open the folder' : ''}.</>}
             </div>
@@ -307,22 +307,22 @@ export function DealFiles({ workspaceId, dealId, canWrite, mode = 'files', onToa
               const src = photoSrc(f);
               const front = i === 0;
               return (
-                <div key={f.id} style={{ flex: '0 0 112px', border: front ? '2px solid #0A8560' : '1px solid #e4e4e7', borderRadius: '10px', overflow: 'hidden', background: '#f4f4f5' }}>
+                <div key={f.id} style={{ flex: '0 0 112px', border: front ? '2px solid #0A8560' : '1px solid var(--divider, #e4e4e7)', borderRadius: '10px', overflow: 'hidden', background: 'var(--surface-2, #f4f4f5)' }}>
                   <button type="button" onClick={() => void open(f)} title={f.name}
                     style={{ position: 'relative', display: 'block', width: '100%', height: '76px', border: 0, padding: 0, cursor: 'pointer', background: src ? `#e9ebf0 url("${src.replace(/"/g, '%22')}") center/cover no-repeat` : '#e9ebf0' }}>
                     {front ? <span style={{ position: 'absolute', top: '5px', left: '5px', background: '#0A8560', color: '#fff', fontSize: '11px', fontWeight: 700, padding: '2px 6px', borderRadius: '999px' }}>Front</span> : null}
                     {f.source === 'ivueit' ? <span style={{ position: 'absolute', bottom: '5px', right: '5px', background: 'rgba(12,14,18,.72)', color: '#fff', fontSize: '9.5px', fontWeight: 600, padding: '1px 5px', borderRadius: '5px' }}>iVueit</span> : null}
                     {f.source === 'compr' ? <span style={{ position: 'absolute', bottom: '5px', right: '5px', background: 'rgba(12,14,18,.72)', color: '#fff', fontSize: '9.5px', fontWeight: 600, padding: '1px 5px', borderRadius: '5px' }}>COMPR</span> : null}
-                    {!src || (f.url && f.source !== 'compr' && !IMAGE_URL.test(f.url)) ? <span style={{ fontSize: '11px', color: '#52525b', padding: '0 6px' }}>Photo link ↗</span> : null}
+                    {!src || (f.url && f.source !== 'compr' && !IMAGE_URL.test(f.url)) ? <span style={{ fontSize: '11px', color: 'var(--muted, #52525b)', padding: '0 6px' }}>Photo link ↗</span> : null}
                   </button>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 6px', fontSize: '11px' }}>
                     {canWrite && !front && f.kind === 'photo' ? (
-                      <button type="button" onClick={() => void makeFront(f)} title="Use this as the front of the house" style={{ border: 0, background: 'none', color: '#0A8560', fontWeight: 600, cursor: 'pointer', padding: 0, fontSize: '11px' }}>Make front</button>
+                      <button type="button" onClick={() => void makeFront(f)} title="Use this as the front of the house" style={{ border: 0, background: 'none', color: 'var(--tx-mint, #0a8560)', fontWeight: 600, cursor: 'pointer', padding: 0, fontSize: '11px' }}>Make front</button>
                     ) : (
-                      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#52525b' }}>{front ? 'Front of house' : f.name}</span>
+                      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--muted, #52525b)' }}>{front ? 'Front of house' : f.name}</span>
                     )}
                     <span style={{ flex: 1 }} />
-                    {canWrite ? <button type="button" onClick={() => void remove(f)} title="Remove" style={{ border: 0, background: 'none', color: '#a1a1aa', cursor: 'pointer' }}>✕</button> : null}
+                    {canWrite ? <button type="button" onClick={() => void remove(f)} title="Remove" style={{ border: 0, background: 'none', color: 'var(--subtle, #a1a1aa)', cursor: 'pointer' }}>✕</button> : null}
                   </div>
                 </div>
               );
@@ -340,38 +340,38 @@ export function DealFiles({ workspaceId, dealId, canWrite, mode = 'files', onToa
             if (!list.length) return null;
             return (
               <div key={type ?? 'none'} style={{ marginTop: '8px' }}>
-                <div style={{ fontSize: '11px', color: '#71717a', fontWeight: 600, padding: '4px 0' }}>
+                <div style={{ fontSize: '11px', color: 'var(--meta, #71717a)', fontWeight: 600, padding: '4px 0' }}>
                   {type ? DOC_LABEL[type] : 'Not labelled'} · {list.length}
                 </div>
                 {list.map((f) => (
                   // Stacked, not five columns: the record's side panel is narrow, and a
                   // grid squeezed the name to a sliver.
-                  <div key={f.id} style={{ padding: '9px 0', borderTop: '1px solid #f0f0f1', display: 'grid', gap: '6px' }}>
+                  <div key={f.id} style={{ padding: '9px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)', display: 'grid', gap: '6px' }}>
                     <button type="button" onClick={() => void open(f)} title={`Open ${f.name}`}
-                      style={{ display: 'block', minWidth: 0, width: '100%', textAlign: 'left', border: 0, background: 'none', padding: 0, cursor: 'pointer', color: '#18181b' }}>
+                      style={{ display: 'block', minWidth: 0, width: '100%', textAlign: 'left', border: 0, background: 'none', padding: 0, cursor: 'pointer', color: 'var(--ink, #18181b)' }}>
                       <span style={{ display: 'block', fontWeight: 600, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
-                      <span style={{ display: 'block', fontSize: '11.5px', color: '#71717a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {f.kind === 'link' ? 'Link' : 'File'}{f.byte_size ? ' · ' + size(f.byte_size) : ''} · {new Date(f.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        {f.source === 'gmail' ? <span style={{ color: '#0A8560', fontWeight: 600 }}> · from email</span> : null}
-                        {f.needs_notary ? <span style={{ color: '#b45309', fontWeight: 600 }}> · notary {f.notary_status || 'needed'}</span> : null}
+                        {f.source === 'gmail' ? <span style={{ color: 'var(--tx-mint, #0a8560)', fontWeight: 600 }}> · from email</span> : null}
+                        {f.needs_notary ? <span style={{ color: 'var(--tx-amber, #b45309)', fontWeight: 600 }}> · notary {f.notary_status || 'needed'}</span> : null}
                       </span>
                     </button>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                       <button type="button" style={{ ...btn, height: '26px' }} onClick={() => void open(f)}>Open</button>
                       {canWrite ? (
                         <select aria-label={`What ${f.name} is`} value={docLabelOf(f) ? f.category! : ''} onChange={(e) => void relabel(f, (e.target.value || null) as DocType | null)}
-                          style={{ height: '26px', minWidth: 0, maxWidth: '150px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '11.5px', background: '#fff', color: '#18181b' }}>
+                          style={{ height: '26px', minWidth: 0, maxWidth: '150px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '7px', fontSize: '11.5px', background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)' }}>
                           <option value="">Label…</option>
                           {DOC_TYPES.map((t) => <option key={t} value={t}>{DOC_LABEL[t]}</option>)}
                         </select>
                       ) : null}
                       {canWrite ? (
-                        <button type="button" style={{ ...btn, height: '26px', color: f.needs_notary ? '#b45309' : '#18181b' }} onClick={() => void markNotary(f)}>
+                        <button type="button" style={{ ...btn, height: '26px', color: f.needs_notary ? 'var(--tx-amber, #b45309)' : 'var(--ink, #18181b)' }} onClick={() => void markNotary(f)}>
                           {f.needs_notary ? 'Needs notary' : 'Notarize'}
                         </button>
                       ) : null}
                       <span style={{ flex: 1 }} />
-                      {canWrite ? <button type="button" onClick={() => void remove(f)} title={`Remove ${f.name}`} aria-label={`Remove ${f.name}`} style={{ border: 0, background: 'none', color: '#a1a1aa', cursor: 'pointer', fontSize: '13px' }}>✕</button> : null}
+                      {canWrite ? <button type="button" onClick={() => void remove(f)} title={`Remove ${f.name}`} aria-label={`Remove ${f.name}`} style={{ border: 0, background: 'none', color: 'var(--subtle, #a1a1aa)', cursor: 'pointer', fontSize: '13px' }}>✕</button> : null}
                     </div>
                   </div>
                 ))}

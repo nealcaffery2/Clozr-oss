@@ -7,8 +7,8 @@
 // buyer's go to buyer_phones, a seller's to seller_phones), with the whole
 // trace in a note on the record.
 
-import type { Candidate } from '../supabase/functions/_shared/genius-core';
-import { applyTraceToBuyer, skipTraceTargets, traceWrites, type SkipHit, type TraceTarget } from './genius';
+import { parseMailingLine, skipTarget, tracePurchaseStub } from '../supabase/functions/_shared/genius-core';
+import { applyTraceToBuyer, skipTraceTargets, traceWrites, type Candidate, type SkipHit, type TraceTarget } from './genius';
 import { logActivity, tagBuyers, tagSellers } from './crm-write';
 import { SKIPTRACE_TAG, logRun, notifyUser } from './data-runs';
 import { addSellerPhones } from './seller-phones';
@@ -42,8 +42,8 @@ const SKIP_TTL_MS = 90 * 864e5;
 
 /** A full US address with a 5-digit ZIP, or null. */
 function parseAddress(line: string): TraceRecord['address'] {
-  const m = line.match(/^(.+?),\s*([^,]+),\s*([A-Z]{2}),?\s*(\d{5})/);
-  return m ? { address: m[1].trim(), city: m[2].trim(), state: m[3], zip: m[4] } : null;
+  const p = parseMailingLine(line);
+  return p ? { address: p.address, city: p.city, state: p.state, zip: p.zip } : null;
 }
 
 /**
@@ -86,16 +86,19 @@ export async function planTrace(workspaceId: number | null, recs: TraceRecord[])
   const targets: TracePlan['targets'] = [];
   const noAddress: TraceRecord[] = [];
   for (const rec of recs) {
-    const where = rec.address && rec.address.address && rec.address.zip ? rec.address : null;
-    if (!where && !rec.mailing) { noAddress.push(rec); continue; }
+    const where = rec.address?.address && (rec.address.zip?.slice(0, 5) || (rec.address.city && rec.address.state))
+      ? { address: rec.address.address, city: rec.address.city ?? '', state: (rec.address.state ?? '').toUpperCase(), zip: (rec.address.zip ?? '').slice(0, 5) }
+      : null;
     const owner = (rec.company && ENTITY.test(rec.company) ? rec.company : rec.name).trim();
     const corporate = ENTITY.test(owner);
-    targets.push({
-      rec, key: keyOf(rec), owner_name: owner, corporate,
-      // The person behind an entity, when the record names one.
+    const stub = {
+      key: keyOf(rec), owner_name: owner, corporate,
       people: corporate ? (rec.name && !ENTITY.test(rec.name) ? [rec.name] : []) : [rec.name],
-      mail_parts: rec.mailing ? null : where, mailing: rec.mailing ?? null,
-    });
+      mail_parts: where, mailing: rec.mailing ?? null,
+      purchases: where ? [tracePurchaseStub(where)] : [],
+    };
+    if (!skipTarget(stub)) { noAddress.push(rec); continue; }
+    targets.push({ rec, ...stub });
   }
   let cached = 0;
   if (supabase && workspaceId != null && targets.length) {

@@ -35,7 +35,7 @@ export function ClozrIcon({ size = 16, color = CLOZR_MINT_INK, title }: { size?:
 export function ClozrAppIcon({ size = 30, radius }: { size?: number; radius?: number }) {
   return (
     <span aria-hidden style={{ width: size, height: size, borderRadius: radius ?? size * 0.24, background: CLOZR_MINT_INK, display: 'grid', placeItems: 'center', flex: 'none' }}>
-      <ClozrIcon size={size * 0.36} color="#fff" />
+      <ClozrIcon size={size * 0.36} color="var(--on-dark, #fff)" />
     </span>
   );
 }
@@ -54,7 +54,7 @@ export function ClozrMark({
   /** Show THE CRM THAT CLOSES beneath. */
   tagline?: boolean;
 } & React.HTMLAttributes<HTMLSpanElement>) {
-  const letter = tone === 'light' ? '#ffffff' : '#18181b';
+  const letter = tone === 'light' ? 'var(--surface, #ffffff)' : 'var(--ink, #18181b)';
   return (
     <span
       role="img"
@@ -78,7 +78,7 @@ export function ClozrMark({
           style={{
             alignSelf: 'flex-end',
             fontSize: size * 0.34,
-            color: tone === 'light' ? 'rgba(255,255,255,.72)' : '#71717a',
+            color: tone === 'light' ? 'rgba(255,255,255,.72)' : 'var(--meta, #71717a)',
             fontWeight: 500,
             marginRight: '-0.34em',
           }}
