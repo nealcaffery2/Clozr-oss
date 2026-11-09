@@ -10,7 +10,7 @@ export type TabCtx = {
   workspaceId: number | null;
   api: Api;
   demo: boolean;
-  /** An owner or admin: may hear voices, start test calls and score them. */
+  /** An owner or admin: may hear voices. Test calls and scoring are every member's. */
   admin: boolean;
   /** An admin who is not in a read-only preview: may change anything. */
   canEdit: boolean;
@@ -27,4 +27,6 @@ export type TabCtx = {
   onOpenRecord?: (kind: 'seller' | 'buyer', id: number) => void;
   /** After a rollback: read the agent again and show the result. */
   onRolledBack: () => void;
+  /** Open the talk panel, which stays beside the tabs while you edit. */
+  openTalk?: () => void;
 };

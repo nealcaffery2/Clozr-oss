@@ -16,6 +16,7 @@ import { ReadOnlyNote } from '@/components/ViewAs';
 import { secretListCsv } from '@/lib/secret-list';
 import { loadBlacklistReasons, reasonFor, reasonKindOf } from '@/lib/blacklist-reasons';
 import { Mark } from '@/components/ds/mark';
+import { ScreenFrame, ScreenHeader } from '@/components/ds/Screen';
 
 export type SecretListRow = {
   id: string; kind: 'Person' | 'Buyer'; name: string; phone: string; email: string; detail: string;
@@ -49,7 +50,8 @@ const card: React.CSSProperties = {
   marginBottom: '12px',
 };
 
-export function Account({ isMobile, blacklist }: { isMobile: boolean; blacklist?: { rows: SecretListRow[]; restore: (id: string) => void } }) {
+/** `embedded`: inside Settings › You › Account, which draws the title, the scroll and the padding. */
+export function Account({ isMobile, blacklist, embedded = false }: { isMobile: boolean; blacklist?: { rows: SecretListRow[]; restore: (id: string) => void }; embedded?: boolean }) {
   const s = useSession();
   // In a View-as preview this is still the admin's own account; nothing on it
   // changes from the preview, so the save buttons behave as they do in demo.
@@ -116,12 +118,10 @@ export function Account({ isMobile, blacklist }: { isMobile: boolean; blacklist?
   }
 
   return (
-    <section data-screen-label="Account" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-      <div data-head style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)', flex: 'none' }}>
-        <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em' }}>Account</h1>
-        <span style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>your profile and sign-in</span>
-        <div style={{ flex: 1 }} />
-        {s.demo ? (
+    // Embedded in Settings › You › Account, Settings draws the title, the scroll and the padding.
+    <ScreenFrame data-screen-label="Account" width="form" padded={!embedded} scroll={!embedded}
+      style={embedded ? { flex: 'none', minHeight: 'auto', background: 'transparent' } : undefined}
+      header={embedded ? undefined : <ScreenHeader title="Account" meta="your profile and sign-in" actions={s.demo ? (
           <a href="/login" className="dc2" style={{ height: '32px', lineHeight: '32px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12.5px', color: 'var(--ink, #18181b)', textDecoration: 'none' }}>
             Sign in
           </a>
@@ -129,12 +129,9 @@ export function Account({ isMobile, blacklist }: { isMobile: boolean; blacklist?
           <button className="dc2" onClick={() => void s.signOut()} style={{ height: '32px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '12.5px', cursor: 'pointer', color: 'var(--ink, #18181b)' }}>
             Sign out
           </button>
-        )}
-      </div>
-
-      <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? '12px 14px 28px' : '16px 20px 40px', background: 'var(--canvas, #fafafa)' }}>
-        <div style={{ maxWidth: '640px' }}>
-          <ReadOnlyNote />
+        )} />}>
+        <div>
+          {embedded ? null : <ReadOnlyNote />}
           {s.demo ? (
             <div style={{ ...card, background: 'var(--caution-soft, #fef3c7)', borderColor: 'var(--tint-amber-2, #fde68a)', color: 'var(--tx-amber-deep, #92400e)', fontSize: '12.5px', lineHeight: 1.55 }}>
               <strong style={{ fontWeight: 700 }}>Demo mode.</strong> Supabase isn&rsquo;t configured for this
@@ -154,7 +151,7 @@ export function Account({ isMobile, blacklist }: { isMobile: boolean; blacklist?
               ) : null}
               {!locked && s.profile?.avatar_url ? (
                 <button type="button" onClick={() => void s.updateProfile({ avatar_url: null }).then((r) => setNote({ ok: r.ok, text: r.ok ? 'Photo removed.' : r.message ?? 'Could not remove.' }))}
-                  style={{ border: 0, background: 'none', padding: 0, fontSize: '11px', color: 'var(--subtle, #a1a1aa)', cursor: 'pointer' }}>Remove</button>
+                  style={{ border: 0, background: 'none', padding: 0, fontSize: '11px', color: 'var(--meta, #71717a)', cursor: 'pointer' }}>Remove</button>
               ) : null}
             </span>
             <span style={{ minWidth: 0 }}>
@@ -198,10 +195,11 @@ export function Account({ isMobile, blacklist }: { isMobile: boolean; blacklist?
               </label>
               <label>
                 <span style={label}>Email</span>
-                <input value={s.user?.email ?? ''} disabled style={{ ...field, color: 'var(--subtle, #a1a1aa)', cursor: 'not-allowed' }} />
+                <input value={s.user?.email ?? ''} disabled aria-describedby="account-email-help" style={{ ...field, color: 'var(--subtle, #a1a1aa)', cursor: 'not-allowed' }} />
+                <span id="account-email-help" style={{ display: 'block', marginTop: '4px', fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>Your sign-in email. Ask an owner to invite the new address to change it.</span>
               </label>
             </div>
-            <button type="submit" disabled={busy || locked} title={roTitle} className="dc3" style={{ marginTop: '14px', height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid #0A8560', background: busy || locked ? '#7fcbb2' : '#0A8560', color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: busy || locked ? 'not-allowed' : 'pointer' }}>
+            <button type="submit" disabled={busy || locked} title={roTitle} className="dc3" style={{ marginTop: '14px', height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid #0A8560', background: '#0A8560', opacity: busy || locked ? 0.5 : 1, color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: busy || locked ? 'not-allowed' : 'pointer' }}>
               Save profile
             </button>
           </form>
@@ -260,12 +258,11 @@ export function Account({ isMobile, blacklist }: { isMobile: boolean; blacklist?
                 ))}
               </div>
             ) : (
-              <p style={{ margin: '12px 0 0', fontSize: 12.5, color: 'var(--subtle, #a1a1aa)' }}>No one is on this list.</p>
+              <p style={{ margin: '12px 0 0', fontSize: 12.5, color: 'var(--muted, #52525b)' }}>No one is on this list.</p>
             )}
           </div>
         </div>
-      </div>
-    </section>
+    </ScreenFrame>
   );
 }
 
@@ -380,7 +377,7 @@ function TwoFactor({ demo, isMobile }: { demo: boolean; isMobile: boolean }) {
               <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 8))} inputMode="numeric" autoComplete="one-time-code" placeholder="123 456" autoFocus style={{ ...field, maxWidth: '200px', letterSpacing: '.2em' }} />
             </label>
             <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-              <button type="submit" disabled={busy || code.length < 6} className="dc3" style={{ height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid #0A8560', background: busy || code.length < 6 ? '#7fcbb2' : '#0A8560', color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: busy || code.length < 6 ? 'not-allowed' : 'pointer' }}>
+              <button type="submit" disabled={busy || code.length < 6} className="dc3" style={{ height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid #0A8560', background: '#0A8560', opacity: busy || code.length < 6 ? 0.5 : 1, color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: busy || code.length < 6 ? 'not-allowed' : 'pointer' }}>
                 Turn on
               </button>
               <button type="button" onClick={() => void cancel()} disabled={busy} className="dc2" style={{ height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', color: 'var(--ink, #18181b)' }}>
@@ -403,7 +400,7 @@ function TwoFactor({ demo, isMobile }: { demo: boolean; isMobile: boolean }) {
           ))}
         </div>
       ) : (
-        <button type="button" onClick={() => void start()} disabled={busy || demo || factors === null} className="dc3" style={{ height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid #0A8560', background: busy || demo || factors === null ? '#7fcbb2' : '#0A8560', color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: busy || demo || factors === null ? 'not-allowed' : 'pointer' }}>
+        <button type="button" onClick={() => void start()} disabled={busy || demo || factors === null} className="dc3" style={{ height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid #0A8560', background: '#0A8560', opacity: busy || demo || factors === null ? 0.5 : 1, color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: busy || demo || factors === null ? 'not-allowed' : 'pointer' }}>
           Set up an authenticator app
         </button>
       )}

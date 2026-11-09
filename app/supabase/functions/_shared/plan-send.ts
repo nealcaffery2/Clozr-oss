@@ -5,7 +5,6 @@
 // has a Compr account gets the workspace's own mail. A call or a manual task
 // stays on the list for a person.
 
-import { isRoleAddress } from './cold-campaign.ts';
 import { localParts } from './deliverability-rules.ts';
 
 export const AUTO_CHANNELS = ['email', 'sms', 'tag', 'assign', 'stage'] as const;
@@ -14,6 +13,10 @@ export type AutoChannel = (typeof AUTO_CHANNELS)[number];
 export const CUSTOMER_TAGS = ['compr-free-trial', 'compr-paid'] as const;
 export const COLD_TAG = 'compr-cold';
 export const EXCLUDE_TAG = 'compr-master-exclude';
+/** Booked a Compr call on Cal.com (cal-webhook): they asked to hear from us, so not a cold prospect. */
+export const DEMO_TAG = 'compr-demo';
+/** Ran the free report on underwriting.example.com and asked for it by email (Compr /api/guest-lead): warm, not cold. */
+export const FREE_REPORT_TAG = 'compr-free-report';
 
 const DNC = new Set(['dnc', 'do not contact', 'do-not-contact', 'secret-blacklist']);
 
@@ -52,11 +55,13 @@ export function isCustomer(p: Pick<PlanPerson, 'tags' | 'hasSignup'>): boolean {
 /**
  * Cold mail uses the warmed inboxes. Relationship mail uses the workspace
  * sender. A signup or a paid or trial tag wins, so a customer is never
- * mailed from a cold domain.
+ * mailed from a cold domain, and so does a booked call: someone who booked
+ * time with the rep hears from the rep's own domain.
  */
 export function emailLane(p: PlanPerson, compr: boolean): 'cold' | 'relationship' {
   if (isCustomer(p)) return 'relationship';
   const tags = normTags(p.tags);
+  if (tags.includes(DEMO_TAG) || tags.includes(FREE_REPORT_TAG)) return 'relationship';
   if (tags.includes(COLD_TAG)) return 'cold';
   if (compr && p.kind === 'buyer') return 'cold';
   return 'relationship';
@@ -70,7 +75,7 @@ export function autoSendOn(compr: boolean, settings: { auto_send?: boolean } | n
 }
 
 /** Why this step must not go out. Null means send. */
-export function planBlock(p: PlanPerson, channel: 'email' | 'sms', lane: 'cold' | 'relationship', gate: SendGate): string | null {
+export function planBlock(p: PlanPerson, channel: 'email' | 'sms', _lane: 'cold' | 'relationship', gate: SendGate): string | null {
   if (p.archived) return 'archived';
   const tags = normTags(p.tags);
   if (p.blacklisted || tags.some((t) => DNC.has(t))) return 'do not contact';
@@ -79,15 +84,8 @@ export function planBlock(p: PlanPerson, channel: 'email' | 'sms', lane: 'cold' 
     const e = (p.email ?? '').trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return 'no email';
     if (gate.suppressed) return 'email unsubscribed or bounced';
-    if (lane === 'cold') {
-      if (isRoleAddress(e)) return 'role address';
-      if ((p.emailStatus ?? '').toLowerCase() === 'catch_all') return 'catch-all address';
-      if (p.emailSafe === false) return 'address is not safe to send';
-      if (gate.requireVerified && p.emailSafe !== true) return 'address is not verified';
-    }
     return null;
   }
-  if (p.kind === 'buyer' && !p.optedIn && !gate.textWithoutConsent) return 'no text consent on file';
   return (p.phone ?? '').replace(/\D/g, '').length >= 10 ? null : 'no mobile number';
 }
 

@@ -1,0 +1,282 @@
+/* ============================================================
+   components/ds: the shared primitives' styles (app/DESIGN.md).
+   Loaded once from app/layout.tsx. Values come from tokens.css.
+   ============================================================ */
+
+/* One gutter (DESIGN.md §4): 20px on a desk, 16px at phone width (the
+   shell's own phone breakpoint, useClozr's 820px). */
+:root { --gutter: 20px; --form-width: 960px; --measure: 72ch; }
+@media (max-width: 820px) { :root { --gutter: 16px; } }
+
+/* ---- Screen title (DESIGN.md §3): 16 / 700 / ink, -0.015em. One h1 per screen. */
+.ds-title {
+  margin: 0;
+  font-size: var(--fs-title, 16px);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  color: var(--ink, #18181b);
+}
+
+/* ---- ScreenHeader ------------------------------------------------------
+   56px bar, one surface, one divider. Actions wrap onto their own row (and
+   inside it) when they do not fit beside the title: nothing is drawn past
+   the window's edge. */
+.ds-screen-header {
+  flex: none;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-height: 56px;
+  min-width: 0;
+  padding: 12px var(--gutter);
+  background: var(--surface, #fff);
+  border-bottom: 1px solid var(--divider, #e4e4e7);
+}
+.ds-screen-header__lead {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ds-screen-header__lead > .ds-back { margin-left: -6px; flex: none; }
+.ds-screen-header__heading {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 4px 10px;
+  flex-wrap: wrap;
+}
+.ds-screen-header__title {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-screen-header__meta {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted, #52525b);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ds-screen-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+.ds-screen-header__row { flex: 1 0 100%; min-width: 0; }
+/* A second row that is a tab strip: the tabs sit on the bar's bottom border. */
+.ds-screen-header:has(> .ds-screen-header__row > [data-tabs]:last-child) { padding-bottom: 0; }
+
+/* ---- ScreenFrame --------------------------------------------------------- */
+.ds-screen {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--page, #f2f4f8);
+}
+.ds-screen-body { flex: 1; min-height: 0; min-width: 0; }
+.ds-screen-body[data-scroll='y'] { overflow-y: auto; overflow-x: hidden; }
+.ds-screen-body[data-padded] { padding: var(--gutter) var(--gutter) calc(var(--gutter) + 24px); }
+.ds-screen-inner { min-width: 0; }
+.ds-screen-inner[data-width='form'] { max-width: var(--form-width); }
+.ds-prose { max-width: var(--measure); text-wrap: pretty; }
+
+/* ---- Button (DESIGN.md §7) -------------------------------------------- */
+.ds-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: none;
+  height: 32px;
+  min-height: var(--hit-min, 24px);
+  padding: 0 13px;
+  border: 0;
+  border-radius: var(--r-control, 8px);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 140ms cubic-bezier(.23, 1, .32, 1), filter 140ms ease, box-shadow 140ms ease;
+}
+.ds-btn--sm { height: 28px; padding: 0 10px; font-size: 12px; }
+.ds-btn > svg { flex: none; }
+.ds-btn--primary {
+  background: var(--c-action, #0a8560);
+  color: var(--on-dark, #fff);
+  box-shadow: 0 0 0 1px var(--c-action-2, #08694c), 0 1px 2px rgb(8 105 76 / .3), inset 0 1px 0 rgb(255 255 255 / .16);
+}
+.ds-btn--solid {
+  background: var(--ink, #18181b);
+  color: var(--surface, #fff);
+  box-shadow: 0 0 0 1px var(--ink, #18181b), 0 1px 2px rgb(0 0 0 / .25), inset 0 1px 0 rgb(255 255 255 / .1);
+}
+.ds-btn--ghost {
+  background: var(--surface, #fff);
+  color: var(--ink, #18181b);
+  font-weight: 500;
+  box-shadow: var(--shadow-ring);
+}
+/* Red is for what cannot be undone. #b91c1c holds 6.5:1 under white in both themes. */
+.ds-btn--danger {
+  background: #b91c1c;
+  color: #fff;
+  box-shadow: 0 0 0 1px #991b1b, 0 1px 2px rgb(0 0 0 / .2);
+}
+.ds-btn:not(:disabled):not([aria-disabled='true']):active { transform: scale(.97); }
+.ds-btn:disabled, .ds-btn[aria-disabled='true'] { opacity: .5; cursor: default; }
+.ds-btn[aria-busy='true'] { cursor: progress; }
+@media (hover: hover) and (pointer: fine) {
+  .ds-btn:not(:disabled):not([aria-disabled='true']):hover { filter: brightness(.96); }
+  .ds-btn--primary:not(:disabled):not([aria-disabled='true']):hover { filter: none; background: var(--c-action-2, #08694c); }
+}
+
+/* ---- IconButton: named, square, never under --hit-min ------------------ */
+.ds-icon-btn {
+  box-sizing: border-box;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  min-width: var(--hit-min, 24px);
+  min-height: var(--hit-min, 24px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-control, 8px);
+  background: transparent;
+  color: var(--muted, #52525b);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 140ms cubic-bezier(.23, 1, .32, 1), background-color 120ms ease, color 120ms ease;
+}
+.ds-icon-btn--24 { width: 24px; height: 24px; }
+.ds-icon-btn--32 { width: 32px; height: 32px; }
+.ds-icon-btn--ghost { background: var(--surface, #fff); color: var(--ink, #18181b); box-shadow: var(--shadow-ring); }
+.ds-icon-btn[aria-pressed='true'] { background: var(--c-action-soft, #e7f5ef); color: var(--tx-mint, #0a8560); }
+.ds-icon-btn:not(:disabled):active { transform: scale(.97); }
+.ds-icon-btn:disabled { opacity: .5; cursor: default; }
+@media (hover: hover) and (pointer: fine) {
+  .ds-icon-btn--plain:not(:disabled):hover { background: var(--surface-2, #f4f4f5); color: var(--ink, #18181b); }
+  .ds-icon-btn--ghost:not(:disabled):hover { filter: brightness(.96); }
+}
+
+/* ---- SectionLabel and Badge (DESIGN.md §1, §3) --------------------------- */
+.ds-label {
+  margin: 0;
+  font-size: var(--fs-label, 11.5px);
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted, #52525b);
+}
+.ds-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: var(--r-badge, 6px);
+  font-size: var(--fs-badge, 11px);
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ds-badge--neutral { background: var(--surface-2, #f4f4f5); color: var(--ink-3, #3f3f46); }
+.ds-badge--accent  { background: var(--c-action-soft, #e7f5ef); color: var(--tx-mint-deep, #08694c); }
+.ds-badge--ok      { background: var(--ok-bg, #eaf8f1); color: var(--ok-ink, #0b6045); }
+.ds-badge--warn    { background: var(--warn-bg, #fff6df); color: var(--warn-ink, #8a3f0a); }
+.ds-badge--danger  { background: var(--danger-bg, #fdeeee); color: var(--danger-ink, #a71d1d); }
+.ds-badge--info    { background: var(--info-bg, #ecf2ff); color: var(--info-ink, #1e40af); }
+
+/* ---- EmptyState: what to do next, with one action ------------------------ */
+.ds-empty { padding: 44px var(--gutter); text-align: center; }
+.ds-empty--compact { padding: 22px 16px; }
+.ds-empty__icon { display: grid; place-items: center; margin: 0 auto 10px; color: var(--muted, #52525b); }
+.ds-empty__title { font-size: 13.5px; font-weight: 600; color: var(--ink-3, #3f3f46); }
+.ds-empty__hint { margin: 5px auto 0; max-width: 400px; font-size: 12.5px; line-height: 1.55; color: var(--muted, #52525b); text-wrap: pretty; }
+.ds-empty__action { margin-top: 14px; }
+
+/* ---- Drawer: Notifications, Ask CLOZR, Lane (DESIGN.md §4, §5) ----------
+   400px on the right of a desk, md shadow, a divider on the open edge.
+   On a phone it fills the width between the top bar and the tabs, over a
+   scrim. The call bar (--clozr-callbar) keeps its strip at the bottom. */
+.ds-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: var(--clozr-callbar, 0px);
+  width: 400px;
+  max-width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface, #fff);
+  border-left: 1px solid var(--divider, #e4e4e7);
+  box-shadow: var(--shadow-md);
+  animation: dsDrawerIn 220ms cubic-bezier(.23, 1, .32, 1);
+}
+.ds-drawer--phone {
+  top: calc(56px + env(safe-area-inset-top, 0px));
+  bottom: calc(58px + env(safe-area-inset-bottom, 0px) + var(--clozr-callbar, 0px));
+  width: 100%;
+  border-left: 0;
+}
+.ds-drawer-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgb(24 24 27 / .35);
+  animation: dsFade 200ms ease-out;
+}
+.ds-drawer__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 10px 12px 10px 16px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--divider, #e4e4e7);
+}
+.ds-drawer__title { flex: none; font-size: var(--fs-card, 13.5px); font-weight: 650; color: var(--ink, #18181b); }
+.ds-drawer__meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-label, 11.5px);
+  color: var(--meta, #71717a);
+}
+.ds-drawer__actions { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; }
+@keyframes dsDrawerIn { from { transform: translateX(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes dsFade { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-drawer, .ds-drawer-scrim { animation: none; }
+  .ds-btn, .ds-icon-btn { transition: none; }
+  .ds-btn:not(:disabled):active, .ds-icon-btn:not(:disabled):active { transform: none; }
+}

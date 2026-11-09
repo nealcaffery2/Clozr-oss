@@ -20,7 +20,7 @@ const GREEN = '#0A8560';
 const link: React.CSSProperties = { fontSize: '12px', color: GREEN, background: 'none', border: 0, cursor: 'pointer', padding: 0, fontWeight: 500, fontFamily: 'inherit' };
 const btn = (primary = false, disabled = false): React.CSSProperties => ({
   height: '28px', padding: '0 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
-  border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? GREEN : 'var(--surface, #fff)', color: primary ? 'var(--surface, #fff)' : INK, opacity: disabled ? 0.6 : 1, fontFamily: 'inherit',
+  border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? GREEN : 'var(--surface, #fff)', color: primary ? 'var(--surface, #fff)' : INK, opacity: disabled ? 0.5 : 1, fontFamily: 'inherit',
 });
 const pct = (c: number | null) => (c == null ? '' : `${Math.round(c * 100)}%`);
 const confColor = (c: number | null) => (c == null ? MUTED : c >= 0.85 ? '#15803d' : c >= 0.6 ? '#b45309' : '#b91c1c');
@@ -70,7 +70,7 @@ export function ContractTermsPanel({ contract, canWrite, onToast, onChanged }: {
   }
 
   if (failed) return <div style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)', marginTop: '8px' }}>{failed}</div>;
-  if (!review) return <div style={{ fontSize: '12px', color: 'var(--subtle, #a1a1aa)', marginTop: '8px' }}>Loading terms…</div>;
+  if (!review) return <div style={{ fontSize: '12px', color: 'var(--meta, #71717a)', marginTop: '8px' }}>Loading terms…</div>;
   const diff = review.diff;
   const applyable = diff.filter((d) => d.column);
   const live = review.extractions.filter((x) => !x.dismissed_at);
@@ -79,7 +79,7 @@ export function ContractTermsPanel({ contract, canWrite, onToast, onChanged }: {
     : review.extracted_at ? `Read ${fmtWhen(review.extracted_at)}` : live.length ? '' : 'Not read yet';
 
   return (
-    <div style={{ marginTop: '8px', border: `1px solid ${LINE}`, borderRadius: '10px', background: '#fcfcfc', padding: '10px 12px' }}>
+    <div style={{ marginTop: '8px', border: `1px solid ${LINE}`, borderRadius: '10px', background: 'var(--soft-well, #fcfcfc)', padding: '10px 12px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '12.5px', fontWeight: 650, color: INK }}>Terms from the PDF</span>
         <span style={{ fontSize: '11.5px', color: review.status === 'failed' ? '#b91c1c' : MUTED, flex: 1, minWidth: '120px' }}>{status}</span>

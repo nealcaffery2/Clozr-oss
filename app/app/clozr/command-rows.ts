@@ -14,6 +14,7 @@ import {
   rankRecords, splitDue, verbCompletions,
 } from '../../lib/command';
 import { taskRecordOf } from '../../lib/task-record';
+import { recentIndex, searchRecords } from '../../lib/record-search';
 
 export type CmdPerson = {
   id: string; name: string; phone: string; email: string; addr: string; stage: string;
@@ -22,10 +23,12 @@ export type CmdPerson = {
   lastComm: string; nextTask: string;
   /** The rep's name, and their id ('' for nobody). */
   assigned: string; assignedId: string;
-  /** Everything a query matches: name, phone, digits-only phone, email, address, city, ZIP, APN, source, tags. */
+  /** Everything a query matches (lib/record-search personFind): name, phone, digits-only phone, email, address, city, ZIP, APN, source, tags. */
   find: string;
+  /** Name and find lowercased once (lib/command searchHay), so a keystroke does not redo it per record. */
+  hay?: string;
 };
-export type CmdBuyer = { id: string; name: string; company: string; phone: string; status: string; find: string };
+export type CmdBuyer = { id: string; name: string; company: string; phone: string; status: string; find: string; hay?: string };
 /**
  * A deal or a submission, on its own property: `id` is its seller ('' for a
  * deal with no seller), `dealId` the deal itself, so a partner's house opens
@@ -82,6 +85,8 @@ export type CmdAction =
   | { t: 'task'; id: string }
   /** The seller's texts: the record with the Texts filter on. Inbox cannot open one named thread. */
   | { t: 'thread'; id: string }
+  /** A conversation with someone not in CLOZR yet: the Inbox, on that number's thread. */
+  | { t: 'inboxSms'; phone: string }
   | { t: 'call'; name: string; phone: string; personId?: string; buyerId?: string }
   | { t: 'compose'; pid: string; channel: 'Text' | 'Email' | 'Note' }
   | { t: 'offer'; pid: string }
@@ -142,9 +147,10 @@ export function buildCommandRows(data: CmdData, raw: string, step: string | null
   const allowed = (id: VerbId) => verbs.some((v) => v.id === id);
   const person = (id: string | null | undefined) => (id ? data.people.find((p) => p.id === id) : undefined);
   const buyer = (id: string | null | undefined) => (id && can('buyers') ? data.buyers.find((b) => b.id === id) : undefined);
-  const recentAt = new Map(data.recentIds.map((k, i) => [k, i]));
-  const rankPeople = (q: string) => rankRecords(data.people, q, (p) => ({ name: p.name, find: p.find, recent: recentAt.get('person:' + p.id) }));
-  const rankBuyers = (q: string) => (can('buyers') ? rankRecords(data.buyers, q, (b) => ({ name: b.name, find: b.find, recent: recentAt.get('buyer:' + b.id) })) : []);
+  // The one people-and-buyers search (lib/record-search), the same the dial box and the People and Buyers boxes run.
+  const recentAt = recentIndex(data.recentIds);
+  const rankPeople = (q: string) => searchRecords(data.people, q, (p) => ({ name: p.name, find: p.find, hay: p.hay, recent: recentAt.get('person:' + p.id) }));
+  const rankBuyers = (q: string) => (can('buyers') ? searchRecords(data.buyers, q, (b) => ({ name: b.name, find: b.find, hay: b.hay, recent: recentAt.get('buyer:' + b.id) })) : []);
   const now = data.now ?? new Date(0);
 
   // ---- rows for one record --------------------------------------------------
@@ -203,7 +209,8 @@ export function buildCommandRows(data: CmdData, raw: string, step: string | null
     const more = 'buyer:' + b.id;
     if (v === 'open') return { label: b.name, sub: ['Buyer', b.company, b.status].filter(Boolean).join(' · '), mark: 'genius', action: open, alt: { label: 'Call', action: call }, more };
     if (v === 'call') return { verb: 'Call', label: b.name, sub: phoneLine(b.phone, b.company), num: true, mark: 'talkr', action: call, alt: { label: 'Open record', action: open }, more };
-    return { verb: 'Text', label: b.name, sub: phoneLine(b.phone, 'the text box on their record'), num: true, mark: 'talkr', action: open, alt: { label: 'Call', action: call }, more };
+    // Opens the buyer's record, where the text box is: the row says so rather than promising a text.
+    return { verb: 'Open', label: b.name, sub: phoneLine(b.phone, 'to text from the record'), num: true, mark: 'talkr', action: open, alt: { label: 'Call', action: call }, more };
   };
   const PERSON_ALL: PersonVerb[] = ['open', 'call', 'text', 'email', 'note', 'task', 'appointment', 'underwrite', 'offer', 'assign', 'stage', 'thread', 'lane', 'newDeal'];
   const PERSON_TOP: PersonVerb[] = ['open', 'call', 'text', 'task'];
@@ -296,9 +303,7 @@ export function buildCommandRows(data: CmdData, raw: string, step: string | null
       g('Tools', [
         fp && allowed('underwrite') ? null : { label: 'COMPR', sub: 'Type underwrite and a seller', mark: 'compr', action: { t: 'type', text: 'underwrite ' } },
         allowed('lane') ? { label: 'Lane', sub: 'The TC assistant, on the file · L', mark: 'lane', action: { t: 'lane', pid: fp?.id ?? null } } : null,
-        allowed('genius') ? { label: 'Genius', sub: 'Every investor buying around any address', mark: 'genius', action: { t: 'go', screen: 'genius' } } : null,
         allowed('dealMachine') ? { label: 'Deal Machine', sub: 'The scraper: run, pause, its log and finds', mark: 'dealMachine', action: { t: 'go', screen: 'dealMachine' } } : null,
-        allowed('buyr') ? { label: 'Buyr', sub: 'Wholesale sniping and Facebook buyer groups', mark: 'buyr', action: { t: 'go', screen: 'buyr' } } : null,
         { label: 'Go to a screen…', sub: 'Type go and its name', mark: 'neutral', action: { t: 'type', text: 'go ' } },
         { label: 'Toggle dark mode', sub: 'Light or dark for this browser · Settings › Account has System', mark: 'neutral', action: { t: 'theme' } },
       ]),
@@ -387,8 +392,8 @@ export function buildCommandRows(data: CmdData, raw: string, step: string | null
         : data.peopleQ ? [{ verb: 'Clear', label: 'the filter ‘' + data.peopleQ + '’', sub: 'Shows the whole list again', mark: 'neutral', action: { t: 'filter', q: '' } }] : [];
       return done([g('People list', rows)], null, 'Search or type a command', 'Type what to filter People for');
     }
-    // Genius, Deal Machine, Buyr.
-    const screen = verb.id === 'genius' ? 'genius' : verb.id === 'buyr' ? 'buyr' : 'dealMachine';
+    // Deal Machine.
+    const screen = 'dealMachine';
     return done([g(verb.label, [{ verb: 'Open', label: verb.label, sub: verb.hint, mark: verb.mark, action: { t: 'go', screen } }]), alsoRecords(new Set())]);
   }
 

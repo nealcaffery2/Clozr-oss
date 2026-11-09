@@ -37,8 +37,22 @@ export function onReadOnlyRefusal(cb: () => void): () => void {
 
 // ---- what counts as a write -------------------------------------------------
 
-/** Database functions that only read, so a preview can still call them. */
-const READ_RPCS = new Set(['address_key', 'import_address_lookup']);
+/**
+ * Database functions that only read, so a preview can still call them.
+ * supabase-js sends every rpc() as a POST, so one left off this list is
+ * refused during a preview: People (people_page), the record's stage
+ * history, reports, search and the RVM check all stopped working that way.
+ * A function that inserts, updates or deletes stays off the list.
+ */
+const READ_RPCS = new Set([
+  'address_key', 'import_address_lookup', 'import_existing_keys',
+  'people_page', 'seller_last_touch', 'record_stage_history', 'stage_history_ids',
+  'search_communications', 'search_buyers_by_tag', 'search_free_agent_buyers', 'search_free_agent_buyers_geo',
+  'free_agent_markets', 'free_agents_in_markets', 'inbox_search', 'talkr_elsewhere', 'line_rep_gaps',
+  'report_comms', 'rvm_blast_summary', 'rvm_send_preview', 'plan_progress_inputs', 'team_stoplight', 'floor_board',
+  'deal_cover_photos', 'deal_lead_sources', 'deal_memory_newest', 'docs_stats', 'compr_road_to_100',
+  'investorbase_connected', 'dm_apify_connected', 'ivueit_settings',
+]);
 
 /**
  * Edge functions a preview may still call: `true` when the whole function only

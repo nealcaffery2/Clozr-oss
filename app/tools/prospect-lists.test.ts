@@ -1,5 +1,5 @@
 // Run: npx tsx tools/prospect-lists.test.ts
-import { isBuyerProspect, isDmProspect, prospectListId } from '../lib/prospect-lists';
+import { cleanTags, isBuyerProspect, isDmProspect, prospectListId } from '../lib/prospect-lists';
 
 let failed = 0;
 const eq = (label: string, got: unknown, exp: unknown) => {
@@ -31,6 +31,14 @@ eq('worked buyer is not skipped', isBuyerProspect([], 'Active', 'Manual'), false
 eq('deal machine source', isDmProspect('deal_machine', []), true);
 eq('dm tag', isDmProspect('Manual', ['dm-prospect']), true);
 eq('other lead', isDmProspect('talkr', ['Hot']), false);
+
+// A null element in a text[] tags column (wholesale snipe sync, Oct 30) crashed
+// the workspace load and left the Deals board empty.
+const withNull = ['genius', null, 'buyer-prospect'] as unknown as string[];
+eq('null tag is skipped, not a crash', prospectListId(withNull, 'Active', 'genius'), 'buyer-prospect');
+eq('null tag in campaign skip', isBuyerProspect(withNull, 'Active', 'Manual'), true);
+eq('null tag in dm check', isDmProspect('Manual', [null, 'dm-prospect'] as unknown as string[]), true);
+eq('cleanTags keeps strings only', cleanTags(['a', null, undefined, 'b']), ['a', 'b']);
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('prospect-lists: all passed');

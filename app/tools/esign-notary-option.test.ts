@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { addViewSeconds, emailsMatch, formatViewDuration, gateOk, hashAccessCode, maskEmail, signedBody, viewedTitle } from '../supabase/functions/_shared/esign-session';
 import { contractSide, isPurchaseContract, nextDealStage, signedDealUpdate } from '../supabase/functions/_shared/contract-apply';
+import { signingDay } from '../supabase/functions/_shared/pdf-fields';
 import { daysUntil, optionAlertAudience, optionAtRisk, optionReadouts } from '../supabase/functions/_shared/option-clock';
 import { renderNotaryStamp, stampGaps } from '../supabase/functions/_shared/notary-stamp';
 
@@ -46,6 +47,15 @@ assert.equal(sellerPsa.patch.earnest_money, 500);
 assert.equal(sellerPsa.patch.close_date, '2026-10-20');
 assert.equal(sellerPsa.patch.option_ends_on, '2026-10-10');
 assert.equal(sellerPsa.patch.contract_status, 'Fully executed');
+
+// applySignedDeal (docs.ts) dates the deal sheet with signingDay(), the Central day the PDF's date-signed
+// boxes get, not the UTC day: the last signature at 9pm CT on Oct 20 is 02:00Z on Oct 21.
+const lateNight = signingDay(new Date('2026-10-21T02:00:00Z'));
+assert.equal(lateNight, '2026-10-20');
+const nightPsa = signedDealUpdate({ kind: 'psa', roles: ['seller'], signedOn: lateNight, tokens: [{ name: 'Trec.OptionDays', value: '14' }] });
+assert.equal(nightPsa.patch.contract_date, '2026-10-20');
+assert.equal(nightPsa.patch.option_ends_on, '2026-11-03');
+assert.notEqual(nightPsa.patch.contract_date, new Date('2026-10-21T02:00:00Z').toISOString().slice(0, 10), 'the UTC day would be a day late');
 
 const buyer = signedDealUpdate({
   kind: 'assignment', roles: ['buyer'], signedOn: '2026-09-26',

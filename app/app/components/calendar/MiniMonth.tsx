@@ -18,19 +18,19 @@ export function MiniMonth({ month, selected, busyDays, onPick, onMonth }: {
   return (
     <div style={{ padding: '4px 0' }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ font: '500 14px/1.2 var(--font-sans)', color: 'var(--ink-4, #3c4043)', flex: 1 }}>
+        <span style={{ font: '500 14px/1.2 var(--font-sans)', color: 'var(--ink, #18181b)', flex: 1 }}>
           {month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
         </span>
         <button type="button" className="cz-icon-btn" onClick={() => onMonth(addMonths(month, -1))} aria-label="Previous month" style={{ width: 28, height: 28 }}>
-          <Chevron dir="left" size={14} color="var(--ink-4, #3c4043)" />
+          <Chevron dir="left" size={14} color="var(--muted, #52525b)" />
         </button>
         <button type="button" className="cz-icon-btn" onClick={() => onMonth(addMonths(month, 1))} aria-label="Next month" style={{ width: 28, height: 28 }}>
-          <Chevron dir="right" size={14} color="var(--ink-4, #3c4043)" />
+          <Chevron dir="right" size={14} color="var(--muted, #52525b)" />
         </button>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0 }}>
         {DOW.map((d, i) => (
-          <span key={i} style={{ font: '500 10px/1 var(--font-sans)', color: '#70757a', textAlign: 'center', padding: '4px 0' }}>{d}</span>
+          <span key={i} style={{ font: '500 11px/1 var(--font-sans)', color: 'var(--muted, #52525b)', textAlign: 'center', padding: '4px 0' }}>{d}</span>
         ))}
         {days.map((d) => {
           const inMonth = d.getMonth() === month.getMonth();
@@ -46,7 +46,7 @@ export function MiniMonth({ month, selected, busyDays, onPick, onMonth }: {
                 font: `${sel || today ? 600 : 400} 12px/1 var(--font-sans)`,
                 position: 'relative',
                 background: sel ? MINT : 'transparent',
-                color: sel ? 'var(--on-dark, #fff)' : today ? MINT : inMonth ? INK : 'var(--line-2, #dadce0)',
+                color: sel ? 'var(--on-dark, #fff)' : today ? MINT : inMonth ? INK : 'var(--meta, #71717a)',
               }}
             >
               {d.getDate()}

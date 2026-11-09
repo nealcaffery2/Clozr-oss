@@ -16,47 +16,41 @@
  * when those ticks finish (the migration's triggers).
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
+import { everyRow } from '../_shared/every-row.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { isServiceCaller, jsonWith } from '../_shared/security.ts';
-import { slopFindings, slopReport } from '../_shared/no-ai-slop.ts';
+import { lifecycleFields, pickRep, type RosterRow } from '../_shared/compr-lifecycle.ts';
+import type { ComprSignup } from '../_shared/compr-trial-sync.ts';
+import { COMPR_FOOTER } from '../../../lib/compr-playbook.ts';
+import { comprTextEmail, ctaPlain } from '../../../lib/compr-email.ts';
+import { cleanMechanicalSlop } from '../_shared/no-ai-slop.ts';
 import { blastFrom, sendResend } from '../_shared/resend.ts';
+import { dropTracking, linkTracking, startTracking } from '../_shared/email-track-store.ts';
 import { resendEnvFor } from '../_shared/workspace-email.ts';
 import { textRecipient } from '../_shared/docs-flow.ts';
 import { withOptOut } from '../_shared/sms-compliance.ts';
+import { needsOptOutLine, optOutFacts } from '../_shared/opt-out-first-touch.ts';
 import { unsubscribeToken, unsubscribeUrl, verificationBlock } from '../_shared/mailguard.ts';
-import { localParts } from '../_shared/deliverability-rules.ts';
+import { localParts, pickReplyTo, readReplyBoxes } from '../_shared/deliverability-rules.ts';
 import { sendPool } from '../_shared/cold-transport.ts';
 import {
-  blockedSendingDomains, coldDailyAllowance, coldDeliverability, coldMessageId, coldSendRoom, composeColdText,
+  blockedSendingDomains, coldDailyAllowance, coldDeliverability, coldMessageId, coldSendRoom, composeColdText, lintColdCopy,
   mailboxDayStart, mailboxGapSeconds, pickPoolMailbox, plainHtml, recipientProvider, warmupGateOn,
   type ColdDeliverability,
 } from '../_shared/cold-campaign.ts';
 import {
-  autoSendOn, coldHold, emailLane, enrollmentOpen, fillMerge, planBlock, planSender, skipTitle, subjectOf, tagToAdd, windowState,
+  autoSendOn, coldHold, emailLane, enrollmentOpen, fillMerge, isCustomer, planBlock, planSender, skipTitle, subjectOf, tagToAdd, windowState,
   type Hours, type PlanPerson,
 } from '../_shared/plan-send.ts';
 import {
   afterThrow, asSettings, buildPool, closeSent, dropPool, eachClaimed, holdUnhealthy, noteSend, readHealth, sendsSince, sentSteps, serial, withPool,
   type Pool, type Serial,
 } from './pool.ts';
+import { LINE_DAILY_CAP, lastLineTo, loadLines, pickLine, pickVersion, rotationOn, type Line } from './lines.ts';
 
 type Any = any;
 const json = jsonWith({});
-
-type RosterRow = { user_id: string; role: string | null; email: string | null; full_name: string | null };
-
-/** Who works the record: its own assignee, else the workspace owner, else the first member. Only a current member counts. */
-function pickRep(i: { assignedTo?: string | null; roster: readonly RosterRow[]; ownerId: string | null }): RosterRow | null {
-  const member = (id: string | null | undefined) => (id ? i.roster.find((r) => r.user_id === id) ?? null : null);
-  return member(i.assignedTo) ?? member(i.ownerId) ?? i.roster[0] ?? null;
-}
-
-/** A markdown CTA line (`[Label](https://...)`) as plain text: "Label: https://...". */
-const CTA_LINE = /^\[([^\]\n]{1,60})\]\(((?:https?:\/\/|\{\{)[^)\s]+)\)$/;
-const ctaPlain = (text: string) => text.split('\n').map((l) => {
-  const m = l.trim().match(CTA_LINE);
-  return m ? `${m[1]}: ${m[2]}` : l;
-}).join('\n');
+const STREET = COMPR_FOOTER.split('\n')[0];
 
 type Claim = {
   task_id: number; workspace_id: number; enrollment_id: number; plan_step_id: number;
@@ -75,7 +69,7 @@ Deno.serve(async (req) => {
   // Every row is claimed here (plan_claim_at, for update skip locked) before
   // anything sends, so an overlapping tick holds none of them. The pool only
   // changes how many of this tick's rows are in flight at once.
-  const { data, error } = await admin.rpc('plan_send_claim', { p_limit: 20 });
+  const { data, error } = await admin.rpc('plan_send_claim', { p_limit: 40 });
   if (error) return json({ error: error.message }, 500);
   const rows = (data ?? []) as Claim[];
   const tally = { sent: 0, texted: 0, tagged: 0, waited: 0, skipped: 0, failed: 0 };
@@ -88,7 +82,7 @@ Deno.serve(async (req) => {
       console.error('plan-tick', row.task_id, err instanceof Error ? err.message : err);
       // A row that already sent is closed or held, never released (afterThrow).
       await afterThrow(row,
-        () => release(admin, row, new Date(Date.now() + 15 * 60_000).toISOString(), null),
+        () => release(admin, row, new Date(Date.now() + 15 * 60_000).toISOString(), 'the last try failed; retrying in 15 minutes'),
         () => closeSent(admin, row.task_id, finishPatch(row, null)));
     }
   });
@@ -104,10 +98,15 @@ const recordKey = (row: Claim) => row.buyer_id ? `b${row.buyer_id}` : row.seller
  * `busy` holds the inboxes with a send in flight, so one inbox never has two.
  */
 type Ws = {
-  compr: boolean; tz: string; requireVerified: boolean;
+  compr: boolean; tz: string; requireVerified: boolean; repSetting: string | null;
   roster: RosterRow[]; ownerId: string | null;
+  /** Gmail inboxes CLOZR files mail from in this workspace: a plan email's Reply-To goes to the rep's one. */
+  synced: { email: string; user_id: string | null }[];
   cold: { campaignId: number | null; policy: ColdDeliverability; cursor: number; gate: boolean; blocked: string[] } | null;
   pool: Pool | null; lock: Serial; busy: Set<number>;
+  settings: Any;
+  /** Text lines by sender (null when Talkr could not be read this tick), and active people by plan, read once per tick (lines.ts). */
+  lines: Map<string, Promise<Line[] | null>>; planActive: Map<number, Promise<number>>;
 };
 
 /** Read once per tick and shared by the rows in flight. A failed read is not kept, so the next row reads again. */
@@ -122,10 +121,11 @@ function workspace(admin: SupabaseClient, cache: Map<number, Promise<Ws>>, id: n
 
 /** Throws on a failed read: a step must not send on default caps or without require_verified_email. */
 async function readWorkspace(admin: SupabaseClient, id: number): Promise<Ws> {
-  const [{ data: ws, error: wsError }, { data: roster, error: rosterError }, { data: cold, error: coldError }] = await Promise.all([
+  const [{ data: ws, error: wsError }, { data: roster, error: rosterError }, { data: cold, error: coldError }, { data: synced }] = await Promise.all([
     admin.from('workspaces').select('owner_id, settings').eq('id', id).maybeSingle(),
     admin.from('workspace_roster').select('user_id, role, email, full_name').eq('workspace_id', id),
-    admin.from('cold_workspace_settings').select('deliverability, physical_address, fallback_timezone, rotation_cursor, warmup_provider, blocked_extra').eq('workspace_id', id).maybeSingle(),
+    admin.from('cold_workspace_settings').select('deliverability, physical_address, fallback_timezone, rotation_cursor, warmup_provider, blocked_extra, allow_company_domains').eq('workspace_id', id).maybeSingle(),
+    readReplyBoxes(admin, id),
   ]);
   const failed = wsError ?? rosterError ?? coldError;
   if (failed) throw new Error(`workspace ${id} unread: ${failed.message}`);
@@ -135,16 +135,19 @@ async function readWorkspace(admin: SupabaseClient, id: number): Promise<Ws> {
     compr: settings.buyer_profile === 'compr',
     tz: settings.timezone || row?.fallback_timezone || 'America/Chicago',
     requireVerified: settings.require_verified_email === true,
+    repSetting: settings.compr_lifecycle?.rep_user_id ?? null,
     roster: (roster ?? []) as RosterRow[],
     ownerId: (ws as Any)?.owner_id ?? null,
+    synced: synced ?? [],
     cold: {
       campaignId: null,
       policy: coldDeliverability(row?.deliverability, row?.physical_address),
       cursor: Number(row?.rotation_cursor ?? 0),
       gate: warmupGateOn(row?.warmup_provider),
-      blocked: blockedSendingDomains(row?.blocked_extra ?? []),
+      blocked: blockedSendingDomains(row?.blocked_extra ?? [], { allowCompanyDomains: row?.allow_company_domains === true }),
     },
     pool: null, lock: serial(), busy: new Set(),
+    settings, lines: new Map(), planActive: new Map(),
   };
   if (built.compr) {
     const { data: camp, error: campError } = await admin.from('cold_campaigns').select('id, status').eq('workspace_id', id).eq('audience_tag', 'compr-cold').order('id').limit(5);
@@ -156,9 +159,9 @@ async function readWorkspace(admin: SupabaseClient, id: number): Promise<Ws> {
 }
 
 async function one(admin: SupabaseClient, row: Claim, ws: Ws, tally: { sent: number; texted: number; tagged: number; waited: number; skipped: number; failed: number }): Promise<void> {
-  const settings = (row.plan_settings ?? {}) as { auto_send?: boolean; business_hours?: Hours; text_without_consent?: boolean };
+  const settings = (row.plan_settings ?? {}) as { auto_send?: boolean; business_hours?: Hours; text_without_consent?: boolean; rotate_lines?: boolean };
   if (!autoSendOn(ws.compr, settings)) {
-    await release(admin, row, null, null);
+    await release(admin, row, null, 'auto-send is off for this plan');
     return;
   }
   if (!(await stillRunning(admin, row.enrollment_id))) {
@@ -174,7 +177,7 @@ async function one(admin: SupabaseClient, row: Claim, ws: Ws, tally: { sent: num
   }
   const hours = windowState(new Date(), settings.business_hours, ws.tz);
   if ((row.channel === 'email' || row.channel === 'sms') && !hours.open) {
-    await release(admin, row, hours.nextAt, null);
+    await release(admin, row, hours.nextAt, "outside the plan's sending hours");
     tally.waited++;
     return;
   }
@@ -192,7 +195,7 @@ async function one(admin: SupabaseClient, row: Claim, ws: Ws, tally: { sent: num
     tally.skipped++;
     return;
   }
-  const rep = pickRep({ assignedTo: person.assignedTo, roster: ws.roster, ownerId: ws.ownerId });
+  const rep = pickRep({ assignedTo: person.assignedTo, settingRep: ws.repSetting, roster: ws.roster, ownerId: ws.ownerId });
   const senderId = planSender({
     stepAssignee: typeof row.config?.assignee === 'string' ? row.config.assignee : null,
     repId: rep?.user_id ?? null, taskAssignee: row.assigned_to, createdBy: row.created_by, compr: ws.compr,
@@ -205,15 +208,34 @@ async function one(admin: SupabaseClient, row: Claim, ws: Ws, tally: { sent: num
       tally.skipped++;
       return;
     }
-    const body = withOptOut(fillMerge(messageOf(row.notes), fields));
-    const slop = slopFindings(body);
-    if (slop.length) {
-      await hold(admin, row, `slop: ${slopReport(slop)}`, tally);
-      return;
+    // Bold, em dashes and emoji are fixed here; wording never holds a send.
+    const plain = cleanMechanicalSlop(fillMerge(pickVersion(messageOf(row.notes), row.enrollment_id), fields));
+    // The opt-out line only on a stranger's first text (opt-out-first-touch.ts).
+    const body = needsOptOutLine(await optOutFacts(admin, Number(row.workspace_id), { buyer_id: row.buyer_id, seller_id: row.seller_id })) ? withOptOut(plain) : plain;
+    // A prospect on a big plan hears from a line local to them, not always the sender's own (lines.ts).
+    let from: Line | null = null;
+    if (senderId && !isCustomer(person.who) && rotationOn(settings.rotate_lines, await activeOnPlan(admin, ws, row.enrollment_id))) {
+      const lines = await linesFor(admin, ws, Number(row.workspace_id), senderId);
+      // Talkr did not answer: the text waits, as a dispo blast does (dispo-campaign-tick). Sending
+      // from the sender's default instead piled a whole plan's texts onto one line, past its cap.
+      if (lines === null) {
+        await release(admin, row, new Date(Date.now() + 5 * 60_000).toISOString(), 'could not read the text lines from Talkr; trying again shortly');
+        tally.waited++;
+        return;
+      }
+      if (lines.length) {
+        from = pickLine(lines, LINE_DAILY_CAP, await lastLineTo(admin, Number(row.workspace_id), { buyer_id: row.buyer_id, seller_id: row.seller_id }), person.who.phone);
+        if (!from) {
+          await release(admin, row, new Date(Date.now() + 12 * 3600_000).toISOString(), "every text line is at its daily cap");
+          tally.waited++;
+          return;
+        }
+        from.sent++;
+      }
     }
     const sent = await textRecipient(admin, { workspace_id: row.workspace_id, deal_id: row.deal_id, created_by: row.created_by }, {
       phone: person.who.phone, seller_id: row.seller_id, buyer_id: row.buyer_id,
-    }, body, senderId, { contractsLine: false });
+    }, body, senderId, { contractsLine: false, fromPhoneNumberId: from?.id ?? null });
     if (sent.ok) {
       sentSteps.add(row);
       await finishSent(admin, row, sent.carrier_fixed ? `Reworded so carriers deliver it: ${sent.carrier_fixed}` : null);
@@ -221,7 +243,21 @@ async function one(admin: SupabaseClient, row: Claim, ws: Ws, tally: { sent: num
       return;
     }
     if (sent.reason === 'quiet hours') {
-      await release(admin, row, hours.open ? new Date(Date.now() + 12 * 3600_000).toISOString() : hours.nextAt, null);
+      await release(admin, row, hours.open ? new Date(Date.now() + 12 * 3600_000).toISOString() : hours.nextAt, "quiet hours in the lead's time zone");
+      tally.waited++;
+      return;
+    }
+    // Daily text cap (or 10DLC gate) on the line: retrying every 15 minutes
+    // only hits it again, so it waits half a day and the step says why.
+    if (sent.reason.startsWith('line held by Talkr')) {
+      // A rotated line Talkr is holding is full for today; the next try takes another line.
+      if (from) {
+        from.sent = LINE_DAILY_CAP;
+        await release(admin, row, new Date(Date.now() + 5 * 60_000).toISOString(), sent.reason);
+        tally.waited++;
+        return;
+      }
+      await release(admin, row, new Date(Date.now() + 12 * 3600_000).toISOString(), sent.reason);
       tally.waited++;
       return;
     }
@@ -236,11 +272,11 @@ async function one(admin: SupabaseClient, row: Claim, ws: Ws, tally: { sent: num
     return;
   }
 
-  const subject = subjectOf(row.subject, row.step_title, fields);
-  const body = fillMerge(messageOf(row.notes), fields);
-  const slop = slopFindings(`${subject}\n${body}`);
-  if (slop.length) {
-    await hold(admin, row, `slop: ${slopReport(slop)}`, tally);
+  const subject = cleanMechanicalSlop(subjectOf(row.subject, row.step_title, fields));
+  const body = cleanMechanicalSlop(fillMerge(messageOf(row.notes), fields));
+  const unfilled = `${subject}\n${body}`.match(/\{\{\s*[a-z_][a-z0-9_]*\s*\}\}/gi);
+  if (unfilled) {
+    await hold(admin, row, `merge field with no value: ${[...new Set(unfilled)].join(', ')}`, tally);
     return;
   }
   if (lane === 'cold') {
@@ -273,8 +309,29 @@ async function coldEmail(
     tally.skipped++;
     return;
   }
+  // Same inbox every time: the one this plan used, else whichever inbox last mailed them on any cold campaign.
+  const pinned = held?.mailbox_id ?? await lastInboxTo(admin, row.workspace_id, email);
+  const address = ws.cold?.policy.physicalAddress?.trim() || (ws.compr ? STREET : '');
+  // The copy rules a cold campaign step gets (lintColdCopy): no link in a first touch, the link limit after it,
+  // the spam score. Held, not skipped: fixing the step's copy lets the waiting rows send.
+  const lint = lintColdCopy({
+    stepPosition: held?.thread_message_id || pinned ? 2 : 1, subject, body, fields: {},
+    policy: { ...ws.cold!.policy, physicalAddress: address },
+  });
+  if (!lint.ok) {
+    await release(admin, row, new Date(Date.now() + 6 * 3600_000).toISOString(), `cold copy blocked: ${lint.blocks.join(' ')}`);
+    tally.waited++;
+    return;
+  }
   // A failed read throws: the row is released and tried again (the catch around one()), never skipped.
-  const gate = await verificationBlock(admin, row.workspace_id, [email], 'bulk', { requireVerified: ws.requireVerified });
+  // Cold mail goes only to a verified address, whatever the workspace setting. Not checked yet (Reoon not reached)
+  // waits an hour for the next check; failed verification ends the step.
+  const gate = await verificationBlock(admin, row.workspace_id, [email], 'bulk', { requireVerified: true });
+  if (gate?.unverified?.length) {
+    await release(admin, row, new Date(Date.now() + 3600_000).toISOString(), 'email not verified yet');
+    tally.waited++;
+    return;
+  }
   if (gate) {
     await finish(admin, row, gate.message);
     await log(admin, row, 'Email skipped', gate.message);
@@ -297,7 +354,6 @@ async function coldEmail(
   const added = tagToAdd(person.who, 'cold');
   if (added && row.buyer_id) await addTag(admin, 'buyers', row.buyer_id, person.tags, added, row);
 
-  const pinned = held?.mailbox_id ?? null;
   const got = await withPool(ws, () => loadPool(admin, row.workspace_id, ws), async (pool) => {
     const boxes = (pinned ? pool.mailboxes.filter((m) => m.id === pinned) : pool.mailboxes).filter((m) => !ws.busy.has(m.id));
     const picked = pickPoolMailbox(boxes, pool.domains, ws.cold?.blocked ?? [], pinned ? 0 : (ws.cold?.cursor ?? 0), new Date(), ws.cold?.policy);
@@ -307,7 +363,6 @@ async function coldEmail(
     if (!mailbox || !domain) return { wait: null };
     const token = await unsubscribeToken({ w: row.workspace_id, e: email });
     const link = unsubscribeUrl(token);
-    const address = ws.cold?.policy.physicalAddress?.trim() || '';
     const text = composeColdText(body, { signature: mailbox.signature, physicalAddress: address, unsubscribeUrl: link });
     const messageId = coldMessageId(enrollmentId, Number(row.plan_step_id), crypto.randomUUID(), picked.mailbox.email);
     const now = new Date();
@@ -332,7 +387,7 @@ async function coldEmail(
     return { claimId: claim.id, mailbox, picked, link, text, messageId, now };
   });
   if (got === 'refused' || 'wait' in got) {
-    await release(admin, row, new Date(Date.now() + 15 * 60_000).toISOString(), got === 'refused' ? null : got.wait ?? null);
+    await release(admin, row, new Date(Date.now() + 15 * 60_000).toISOString(), got === 'refused' ? 'no warmed inbox has room right now' : got.wait ?? 'no warmed inbox has room right now');
     tally.waited++;
     return;
   }
@@ -399,21 +454,33 @@ async function relationshipEmail(
     tally.skipped++;
     return;
   }
-  const text = ctaPlain(body);
-  const html = plainHtml(text);
+  const plain = ctaPlain(body);
+  const text = /4266 Example/i.test(plain) || !ws.compr ? plain : `${plain}\n\n${COMPR_FOOTER}`;
+  // A Compr customer gets the email in Compr's design (lib/compr-email.ts); the text part stays the same words.
+  // Read receipts on relationship mail only (a customer, a signup, a seller we know). Cold mail never
+  // carries a pixel (email-track-store.ts); the report reads opens from email_tracking.
+  const { html, token } = await startTracking(admin, {
+    workspaceId: Number(row.workspace_id), userId: rep?.user_id ?? row.created_by ?? null, recipients: [person.who.email!.trim()], subject,
+    html: ws.compr ? comprTextEmail(body, { title: subject }) : plainHtml(text), where: 'plan-tick relationship email',
+  });
+  // The rep's inbox CLOZR syncs in this workspace (alex@underwriting.example.com in Compr), not their login
+  // email, so a reply files on the record and stops the plan (deliverability-rules.ts pickReplyTo).
+  const replyTo = pickReplyTo({ reply_to: rep?.email ?? null, user_id: rep?.user_id ?? null }, ws.synced);
   const sent = await sendResend({
-    from: from.from, to: person.who.email!.trim(), subject, html, text, replyTo: rep?.email ?? null,
-    headers: rep?.email ? { 'List-Unsubscribe': `<mailto:${rep.email}?subject=unsubscribe>` } : undefined,
+    from: from.from, to: person.who.email!.trim(), subject, html, text, replyTo,
+    headers: replyTo ? { 'List-Unsubscribe': `<mailto:${replyTo}?subject=unsubscribe>` } : undefined,
     tags: { kind: 'action_plan', plan: String(row.plan_name ?? '').slice(0, 40) },
     idempotencyKey: `plan-${row.task_id}`,
   }, mail.env);
   if (!sent) {
+    await dropTracking(admin, token, 'plan-tick relationship email');
     await release(admin, row, new Date(Date.now() + 15 * 60_000).toISOString(), 'Resend refused the send');
     tally.failed++;
     return;
   }
   sentSteps.add(row);
-  await fileEmail(admin, row, { subject, body: text, from: from.email, to: person.who.email!.trim(), source: 'resend', sourceId: `plan:${row.task_id}`, repId: rep?.user_id ?? row.assigned_to });
+  const commId = await fileEmail(admin, row, { subject, body: text, from: from.email, to: person.who.email!.trim(), source: 'resend', sourceId: `plan:${row.task_id}`, repId: rep?.user_id ?? row.assigned_to });
+  await linkTracking(admin, token, commId, 'plan-tick relationship email');
   if (ws.compr && row.buyer_id && !person.assignedTo && rep) await giveTo(admin, row, rep.user_id, rep.full_name || 'the Compr rep');
   await finishSent(admin, row, null);
   tally.sent++;
@@ -438,7 +505,7 @@ async function actAssign(admin: SupabaseClient, row: Claim, person: Loaded, ws: 
   const named = typeof row.config?.assignee === 'string' ? row.config.assignee : null;
   const rep = named
     ? ws.roster.find((r) => r.user_id === named) ?? null
-    : pickRep({ assignedTo: person.assignedTo, roster: ws.roster, ownerId: ws.ownerId });
+    : pickRep({ assignedTo: person.assignedTo, settingRep: ws.repSetting, roster: ws.roster, ownerId: ws.ownerId });
   if (rep && (row.buyer_id || row.seller_id)) {
     const table = row.buyer_id ? 'buyers' : 'sellers';
     await admin.from(table).update({ assigned_to: rep.user_id }).eq('id', (row.buyer_id ?? row.seller_id) as number);
@@ -458,7 +525,7 @@ async function actStage(admin: SupabaseClient, row: Claim, _person: Loaded, tall
   tally.tagged++;
 }
 
-type Loaded = { who: PlanPerson; tags: string[]; assignedTo: string | null; name: string };
+type Loaded = { who: PlanPerson; tags: string[]; assignedTo: string | null; name: string; signup?: ComprSignup | null };
 
 async function loadPerson(admin: SupabaseClient, row: Claim): Promise<Loaded | null> {
   if (row.buyer_id) {
@@ -472,6 +539,7 @@ async function loadPerson(admin: SupabaseClient, row: Claim): Promise<Loaded | n
       name: String(b.name ?? ''),
       assignedTo: b.assigned_to ?? null,
       tags: Array.isArray(b.tags) ? b.tags : [],
+      signup: (b.compr_signup ?? null) as ComprSignup | null,
       who: {
         kind: 'buyer', tags: b.tags ?? [], email: b.email ?? null, phone: b.phone ?? null,
         archived: !!b.archived_at, blacklisted: !!b.blacklisted_at, optedIn: !!b.opted_in_at,
@@ -498,7 +566,11 @@ async function loadPerson(admin: SupabaseClient, row: Claim): Promise<Loaded | n
 function mergeFields(person: Loaded, repNameText: string): Record<string, string> {
   const name = person.name.trim();
   const first = name.split(/\s+/)[0] || name;
-  return { first_name: first, name, contact_name: name, rep_name: repNameText, email: person.who.email ?? '', phone: person.who.phone ?? '' };
+  // A Compr contact also fills the fields its campaigns use ({{plan}}, {{runs}},
+  // {{runs_30d}}, {{quota}}, {{trial_end}}, {{ended_on}}, {{booking_url}}), from
+  // the signup compr-trial-sync keeps on the buyer.
+  const compr = person.signup ? lifecycleFields(person.signup, name, repNameText, new Date().toISOString()) : {};
+  return { ...compr, first_name: first, name, contact_name: name, rep_name: repNameText, email: person.who.email ?? '', phone: person.who.phone ?? '' };
 }
 
 async function isSuppressed(admin: SupabaseClient, ws: number, email: string): Promise<boolean> {
@@ -527,19 +599,20 @@ function repName(ws: Ws, userId: string, fallback: RosterRow | null): string {
   return ws.roster.find((r) => r.user_id === userId)?.full_name || fallback?.full_name || 'the Compr rep';
 }
 
-async function fileEmail(admin: SupabaseClient, row: Claim, mail: { subject: string; body: string; from: string; to: string; source: string; sourceId: string; repId: string | null }): Promise<void> {
+async function fileEmail(admin: SupabaseClient, row: Claim, mail: { subject: string; body: string; from: string; to: string; source: string; sourceId: string; repId: string | null }): Promise<number | null> {
   const rec: Record<string, unknown> = {
     workspace_id: row.workspace_id, seller_id: row.seller_id, buyer_id: row.buyer_id, deal_id: row.deal_id,
     channel: 'email', direction: 'outbound', occurred_at: new Date().toISOString(),
     subject: mail.subject, body: mail.body.slice(0, 20_000), from_email: mail.from, to_email: mail.to,
     status: 'sent', source: mail.source, source_id: mail.sourceId, rep_id: mail.repId,
   };
-  let { error } = await admin.from('communications').upsert(rec, { onConflict: 'workspace_id,source,source_id' });
+  let { data, error } = await admin.from('communications').upsert(rec, { onConflict: 'workspace_id,source,source_id' }).select('id').maybeSingle();
   if (error && /rep_id|deal_id/.test(error.message)) {
     delete rec.rep_id;
-    ({ error } = await admin.from('communications').upsert(rec, { onConflict: 'workspace_id,source,source_id' }));
+    ({ data, error } = await admin.from('communications').upsert(rec, { onConflict: 'workspace_id,source,source_id' }).select('id').maybeSingle());
   }
   if (error) console.error('plan email log', row.task_id, error.message);
+  return (data as { id: number } | null)?.id ?? null;
 }
 
 async function log(admin: SupabaseClient, row: Claim, title: string, body: string): Promise<void> {
@@ -564,6 +637,33 @@ function cleaned(notes: string | null, extra: string | null): string | null {
  * "Waiting: Talkr not connected to this workspace" on the end.
  */
 const messageOf = (notes: string | null | undefined) => cleaned(notes ?? null, null) ?? '';
+
+/** People active on this enrolment's plan, read once per plan per tick. */
+async function activeOnPlan(admin: SupabaseClient, ws: Ws, enrollmentId: number): Promise<number> {
+  const { data } = await admin.from('enrollments').select('plan_id').eq('id', enrollmentId).maybeSingle();
+  const planId = Number((data as { plan_id?: number } | null)?.plan_id);
+  if (!Number.isFinite(planId)) return 0;
+  let hit = ws.planActive.get(planId);
+  if (!hit) {
+    hit = Promise.resolve(admin.from('enrollments').select('id', { count: 'exact', head: true }).eq('plan_id', planId).eq('status', 'active'))
+      .then(({ count }) => count ?? 0);
+    ws.planActive.set(planId, hit);
+  }
+  return hit;
+}
+
+/** Null when Talkr could not be read (lines.ts throws): the caller holds the text rather than sending from the default. */
+function linesFor(admin: SupabaseClient, ws: Ws, wsId: number, senderId: string): Promise<Line[] | null> {
+  let hit = ws.lines.get(senderId);
+  if (!hit) {
+    hit = loadLines(admin, wsId, senderId, ws.settings ?? {}).catch((err) => {
+      console.error('plan-tick lines', wsId, senderId, err instanceof Error ? err.message : err);
+      return null;
+    });
+    ws.lines.set(senderId, hit);
+  }
+  return hit;
+}
 
 async function stillRunning(admin: SupabaseClient, enrollmentId: number): Promise<boolean> {
   const { data } = await admin.from('enrollments').select('status').eq('id', enrollmentId).maybeSingle();
@@ -597,6 +697,15 @@ async function hold(admin: SupabaseClient, row: Claim, why: string, tally: { wai
   tally.waited++;
 }
 
+/** The warmed inbox that last mailed this address in the workspace, so a person never hears from two. */
+async function lastInboxTo(admin: SupabaseClient, wsId: number, email: string): Promise<number | null> {
+  const { data, error } = await admin.from('cold_sends').select('mailbox_id').eq('workspace_id', wsId).eq('to_email', email)
+    .neq('status', 'failed').order('sent_at', { ascending: false }).limit(1).maybeSingle();
+  if (error) throw new Error(`last inbox unread: ${error.message}`);
+  const id = (data as { mailbox_id?: number | null } | null)?.mailbox_id;
+  return id == null ? null : Number(id);
+}
+
 /**
  * The workspace's warmed inboxes and their sends, read once per tick
  * (withPool). Only mailbox_id and sent_at of the rows the counts use: back to
@@ -614,14 +723,19 @@ async function loadPool(admin: SupabaseClient, wsId: number, ws: Ws): Promise<Po
   if (domainError || boxError) throw new Error(`cold pool unread: ${(domainError ?? boxError)!.message}`);
   const raw = (boxes ?? []) as Any[];
   if (!raw.length) return buildPool(raw, domains ?? [], [], now, !!ws.cold?.gate);
-  const [{ data: sends, error }, health] = await Promise.all([
-    admin.from('cold_sends').select('mailbox_id, sent_at')
-      .eq('workspace_id', wsId).in('mailbox_id', raw.map((m) => m.id))
-      .gte('sent_at', sendsSince(raw, now, ws.cold!.policy.gapMaxSeconds).toISOString()).neq('status', 'failed'),
-    readHealth(admin, wsId, now),
-  ]);
-  if (error) throw new Error(`cold sends unread: ${error.message}`);
-  const pool = buildPool(raw, domains ?? [], (sends ?? []) as { mailbox_id: number; sent_at: string }[], now, !!ws.cold?.gate);
+  let sends: { mailbox_id: number; sent_at: string }[];
+  let health: Awaited<ReturnType<typeof readHealth>>;
+  try {
+    [sends, health] = await Promise.all([
+      everyRow<{ mailbox_id: number; sent_at: string }>(() => admin.from('cold_sends').select('mailbox_id, sent_at')
+        .eq('workspace_id', wsId).in('mailbox_id', raw.map((m) => m.id))
+        .gte('sent_at', sendsSince(raw, now, ws.cold!.policy.gapMaxSeconds).toISOString()).neq('status', 'failed').order('id')),
+      readHealth(admin, wsId, now),
+    ]);
+  } catch (e) {
+    throw new Error(`cold sends unread: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  const pool = buildPool(raw, domains ?? [], sends, now, !!ws.cold?.gate);
   // cold-campaign-tick's health gate, before every claim from this pool. No reading (null) holds nothing back.
   const held = health ? holdUnhealthy(pool, health, ws.cold!.policy) : null;
   if (held && (held.mailboxes.length || held.domains.length)) console.error('plan-tick cold health hold', wsId, JSON.stringify(held));

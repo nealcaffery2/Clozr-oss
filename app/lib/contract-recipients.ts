@@ -8,6 +8,7 @@ import { supabase } from './supabase';
 import { type Contact, type ContactLink, ilikeSafe, parseQuery, rankContacts } from './contact-search';
 import { classify, type Existing } from './import-dedupe';
 import { createBuyer, createSeller } from './crm-write';
+import { likeExact } from './quick-add-dupes';
 import { loadDealForSeller } from './deal-sheet';
 
 export type { Contact, ContactLink };
@@ -31,9 +32,9 @@ export async function searchContacts(workspaceId: number, q: string, limit = 12)
     ...((sellers.data ?? []) as { id: number; name: string; email: string | null; phone: string | null; property_address: string | null }[])
       .map((s) => ({ kind: 'seller' as const, id: s.id, name: s.name, email: s.email, phone: s.phone, sub: s.property_address })),
     ...((buyers.data ?? []) as { id: number; name: string; company: string | null; email: string | null; phone: string | null }[])
-      .map((b) => ({ kind: 'buyer' as const, id: b.id, name: b.name, email: b.email, phone: b.phone, sub: b.company })),
+      .map((b) => ({ kind: 'buyer' as const, id: b.id, name: b.name, email: b.email, phone: b.phone, sub: b.company, company: b.company })),
     ...((vendors.data ?? []) as { id: number; business_name: string; contact_name: string | null; email: string | null; phone: string | null; service_type: string | null }[])
-      .map((v) => ({ kind: 'vendor' as const, id: v.id, name: v.contact_name || v.business_name, email: v.email, phone: v.phone, sub: [v.contact_name ? v.business_name : null, v.service_type].filter(Boolean).join(' · ') || null, trade: v.service_type })),
+      .map((v) => ({ kind: 'vendor' as const, id: v.id, name: v.contact_name || v.business_name, email: v.email, phone: v.phone, sub: [v.contact_name ? v.business_name : null, v.service_type].filter(Boolean).join(' · ') || null, trade: v.service_type, company: v.business_name })),
     ...((team.data ?? []) as { user_id: string; full_name: string | null; email: string | null; title: string | null }[])
       .filter((t) => t.full_name || t.email)
       .map((t) => ({ kind: 'team' as const, id: t.user_id, name: t.full_name || t.email || 'Teammate', email: t.email, phone: null, sub: t.title })),
@@ -57,7 +58,8 @@ export async function saveRecipientToCrm(workspaceId: number, p: Person, kind: '
   const email = (p.email ?? '').trim().toLowerCase() || null;
   const phone = (p.phone ?? '').trim() || null;
   const digits = (phone ?? '').replace(/\D/g, '');
-  const ors = [email ? `email.ilike.${ilikeSafe(email)}` : null, digits.length >= 7 ? `phone.ilike.%${digits.slice(-4)}%` : null].filter(Boolean).join(',');
+  // The whole email, wildcards escaped: ilikeSafe is for search words and blanks the underscore in first_last@…, so that address never matched.
+  const ors = [email ? `email.ilike.${likeExact(email)}` : null, digits.length >= 7 ? `phone.ilike.%${digits.slice(-4)}%` : null].filter(Boolean).join(',');
   if (ors) {
     const table = kind === 'seller' ? 'sellers' : 'buyers';
     const { data } = await supabase.from(table).select('id, name, email, phone').eq('workspace_id', workspaceId).or(ors).limit(50);

@@ -9,6 +9,8 @@ import { activeTalkrBinding, gateTalkrWrite, readTalkrOrg, TALKR_NOT_CONNECTED }
 import { loadTalkrConnections } from './talkr-connect.ts';
 
 export const TALKR_DEFAULT_URL = 'https://talkr.example.com';
+// Not the Deno global itself: tools/sms-auto-reply.test.ts loads this file under Node.
+const env = (k: string) => (globalThis as { Deno?: { env: { get(k: string): string | undefined } } }).Deno?.env.get(k);
 const enc = new TextEncoder();
 const b64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
@@ -17,12 +19,12 @@ const b64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replac
  * as PARTNER_JWT_SECRET. The same token dispo-campaign-tick and number-guard mint.
  */
 export async function partnerToken(user: { id: string; email: string | null }): Promise<string | null> {
-  const secret = Deno.env.get('TALKR_PARTNER_JWT_SECRET');
+  const secret = env('TALKR_PARTNER_JWT_SECRET');
   if (!secret || !user.email) return null;
   const now = Math.floor(Date.now() / 1000);
   const head = b64url(enc.encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })));
   const body = b64url(enc.encode(JSON.stringify({
-    iss: `${Deno.env.get('SUPABASE_URL')}/auth/v1`, sub: user.id, aud: 'authenticated', role: 'authenticated', email: user.email, iat: now, exp: now + 300,
+    iss: `${env('SUPABASE_URL')}/auth/v1`, sub: user.id, aud: 'authenticated', role: 'authenticated', email: user.email, iat: now, exp: now + 300,
   })));
   const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(`${head}.${body}`)));
@@ -62,13 +64,13 @@ export async function postOutreach(
   try {
     const { data: ws } = await admin.from('workspaces').select('settings').eq('id', workspaceId).maybeSingle();
     settings = ws?.settings ?? null;
-    base = String((settings as { talkr_url?: string } | null)?.talkr_url || Deno.env.get('TALKR_API_URL') || TALKR_DEFAULT_URL).replace(/\/$/, '');
+    base = String((settings as { talkr_url?: string } | null)?.talkr_url || env('TALKR_API_URL') || TALKR_DEFAULT_URL).replace(/\/$/, '');
   } catch { /* default URL */ }
   const binding = activeTalkrBinding({ id: workspaceId, settings }, (await loadTalkrConnections(admin, [workspaceId]))[0] ?? null);
   if (!binding) {
     return reqs.flatMap((r) => r.refs.map((ref) => ({ ref, ok: false, note: TALKR_NOT_CONNECTED })));
   }
-  if (!Deno.env.get('TALKR_PARTNER_JWT_SECRET')) {
+  if (!env('TALKR_PARTNER_JWT_SECRET')) {
     return reqs.flatMap((r) => r.refs.map((ref) => ({ ref, ok: false, note: 'Talkr not told (TALKR_PARTNER_JWT_SECRET is not set), so a callback rings by the number\'s own routing.' })));
   }
   const out: OutreachResult[] = [];

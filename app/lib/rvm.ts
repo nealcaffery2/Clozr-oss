@@ -12,6 +12,7 @@
 // With the extension: rvm-tick imports this file under Deno, which does not
 // guess one, and the function failed to load without it.
 import { zoneForNumber } from './talkr-web/time.ts';
+import { stateOfAreaCode } from './area-codes.ts';
 
 const DNC = /^(dnc|dnd|do[\s_-]?not[\s_-]?(call|contact|disturb))$/i;
 
@@ -65,19 +66,57 @@ export function zoneForState(state: string | null | undefined): string | null {
   return code ? STATE_ZONES[code] ?? null : null;
 }
 
-/** State when we have it, else the area-code hint, else Central — Acme Homes' zone. */
+/**
+ * State when we have it, else the area code's state, else the area-code
+ * hint, else Central — Acme Homes' zone. The hint table knows 22 area codes;
+ * the state table knows them all, so without it a Greenville (864) or San
+ * Antonio (210) number was treated as Chicago.
+ */
 export function zoneForRvm(phone: string | null | undefined, fallback = 'America/Chicago', state?: string | null): string {
   const fromState = zoneForState(state);
   if (fromState) return fromState;
   if (!phone) return fallback;
+  const fromArea = zoneForState(stateOfAreaCode(areaCodeOf(phone)));
+  if (fromArea) return fromArea;
   const e = phone.trim().startsWith('+') ? phone.trim() : `+1${phone.replace(/\D/g, '').replace(/^1/, '')}`;
   return zoneForNumber(e) ?? fallback;
 }
 
 /** UTC instant of local midnight in `timeZone`, so a daily cap is a calendar day there. */
 export function localMidnightIso(now: Date, timeZone: string): string {
-  const clock = zonedClock(now, timeZone);
-  return new Date(now.getTime() - clock.minutes * 60_000).toISOString();
+  const { year, month, day } = zonedDate(now, timeZone);
+  return zonedInstant(timeZone, year, month, day, 0).toISOString();
+}
+
+type ZonedDate = { year: number; month: number; day: number };
+
+/** The calendar date `now` falls on in `timeZone` (month is 1–12). */
+function zonedDate(now: Date, timeZone: string): ZonedDate {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(now);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  return { year: get('year'), month: get('month'), day: get('day') };
+}
+
+/**
+ * The UTC instant whose clock in `timeZone` reads `minutes` past midnight on
+ * that date. Subtracting the clock's minutes from `now` assumed the day had
+ * no DST change in it, and on the two days a year it does, midnight and the
+ * window's start came out an hour off. Here the date is read as if it were
+ * UTC and corrected by the zone's offset at that instant; a second pass
+ * settles an offset that changed between the guess and the answer.
+ */
+function zonedInstant(timeZone: string, year: number, month: number, day: number, minutes: number): Date {
+  const want = Date.UTC(year, month - 1, day, 0, minutes);
+  let guess = want;
+  for (let i = 0; i < 2; i++) {
+    const at = new Date(guess);
+    const d = zonedDate(at, timeZone);
+    const c = zonedClock(at, timeZone);
+    const reads = Date.UTC(d.year, d.month - 1, d.day, 0, c.minutes);
+    if (reads === want) break;
+    guess -= reads - want;
+  }
+  return new Date(guess);
 }
 
 export type ZonedClock = { day: number; minutes: number };
@@ -118,12 +157,14 @@ export function inWindow(clock: ZonedClock, window: RvmWindow): boolean {
 export function nextWindowOpen(now: Date, timeZone: string, window: RvmWindow): Date {
   const clock = zonedClock(now, timeZone);
   if (inWindow(clock, window)) return now;
+  const today = zonedDate(now, timeZone);
+  // Calendar days, not 24-hour steps: stepping 24 h from 23:30 skipped the
+  // 23-hour spring-forward day, and the drop waited a day longer than asked.
   for (let add = 0; add < 8; add++) {
-    const probe = new Date(now.getTime() + add * 86_400_000);
-    const c = zonedClock(probe, timeZone);
-    if (!window.days.includes(c.day)) continue;
-    const startToday = new Date(probe.getTime() - c.minutes * 60_000 + window.startMin * 60_000);
-    if (startToday.getTime() > now.getTime()) return startToday;
+    const date = new Date(Date.UTC(today.year, today.month - 1, today.day + add));
+    if (!window.days.includes(date.getUTCDay())) continue;
+    const start = zonedInstant(timeZone, date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate(), window.startMin);
+    if (start.getTime() > now.getTime()) return start;
   }
   return new Date(now.getTime() + 86_400_000);
 }

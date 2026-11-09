@@ -29,6 +29,7 @@ const base: Data = {
   status: 'ok',
   convs: [conv('c1', '2026-10-14T10:00:00Z', 1), conv('c2', '2026-10-14T09:00:00Z')],
   unread: 1,
+  unreadThreads: [],
   recent: [call('k1', 'completed', 40), call('k2', 'no_answer')],
   history: [hist('h1', 'completed')],
 };
@@ -40,7 +41,7 @@ eq('a different length', sameRows(base.recent, base.recent.slice(1)), false);
 eq('a status moved', sameRows(base.recent, [call('k1', 'in_progress', 40), call('k2', 'no_answer')]), false);
 eq('reordered', sameRows(base.recent, [base.recent[1]!, base.recent[0]!]), false);
 
-const fresh = { convs: copy(base.convs), unread: 1, recent: copy(base.recent), history: copy(base.history) };
+const fresh = { convs: copy(base.convs), unread: 1, unreadThreads: [], recent: copy(base.recent), history: copy(base.history) };
 eq('nothing changed: the same object back', foldLists(base, fresh) === base, true);
 eq('every list failed to read: the same object back', foldLists(base, {}) === base, true);
 

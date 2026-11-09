@@ -6,6 +6,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { everyRow } from './every-row';
 import { supabase } from './supabase';
 import type { InboxFilter, SavedFilter } from './inbox-folders';
 
@@ -38,6 +39,24 @@ export function pinnedFirst<T>(items: T[], keyOf: (t: T) => string, state: Map<s
   return items.map((t, i) => ({ t, i })).sort((a, b) => (pin(b.t) - pin(a.t)) || (a.i - b.i)).map((x) => x.t);
 }
 
+/**
+ * Of these numbers, the ones that have ever texted this workspace
+ * (communications, communications_sms_from_idx). Awaiting reply leaves out
+ * threads only we have written in. null when the read failed.
+ */
+export async function numbersThatWrote(workspaceId: number, phones: string[]): Promise<Set<string> | null> {
+  if (!supabase || !phones.length) return new Set();
+  const out = new Set<string>();
+  for (let i = 0; i < phones.length; i += 100) {
+    const rows = await everyRow<{ from_phone: string | null }>(() => supabase!.from('communications').select('from_phone')
+      .eq('workspace_id', workspaceId).eq('channel', 'sms').eq('direction', 'inbound').in('from_phone', phones.slice(i, i + 100)).order('id') as never)
+      .catch(() => null);
+    if (!rows) return null;
+    for (const r of rows) if (r.from_phone) out.add(r.from_phone);
+  }
+  return out;
+}
+
 export const smsKey = (e164: string) => 'sms:' + String(e164 ?? '').replace(/[^\d+]/g, '');
 const FILTER = 'filter:';
 
@@ -45,6 +64,9 @@ const NEW_COLS = 'item_key, seen_at, pinned_at, cleared_at, unread_at, labels, d
 const OLD_COLS = 'item_key, seen_at, pinned_at, cleared_at';
 
 /** The signed-in member's inbox state, with writes that show at once and persist in the background. */
+/** Every mounted useInboxState, so a write in the Inbox moves the nav badge (SideNav) at once. */
+const peers = new Set<(scope: string, key: string, patch: Patch | null) => void>();
+
 export function useInboxState(workspaceId: number | null, userId: string | null) {
   const [state, setState] = useState<Map<string, ItemState>>(new Map());
   const scope = `${workspaceId ?? ''}:${userId ?? ''}`;
@@ -57,31 +79,42 @@ export function useInboxState(workspaceId: number | null, userId: string | null)
   useEffect(() => {
     if (!supabase || !workspaceId || !userId) return;
     let live = true;
-    const read = (cols: string) => supabase!.from('inbox_item_state' as never).select(cols)
-      .eq('workspace_id', workspaceId).eq('user_id', userId).limit(5000);
-    void read(NEW_COLS).then(async (r) => {
+    // Every page: past 1,000 items the read stopped and the rest showed unread, unpinned and uncleared again.
+    const read = (cols: string) => everyRow<{ item_key: string } & ItemState>(() => supabase!.from('inbox_item_state' as never).select(cols)
+      .eq('workspace_id', workspaceId).eq('user_id', userId).order('item_key') as never);
+    void read(NEW_COLS)
       // Migration 357 not applied yet: the old columns still work.
-      const res = r.error && /column|schema cache/i.test(r.error.message) ? await read(OLD_COLS) : r;
-      if (!live) return;
-      const rows = (res.data ?? []) as unknown as ({ item_key: string } & ItemState)[];
-      setState(new Map(rows.map((r) => [r.item_key, { seen_at: r.seen_at, pinned_at: r.pinned_at, cleared_at: r.cleared_at, unread_at: r.unread_at ?? null, labels: r.labels ?? [], data: r.data ?? null }])));
-    });
+      .catch((e: Error) => (/column|schema cache/i.test(e.message) ? read(OLD_COLS) : Promise.reject(e)))
+      .then((rows) => {
+        if (!live) return;
+        setState(new Map(rows.map((r) => [r.item_key, { seen_at: r.seen_at, pinned_at: r.pinned_at, cleared_at: r.cleared_at, unread_at: r.unread_at ?? null, labels: r.labels ?? [], data: r.data ?? null }])));
+      }, () => undefined);
     return () => { live = false; };
   }, [workspaceId, userId]);
 
+  useEffect(() => {
+    const apply = (from: string, key: string, patch: Patch | null) => {
+      if (from !== scope) return;
+      setState((m) => {
+        const next = new Map(m);
+        if (patch) next.set(key, { seen_at: null, pinned_at: null, cleared_at: null, ...m.get(key), ...patch });
+        else next.delete(key);
+        return next;
+      });
+    };
+    peers.add(apply);
+    return () => { peers.delete(apply); };
+  }, [scope]);
+
   const write = useCallback((key: string, patch: Patch) => {
-    setState((m) => {
-      const next = new Map(m);
-      next.set(key, { seen_at: null, pinned_at: null, cleared_at: null, ...m.get(key), ...patch });
-      return next;
-    });
+    for (const p of peers) p(`${workspaceId ?? ''}:${userId ?? ''}`, key, patch);
     if (!supabase || !workspaceId || !userId) return;
     void supabase.from('inbox_item_state' as never)
       .upsert({ workspace_id: workspaceId, user_id: userId, item_key: key, ...patch, updated_at: new Date().toISOString() } as never, { onConflict: 'workspace_id,user_id,item_key' })
       .then(({ error }) => { if (error) console.warn('inbox state', error.message); });
   }, [workspaceId, userId]);
   const erase = useCallback((key: string) => {
-    setState((m) => { const next = new Map(m); next.delete(key); return next; });
+    for (const p of peers) p(`${workspaceId ?? ''}:${userId ?? ''}`, key, null);
     if (!supabase || !workspaceId || !userId) return;
     void supabase.from('inbox_item_state' as never).delete().eq('workspace_id', workspaceId).eq('user_id', userId).eq('item_key', key)
       .then(({ error }) => { if (error) console.warn('inbox state', error.message); });

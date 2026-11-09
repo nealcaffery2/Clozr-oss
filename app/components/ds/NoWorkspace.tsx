@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { ClozrMark } from '@/components/ds/ClozrMark';
-import { btn, INK, MUTED, SHADOW } from '@/components/genius/parts';
+import { btn, INK, MUTED, SHADOW } from '@/components/kit/parts';
 
 export function NoWorkspace({ failed, email, onRetry, onSignOut }: {
   failed: boolean;

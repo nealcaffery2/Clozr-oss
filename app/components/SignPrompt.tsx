@@ -98,7 +98,7 @@ export function SignPrompt({ workspaceId, email }: { workspaceId: number; email:
   return (
     <>
       {top && !signing && !popup ? (
-        <div style={{ position: 'fixed', right: '16px', bottom: '16px', zIndex: 85, width: 'min(360px, calc(100vw - 32px))', background: 'var(--surface, #fff)', border: '1px solid #A8ECD2', borderRadius: '14px', boxShadow: '0 16px 40px rgba(0,0,0,.16)', padding: '14px 16px' }}>
+        <div style={{ position: 'fixed', right: '16px', bottom: 'calc(16px + var(--clozr-phone-tabs, 0px) + env(safe-area-inset-bottom, 0px) + var(--clozr-callbar, 0px))', zIndex: 85, width: 'min(360px, calc(100vw - 32px))', background: 'var(--surface, #fff)', border: '1px solid #A8ECD2', borderRadius: '14px', boxShadow: '0 16px 40px rgba(0,0,0,.16)', padding: '14px 16px' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--tx-mint, #0a8560)' }}>Needs your signature</div>

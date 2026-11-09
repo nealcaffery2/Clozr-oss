@@ -1,0 +1,81 @@
+/* The power dialer (components/talkr/PowerDialer.tsx). Under .talkr-dialer so
+   the dialer's tokens apply; dense like the rest of the desk (DESIGN.md §4).
+   The session bar is the one surface with a tinted background: it is the
+   state the rep reads a hundred times a shift, so it sits apart from the
+   cards below it. */
+
+.talkr-dialer .pd-bar {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 20px; align-items: center;
+  padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.talkr-dialer .pd-bar[data-live='true'] { background: var(--accent-soft); border-bottom-color: var(--accent-light); }
+.talkr-dialer .pd-bar[data-paused='true'] { background: var(--panel-2, #f6f7f9); }
+.talkr-dialer .pd-state { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.talkr-dialer .pd-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--muted-2, #a1a1aa); flex: none; }
+.talkr-dialer .pd-dot[data-tone='live'] { background: var(--accent); box-shadow: 0 0 0 3px rgba(10, 133, 96, 0.18); }
+.talkr-dialer .pd-dot[data-tone='ring'] { background: var(--amber); }
+.talkr-dialer .pd-dot[data-tone='off'] { background: var(--muted-2, #a1a1aa); }
+.talkr-dialer .pd-dot[data-tone='stop'] { background: var(--red); }
+.talkr-dialer .pd-title { font: 700 15px/1.2 var(--sans); letter-spacing: -0.01em; color: var(--text); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.talkr-dialer .pd-sub { font: 500 12px/1.3 var(--sans); color: var(--muted); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.talkr-dialer .pd-inline { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 500 12px/1.3 var(--sans); color: var(--muted); font-variant-numeric: tabular-nums; }
+.talkr-dialer .pd-inline b { font-weight: 700; color: var(--text); }
+.talkr-dialer .pd-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.talkr-dialer .pd-kbd { display: inline-block; min-width: 16px; padding: 1px 4px; margin-left: 6px; border: 1px solid currentColor; border-radius: 4px; opacity: 0.6; font: 600 11px/1.2 var(--sans); text-align: center; text-transform: uppercase; }
+
+/* Lines of the batch */
+.talkr-dialer .pd-lines { display: flex; flex-direction: column; gap: 2px; }
+.talkr-dialer .pd-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 8px 10px; border-radius: 10px; border: 1px solid transparent; }
+.talkr-dialer .pd-line[data-state='talking'] { background: var(--accent-soft); border-color: var(--accent-light); }
+.talkr-dialer .pd-line[data-live='false'] { opacity: 0.72; }
+.talkr-dialer .pd-line-name { font: 600 13px/1.25 var(--sans); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.talkr-dialer .pd-line-meta { grid-column: 1; font: 500 11.5px/1.3 var(--sans); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.talkr-dialer .pd-line-state { grid-column: 2; grid-row: 1 / span 2; align-self: center; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font: 600 11.5px/1.2 var(--sans); color: var(--muted); white-space: nowrap; }
+.talkr-dialer .pd-line[data-state='talking'] .pd-line-state { color: var(--accent); }
+.talkr-dialer .pd-line[data-state='ringing'] .pd-line-state, .talkr-dialer .pd-line[data-state='dialing'] .pd-line-state { color: var(--text); }
+.talkr-dialer .pd-line-clock { font: 500 11px/1 var(--sans); font-variant-numeric: tabular-nums; color: var(--muted); }
+
+/* The session's numbers: label and value on one line, value right-aligned and tabular */
+.talkr-dialer .pd-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; }
+.talkr-dialer .pd-stat { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line-soft); }
+.talkr-dialer .pd-stat span:first-child { font: 500 11.5px/1.3 var(--sans); color: var(--muted); }
+.talkr-dialer .pd-stat span:last-child { font: 700 13px/1.3 var(--sans); color: var(--text); font-variant-numeric: tabular-nums; }
+.talkr-dialer .pd-stat small { font: 500 11px/1 var(--sans); color: var(--muted); margin-left: 4px; }
+.talkr-dialer .pd-stat[data-tone='warn'] span:last-child { color: var(--amber); }
+.talkr-dialer .pd-stat[data-tone='bad'] span:last-child { color: var(--red); }
+
+/* Up next */
+.talkr-dialer .pd-next { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 0 10px; align-items: center; padding: 6px 4px; border-bottom: 1px solid var(--line-soft); }
+.talkr-dialer .pd-next:last-child { border-bottom: 0; }
+.talkr-dialer .pd-next-n { font: 500 11px/1 var(--sans); color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.talkr-dialer .pd-next-name { font: 600 12.5px/1.25 var(--sans); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.talkr-dialer .pd-next-sub { grid-column: 2; font: 500 11px/1.3 var(--sans); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.talkr-dialer .pd-next-try { grid-column: 3; grid-row: 1 / span 2; font: 600 10.5px/1 var(--sans); color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+
+/* Setup */
+.talkr-dialer .pd-field { display: flex; flex-direction: column; gap: 6px; }
+.talkr-dialer .pd-stepper { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.talkr-dialer .pd-stepper button { width: 32px; height: 30px; border: 0; background: transparent; color: var(--text); cursor: pointer; display: inline-grid; place-items: center; }
+.talkr-dialer .pd-stepper button:disabled { opacity: .5; cursor: default; }
+.talkr-dialer .pd-stepper output { min-width: 34px; text-align: center; font: 700 13px/1 var(--sans); font-variant-numeric: tabular-nums; border-left: 1px solid var(--line); border-right: 1px solid var(--line); height: 30px; display: inline-grid; place-items: center; }
+.talkr-dialer .pd-check { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; font: 500 12px/1.4 var(--sans); color: var(--text); }
+.talkr-dialer .pd-check[data-state='missing'] { color: var(--red); }
+.talkr-dialer .pd-check[data-state='warn'] { color: var(--amber); }
+.talkr-dialer .pd-check small { display: block; font: 500 11.5px/1.35 var(--sans); color: var(--muted); }
+.talkr-dialer .pd-check-fix { margin-left: auto; flex: none; }
+.talkr-dialer .pd-toggle { display: flex; align-items: center; gap: 8px; font: 500 12.5px/1.3 var(--sans); color: var(--text); cursor: pointer; }
+.talkr-dialer .pd-toggle input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+.talkr-dialer .pd-keys { display: flex; flex-wrap: wrap; gap: 4px 12px; font: 500 11px/1.3 var(--sans); color: var(--muted); }
+
+/* The phone's strip */
+.clozr-phone .pd-strip { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.clozr-phone .pd-strip[data-live='true'] { background: var(--accent-soft); }
+.clozr-phone .pd-strip-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.clozr-phone .pd-strip-title { font: 600 13px/1.2 var(--sans); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clozr-phone .pd-strip-sub { font: 500 11.5px/1.2 var(--sans); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clozr-phone .pd-strip-btns { display: flex; gap: 6px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .talkr-dialer .pd-dot[data-tone='ring'] { animation: pd-pulse 1.2s ease-in-out infinite; }
+}
+@keyframes pd-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }

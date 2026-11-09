@@ -132,7 +132,7 @@ export function CallBar({ V }: { V: ClozrView }) {
       data-screen-label="Live call"
       data-testid="call-bar"
       className="talkr-dialer"
-      style={{ flexShrink: 0, borderTop: '1px solid var(--dark-2)', background: 'var(--ink)', position: 'relative', zIndex: 44 }}
+      style={{ flexShrink: 0, borderTop: '1px solid var(--dark-2)', background: 'var(--ink)', position: 'relative', zIndex: 'calc(var(--z-drawer) - 2)' }}
     >
       <div className="flex items-center gap-1.5 px-3 py-2.5 md:gap-2.5 md:px-5" style={{ flexWrap: 'wrap' }}>
         <span

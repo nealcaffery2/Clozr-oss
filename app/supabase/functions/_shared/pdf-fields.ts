@@ -53,6 +53,13 @@ export type Validation = {
 };
 
 /** One field as the editor and the tables hold it. */
+export const FONT_FAMILIES = ['auto', 'helvetica', 'times', 'courier'] as const;
+export type FontFamily = (typeof FONT_FAMILIES)[number];
+/** CSS for a field font, so the editor and the signing page look like the PDF. */
+export const FONT_CSS: Record<FontFamily, string> = {
+  auto: 'inherit', helvetica: 'Helvetica, Arial, sans-serif', times: '"Times New Roman", Times, serif', courier: '"Courier New", Courier, monospace',
+};
+
 export type FieldDef = {
   id?: number | string | null;
   /** Template role this field belongs to (templates), or the signer's role (contracts). */
@@ -77,6 +84,10 @@ export type FieldDef = {
   /** Formula fields: "{gross} * {pct} / 100"; calculated, never typed. */
   formula?: string | null;
   placeholder?: string | null;
+  /** Text size in points on the signed PDF; null fits the box. */
+  font_size?: number | null;
+  /** auto (the document's own font), helvetica, times or courier; null is auto. */
+  font_family?: FontFamily | null;
   /** On a draft contract: what the field holds now (from the record, or typed by the sender while preparing it). */
   value?: string | null;
 };
@@ -171,11 +182,33 @@ export function normalizeField(raw: unknown, pages?: number | null): { ok: true;
       field_key: key(f.field_key), group_key: group, conditions,
       formula: type === 'formula' ? formula : null,
       placeholder: str(f.placeholder, 120),
+      font_size: num(f.font_size) != null ? Math.min(36, Math.max(6, num(f.font_size)!)) : null,
+      font_family: FONT_FAMILIES.includes(f.font_family as FontFamily) && f.font_family !== 'auto' ? f.font_family as FontFamily : null,
     },
   };
 }
 
 const ISO_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/**
+ * A date as people type it, as YYYY-MM-DD: 2026-10-20, 10/20/2026, 10-20-26,
+ * 10.20.2026, Oct 20 2026, October 20, 2026. Null when it is not a real day.
+ */
+export function parseDay(raw: string): string | null {
+  const s = raw.trim();
+  let y: number, mo: number, d: number;
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else if ((m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/))) { mo = +m[1]; d = +m[2]; y = +m[3]; }
+  else if ((m = s.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{2}|\d{4})$/))) {
+    mo = MONTHS.indexOf(m[1].slice(0, 3).toLowerCase()) + 1; d = +m[2]; y = +m[3];
+  } else return null;
+  if (y < 100) y += 2000;
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (!mo || dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
 const PNG = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/;
 export const MAX_PNG = 400_000;
 
@@ -203,10 +236,10 @@ export function validateValue(f: Pick<FieldDef, 'type' | 'options' | 'validation
       return { ok: true, value: String(f.type === 'currency' ? Math.round(n * 100) / 100 : n) };
     }
     case 'date': case 'date_signed': {
-      const m = s.match(ISO_DAY);
+      const m = (parseDay(s) ?? s).match(ISO_DAY);
       const d = m ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) : null;
       if (!m || !d || d.getUTCMonth() !== Number(m[2]) - 1) return { ok: false, error: `${name} must be a date` };
-      return { ok: true, value: s };
+      return { ok: true, value: m[0] };
     }
     case 'checkbox':
       return { ok: true, value: s === 'true' || s === '1' || s === 'on' || raw === true ? 'true' : null };
@@ -295,6 +328,7 @@ export function bindToSigners(
       label: f.label ?? null, default_value: f.default_value ?? null, variable_key: f.variable_key ?? null,
       options: f.options ?? null, validation: f.validation ?? null,
       field_key: f.field_key ?? null, group_key: f.group_key ?? null, conditions: f.conditions ?? null, formula: f.formula ?? null, placeholder: f.placeholder ?? null,
+      font_size: f.font_size ?? null, font_family: f.font_family ?? null,
       value: bound ?? (def && def.ok ? def.value : null),
       sort: i,
     });
@@ -347,8 +381,70 @@ export function toPdfPoint(p: PageBox, u: number, v: number): { x: number; y: nu
   }
 }
 
+/**
+ * The standard font closest to what the document is set in, from its fonts'
+ * BaseFont names ("ABCDEF+TimesNewRomanPSMT", "Arial-BoldMT"): the family most
+ * fonts belong to, Helvetica when there are none.
+ */
+export function detectDocFont(baseFonts: string[]): PdfFont {
+  const n = { helvetica: 0, times: 0, courier: 0 };
+  for (const raw of baseFonts) {
+    const b = raw.replace(/^[A-Z]{6}\+/, '').toLowerCase();
+    if (/courier|mono|consol/.test(b)) n.courier++;
+    else if (/times|georgia|garamond|cambria|book|serif|minion|palatino|century/.test(b) && !/sans/.test(b)) n.times++;
+    else n.helvetica++;
+  }
+  return n.times > n.helvetica && n.times >= n.courier ? 'times' : n.courier > n.helvetica ? 'courier' : 'helvetica';
+}
+
+/** Field text size on the signed PDF when the field sets none: one size across the document. */
+export const DEFAULT_FONT_PT = 10;
+
+/** Line pitch as a multiple of the font size, on the page and on screen alike. */
+export const LINE_HEIGHT = 1.2;
+
+/**
+ * A text box tall enough for two lines at its size takes paragraphs: Enter
+ * starts a new line and the signed PDF wraps it. A one-line box keeps its
+ * single input so a name or price stays on the form's line.
+ */
+export function isMultiline(type: FieldType, boxHeightPt: number, fontPt: number | null | undefined): boolean {
+  return type === 'text' && boxHeightPt >= (fontPt || DEFAULT_FONT_PT) * LINE_HEIGHT * 2;
+}
+
+/**
+ * Text broken into lines no wider than `room`: the writer's own line breaks
+ * kept, words wrapped, a word longer than the line split by character.
+ */
+export function wrapLines(text: string, room: number, width: (s: string) => number): string[] {
+  const out: string[] = [];
+  for (const para of text.replace(/\r\n?/g, '\n').split('\n')) {
+    const words = para.replace(/[ \t]+/g, ' ').trim().split(' ').filter(Boolean);
+    if (!words.length) { out.push(''); continue; }
+    let line = '';
+    for (let w of words) {
+      const next = line ? `${line} ${w}` : w;
+      if (width(next) <= room) { line = next; continue; }
+      if (line) out.push(line);
+      while (width(w) > room && w.length > 1) {
+        let n = w.length - 1;
+        while (n > 1 && width(w.slice(0, n)) > room) n--;
+        out.push(w.slice(0, n));
+        w = w.slice(n);
+      }
+      line = w;
+    }
+    out.push(line);
+  }
+  while (out.length > 1 && out[out.length - 1] === '') out.pop();
+  return out;
+}
+
+/** The PDF's standard fonts a field can be drawn in. */
+export type PdfFont = 'helvetica' | 'times' | 'courier';
+
 export type DrawOp =
-  | { op: 'text'; page: number; x: number; y: number; size: number; rotate: number; text: string }
+  | { op: 'text'; page: number; x: number; y: number; size: number; rotate: number; text: string; font: PdfFont }
   | { op: 'image'; page: number; x: number; y: number; width: number; height: number; rotate: number; png: string }
   | { op: 'line'; page: number; start: { x: number; y: number }; end: { x: number; y: number }; thickness: number };
 
@@ -359,9 +455,11 @@ export type DrawOp =
  * this stays pure. Pages are 1-based; fields on missing pages are skipped.
  */
 export function planFlatten(
-  fields: Array<Pick<ContractField, 'type' | 'page' | 'x' | 'y' | 'w' | 'h' | 'value'> & { imageSize?: { width: number; height: number } | null }>,
+  fields: Array<Pick<ContractField, 'type' | 'page' | 'x' | 'y' | 'w' | 'h' | 'value'> & { imageSize?: { width: number; height: number } | null; font_size?: number | null; font_family?: string | null }>,
   pages: PageBox[],
-  measure: (text: string, size: number) => number,
+  measure: (text: string, size: number, font: PdfFont) => number,
+  /** What "auto" draws in: the document's own font family (detectDocFont). */
+  autoFont: PdfFont = 'helvetica',
 ): DrawOp[] {
   const ops: DrawOp[] = [];
   for (const f of fields) {
@@ -391,22 +489,53 @@ export function planFlatten(
       ops.push({ op: 'line', page: f.page, start: pt(0.42, 0.8), end: pt(0.84, 0.2), thickness });
       continue;
     }
-    let text = displayValue(f, value).replace(/\s+/g, ' ');
+    const raw = displayValue(f, value);
+    let text = raw.replace(/\s+/g, ' ');
     if (!text) continue;
-    let size = Math.max(4, Math.min(11, bh * 0.72));
+    const font: PdfFont = f.font_family === 'helvetica' || f.font_family === 'times' || f.font_family === 'courier' ? f.font_family : autoFont;
+    // One size for the whole document (the field's own size when set), not one
+    // per box height: short boxes used to come out at 4pt next to 11pt ones.
+    // It only shrinks when the text is wider than its box.
+    let size = f.font_size ? Math.max(4, f.font_size) : DEFAULT_FONT_PT;
     const room = Math.max(1, bw - 4);
-    const wide = measure(text, size);
-    if (wide > room) size = Math.max(4, size * room / wide);
+    // A paragraph box: lines wrapped from the top and the writer's line breaks
+    // kept. Text that fits one line still takes the centred path below, so a
+    // tall name box draws exactly as it did.
+    if (isMultiline(f.type, bh, size) && (/\n/.test(raw) || measure(text, size, font) > room)) {
+      const avail = Math.max(1, bh - 4);
+      const tall = (n: number, s: number) => (n - 1) * s * LINE_HEIGHT + s;
+      let lines = wrapLines(raw, room, (s) => measure(s, size, font));
+      while (tall(lines.length, size) > avail && size > 6) {
+        size = Math.max(6, size - 0.5);
+        lines = wrapLines(raw, room, (s) => measure(s, size, font));
+      }
+      const fit = Math.max(1, Math.floor((avail - size) / (size * LINE_HEIGHT)) + 1);
+      if (lines.length > fit) {
+        lines = lines.slice(0, fit);
+        let last = lines[fit - 1];
+        while (last.length > 0 && measure(`${last}…`, size, font) > room) last = last.slice(0, -1);
+        lines[fit - 1] = `${last.trimEnd()}…`;
+      }
+      lines.forEach((line, i) => {
+        if (!line) return;
+        const v = f.y + (2 + size * 0.8 + i * size * LINE_HEIGHT) / d.height;
+        const at = toPdfPoint(p, f.x + 2 / d.width, v);
+        ops.push({ op: 'text', page: f.page, x: at.x, y: at.y, size: Math.round(size * 100) / 100, rotate: r, text: line, font });
+      });
+      continue;
+    }
+    const wide = measure(text, size, font);
+    if (wide > room) size = Math.max(6, size * room / wide);
     // Still too wide at the smallest legible size: cut it short rather than run off the box.
-    if (measure(text, size) > room) {
-      while (text.length > 1 && measure(`${text}…`, size) > room) text = text.slice(0, -1);
+    if (measure(text, size, font) > room) {
+      while (text.length > 1 && measure(`${text}…`, size, font) > room) text = text.slice(0, -1);
       text = `${text.trimEnd()}…`;
     }
-    // Baseline a little above the bottom of the box, left-aligned with padding.
+    // Centred on the box when it is tall enough, else sitting just above its bottom edge (the form's line).
     const u = f.x + 2 / d.width;
-    const v = f.y + f.h - Math.max(1, (bh - size) / 2 + size * 0.18) / d.height;
+    const v = f.y + f.h - Math.max(1.5, (bh - size * 0.72) / 2) / d.height;
     const at = toPdfPoint(p, u, v);
-    ops.push({ op: 'text', page: f.page, x: at.x, y: at.y, size: Math.round(size * 100) / 100, rotate: r, text });
+    ops.push({ op: 'text', page: f.page, x: at.x, y: at.y, size: Math.round(size * 100) / 100, rotate: r, text, font });
   }
   return ops;
 }

@@ -7,6 +7,7 @@ import {
   GENERIC_INTRO_NO_NAME, intoWindow, inventedNumbers, levelOf, localHM, lowballStreak, noResponseLastN, notInterestedLastN, notSentInDays,
   citesAddress, geniusBuyerMatch, offerAsk, podioPurchases, probabilityToBuy, propertyTypeLabel, purchaseNote, purchasesFor, respondingNoStatusLastN, rotate, smartTime, splitIntro, strategyOf, stripEmoji,
   type BuyerStats, type SentDeal,
+  staggerSeconds,
 } from '../supabase/functions/_shared/dispo-rules';
 
 const now = new Date('2026-09-13T15:00:00Z');
@@ -73,6 +74,9 @@ assert.equal(purchaseNote(area), "It's in the same area as 7 Elm, which you pick
 const podio = buyerFacts({ name: 'Pat' }, [{ address: 'Old Podio St', date: null, from: 'podio' }], deal, now);
 assert.equal(purchaseNote(podio), 'I saw you picked up Old Podio St.', 'nothing relates it to the deal: the purchase alone');
 assert.equal(purchaseNote(buyerFacts({ name: 'Pat' }, [], deal, now)), '', 'no purchase, no sentence');
+const old = buyerFacts({ name: 'Ronie' }, [{ address: '831 Thistle Dr', date: '2006-06-22', from: 'genius', distanceMi: 0.9 }, { address: '831 Thistle Dr', date: null, from: 'genius', distanceMi: 0.9 }], deal, now);
+assert.equal(purchaseNote(old), '', 'a 20-year-old purchase is not "the flip you did", dated or undated');
+assert.equal(old.purchaseCount, 2, 'still counted as on file');
 assert.equal(
   offerAsk(f, '1 Main'),
   'I saw you bought 9 Oak about 3 months ago, 0.7 miles from our property on 1 Main. Looks like it fits your criteria. Want to make an offer?',
@@ -169,3 +173,8 @@ assert.equal(lowballStreak([{ amount: 70, asking: 100, at: '2026-09-01' }, { amo
 assert.equal(lowballStreak([{ amount: 90, asking: 100, at: '2026-09-03' }, { amount: 70, asking: 100, at: '2026-09-02' }, { amount: 70, asking: 100, at: '2026-09-01' }], 3, 80), false, 'most recent offer broke the streak');
 
 console.log('dispo-rules: all assertions passed');
+
+// Send pace: all at once means no spacing between buyers; the others keep their bands.
+assert.equal(staggerSeconds('at_once', 42), 0);
+assert.ok(staggerSeconds('frequently', 42) >= 30 && staggerSeconds('frequently', 42) <= 60);
+assert.ok(staggerSeconds('sometimes', 42) >= 90 && staggerSeconds('sometimes', 42) <= 210);

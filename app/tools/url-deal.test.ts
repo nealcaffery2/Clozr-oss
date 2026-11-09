@@ -20,7 +20,7 @@ assert.deepEqual(dealPinsFor('home', 'd9'), {});
 
 // A missing or archived record lands on its own list, not Home.
 assert.equal(recordListOf('buyer'), 'buyers');
-for (const sc of ['person', 'dealSheet', 'dispoProperty', 'tc']) assert.equal(recordListOf(sc), 'people');
+for (const sc of ['person', 'vendor', 'dealSheet', 'dispoProperty', 'tc']) assert.equal(recordListOf(sc), 'people');
 assert.equal(recordListOf('deals'), null);
 
 console.log('url-deal ok');

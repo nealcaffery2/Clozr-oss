@@ -19,9 +19,9 @@ const MUTED = 'var(--muted, #52525b)';
 const SUBTLE = 'var(--meta, #71717a)';
 const LINE = 'var(--divider, #e4e4e7)';
 const MINT = '#0A8560';
-const MINT_TEXT = '#08694C';
-const AMBER = '#B45309';
-const RED = '#B91C1C';
+const MINT_TEXT = 'var(--tx-mint-deep, #08694c)';
+const AMBER = 'var(--tx-amber, #b45309)';
+const RED = 'var(--tx-red, #b91c1c)';
 const TONE: Record<string, string> = { overdue: RED, due: AMBER, money: INK, muted: MUTED };
 const HIDE_KEY = 'clozr.today.focus.hidden';
 
@@ -100,7 +100,7 @@ export function ClozrForToday({
     <section data-testid="today-focus" aria-label="Clozr for today" className="cft" style={{ flexShrink: 0, boxSizing: 'border-box', padding: isMobile ? '12px 16px 4px' : '16px 24px 12px', background: 'var(--canvas, #fafafa)', borderBottom: isMobile ? 0 : `1px solid ${LINE}`, color: INK }}>
       <style>{CSS}</style>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-        <h2 style={{ margin: 0, fontSize: isMobile ? 17 : 19, fontWeight: 600, lineHeight: 1.3, letterSpacing: '-0.01em' }}>{greeting}</h2>
+        <h2 style={{ margin: 0, fontSize: 13.5, fontWeight: 650, lineHeight: 1.3 }}>{greeting}</h2>
         <span data-testid="today-focus-greeting" style={{ fontSize: 13, fontWeight: 500, color: INK2, flex: 1, minWidth: 160 }}>{hidden ? '' : line}</span>
         <button type="button" onClick={toggle} aria-expanded={!hidden} style={{ border: 0, background: 'none', padding: 0, color: MINT_TEXT, fontSize: 12, fontWeight: 500, cursor: 'pointer', minHeight: 28 }}>
           {hidden ? 'Show Clozr for today' : 'Hide'}

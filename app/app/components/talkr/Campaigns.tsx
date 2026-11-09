@@ -40,8 +40,8 @@ import {
   TextArea,
   Toggle,
 } from './ui';
-import { DialSessionStart } from './DialSessionBar';
-import '@/app/clozr/talkr-dialer.css';
+import { setDialerView } from '@/lib/dialer-view';
+// Styles: talkr-dialer.css, loaded once by ClozrShell (see the note there).
 
 const LEAD_STATUS_COLORS: Record<string, string> = {
   pending: 'var(--accent)',
@@ -144,11 +144,11 @@ export function CampaignsPanel({ V }: { V: ClozrView }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <DialSessionStart V={V} />
       {error && <Notice tone="error">{error}</Notice>}
 
       <div className="flex items-center gap-3">
         <Eyebrow>All campaigns</Eyebrow>
+        <Button tone="ghost" onClick={() => setDialerView('power')} title="Pick a campaign, lines and a voicemail, then dial it">Dial in the power dialer</Button>
         <Button tone="accent" className="ml-auto" onClick={() => setEditing('new')}>
           <Icon name="plus" size={14} />
           New campaign

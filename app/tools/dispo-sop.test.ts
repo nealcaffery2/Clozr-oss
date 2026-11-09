@@ -29,6 +29,10 @@ check('access: occupied, marketed yesterday, inside 48h', accessCheck({ occupanc
 check('comps 30 days old pass', compsCheck('2026-09-10', today).state === 'ok');
 check('comps 31 days old fail', compsCheck('2026-09-09', today).state === 'late');
 check('no comps date is missing', compsCheck(null, today).state === 'missing');
+// No date typed: the last COMPR run on the deal is the comps date; a typed date still wins.
+check('COMPR run 10 days ago passes', compsCheck(null, today, '2026-09-30T15:18:41Z').state === 'ok' && compsCheck(null, today, '2026-09-30T15:18:41Z').detail.startsWith('COMPR comps'));
+check('COMPR run 40 days ago is late', compsCheck(null, today, '2026-08-31T10:00:00Z').state === 'late');
+check('typed date beats COMPR', compsCheck('2026-08-01', today, '2026-10-05T00:00:00Z').state === 'late');
 
 check('contract date means signed', contractCheck({ contract_date: '2026-10-01' }).state === 'ok');
 check('no contract is missing', contractCheck({ contract_status: 'Sent' }).state === 'missing');

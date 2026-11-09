@@ -18,7 +18,7 @@
  * the wrap-up's Enter shortcut cannot save a call twice.
  */
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type { ClozrView } from '@/app/clozr/view';
 import { useWakeLock } from '@/app/clozr/useWakeLock';
 import { aiTargetFrom, useAiCall } from '@/lib/ai-call';
@@ -28,8 +28,9 @@ import { formatPhone, toE164 } from '@/lib/talkr-web/time';
 import { ActiveCall } from './ActiveCall';
 import { CallContext, defaultCallContextTab, type CallContextTab } from './CallContext';
 import { CallerIdPicker, DefaultStar, showsDefault } from './CallerIdPicker';
-import { DialSessionBar, DialSessionStart } from './DialSessionBar';
+import { PowerDialerStrip } from './PowerDialer';
 import {
+  DialMatchList,
   Keys,
   LiveCallCard,
   NotesCard,
@@ -42,14 +43,18 @@ import {
   VoicemailList,
   WrapUpCard,
   dialDigits,
+  useDialLookup,
 } from './DialerParts';
+import { type Contact } from '@/lib/contact-search';
+import { dialTarget, whoseNumber } from '@/lib/dial-lookup';
 import { Icon } from './Icon';
 import { PhoneSheet, PhoneTabBar, type PhoneTab } from './ios';
 import { ProspectTime } from './ProspectTime';
 import { useSoftphone } from './softphoneAdapter';
 import { LiveCalls, MonitorCard } from './Supervision';
 import { RvmPanel } from './RvmPanel';
-import '@/app/clozr/talkr-dialer.css';
+// Styles: talkr-dialer.css, loaded once by ClozrShell (see the note there).
+import { onShellPopstate } from '@/lib/shell-history';
 import { TalkrMark } from '@/app/components/brand/TalkrMark';
 import { openReach } from '@/app/components/record/reach';
 
@@ -83,16 +88,101 @@ function DeleteGlyph() {
 let selfBacks = 0;
 function backOutOfPhone() {
   selfBacks += 1;
-  window.addEventListener(
-    'popstate',
-    () => {
-      setTimeout(() => {
-        selfBacks = Math.max(0, selfBacks - 1);
-      }, 0);
-    },
-    { once: true },
-  );
+  // The entry below is the shell's, so the step is heard as clozr:popstate
+  // (lib/shell-history.ts); a plain popstate still counts when the router
+  // owns that entry and the guard let the event through.
+  let fired = false;
+  const done = () => {
+    if (fired) return;
+    fired = true;
+    offShell();
+    window.removeEventListener('popstate', done);
+    setTimeout(() => {
+      selfBacks = Math.max(0, selfBacks - 1);
+    }, 0);
+  };
+  const offShell = onShellPopstate(done);
+  window.addEventListener('popstate', done);
   window.history.back();
+}
+
+/**
+ * The keypad's search sheet: the dial box's search (the command bar's), a
+ * field over the same rows the desk's dial box drops down. Nothing typed, it
+ * lists the contacts opened last and the latest activity. A tap loads the number.
+ */
+function PhoneSearch({
+  listId,
+  q,
+  setQ,
+  lookup,
+  active,
+  setActive,
+  onPick,
+}: {
+  listId: string;
+  q: string;
+  setQ: (q: string) => void;
+  lookup: ReturnType<typeof useDialLookup>;
+  active: number;
+  setActive: (i: number) => void;
+  onPick: (c: Contact) => void;
+}) {
+  const inputId = useId();
+  // Read once as the sheet opens, not on each render of the phone.
+  const [recents] = useState(() => lookup.recent());
+  const typed = q.trim();
+  const names = lookup.names;
+  const rows = typed ? (names?.q === q ? names.matches : []) : recents;
+  const at = rows.length ? Math.min(Math.max(active, typed ? 0 : -1), rows.length - 1) : -1;
+  const note = typed
+    ? names?.q === q && !names.busy ? `Nobody matching “${typed}” has a number on file.` : 'Searching…'
+    : 'Nobody opened or contacted yet. Type a name, number, address or email.';
+  return (
+    <div className="phone-search-sheet">
+      <label htmlFor={inputId} className="phone-search-label">
+        Name, number, address or email
+      </label>
+      <div className="phone-search-field">
+        <Icon name="search" size={17} />
+        <input
+          id={inputId}
+          // The sheet opens for this field: the keyboard comes straight up.
+          autoFocus
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (!rows.length) return;
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActive(Math.min(rows.length - 1, at + 1)); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(0, at - 1)); }
+            else if (e.key === 'Enter' && at >= 0) { e.preventDefault(); onPick(rows[at]); }
+          }}
+          role="combobox"
+          aria-expanded={rows.length > 0}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={at >= 0 ? `${listId}-${at}` : undefined}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          enterKeyHint="go"
+          data-lpignore="true"
+          data-1p-ignore="true"
+          data-bwignore="true"
+        />
+        {q && (
+          <button type="button" className="phone-search-clear" aria-label="Clear search" onClick={() => setQ('')}>
+            <Icon name="x" size={12} />
+          </button>
+        )}
+      </div>
+      <div className="phone-search-list">
+        <DialMatchList id={listId} rows={rows} active={at} setActive={setActive} onPick={onPick} label={typed ? undefined : 'Recent'} note={rows.length ? null : note} />
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -102,7 +192,7 @@ function backOutOfPhone() {
 export function PhoneScreen({ V }: { V: ClozrView }) {
   const { callState } = useSoftphone();
   const session = V.talkrPhone.session.session;
-  const sessionRunning = (!!session && session.state !== 'paused') || !!V.queueSession;
+  const sessionRunning = !!session && session.state !== 'paused';
   // A locked phone drops the call (iOS suspends the page), so the screen is
   // held awake from dialling to hang-up, while a call rings in, and while a
   // power-dialer session is running.
@@ -116,7 +206,14 @@ function PhoneSurface({ V }: { V: ClozrView }) {
   const { callState, authed, active, team, me, setMe, liveCalls, monitor, deviceState } = sp;
   const rootRef = useRef<HTMLDivElement>(null);
   const [digits, setDigits] = useState('');
-  const [sheet, setSheet] = useState<null | 'options' | 'callerid' | 'lead' | 'context' | 'incoming-lead' | 'decline-message'>(null);
+  const [sheet, setSheet] = useState<null | 'options' | 'callerid' | 'lead' | 'context' | 'incoming-lead' | 'decline-message' | 'search'>(null);
+  // The keypad's search (the command bar's, as on the desk's dial box): what is typed, and who was picked.
+  const [searchQ, setSearchQ] = useState('');
+  const [picked, setPicked] = useState<Contact | null>(null);
+  const [searchAt, setSearchAt] = useState(-1);
+  const searchListId = useId();
+  // No digits: the keypad already knows whose a whole number is (V.dialerRecordFor), so no second read.
+  const lookup = useDialLookup(V, searchQ, '');
   const [ctxTab, setCtxTab] = useState<ContextTab>('lead');
   const [reason, setReason] = useState<string | null>(null);
   const ai = useAiCall(V.templatesWorkspaceId ?? null);
@@ -161,14 +258,15 @@ function PhoneSurface({ V }: { V: ClozrView }) {
       window.history.pushState({ ...((window.history.state as object | null) ?? {}), clozrPhone: 1 }, '', window.location.href);
     }
     let popped = false;
-    const onPop = () => {
+    // Back is heard as clozr:popstate (lib/shell-history.ts), the shell's own
+    // traversal, so the router never reloads the page under a live call.
+    const offPop = onShellPopstate(() => {
       if (selfBacks > 0) return;
       popped = true;
       latest.current.minimisePhone();
-    };
-    window.addEventListener('popstate', onPop);
+    });
     return () => {
-      window.removeEventListener('popstate', onPop);
+      offPop();
       // Closed by Done or Minimise: take the phone's history entry back out.
       if (!popped && (window.history.state as { clozrPhone?: number } | null)?.clozrPhone) {
         backOutOfPhone();
@@ -202,7 +300,7 @@ function PhoneSurface({ V }: { V: ClozrView }) {
     pendingNext.current = false;
     const cur = latest.current;
     if (cur.talkrPhone.session.session) void cur.talkrPhone.session.next();
-    else cur.queueSession?.next();
+
   }, [callState]);
 
   // ── keypad actions ──────────────────────────────────────────────────────
@@ -246,7 +344,9 @@ function PhoneSurface({ V }: { V: ClozrView }) {
       }
       return;
     }
-    V.dialE164(e164);
+    // A contact picked from the search calls as that record while the number is still theirs.
+    const who = picked && whoseNumber(digits, [picked]) ? picked : null;
+    V.dialE164(e164, who?.name, who ? dialTarget(who) : null);
   };
   const aiCall = async () => {
     if (!e164 || aiBusy) return;
@@ -313,9 +413,9 @@ function PhoneSurface({ V }: { V: ClozrView }) {
   };
 
   // ── pieces ─────────────────────────────────────────────────────────────
-  const sessionOn = !!V.talkrPhone.session.session || !!V.queueSession;
-  const sessionLeft = V.talkrPhone.session.session ? V.talkrPhone.session.remaining : V.queueSession?.left ?? null;
-  const sessionMode = V.talkrPhone.session.session?.mode ?? V.queueSession?.mode;
+  const sessionOn = !!V.talkrPhone.session.session;
+  const sessionLeft = V.talkrPhone.session.remaining;
+  const sessionMode = V.talkrPhone.session.session ? V.talkrPhone.session.dialMode : undefined;
   const sessionName = sessionMode && sessionMode !== 'power' ? 'Predictive' : 'Power dialer';
   const tabs: Array<PhoneTab<DialerTab>> = [
     { value: 'Recent', label: 'Recents', icon: 'clock', testId: 'phone-tab-recents' },
@@ -466,13 +566,6 @@ function PhoneSurface({ V }: { V: ClozrView }) {
           End session
         </button>
       </>
-    ) : V.queueSession ? (
-      <button type="button" className="phone-row" style={{ color: '#FF453A' }} onClick={V.queueSession.end}>
-        <span className="inline-flex w-7 justify-center">
-          <Icon name="x" size={20} />
-        </span>
-        End session
-      </button>
     ) : null;
     const ctxTabs: Array<{ value: ContextTab; label: string }> = [
       { value: 'lead', label: 'Lead' },
@@ -543,8 +636,8 @@ function PhoneSurface({ V }: { V: ClozrView }) {
     );
   } else if (mode === 'wrap') {
     const rec = V.callRecord;
-    const ts = V.talkrPhone.session;
-    const canNext = (!!ts.session && ts.session.state !== 'paused' && !V.talkrPhone.extension.holdingSoftphone) || !!V.queueSession;
+    // Save dials on only in a self-advancing session; power waits for the rep's Next.
+    const canNext = V.sessionAutoDials && !V.talkrPhone.extension.holdingSoftphone;
     body = (
       <>
         <div className="grid flex-none items-center" style={{ height: 56, gridTemplateColumns: '1fr auto 1fr', padding: '0 8px' }}>
@@ -605,13 +698,28 @@ function PhoneSurface({ V }: { V: ClozrView }) {
             <Icon name="more" size={24} strokeWidth={3} />
           </button>
         </div>
-        {sessionOn && <DialSessionBar V={V} variant="compact" />}
+        {sessionOn && <PowerDialerStrip V={V} />}
         {!talkrReady ? (
           <div className="phone-dark phone-scroll">
             <TalkrNotSignedIn V={V} />
           </div>
         ) : (
           <>
+            <div className="phone-search-row">
+              <button
+                type="button"
+                className="phone-search"
+                data-testid="phone-search"
+                onClick={() => {
+                  setSearchQ('');
+                  setSearchAt(-1);
+                  setSheet('search');
+                }}
+              >
+                <Icon name="search" size={17} />
+                <span className="truncate">Search people and buyers</span>
+              </button>
+            </div>
             <div className="flex min-h-[96px] flex-1 flex-col items-center justify-end overflow-hidden px-4 pb-4">
               <PhoneNumberDisplay digits={digits} onPaste={(text) => setDigits(dialDigits(text))} />
               {(reason || sp.deviceError) && (
@@ -767,6 +875,24 @@ function PhoneSurface({ V }: { V: ClozrView }) {
             </p>
           )}
         </PhoneSheet>
+        <PhoneSheet open={sheet === 'search'} onClose={() => setSheet(null)} title="Find who to call" height="88%" testId="phone-search-sheet">
+          <PhoneSearch
+            listId={searchListId}
+            q={searchQ}
+            setQ={(q) => {
+              setSearchQ(q);
+              setSearchAt(-1);
+            }}
+            lookup={lookup}
+            active={searchAt}
+            setActive={setSearchAt}
+            onPick={(c) => {
+              setPicked(c);
+              setDigits(dialDigits(c.phone ?? ''));
+              setSheet(null);
+            }}
+          />
+        </PhoneSheet>
         <PhoneSheet open={sheet === 'lead' && !!match} onClose={() => setSheet(null)} title={match?.name ?? 'Lead'} tone="light" height="88%">
           {match && (
             <CallContext
@@ -797,12 +923,10 @@ function PhoneSurface({ V }: { V: ClozrView }) {
           {tab === 'Recent' && <RecentList V={V} big onPick={(phone) => V.dialE164(phone)} />}
           {tab === 'Queue' && (
             <>
-              {sessionOn ? (
+              {sessionOn && (
                 <div style={{ margin: '4px -16px 8px' }}>
-                  <DialSessionBar V={V} variant="compact" />
+                  <PowerDialerStrip V={V} />
                 </div>
-              ) : (
-                <DialSessionStart V={V} />
               )}
               <QueueList V={V} wide />
             </>

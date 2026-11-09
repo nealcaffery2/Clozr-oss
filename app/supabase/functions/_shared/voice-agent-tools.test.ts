@@ -3,7 +3,7 @@
 // tool configs. Run:  npx tsx supabase/functions/_shared/voice-agent-tools.test.ts
 //   or: deno run supabase/functions/_shared/voice-agent-tools.test.ts
 import {
-  APPOINTMENT_KINDS, DNC_TAG, LEAD_MINUTES, appointmentRow, bookingProblem, localDate, moneyOf, openSlots, parseBooking, parseQualification,
+  APPOINTMENT_KINDS, DNC_TAG, LEAD_MINUTES, appointmentRow, bookingProblem, localDate, moneyOf, openSlots, optOutRow, parseBooking, parseQualification,
   qualificationWrite, slotFree, withDncTag, writeToolBody,
 } from './voice-agent-tools.ts';
 import { hasDnc } from '../../../lib/rvm.ts';
@@ -72,6 +72,8 @@ eq('nothing learned still says so', qualificationWrite('seller', parseQualificat
 eq('DNC is added', withDncTag(['hot'], hasDnc), ['hot', DNC_TAG]);
 eq('a tag that already says do not call is left alone', [withDncTag(['do not call'], hasDnc), withDncTag(['DND'], hasDnc)], [null, null]);
 eq('no tags', withDncTag(null, hasDnc), [DNC_TAG]);
+eq('the opt-out row names the record when there is one', optOutRow(7, '+15125550100', 'asked on the call', { kind: 'buyer', id: 42 }), { workspace_id: 7, phone_key: '+15125550100', channel: 'call', said: 'asked on the call', record_kind: 'buyer', record_id: 42 });
+eq('a caller nobody has on file is still opted out, by the number alone', optOutRow(7, '+15125550100', 'asked on the call', null), { workspace_id: 7, phone_key: '+15125550100', channel: 'call', said: 'asked on the call', record_kind: null, record_id: null });
 
 // ---- tool configs ----
 // deno-lint-ignore no-explicit-any
@@ -82,7 +84,7 @@ eq('kind is an enum the LLM picks from', tb.tool_config.api_schema.request_body_
 const cb = writeToolBody('get_compr_offer', 'https://p.supabase.co/functions/v1/voice-agent', 'X', 's') as any; // deno-lint-ignore no-explicit-any
 eq('get_compr_offer posts to its route and says to wait for ready: true', [cb.tool_config.name, cb.tool_config.api_schema.url, /ready: true/.test(cb.tool_config.description)], ['get_compr_offer', 'https://p.supabase.co/functions/v1/voice-agent/tool/get-compr-offer', true]);
 const qb = writeToolBody('save_qualification', 'https://p.supabase.co/functions/v1/voice-agent', 'X', 's') as any;
-eq('save_qualification takes every field and the outcome enum', [Object.keys(qb.tool_config.api_schema.request_body_schema.properties).length, qb.tool_config.api_schema.request_body_schema.properties.outcome.enum.includes('do_not_contact')], [26, true]);
+eq('save_qualification takes every field and the outcome enum', [Object.keys(qb.tool_config.api_schema.request_body_schema.properties).length, qb.tool_config.api_schema.request_body_schema.properties.outcome.enum.includes('do_not_contact')], [28, true]);
 eq('book_appointment and save_qualification take a new caller\'s property address', [!!tb.tool_config.api_schema.request_body_schema.properties.property_address, !!qb.tool_config.api_schema.request_body_schema.properties.property_address], [true, true]);
 ok('the timeout is inside the allowed 5 to 300 seconds', tb.tool_config.response_timeout_secs >= 5 && tb.tool_config.response_timeout_secs <= 300);
 

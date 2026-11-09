@@ -20,7 +20,7 @@ export function OutcomeBar({ V }: { V: ClozrView }) {
     return (
       <section aria-label="How the offer went" data-testid="record-outcome" style={{ ...card, padding: '10px 12px' }}>
         <h2 style={{ margin: 0, fontSize: '13px', fontWeight: 600 }}>How the offer went</h2>
-        <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#71717a' }}>Read-only: you can’t log an outcome on this record.</p>
+        <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--meta, #71717a)' }}>Read-only: you can’t log an outcome on this record.</p>
       </section>
     );
   }

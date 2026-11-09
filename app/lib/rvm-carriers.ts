@@ -92,6 +92,9 @@ export function slybroadcastFields(input: {
     c_callerID: caller,
     c_url: input.audioUrl,
     c_audio: input.audioType,
+    // Required by the gateway: without it every drop came back "c_date: required"
+    // and no Compr voicemail ever went out. 'now' sends at once.
+    c_date: 'now',
   };
   if (input.callbackUrl) fields.c_dispo_url = input.callbackUrl;
   return fields;

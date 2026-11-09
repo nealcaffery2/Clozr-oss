@@ -7,13 +7,13 @@
 // write People's Assign panel makes.
 
 import React, { useEffect, useState } from 'react';
-import { Archive, Mail, MailOpen, X } from 'lucide-react';
+import { Archive, Mail, MailOpen, Megaphone, X } from 'lucide-react';
 import type { AssignMate } from '@/app/components/bulk/AssignPanel';
 import { type Disposition, DISPOSITIONS, DISPOSITION_TONE } from '@/lib/inbox-folders';
 import { type SequenceDto, api } from '@/lib/talkr-web/api';
 import { Menu } from './Menu';
 
-export function BulkBar({ count, sellers, team, talkr, onClear, onRead, onUnread, onLabel, onArchive, onAssign, onEnroll, onCampaign }: {
+export function BulkBar({ count, sellers, team, talkr, onClear, onRead, onUnread, onLabel, onArchive, onAssign, onEnroll, onCampaign, onPush }: {
   count: number;
   /** How many of the selected threads are on a seller record. */
   sellers: number;
@@ -28,6 +28,8 @@ export function BulkBar({ count, sellers, team, talkr, onClear, onRead, onUnread
   onAssign: (userId: string | null, name: string) => void;
   onEnroll: (s: SequenceDto) => void;
   onCampaign: () => void;
+  /** The sellers into a bulk text campaign (migration 368). */
+  onPush: () => void;
 }) {
   const [seqs, setSeqs] = useState<SequenceDto[] | null>(talkr ? null : []);
   const [seqErr, setSeqErr] = useState<string | null>(null);
@@ -52,6 +54,7 @@ export function BulkBar({ count, sellers, team, talkr, onClear, onRead, onUnread
         empty={none ?? (!talkr ? 'Talkr is not linked to this sign-in' : seqErr ? `Sequences did not load: ${seqErr}` : seqs === null ? 'Loading sequences…' : 'No enabled text sequences in Talkr')}
         items={sellers ? (seqs ?? []).map((s) => ({ label: s.name, hint: s.description ?? undefined, run: () => onEnroll(s) })) : []} />
       <button type="button" className="ax-tool" onClick={onCampaign} disabled={!sellers || !talkr} title={none ?? (!talkr ? 'Talkr is not linked to this sign-in' : 'Send the sellers to a Talkr dialer campaign')}>Campaign</button>
+      <button type="button" className="ax-tool" onClick={onPush} disabled={!sellers} title={none ?? 'Push the sellers into a bulk text campaign'}><Megaphone size={14} aria-hidden />Push to campaign</button>
       <button type="button" className="ax-icon-btn ax-bulk-x" aria-label="Clear selection" onClick={onClear}><X size={15} strokeWidth={2.25} aria-hidden /></button>
     </div>
   );

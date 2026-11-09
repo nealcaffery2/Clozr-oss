@@ -15,7 +15,7 @@ import { useSoftphone } from '@/app/components/talkr/softphoneAdapter';
 import { SequenceList } from './SequenceList';
 import { SequenceBuilder } from './SequenceBuilder';
 import { SKIP_REASON, enrollSellers, type EnrollOutcome, type EnrollSeller } from './enrollSellers';
-import '@/app/clozr/talkr-dialer.css';
+// Styles: talkr-dialer.css, loaded once by ClozrShell (see the note there).
 
 export function TextSequences({ headerLeft }: { headerLeft?: React.ReactNode }) {
   const [open, setOpen] = useState<string | null>(null);

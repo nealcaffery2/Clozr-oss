@@ -14,6 +14,7 @@
  *   correct_send      { contract_id, note? }                     send the corrected version (invites go out in signing order, the note as the message)
  *   duplicate         { contract_id, name? }                     new draft, same recipients and fields, no values
  *   delete            { contract_id }                            soft delete (draft, voided, declined, expired only)
+ *   rename            { contract_id, name }                      a person's name; never auto-renamed after (name_auto false)
  *   archive           { contract_id, archived: boolean }
  *   tags              { contract_id, tags: string[] }
  *   reassign          { contract_id, signer_id, name, email, phone?, reason }  sender-side reassign (moves unfilled fields)
@@ -30,22 +31,25 @@
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { ALLOW_HEADERS, isServiceCaller } from '../_shared/security.ts';
+import { ALLOW_HEADERS, clientIp, isServiceCaller } from '../_shared/security.ts';
 import { type Any, createContract, loadCompany, loadParties, logContractFeed, logEvent, partySigner } from '../_shared/docs.ts';
 import { createPdfContract } from '../_shared/pdf-contracts.ts';
 import { delegateRecipient, dispatchSend, loadRecipients } from '../_shared/docs-flow.ts';
 import { publishContract } from '../_shared/contract-webhooks.ts';
 import { clampRect } from '../_shared/pdf-fields.ts';
-import { pd } from '../_shared/pandadoc.ts';
+import { filedWorkspaces, pd } from '../_shared/pandadoc.ts';
+import { belongsElsewhere } from '../_shared/pandadoc-match.ts';
 import { safeOrigin } from '../_shared/parity/security.ts';
 import { notifyVoided } from '../_shared/parity/notify.ts';
 import { verifyContract } from '../_shared/parity/certificate.ts';
 import { PARITY_FIELD_META, type ParityFieldType } from '../_shared/parity/field-logic.ts';
+import { everyRow } from '../_shared/every-row.ts';
+import { type SwapClient, swapRows } from '../_shared/swap-rows.ts';
 import { claimBulkItem } from './bulk.ts';
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': ALLOW_HEADERS, 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
-const WRITERS = ['owner', 'admin', 'acquisitions', 'dispositions', 'tc'];
+const WRITERS = ['owner', 'admin', 'acquisitions', 'dispositions', 'tc', 'partnerships'];
 const ADMINS = ['owner', 'admin'];
 const newToken = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => b.toString(16).padStart(2, '0')).join('');
 
@@ -90,7 +94,10 @@ Deno.serve(async (req) => {
   if (!(await roleOk(user, ws, templateAction ? ADMINS : WRITERS))) return json({ error: 'You do not have access to documents in this workspace.' }, 403);
 
   const origin = safeOrigin(b.origin, req.headers.get('origin'));
-  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null;
+  // The hop the nearest proxy appended (security.ts clientIp), never the client-supplied first
+  // X-Forwarded-For value: this address goes on the signature block, certificate and audit trail.
+  const seenIp = clientIp(req);
+  const ip = seenIp === 'unknown' ? null : seenIp;
   const who = { actor_type: 'user' as const, actor_id: auth.user.email ?? auth.user.id, ip, user_agent: req.headers.get('user-agent')?.slice(0, 300) ?? null };
   const { company } = await loadCompany(admin, ws);
 
@@ -184,13 +191,18 @@ ${row.message}` : ''}` : (row.message ?? null);
       case 'duplicate': {
         const row = await loadContract(admin, ws, b.contract_id);
         if (!row) return json({ error: 'not found' }, 404);
+        // Not carried onto the copy: the original's archive flag, its bulk-send batch and public form. Its hash comes
+        // along only while it still describes the file the copy points at: a completed original's sha256 is the
+        // signed PDF's, and a PDF-mode copy starts from the source file.
         const { id: _id, created_at: _c, updated_at: _u, sent_at: _s, viewed_at: _v, completed_at: _cp, voided_at: _vd, expired_at: _e,
-          pandadoc_id: _p, final_sha256: _f, last_event: _l, ref_number: _r, extract_status: _x, extracted_at: _xa, extract_error: _xe, ...rest } = row;
+          pandadoc_id: _p, final_sha256: _f, last_event: _l, ref_number: _r, extract_status: _x, extracted_at: _xa, extract_error: _xe,
+          archived_at: _ar, bulk_send_id: _bs, form_id: _fo, sha256: _sh, ...rest } = row;
         const { data: copy, error } = await admin.from('contracts').insert({
-          ...rest, name: String(b.name ?? `${row.name} (copy)`), status: 'draft', provider: 'clozr', parent_contract_id: row.id,
+          ...rest, name: String(b.name ?? `${row.name} (copy)`), name_auto: b.name ? false : !!row.name_auto, status: 'draft', provider: 'clozr', parent_contract_id: row.id,
           created_by: auth.user.id, revision: 1, corrected_at: null, void_reason: null, expires_at: null, approved_at: null,
           approval_requested_at: null, approval_rejected_at: null, approval_rejected_reason: null, notary_status: row.needs_notary ? 'needed' : 'none', notarized_at: null,
           pdf_path: row.mode === 'pdf' ? row.source_pdf_path : row.pdf_path,
+          sha256: !row.final_sha256 && row.mode !== 'pdf' ? row.sha256 : null,
         }).select('*').single();
         if (error || !copy) return json({ error: error?.message ?? 'could not copy' }, 500);
         const signers = await loadRecipients(admin, row.id);
@@ -210,6 +222,20 @@ ${row.message}` : ''}` : (row.message ?? null);
         if (rows.length) await admin.from('contract_fields').insert(rows);
         await logEvent(admin, copy, 'created', { duplicated_from: row.id }, who);
         return json({ ok: true, contract: copy });
+      }
+
+      // A person's name for it. Never overwritten after this (name_auto false); the signed copy on the deal's Files follows.
+      case 'rename': {
+        const row = await loadContract(admin, ws, b.contract_id);
+        if (!row) return json({ error: 'not found' }, 404);
+        const name = String(b.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
+        if (!name) return json({ error: 'Give it a name.' }, 422);
+        const { data: renamed, error } = await admin.from('contracts').update({ name, name_auto: false, updated_at: new Date().toISOString() })
+          .eq('id', row.id).select('*').single();
+        if (error || !renamed) return json({ error: error?.message ?? 'could not rename' }, 500);
+        await admin.from('deal_files').update({ name: `${name} (signed).pdf`.slice(0, 180) }).eq('contract_id', row.id).eq('source', 'esign');
+        await logEvent(admin, row, 'renamed', { from: row.name, to: name }, who);
+        return json({ ok: true, contract: renamed });
       }
 
       case 'delete': {
@@ -311,14 +337,18 @@ ${row.message}` : ''}` : (row.message ?? null);
             group_key: f.group_key ? String(f.group_key).slice(0, 60) : null,
             conditions: f.conditions ?? null, formula: f.formula ? String(f.formula).slice(0, 500) : null,
             placeholder: f.placeholder ?? null, font_size: f.font_size ?? null,
+            font_family: ['helvetica', 'times', 'courier'].includes(String(f.font_family)) ? String(f.font_family) : null,
           });
         }
-        const { error: delErr } = await admin.from('doc_template_fields').delete().eq('template_id', t.id);
-        if (delErr) return json({ error: delErr.message }, 500);
-        if (rows.length) {
-          const { error } = await admin.from('doc_template_fields').insert(rows);
-          if (error) return json({ error: error.message }, 422);
+        // New fields in first, then the old ones out: a failed insert used to leave the template with none.
+        let oldIds: number[];
+        try {
+          oldIds = (await everyRow<{ id: number }>(() => admin.from('doc_template_fields').select('id').eq('template_id', t.id).order('id'))).map((f) => f.id);
+        } catch (e) {
+          return json({ error: (e as Error).message }, 500);
         }
+        const swap = await swapRows(admin as unknown as SwapClient, 'doc_template_fields', oldIds, rows);
+        if (swap) return json({ error: swap.error.message }, swap.stage === 'insert' ? 422 : 500);
         await admin.from('doc_templates').update({ mode: 'pdf', updated_at: new Date().toISOString() }).eq('id', t.id);
         return json({ ok: true, saved: rows.length });
       }
@@ -392,7 +422,10 @@ ${row.message}` : ''}` : (row.message ?? null);
         const page = Math.max(1, Number(b.page ?? 1));
         const list = await pd<{ results: Any[] }>('GET', `/documents?count=100&page=${page}&order_by=date_created`);
         let upserted = 0;
+        // The PandaDoc key is shared by every workspace: leave documents filed elsewhere alone.
+        const filed = await filedWorkspaces(admin, (list.results ?? []).map((d) => String(d.id)));
         for (const d of list.results ?? []) {
+          if (belongsElsewhere(d, ws, filed.get(String(d.id)) ?? [])) continue;
           const { data: existing } = await admin.from('contracts').select('id').eq('workspace_id', ws).eq('pandadoc_id', d.id).maybeSingle();
           const patch = {
             workspace_id: ws, provider: 'pandadoc', pandadoc_id: d.id, name: d.name, status: String(d.status ?? '').replace(/^document\./, '') || 'draft',

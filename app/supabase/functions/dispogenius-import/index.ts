@@ -28,7 +28,7 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { corsFor, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import {
-  type Any, type DgBuyer, clampScore, dealPatch, emailKey, matchBuyer, matchStatus, num, phoneKey, splitAddress,
+  type Any, type DgBuyer, buyerKeyMaps, clampScore, dealPatch, emailKey, matchBuyer, matchStatus, num, phoneKey, splitAddress,
 } from '../_shared/dispogenius-map.ts';
 
 const DG = 'https://api.dispogenius.io';
@@ -120,16 +120,9 @@ async function importDeal(admin: SupabaseClient, ws: number, userId: string, dgD
     dealId = data!.id as number;
   }
 
-  // Everyone already in the workspace, keyed the way the matcher keys them.
-  const { data: buyers } = await admin.from('buyers').select('id, phone, email').eq('workspace_id', ws);
-  const byPhone = new Map<string, number>();
-  const byEmail = new Map<string, number>();
-  for (const b of (buyers ?? []) as Any[]) {
-    const p = phoneKey(b.phone); if (p && !byPhone.has(p)) byPhone.set(p, b.id);
-    const e = emailKey(b.email); if (e && !byEmail.has(e)) byEmail.set(e, b.id);
-  }
-
   const rows = await dgAll(`/api/v1/${dgDealId}/buyers`);
+  // The buyers these rows could be, keyed the way the matcher keys them.
+  const { byPhone, byEmail } = await buyerKeyMaps(admin, ws, rows.map((r: Any) => r?.buyer ?? {}));
   const counts = { buyers_created: 0, buyers_matched: 0, buyers_skipped: 0, matches: 0 };
 
   for (const row of rows) {
@@ -236,12 +229,7 @@ Deno.serve(async (req) => {
       const id = Number(b.deal_id);
       if (!Number.isInteger(id)) return json({ error: 'deal_id must be an integer' }, 422);
       const [deal, rows] = [await dg(`/api/v1/deals/${id}/`), await dgAll(`/api/v1/${id}/buyers`)];
-      const { data: buyers } = await admin.from('buyers').select('id, phone, email').eq('workspace_id', ws);
-      const byPhone = new Map<string, number>(); const byEmail = new Map<string, number>();
-      for (const x of (buyers ?? []) as Any[]) {
-        const p = phoneKey(x.phone); if (p && !byPhone.has(p)) byPhone.set(p, x.id);
-        const e = emailKey(x.email); if (e && !byEmail.has(e)) byEmail.set(e, x.id);
-      }
+      const { byPhone, byEmail } = await buyerKeyMaps(admin, ws, rows.map((r: Any) => r?.buyer ?? {}));
       const matches = rows.map((r: Any) => {
         const hit = r?.buyer ? matchBuyer(r.buyer, byPhone, byEmail) : null;
         return { dg: r?.buyer ?? null, temperature: r?.temperature ?? null, probability_score: r?.probability_score ?? null,

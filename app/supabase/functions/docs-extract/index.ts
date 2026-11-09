@@ -25,13 +25,14 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { ALLOW_HEADERS, UNTRUSTED_RULE, isServiceCaller } from '../_shared/security.ts';
 import { CLAUDE_MODEL } from '../_shared/models.ts';
+import { recordUsage, type AnthropicUsage } from '../_shared/ai-usage.ts';
 import { type Any, logContractFeed, logEvent } from '../_shared/docs.ts';
 import { publishContract } from '../_shared/contract-webhooks.ts';
 import { cleanExtraction, dealDiff, EXTRACT_FIELDS, type Extraction, FIELD_KEYS, patchFor } from '../_shared/extract-diff.ts';
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': ALLOW_HEADERS, 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
-const WRITERS = ['owner', 'admin', 'acquisitions', 'dispositions', 'tc'];
+const WRITERS = ['owner', 'admin', 'acquisitions', 'dispositions', 'tc', 'partnerships'];
 /** Base64 grows a file by a third; the API takes 32 MB a request. */
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
 
@@ -81,7 +82,7 @@ function b64(bytes: Uint8Array): string {
 }
 
 /** One Messages API call over fetch: the PDF as a document block, the answer held to SCHEMA. */
-async function askClaude(apiKey: string, pdf: Uint8Array, title: string): Promise<unknown> {
+async function askClaude(apiKey: string, pdf: Uint8Array, title: string, wsId: number): Promise<unknown> {
   const ws = Deno.env.get('ANTHROPIC_WORKSPACE_ID');
   const body: Record<string, unknown> = {
     model: CLAUDE_MODEL,
@@ -115,7 +116,8 @@ async function askClaude(apiKey: string, pdf: Uint8Array, title: string): Promis
     try { msg = (JSON.parse(text) as { error?: { message?: string } }).error?.message ?? msg; } catch { /* raw */ }
     throw new Error(res.status === 401 ? 'the ANTHROPIC_API_KEY secret is invalid' : `Claude ${res.status}: ${msg}`);
   }
-  const out = JSON.parse(text) as { stop_reason?: string; content?: { type: string; text?: string }[] };
+  const out = JSON.parse(text) as { stop_reason?: string; model?: string; usage?: AnthropicUsage; content?: { type: string; text?: string }[] };
+  await recordUsage(null, { ws: wsId, feature: 'docs_extract', model: out.model ?? '', usage: out.usage });
   if (out.stop_reason === 'refusal') throw new Error('Claude declined to read this document');
   if (out.stop_reason === 'max_tokens') throw new Error('the document has more terms than one read can hold');
   const answer = (out.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
@@ -228,7 +230,7 @@ Deno.serve(async (req) => {
           if (dl || !blob) throw new Error('could not open the PDF');
           const bytes = new Uint8Array(await blob.arrayBuffer());
           if (bytes.byteLength > MAX_PDF_BYTES) throw new Error('the PDF is over 20 MB');
-          const rows = cleanExtraction(await askClaude(apiKey, bytes, s.title));
+          const rows = cleanExtraction(await askClaude(apiKey, bytes, s.title, s.ws));
           // A re-run replaces what nobody acted on; applied rows stay as the record of what was applied.
           const del = admin.from('contract_extractions').delete().is('applied_to_deal_at', null);
           const { error: delErr } = s.contract ? await del.eq('contract_id', s.contract.id) : await del.eq('deal_file_id', s.file!.id);

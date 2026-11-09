@@ -175,7 +175,7 @@ export function EmojiButton({
         title="Emoji"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-45"
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-50"
         style={{
           border: '1px solid var(--line)',
           background: open ? 'var(--accent-soft)' : 'var(--panel)',
@@ -230,7 +230,7 @@ export function EmojiButton({
           </div>
           <p
             className="px-3 py-2"
-            style={{ borderTop: '1px solid var(--line)', font: '400 10px/1.35 var(--sans)', color: 'var(--muted-2)' }}
+            style={{ borderTop: '1px solid var(--line)', font: '400 11px/1.35 var(--sans)', color: 'var(--muted-2)' }}
           >
             An emoji switches the message to UCS-2 — 70 characters a segment instead of 160.
           </p>
@@ -246,7 +246,7 @@ function GroupLabel({ children }: { children: string }) {
       className="sticky top-0 px-1 pb-1 pt-2"
       style={{
         background: 'var(--panel)',
-        font: '600 9px/1 var(--sans)',
+        font: '600 11px/1 var(--sans)',
         color: 'var(--muted-2)',
       }}
     >

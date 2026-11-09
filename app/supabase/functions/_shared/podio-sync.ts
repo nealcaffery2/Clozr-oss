@@ -93,7 +93,7 @@ export type SubmissionCols = {
   mao: number | null; earnest_money: number | null; underwriting_url: string | null; occupancy_notes: string | null; market: string | null;
   /** The underwriter's low / high offer band (Podio "UW Suggested Low / High Offer"). */
   wholesale_offer: number | null; institutional_offer: number | null;
-  /** thecompr.com/r/… from "Ai Compr Tool", beside underwriting_url. */
+  /** underwriting.example.com/r/… from "Ai Compr Tool", beside underwriting_url. */
   compr_report_url: string | null;
   /** "Garage Info" when it parses as a number of spaces. */
   garage_spaces: number | null;
@@ -687,7 +687,8 @@ export function readComm(item: Any): Comm | null {
   // A date field's `start` is in the viewer's zone; `start_utc` is not.
   const dateVal = (item?.fields ?? []).find((f: Any) => one(f.label).toLowerCase() === 'created date')?.values?.[0];
   const when = podioIso(dateVal?.start_utc) ?? podioIso(item?.created_on);
-  const rec = [get('Call Recording Link'), get('Call Recording')].map((v) => /https?:\/\/\S+/.exec(v)?.[0]).find(Boolean) ?? null;
+  // The link arrives as markdown, `**[Listen](https://…mp3)**`: stop at the `)` so the URL plays.
+  const rec = [get('Call Recording Link'), get('Call Recording')].map((v) => /https?:\/\/[^\s)\]*"<>]+/.exec(v)?.[0]).find(Boolean) ?? null;
   const status = one(get(direction === 'inbound' ? 'Inbound Status' : 'Outbound Status')) || one(get('smrtDialer Status')) || null;
   const body = channel === 'sms'
     ? clean(get('Text Message')) || null

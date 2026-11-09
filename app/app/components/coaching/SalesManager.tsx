@@ -29,9 +29,14 @@ export const COACHING_TABS = ['Overview', 'Flagged calls', 'Submit a call', 'Sco
 type Tab = (typeof COACHING_TABS)[number];
 const PERIODS = [['this-week', 'This week'], ['last-week', 'Last week'], ['last-30-days', 'Last 30 days'], ['this-month', 'This month'], ['this-quarter', 'This quarter']] as const;
 
-type Props = { workspaceId: number | null; me: string | null; admin: boolean; isMobile: boolean; toast?: (m: string) => void; initialTab?: Tab };
+/** `titled={false}` when the screen's own header already names it (the Coaching screen). */
+type Props = { workspaceId: number | null; me: string | null; admin: boolean; isMobile: boolean; toast?: (m: string) => void; initialTab?: Tab; titled?: boolean };
 
-export function SalesManager({ workspaceId, me, admin, isMobile, toast, initialTab = 'Overview' }: Props) {
+/** What the AI Sales Manager does, for the line under its title. */
+export const salesManagerBlurb = (admin: boolean) =>
+  'Reviews every recorded seller call, scores it against the acquisitions call flow, flags missed deals and coaches the fix.' + (admin ? '' : ' Your own calls and practice.');
+
+export function SalesManager({ workspaceId, me, admin, isMobile, toast, initialTab = 'Overview', titled = true }: Props) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [period, setPeriod] = useState<string>('this-week');
   const [sc, setSc] = useState<{ period: string; res: ScorecardsResult | null; error: string | null } | null>(null);
@@ -51,10 +56,10 @@ export function SalesManager({ workspaceId, me, admin, isMobile, toast, initialT
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 260px', minWidth: 0 }}>
-          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, letterSpacing: '-0.01em', color: INK }}>AI Sales Manager</h2>
-          <p style={{ margin: '2px 0 0', fontSize: 12.5, color: MUTED }}>
-            Reviews every recorded seller call, scores it against the acquisitions call flow, flags missed deals and coaches the fix.{admin ? '' : ' Your own calls and practice.'}
-          </p>
+          {titled ? <>
+            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, letterSpacing: '-0.01em', color: INK }}>AI Sales Manager</h2>
+            <p style={{ margin: '2px 0 0', fontSize: 12.5, color: MUTED }}>{salesManagerBlurb(admin)}</p>
+          </> : null}
         </div>
         {tab === 'Overview' || tab === 'Scorecards' ? (
           <select aria-label="Period" value={period} onChange={(e) => setPeriod(e.target.value)} style={select}>
@@ -363,7 +368,7 @@ function Scorecards({ scores, isMobile }: { scores: { res: ScorecardsResult | nu
     </div>
   );
 }
-const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', borderBottom: `1px solid ${LINE}`, ...eyebrow, fontSize: 10, whiteSpace: 'nowrap' };
+const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', borderBottom: `1px solid ${LINE}`, ...eyebrow, fontSize: 11, whiteSpace: 'nowrap' };
 const td: React.CSSProperties = { padding: '8px 10px', borderBottom: '1px solid var(--divider-2, #f0f0f1)', color: INK };
 
 // ---- Practice history -------------------------------------------------------------------

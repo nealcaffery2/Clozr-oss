@@ -3,8 +3,9 @@
  *
  * Google Calendar (and Apple, Outlook) subscribe to a URL and re-fetch it on
  * their own schedule, so CLOZR → Google sync needs no OAuth, no tokens to
- * refresh and no server of its own: appointments and dated tasks become
- * VEVENTs, and this URL is what "Other calendars → From URL" points at.
+ * refresh and no server of its own: appointments become VEVENTs, and this
+ * URL is what "Other calendars → From URL" points at. Tasks stay off
+ * everyone's calendar (Oct 30, 2026).
  *
  * One-way by design. Editing an event in Google does not come back; the CRM
  * is the source of truth for what the team is doing.
@@ -16,6 +17,7 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { HARDENING, clientIp, rateLimit } from '../_shared/security.ts';
+import { everyRowResult } from '../_shared/every-row.ts';
 
 const text = (body: string, status = 200, type = 'text/plain') =>
   new Response(body, { status, headers: { ...HARDENING, 'Content-Type': type, 'Cache-Control': 'no-cache' } });
@@ -48,12 +50,19 @@ Deno.serve(async (req) => {
   if (!ws) return text('unknown token', 401);
 
   const since = new Date(Date.now() - 90 * 86_400_000).toISOString();
-  const [{ data: appts }, { data: tasks }, { data: sellers }] = await Promise.all([
-    db.from('appointments').select('id, title, kind, starts_at, ends_at, location, notes, seller_id, updated_at').eq('workspace_id', ws.id).gte('starts_at', since),
-    db.from('tasks').select('id, title, task_type, due_at, done, seller_id, updated_at').eq('workspace_id', ws.id).eq('done', false).not('due_at', 'is', null).gte('due_at', since),
-    db.from('sellers').select('id, name, property_address').eq('workspace_id', ws.id),
-  ]);
-  const who = new Map((sellers ?? []).map((s) => [s.id, s]));
+  // Paged by id: a bare select stops at PostgREST's 1,000 rows. A deleted
+  // appointment stays in the table until a Google push purges it, which a
+  // workspace without Google never does, so the feed filters it here.
+  const { data: appts } = await everyRowResult(() => db.from('appointments').select('id, title, kind, starts_at, ends_at, location, notes, seller_id, updated_at').eq('workspace_id', ws.id).is('deleted_at', null).gte('starts_at', since).order('id'));
+  // Only the sellers these events name, 200 ids a read: the whole workspace
+  // was read and cut at 1,000, so most events went out without a name.
+  const sellerIds = [...new Set((appts ?? []).map((r) => r.seller_id).filter((x) => x != null))];
+  const sellers: { id: number; name: string; property_address: string | null }[] = [];
+  for (let i = 0; i < sellerIds.length; i += 200) {
+    const { data } = await db.from('sellers').select('id, name, property_address').in('id', sellerIds.slice(i, i + 200));
+    sellers.push(...(data ?? []));
+  }
+  const who = new Map(sellers.map((s) => [s.id, s]));
 
   const lines: string[] = [
     'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//CLOZR//Calendar feed//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
@@ -67,15 +76,6 @@ Deno.serve(async (req) => {
       fold(`SUMMARY:${esc([a.kind !== 'Appointment' ? a.kind : '', a.title].filter(Boolean).join(' · '))}`),
       fold(`DESCRIPTION:${esc([s ? `${s.name}${s.property_address ? ' — ' + s.property_address : ''}` : '', a.notes ?? ''].filter(Boolean).join('\n'))}`),
       ...(a.location || s?.property_address ? [fold(`LOCATION:${esc(a.location ?? s!.property_address!)}`)] : []),
-      'END:VEVENT');
-  }
-  for (const t of tasks ?? []) {
-    const s = t.seller_id ? who.get(t.seller_id) : null;
-    const end = new Date(new Date(t.due_at!).getTime() + 30 * 60_000).toISOString();
-    lines.push('BEGIN:VEVENT',
-      `UID:task-${t.id}@clozr`, `DTSTAMP:${stamp(t.updated_at)}`, `DTSTART:${stamp(t.due_at!)}`, `DTEND:${stamp(end)}`,
-      fold(`SUMMARY:${esc(`${t.task_type}: ${t.title}`)}`),
-      fold(`DESCRIPTION:${esc(s ? `${s.name}${s.property_address ? ' — ' + s.property_address : ''}` : 'CLOZR task')}`),
       'END:VEVENT');
   }
   lines.push('END:VCALENDAR');

@@ -25,6 +25,9 @@ eq('links: rewritten in place', out.html.includes(`href="${base}/c/${tok}/0"`) &
 eq('links: mailto kept', out.html.includes('href="mailto:me@ex.com"'), true);
 eq('links: unsubscribe kept', out.html.includes('deliverability/unsubscribe?t=z'), true);
 eq('pixel: appended once', out.html.split(`${base}/o/${tok}.gif`).length - 1, 1);
+const pixelOnly = instrument(html, tok, base, { links: false });
+eq('links off: no link rewritten, none listed', pixelOnly.links.length === 0 && !pixelOnly.html.includes(`${base}/c/`), true);
+eq('links off: the pixel still goes in', pixelOnly.html.split(`${base}/o/${tok}.gif`).length - 1, 1);
 eq('pixel: inside </body> when there is one', instrument('<html><body>x</body></html>', tok, base).html.endsWith('/></body></html>'), true);
 
 eq('path: open', parsePath(`/email-track/o/${tok}.gif`), { kind: 'open', token: tok });

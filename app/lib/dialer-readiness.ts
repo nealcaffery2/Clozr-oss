@@ -131,7 +131,7 @@ const subs = new Set<() => void>();
 let host: ((p: Prompt) => void) | null = null;
 
 const WARNED_KEY = 'clozr.dialerReady.warned';
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => new Intl.DateTimeFormat('en-CA').format(new Date());
 
 /** The checklist was describing another workspace. The next publish fills it in. */
 export function clearReadiness(): void {

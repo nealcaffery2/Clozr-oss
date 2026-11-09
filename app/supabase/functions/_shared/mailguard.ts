@@ -15,7 +15,9 @@
  * In order: suppressed recipients are refused (transactional mail skips only
  * hard bounces — a signing link to a seller who unsubscribed from follow-ups
  * is still owed), then an address that email verification has marked unsafe.
- * Unverified addresses (email_safe_to_send null, or no row) still send. A
+ * An address nothing has verified yet is verified first (verifyAtSend:
+ * syntax, MX, Reoon) and the verdict cached. One still unverified after that
+ * (DNS or Reoon could not say) still sends. A
  * workspace with settings.require_verified_email also refuses those nulls,
  * and only for bulk. Transactional mail (contracts, signing links, a test to
  * yourself) skips the verification check entirely. allowUnverified skips it
@@ -32,6 +34,7 @@
  * /deliverability/resend instead.
  */
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { everyRow } from './every-row.ts';
 import {
   BUYER_SEND_ROLES, FREE_MAIL, PER_ADDRESS_TARGET, WARMUP_START, type MailboxSettings, type Refusal, type SendKind, addressesPerRep, autoPauseReason, blastDomains, blockUnverified, domainOf, emailSafety, limitsFor, parseBounce, preflight, refusal, repBlastAddresses,
 } from './deliverability-rules.ts';
@@ -39,6 +42,8 @@ import {
 export { blockUnverified, emailSafety };
 import { type EnvLike, blastFrom } from './resend.ts';
 import { resendEnvFor } from './workspace-email.ts';
+import { alertPause } from './send-alert.ts';
+import { type ReoonDeps, type VerifyResult, VERIFY_PROVIDER, normalizeEmail, verifyEmails, writeVerification } from './reoon.ts';
 
 type Any = any;
 
@@ -61,6 +66,8 @@ export async function settingsFor(admin: SupabaseClient, account: { id: number; 
 
 export type Guard = { ok: true; ids: number[] } | {
   ok: false; code: Refusal['code'] | 'suppressed' | 'domain' | 'unverified_unsafe' | 'check_failed'; message: string; next_at: string | null; suppressed?: string[]; unsafe?: string[];
+  /** The part of `unsafe` not checked yet (Reoon was not reached): a later check may clear them, unlike a failed one. */
+  unverified?: string[];
   /** On a cap refusal: how many recipients would still fit today and this hour, so a batch can send that many. */
   room?: number;
 };
@@ -117,6 +124,74 @@ async function verificationFlags(admin: SupabaseClient, workspaceId: number, ema
   return flags;
 }
 
+/** Swappable in tests: DNS, and Reoon's env and fetch. */
+export const verifyDeps: { resolveDns: (name: string, type: 'MX' | 'A') => Promise<unknown[]>; reoon: ReoonDeps } = {
+  resolveDns: (name, type) => Deno.resolveDns(name, type as 'MX'),
+  reoon: {},
+};
+
+// ponytail: inline cap per send; a 100-recipient composer send verifies 25 now, the rest on their next send. Raise it or pre-verify lists if that bites.
+const VERIFY_INLINE_CAP = 25;
+
+/**
+ * 'no_mail' when the domain does not exist or takes no mail (no MX, or only
+ * a null MX per RFC 7505, and no A record to fall back to). null when DNS
+ * could not say: unknown, not bad.
+ */
+async function domainMail(domain: string): Promise<'ok' | 'no_mail' | null> {
+  if (FREE_MAIL.has(domain)) return 'ok';
+  const lookup = async (type: 'MX' | 'A') => {
+    try { return await verifyDeps.resolveDns(domain, type); } catch (e) { return e instanceof Deno.errors.NotFound ? [] : null; }
+  };
+  const mx = await lookup('MX');
+  if (mx == null) return null;
+  if ((mx as { exchange?: string }[]).some((r) => String(r.exchange ?? '').replace(/\.$/, ''))) return 'ok';
+  if (mx.length) return 'no_mail';
+  const a = await lookup('A');
+  if (a == null) return null;
+  return a.length ? 'ok' : 'no_mail';
+}
+
+type Verdict = { email: string; status: string; safe: boolean; provider: string };
+
+/**
+ * A verdict for addresses nothing has verified yet, before the first send to
+ * them: syntax, then the domain's mail servers, then Reoon (when
+ * REOON_API_KEY is set). Verdicts are cached in email_verifications (read
+ * back by email_safety_flags, migration 370) and Reoon's also on the contact
+ * rows that carry the address, so each address is checked once. What cannot
+ * be decided (DNS timeout, Reoon down or no key) is left out and the address
+ * stays unverified.
+ */
+export async function verifyAtSend(admin: SupabaseClient, workspaceId: number, emails: string[]): Promise<Map<string, boolean>> {
+  const results: Verdict[] = [];
+  const domains = new Map<string, Promise<'ok' | 'no_mail' | null>>();
+  const toReoon: string[] = [];
+  for (const raw of emails.slice(0, VERIFY_INLINE_CAP)) {
+    const email = normalizeEmail(raw);
+    if (!email) { results.push({ email: raw, status: 'invalid_syntax', safe: false, provider: 'syntax' }); continue; }
+    const domain = email.split('@')[1];
+    if (!domains.has(domain)) domains.set(domain, domainMail(domain));
+    if (await domains.get(domain) === 'no_mail') results.push({ email, status: 'no_mx', safe: false, provider: 'dns' });
+    else toReoon.push(email);
+  }
+  if (toReoon.length) {
+    const r = await verifyEmails(toReoon, verifyDeps.reoon);
+    if (r.ok) results.push(...r.results);
+    else if (!r.missingKey) console.error('mailguard: verify at send', r.error);
+  }
+  if (!results.length) return new Map();
+  const at = new Date().toISOString();
+  const { error } = await admin.from('email_verifications').upsert(
+    results.map((r) => ({ workspace_id: workspaceId, email: r.email, status: r.status, safe: r.safe, provider: r.provider, verified_at: at })),
+    { onConflict: 'workspace_id,email' },
+  );
+  if (error) console.error('mailguard: email_verifications write', error.message);
+  const stored = await writeVerification(admin, workspaceId, results.filter((r) => r.provider === VERIFY_PROVIDER) as VerifyResult[]);
+  if (!stored.ok) console.error('mailguard: contact verification write', stored.error);
+  return new Map(results.map((r) => [r.email, r.safe]));
+}
+
 /**
  * The verification refusal, or null when every recipient may be sent. Throws
  * when the workspace setting or the flags cannot be read, so the caller holds
@@ -133,6 +208,8 @@ export async function verificationBlock(admin: SupabaseClient, workspaceId: numb
     requireVerified = (data?.settings as Any)?.require_verified_email === true;
   }
   const flags = await verificationFlags(admin, workspaceId, to);
+  const fresh = await verifyAtSend(admin, workspaceId, to.filter((e) => emailSafety(flags.get(e) ?? []) === 'unverified'));
+  for (const [email, safe] of fresh) flags.set(email, [safe]);
   const unsafe: string[] = [];
   const unverified: string[] = [];
   for (const email of to) {
@@ -146,7 +223,7 @@ export async function verificationBlock(admin: SupabaseClient, workspaceId: numb
     unsafe.length ? `${unsafe.join(', ')} failed email verification and ${unsafe.length === 1 ? 'is' : 'are'} not safe to send` : '',
     unverified.length ? `${unverified.join(', ')} ${unverified.length === 1 ? 'has' : 'have'} not been verified, and this workspace only sends bulk mail to a verified address` : '',
   ].filter(Boolean);
-  return { ok: false, code: 'unverified_unsafe', next_at: null, unsafe: [...unsafe, ...unverified], message: `Not sent: ${parts.join('; ')}.` };
+  return { ok: false, code: 'unverified_unsafe', next_at: null, unsafe: [...unsafe, ...unverified], unverified, message: `Not sent: ${parts.join('; ')}.` };
 }
 
 export async function guardSend(admin: SupabaseClient, account: { id: number; workspace_id: number; email: string }, recipients: string[], kind: SendKind, opts: GuardOptions = {}): Promise<Guard> {
@@ -414,7 +491,7 @@ export async function markSendProvider(admin: SupabaseClient, ids: number[], pro
 export async function checkAutoPause(admin: SupabaseClient, account: { id: number; workspace_id: number }): Promise<string | null> {
   const since = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
   const [{ data: recent }, { data: last50 }, { count: unsub30d }] = await Promise.all([
-    admin.from('email_send_log').select('kind, sent_at, bounced_at').eq('account_id', account.id).gte('sent_at', since(30)).limit(10_000),
+    everyRow<Any>(() => admin.from('email_send_log').select('kind, sent_at, bounced_at').eq('account_id', account.id).gte('sent_at', since(30)).order('id')).then((rows) => ({ data: rows })).catch(() => ({ data: [] as Any[] })),
     admin.from('email_send_log').select('bounce_status').eq('account_id', account.id).order('sent_at', { ascending: false }).limit(50),
     admin.from('email_suppressions').select('id', { count: 'exact', head: true }).eq('account_id', account.id).eq('reason', 'unsubscribe').gte('created_at', since(30)),
   ]);
@@ -432,6 +509,8 @@ export async function checkAutoPause(admin: SupabaseClient, account: { id: numbe
   if (cur?.paused) return reason;
   await admin.from('mailbox_settings').update({ paused: true, paused_auto: true, paused_reason: `Auto-paused: ${reason}.`, paused_at: new Date().toISOString() }).eq('account_id', account.id);
   console.warn('mailbox auto-paused', { account: account.id, reason });
+  const { data: acct } = await admin.from('google_accounts').select('email').eq('id', account.id).maybeSingle();
+  await alertPause(admin, account.workspace_id, 'gmail_mailbox', account.id, String((acct as Any)?.email || 'A Gmail mailbox'), reason);
   return reason;
 }
 
@@ -439,7 +518,7 @@ export async function checkAutoPause(admin: SupabaseClient, account: { id: numbe
 export async function checkAutoPauseSender(admin: SupabaseClient, sender: { id: number; workspace_id: number }): Promise<string | null> {
   const since = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
   const [{ data: recent }, { data: last50 }, { count: unsub30d }, { count: complaint30d }] = await Promise.all([
-    admin.from('email_send_log').select('kind, sent_at, bounced_at').eq('sender_id', sender.id).gte('sent_at', since(30)).limit(10_000),
+    everyRow<Any>(() => admin.from('email_send_log').select('kind, sent_at, bounced_at').eq('sender_id', sender.id).gte('sent_at', since(30)).order('id')).then((rows) => ({ data: rows })).catch(() => ({ data: [] as Any[] })),
     admin.from('email_send_log').select('bounce_status').eq('sender_id', sender.id).order('sent_at', { ascending: false }).limit(50),
     admin.from('email_suppressions').select('id', { count: 'exact', head: true }).eq('workspace_id', sender.workspace_id).eq('reason', 'unsubscribe').gte('created_at', since(30)),
     admin.from('email_suppressions').select('id', { count: 'exact', head: true }).eq('workspace_id', sender.workspace_id).eq('reason', 'complaint').gte('created_at', since(30)),
@@ -458,6 +537,8 @@ export async function checkAutoPauseSender(admin: SupabaseClient, sender: { id: 
   if (cur?.paused) return reason;
   await admin.from('email_senders').update({ paused: true, paused_auto: true, paused_reason: `Auto-paused: ${reason}.`, paused_at: new Date().toISOString() }).eq('id', sender.id);
   console.warn('resend sender auto-paused', { sender: sender.id, reason });
+  const { data: row } = await admin.from('email_senders').select('from_email').eq('id', sender.id).maybeSingle();
+  await alertPause(admin, sender.workspace_id, 'resend_sender', sender.id, String((row as Any)?.from_email || 'A Resend sender'), reason);
   return reason;
 }
 

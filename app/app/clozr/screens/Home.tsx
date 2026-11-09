@@ -8,41 +8,29 @@ import { Empty } from '@/components/ds/Empty';
 import { Chevron, CZ } from '@/components/ds/chrome';
 import type { ClozrView } from '@/app/clozr/view';
 import { Mark } from '@/components/ds/mark';
+import { ScreenHeader } from '@/components/ds/Screen';
+import { Button, IconButton } from '@/components/ds/Button';
+import { Badge } from '@/components/ds/Text';
+import { textTone } from '@/lib/text-tone';
+import { Check, Clock, Phone, Users } from 'lucide-react';
 
 const none = (text: string) => (
-  <div style={{padding: "18px 16px", fontSize: "12.5px", color: "var(--subtle, #a1a1aa)"}}>{text}</div>
+  <div style={{padding: "18px 16px", fontSize: "12.5px", color: "var(--meta, #71717a)"}}>{text}</div>
 );
 
 export function Home({ V }: { V: ClozrView }) {
   return (
-    <section data-screen-label="Home" style={{flex: "1", minWidth: "0", overflow: "auto", padding: V.isMobile ? "14px 12px 28px" : "22px 28px 40px"}}>
-      <div style={{display: "flex", flexDirection: V.isMobile ? "column" : "row", alignItems: V.isMobile ? "stretch" : "flex-end", justifyContent: "space-between", gap: V.isMobile ? "12px" : "16px", marginBottom: "18px"}}>
-        <div>
-          <div style={{fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--meta, #71717a)", fontWeight: "600"}}>
-            {V.todayLabel}
-          </div>
-          <h1 style={{margin: "4px 0 0", fontSize: V.isMobile ? "21px" : "24px", fontWeight: "700", letterSpacing: "-0.03em"}}>
-            {V.greeting}{V.meName ? ', ' + V.meName : ''}
-          </h1>
-          {V.todayAiGreeting && <p style={{margin: "4px 0 0", fontSize: "13px", color: "var(--muted, #52525b)"}}>{V.todayAiGreeting}</p>}
-        </div>
-        <div style={{display: "flex", gap: "8px", alignItems: "center"}}>
+    <section data-screen-label="Home" style={{flex: "1", minWidth: "0", display: "flex", flexDirection: "column"}}>
+      <ScreenHeader title={<>{V.greeting}{V.meName ? ', ' + V.meName : ''}</>} titleTitle={`${V.greeting}${V.meName ? ', ' + V.meName : ''}`} meta={V.todayLabel} actions={<>
           {/* Owners and admins only: it scopes the tiles and the queue below. */}
           {V.canScopeHome ? (
           <div style={{position: "relative"}}>
-            <button className="dc1 cz-menu-trigger" onClick={V.toggleTeamMenu} style={{height: "34px", padding: "0 12px", borderRadius: "10px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "13px", fontWeight: "500", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "8px", color: "var(--ink, #18181b)", fontFamily: "var(--font-sans)"}}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="9" cy="8" r="3.2" />
-                <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
-                <path d="M16 5.2a3.2 3.2 0 0 1 0 6.3" />
-                <path d="M21.5 20a6.5 6.5 0 0 0-4.5-6.2" />
-              </svg>
+            <Button className="cz-menu-trigger" onClick={V.toggleTeamMenu} aria-expanded={!!V.teamMenuOpen} icon={<Users size={14} aria-hidden />} iconRight={<Chevron size={12} color={CZ.muted} />}>
               {V.teamView}
-              <Chevron size={12} color={CZ.faint} />
-            </button>
+            </Button>
             {(V.teamMenuOpen) ? (
               <>
-              <div ref={keepInView} style={{position: "absolute", top: "38px", right: "0", width: "200px", background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "10px", boxShadow: "0 10px 28px -10px rgba(18,22,40,0.2)", padding: "5px", zIndex: "30"}}>
+              <div ref={keepInView} style={{position: "absolute", top: "38px", right: "0", width: "200px", background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "10px", boxShadow: "var(--shadow-md)", padding: "5px", zIndex: "30"}}>
                 {(V.teamOptions || []).map((o, o__i) => (
                   <React.Fragment key={o__i}>
                   <button className="dc2" onClick={o.go} style={{display: "block", width: "100%", textAlign: "left", height: "32px", padding: "0 10px", border: "0", borderRadius: "7px", background: "none", cursor: "pointer", fontSize: "13px", color: "var(--ink, #18181b)"}}>
@@ -55,14 +43,16 @@ export function Home({ V }: { V: ClozrView }) {
             ) : null}
           </div>
           ) : null}
-          <button className="clozr-talkr-btn" onClick={V.openCallQueue} style={{height: "34px", flex: V.isMobile ? "1" : "none", whiteSpace: "nowrap", padding: "0 12px", borderRadius: "9px", border: "1px solid var(--c-talkr)", background: "var(--c-talkr)", color: "#fff", fontWeight: "600", fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "7px"}}>
+          <Button kind="primary" onClick={V.openCallQueue} icon={<Phone size={14} aria-hidden />} style={{flex: V.isMobile ? "1" : "none"}}>
             Start call queue
-            <span style={{fontSize: "11px", opacity: ".7"}}>
+            <span style={{fontSize: "11.5px", fontWeight: 500, opacity: ".85", fontVariantNumeric: "tabular-nums"}}>
               {V.callQueueCount}
             </span>
-          </button>
-        </div>
-      </div>
+          </Button>
+      </>}>
+        {V.todayAiGreeting ? <p className="ds-prose" style={{margin: 0, fontSize: "13px", color: "var(--muted, #52525b)"}}>{V.todayAiGreeting}</p> : null}
+      </ScreenHeader>
+      <div style={{flex: "1", minHeight: "0", overflow: "auto", padding: "var(--gutter) var(--gutter) 40px"}}>
       {(V.workspaceEmpty || !V.crmOk) ? (
         <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", boxShadow: "0 1px 2px rgba(0,0,0,.03)"}}>
           <Empty
@@ -80,13 +70,13 @@ export function Home({ V }: { V: ClozrView }) {
           <React.Fragment key={s__i}>
           <div style={{padding: V.isMobile ? "12px 13px" : "14px 16px", borderRight: "1px solid var(--divider-2, #f0f0f1)", borderBottom: V.isMobile ? "1px solid var(--divider-2, #f0f0f1)" : "0"}}>
             {/* Labels name their period ("… this month"), so they may wrap rather than run into the next tile. */}
-            <div style={{fontSize: "10.5px", letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--meta, #71717a)", fontWeight: "600", whiteSpace: "normal"}}>
+            <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "500", whiteSpace: "normal"}}>
               {s.k}
             </div>
-            <div style={{fontSize: "22px", fontWeight: "700", letterSpacing: "-0.03em", marginTop: "6px", color: "var(--ink, #18181b)"}}>
+            <div style={{fontSize: "var(--fs-figure)", fontWeight: "650", letterSpacing: "-0.02em", marginTop: "6px", color: "var(--ink, #18181b)", fontVariantNumeric: "tabular-nums"}}>
               {s.v}
             </div>
-            <div style={{fontSize: "11.5px", marginTop: "2px", color: s.dColor}}>
+            <div style={{fontSize: "11.5px", marginTop: "2px", color: textTone(s.dColor)}}>
               {s.d}
             </div>
           </div>
@@ -98,7 +88,7 @@ export function Home({ V }: { V: ClozrView }) {
           <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", overflow: "hidden"}}>
             <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: V.isMobile ? "wrap" : "nowrap", padding: "12px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)"}}>
               <div style={{display: "flex", alignItems: "baseline", gap: "10px", minWidth: "0", flex: "1 1 auto"}}>
-                <span style={{fontWeight: "600", fontSize: "14px", flex: "none"}}>
+                <span className="t-title" style={{flex: "none"}}>
                   {V.homeQueueTitle}
                 </span>
                 <span style={{fontSize: "12px", color: "var(--meta, #71717a)", minWidth: "0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
@@ -106,12 +96,10 @@ export function Home({ V }: { V: ClozrView }) {
                 </span>
               </div>
               <div style={{display: "flex", gap: "6px", flex: "none"}}>
-                <button className="dc2" onClick={V.goTasks} style={{height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12px", cursor: "pointer", color: "var(--muted, #52525b)"}}>
-            All tasks
-          </button>
-                <button className="clozr-talkr-ghost" onClick={V.can.today ? V.goToday : V.openCallQueue} style={{display: "inline-flex", alignItems: "center", gap: "4px", color: "var(--c-talkr)", height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--tint-rose, #fecdd3)", background: "var(--c-btn-bg)", fontSize: "12px", cursor: "pointer", fontWeight: "600"}}>
-                  Work queue <Chevron dir="right" size={12} color="currentColor" />
-                </button>
+                <Button size={28} onClick={V.goTasks}>All tasks</Button>
+                <Button size={28} onClick={V.can.today ? V.goToday : V.openCallQueue} iconRight={<Chevron dir="right" size={12} color="currentColor" />}>
+                  Work queue
+                </Button>
               </div>
             </div>
             {(V.queue || []).map((q) => (
@@ -123,13 +111,13 @@ export function Home({ V }: { V: ClozrView }) {
               <div className="dc4" style={V.isMobile
                 ? {display: "flex", flexDirection: "column", gap: "9px", alignItems: "stretch", padding: "12px 14px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", minWidth: "0"}
                 : {display: "grid", gridTemplateColumns: "92px minmax(0,1fr) auto", gap: "14px", alignItems: "center", padding: "11px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", transition: "background .12s"}}>
-                <span style={{display: "inline-flex", alignItems: "center", gap: "7px", fontSize: "10.5px", fontWeight: "700", letterSpacing: "0.1em", textTransform: "uppercase", color: q.color, whiteSpace: "nowrap"}}>
+                <span style={{display: "inline-flex", alignItems: "center", gap: "7px", fontSize: "11.5px", fontWeight: "650", color: textTone(q.color), whiteSpace: "nowrap"}}>
                   <Mark label={q.tag} />
                   {q.tag}
                 </span>
                 <div style={{minWidth: "0"}}>
                   <div style={{display: "flex", alignItems: "baseline", gap: "8px", flexWrap: V.isMobile ? "wrap" : "nowrap", minWidth: "0"}}>
-                    <button className="dc5" onClick={q.open} style={{fontWeight: "600", fontSize: "13.5px", color: "var(--ink, #18181b)", background: "none", border: "0", padding: "0", cursor: "pointer", textAlign: "left", minWidth: "0", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
+                    <button className="dc5 t-name" onClick={q.open} style={{ background: "none", border: "0", padding: "0", cursor: "pointer", textAlign: "left", minWidth: "0", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
                       {q.title}
                     </button>
                     <span style={{fontSize: "12px", color: "var(--meta, #71717a)", minWidth: "0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
@@ -141,26 +129,12 @@ export function Home({ V }: { V: ClozrView }) {
                   </div>
                 </div>
                 <div style={{display: "flex", gap: "6px", minWidth: "0"}}>
-                  <button className="clozr-talkr-ghost" onClick={q.call} style={{color: "var(--c-talkr)", height: V.isMobile ? "36px" : "28px", flex: V.isMobile ? "1" : "none", minWidth: "0", padding: "0 10px", borderRadius: V.isMobile ? "9px" : "7px", border: "1px solid var(--tint-rose, #fecdd3)", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "500", cursor: "pointer", }}>
-                    Call
-                  </button>
-                  <button className="clozr-talkr-ghost" onClick={q.text} style={{color: "var(--c-talkr)", height: V.isMobile ? "36px" : "28px", flex: V.isMobile ? "1" : "none", minWidth: "0", padding: "0 10px", borderRadius: V.isMobile ? "9px" : "7px", border: "1px solid var(--tint-rose, #fecdd3)", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "500", cursor: "pointer", }}>
-                    Text
-                  </button>
-                  <button className="dc6" onClick={q.open} style={{height: V.isMobile ? "36px" : "28px", flex: V.isMobile ? "1" : "none", minWidth: "0", padding: "0 10px", borderRadius: V.isMobile ? "9px" : "7px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "500", cursor: "pointer", color: "var(--ink, #18181b)"}}>
-                    Open
-                  </button>
-                  <button className="dc7" onClick={q.complete} title="Complete" style={{height: V.isMobile ? "36px" : "28px", width: V.isMobile ? "38px" : "30px", flex: "none", borderRadius: V.isMobile ? "9px" : "7px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", cursor: "pointer", color: "var(--tx-green-deep, #1f7a4d)", display: "grid", placeItems: "center"}}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  </button>
-                  <button className="dc2" onClick={q.snooze} title={q.snoozeLabel} style={{height: V.isMobile ? "36px" : "28px", width: V.isMobile ? "38px" : "30px", flex: "none", borderRadius: V.isMobile ? "9px" : "7px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", cursor: "pointer", color: "var(--meta, #71717a)", display: "grid", placeItems: "center"}}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10" />
-                      <polyline points="12 6 12 12 16 14" />
-                    </svg>
-                  </button>
+                  {/* Call and Text are ordinary actions: ghost, not Talkr red (red means destructive). */}
+                  <Button size={28} onClick={q.call} style={V.isMobile ? {flex: "1", minWidth: "0"} : undefined}>Call</Button>
+                  <Button size={28} onClick={q.text} style={V.isMobile ? {flex: "1", minWidth: "0"} : undefined}>Text</Button>
+                  <Button size={28} onClick={q.open} style={V.isMobile ? {flex: "1", minWidth: "0"} : undefined}>Open</Button>
+                  <IconButton kind="ghost" size={28} label="Complete" onClick={q.complete} icon={<Check size={14} strokeWidth={2.4} aria-hidden />} style={{color: "var(--tx-green-deep, #1f7a4d)"}} />
+                  <IconButton kind="ghost" size={28} label={q.snoozeLabel || 'Snooze'} onClick={q.snooze} icon={<Clock size={14} aria-hidden />} />
                 </div>
               </div>
               </React.Fragment>
@@ -174,7 +148,7 @@ export function Home({ V }: { V: ClozrView }) {
           <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "1fr" : "1fr 1fr", gap: V.isMobile ? "12px" : "16px", minWidth: "0"}}>
             <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", overflow: "hidden"}}>
               <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)"}}>
-                <span style={{fontWeight: "600", fontSize: "14px"}}>
+                <span className="t-title">
                   Recent inbound
                 </span>
                 {V.can.inbox ? (
@@ -191,18 +165,18 @@ export function Home({ V }: { V: ClozrView }) {
                   </span>
                   <span style={{minWidth: "0"}}>
                     <span style={{display: "flex", gap: "6px", alignItems: "baseline"}}>
-                      <span style={{fontWeight: "600", fontSize: "13px", color: "var(--ink, #18181b)"}}>
+                      <span className="t-name">
                         {m.name}
                       </span>
-                      <span style={{fontSize: "11px", color: "var(--subtle, #a1a1aa)", textTransform: "uppercase", letterSpacing: ".06em"}}>
-                        {m.channel}
+                      <span style={{fontSize: "11.5px", color: "var(--meta, #71717a)"}}>
+                        {/sms/i.test(m.channel) ? 'SMS' : m.channel.charAt(0).toUpperCase() + m.channel.slice(1).toLowerCase()}
                       </span>
                     </span>
                     <span style={{display: "block", fontSize: "12px", color: "var(--meta, #71717a)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>
                       {m.preview}
                     </span>
                   </span>
-                  <span style={{fontSize: "11px", color: "var(--subtle, #a1a1aa)", whiteSpace: "nowrap"}}>
+                  <span style={{fontSize: "11.5px", color: "var(--meta, #71717a)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums"}}>
                     {m.time}
                   </span>
                 </button>
@@ -212,7 +186,7 @@ export function Home({ V }: { V: ClozrView }) {
             </div>
             <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", overflow: "hidden"}}>
               <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)"}}>
-                <span style={{fontWeight: "600", fontSize: "14px"}}>
+                <span className="t-title">
                   Upcoming closings
                 </span>
                 <span style={{fontSize: "12px", color: "var(--meta, #71717a)"}}>
@@ -223,7 +197,7 @@ export function Home({ V }: { V: ClozrView }) {
                 <React.Fragment key={c__i}>
                 <button className="dc4" onClick={c.open} style={{display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto", gap: "12px", alignItems: "center", width: "100%", textAlign: "left", padding: "10px 16px", border: "0", borderBottom: "1px solid var(--divider-2, #f0f0f1)", background: "none", cursor: "pointer"}}>
                   <span style={{minWidth: "0"}}>
-                    <span style={{display: "block", fontWeight: "600", fontSize: "13px", color: "var(--ink, #18181b)"}}>
+                    <span className="t-name" style={{display: "block"}}>
                       {c.addr}
                     </span>
                     <span style={{display: "block", fontSize: "12px", color: "var(--meta, #71717a)"}}>
@@ -233,7 +207,7 @@ export function Home({ V }: { V: ClozrView }) {
                   <span style={{fontSize: "13px", fontWeight: "600", color: "var(--ink, #18181b)"}}>
                     {c.fee}
                   </span>
-                  <span style={{fontSize: "12px", color: c.color, fontWeight: "600", whiteSpace: "nowrap"}}>
+                  <span style={{fontSize: "12px", color: textTone(c.color), fontWeight: "600", whiteSpace: "nowrap"}}>
                     {c.when}
                   </span>
                 </button>
@@ -246,39 +220,34 @@ export function Home({ V }: { V: ClozrView }) {
         <div style={{display: "flex", flexDirection: "column", gap: "16px", minWidth: "0"}}>
           {(V.showAi && V.aiAlerts.length) ? (
             <>
-            <div style={{background: "var(--ink-hero, #141419)", color: "var(--on-dark, #fff)", borderRadius: "12px", padding: "16px", position: "relative", overflow: "hidden"}}>
-              <div style={{position: "absolute", inset: "0", pointerEvents: "none", background: "radial-gradient(120% 90% at 90% -10%, rgba(10, 133, 96,0.34), transparent 58%)"}}></div>
-              <div style={{position: "relative"}}>
-                <div style={{display: "flex", alignItems: "center", justifyContent: "space-between"}}>
-                  <span style={{fontSize: "10.5px", letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,.6)", fontWeight: "600"}}>
-                    CLOZR AI · alerts
-                  </span>
-                  <span style={{width: "7px", height: "7px", borderRadius: "999px", background: "#0A8560", animation: "clozrPulse 2.4s infinite"}}></span>
-                </div>
-                {(V.aiAlerts || []).map((a, a__i) => (
-                  <React.Fragment key={a__i}>
-                  <div style={{marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(255,255,255,.1)"}}>
-                    <div style={{fontSize: "13px", lineHeight: "1.45", color: "rgba(255,255,255,.92)"}}>
-                      {a.text}
-                    </div>
-                    <div style={{display: "flex", gap: "6px", marginTop: "8px"}}>
-                      <button className="dc3" onClick={a.go} style={{height: "26px", padding: "0 10px", borderRadius: "7px", border: "0", background: "#0A8560", color: "#fff", fontSize: "12px", fontWeight: "600", cursor: "pointer"}}>
-                        {a.cta}
-                      </button>
-                      <button className="dc8" onClick={a.dismiss} style={{height: "26px", padding: "0 10px", borderRadius: "7px", border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: "rgba(255,255,255,.75)", fontSize: "12px", cursor: "pointer"}}>
-                        Dismiss
-                      </button>
-                    </div>
-                  </div>
-                  </React.Fragment>
-                ))}
+            <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", overflow: "hidden"}}>
+              <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)"}}>
+                <span className="t-title">
+                  CLOZR AI alerts
+                </span>
+                <span style={{fontSize: "12px", color: "var(--meta, #71717a)", fontVariantNumeric: "tabular-nums"}}>
+                  {V.aiAlerts.length} new
+                </span>
               </div>
+              {(V.aiAlerts || []).map((a, a__i) => (
+                <React.Fragment key={a__i}>
+                <div style={{padding: "12px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)"}}>
+                  <div style={{fontSize: "13px", lineHeight: "1.45", color: "var(--ink-2, #27272a)"}}>
+                    {a.text}
+                  </div>
+                  <div style={{display: "flex", gap: "6px", marginTop: "8px"}}>
+                    <Button kind="solid" size={28} onClick={a.go}>{a.cta}</Button>
+                    <Button size={28} onClick={a.dismiss}>Dismiss</Button>
+                  </div>
+                </div>
+                </React.Fragment>
+              ))}
             </div>
             </>
           ) : null}
           <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", overflow: "hidden"}}>
             <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)"}}>
-              <span style={{fontWeight: "600", fontSize: "14px"}}>
+              <span className="t-title">
                 At-risk deals
               </span>
               <button onClick={V.goDeals} style={{display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "12px", color: "var(--tx-mint, #0a8560)", background: "none", border: "0", cursor: "pointer", fontWeight: "500"}}>
@@ -296,10 +265,10 @@ export function Home({ V }: { V: ClozrView }) {
                     {r.reason}
                   </span>
                 </span>
-                <span style={{display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "10.5px", fontWeight: "700", letterSpacing: ".1em", textTransform: "uppercase", color: r.color}}>
-                  <Mark label={r.stage} />
+                <Badge style={{flex: "none"}}>
+                  <span style={{display: "inline-flex", color: r.color}}><Mark label={r.stage} size={12} /></span>
                   {r.stage}
-                </span>
+                </Badge>
               </button>
               </React.Fragment>
             ))}
@@ -307,7 +276,7 @@ export function Home({ V }: { V: ClozrView }) {
           </div>
           <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", overflow: "hidden"}}>
             <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)"}}>
-              <span style={{fontWeight: "600", fontSize: "14px"}}>
+              <span className="t-title">
                 Recent contracts
               </span>
               <span style={{fontSize: "12px", color: "var(--meta, #71717a)"}}>
@@ -335,13 +304,13 @@ export function Home({ V }: { V: ClozrView }) {
           </div>
           {V.teamFeed.length ? (
           <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", overflow: "hidden"}}>
-            <div style={{padding: "12px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", fontWeight: "600", fontSize: "14px"}}>
+            <div className="t-title" style={{padding: "12px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)"}}>
               Team activity
             </div>
             {(V.teamFeed || []).map((f, f__i) => (
               <React.Fragment key={f__i}>
               <div style={{display: "grid", gridTemplateColumns: "26px minmax(0,1fr) auto", gap: "10px", alignItems: "start", padding: "9px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)"}}>
-                <span style={{width: "26px", height: "26px", borderRadius: "7px", background: "var(--mint-dim, #e7f8f1)", color: "var(--tx-mint, #0a8560)", display: "grid", placeItems: "center", fontSize: "10px", fontWeight: "700"}}>
+                <span style={{width: "26px", height: "26px", borderRadius: "7px", background: "var(--mint-dim, #e7f8f1)", color: "var(--tx-mint, #0a8560)", display: "grid", placeItems: "center", fontSize: "10.5px", fontWeight: "700"}}>
                   {f.initials}
                 </span>
                 <span style={{fontSize: "12.5px", color: "var(--ink-2, #27272a)", lineHeight: "1.4"}}>
@@ -350,7 +319,7 @@ export function Home({ V }: { V: ClozrView }) {
                   </b>
                   {f.text}
                 </span>
-                <span style={{fontSize: "11px", color: "var(--subtle, #a1a1aa)", whiteSpace: "nowrap"}}>
+                <span style={{fontSize: "11.5px", color: "var(--meta, #71717a)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums"}}>
                   {f.time}
                 </span>
               </div>
@@ -359,6 +328,7 @@ export function Home({ V }: { V: ClozrView }) {
           </div>
           ) : null}
         </div>
+      </div>
       </div>
     </section>
   );

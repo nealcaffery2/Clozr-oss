@@ -14,7 +14,7 @@
  */
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { type Any, type Company, applySent, emailSigners, ensureTcCc, logContractFeed, logEvent, signUrl, signingSender } from './docs.ts';
-import { needsApproval, pendingApprovals, sendTo } from './signing-order.ts';
+import { needsApproval, pendingApprovals, recipientType, sendTo } from './signing-order.ts';
 import { codeText, delegatedRole, insertAt, normalizeDelivery, phoneE164, signingText, wantsEmail, wantsSms } from './docs-people.ts';
 import { sendResend, transactionalFrom } from './resend.ts';
 import { signingResendEnv } from './workspace-email.ts';
@@ -65,14 +65,15 @@ export type TextResult = { ok: true; communication_id?: number | null; carrier_f
 /**
  * One text to one recipient, as the sender. Blacklisted records and numbers
  * Talkr has suppressed (they replied STOP) are never texted; quiet hours are
- * Talkr's to enforce and come back as a reason. A blacklist read that fails
+ * Talkr's to enforce and come back as a reason, as does a line at its daily
+ * text cap or 10DLC gate ("line held by Talkr: ..."). A blacklist read that fails
  * comes back as BLACKLIST_UNREAD (lib/blacklist): nothing went out, and the
  * caller holds the text and tries again rather than counting it as a no.
  */
 export async function textRecipient(
   admin: SupabaseClient, row: Record<string, Any>, to: { phone?: string | null; seller_id?: number | null; buyer_id?: number | null; vendor_id?: number | null },
   body: string, senderId: string | null | undefined,
-  /** Who else calls this: the AI agent sends from the sender's own default line (fromPhoneNumberId null, contractsLine false). */
+  /** Who else calls this: the AI agent sends on a line picked like a plan text (ai-agent aiTextLine), contractsLine false. */
   opts: { fromPhoneNumberId?: string | null; contractsLine?: boolean } = {},
 ): Promise<TextResult> {
   const phone = phoneE164(to.phone);
@@ -124,6 +125,7 @@ export async function textRecipient(
     const code = String(res.body?.error ?? '');
     if (code === 'suppressed') return { ok: false, reason: 'number opted out of texts' };
     if (code === 'quiet_hours') return { ok: false, reason: 'quiet hours' };
+    if (code === 'number_protected') return { ok: false, reason: `line held by Talkr: ${res.body?.message || code}` };
     return { ok: false, reason: `Talkr refused: ${code || res.status}` };
   }
   const msg = res.body?.message ?? {};
@@ -354,7 +356,7 @@ const OPEN = ['draft', 'awaiting_approval', 'sent', 'viewed'];
  */
 export async function addRecipient(admin: SupabaseClient, row: Record<string, Any>, r: NewRecipient, ctx: FlowCtx) {
   if (!OPEN.includes(row.status)) throw new Error(`This document is ${row.status}; recipients can no longer change.`);
-  const type = ['signer', 'cc', 'viewer', 'approver'].includes(String(r.recipient_type)) ? String(r.recipient_type) : 'signer';
+  const type = recipientType(r.recipient_type);
   const email = (r.email ?? '').trim().toLowerCase() || null;
   const phone = (r.phone ?? '').trim() || null;
   const delivery = normalizeDelivery(r.delivery);
@@ -364,7 +366,7 @@ export async function addRecipient(admin: SupabaseClient, row: Record<string, An
   const place = insertAt(all.filter((s) => s.status !== 'delegated'), r.position);
   for (const s of place.shift) await admin.from('contract_signers').update({ sort: s.sort }).eq('id', s.id);
   const n = all.filter((s) => String(s.role).startsWith('added')).length + 1;
-  const label = (r.label ?? '').trim() || (type === 'cc' ? 'CC' : type === 'viewer' ? 'Viewer' : type === 'approver' ? 'Approver' : 'Signer');
+  const label = (r.label ?? '').trim() || (type === 'cc' ? 'CC' : type === 'viewer' ? 'Viewer' : type === 'approver' ? 'Approver' : type === 'filler' ? 'Filler' : 'Signer');
   const { data: fresh, error } = await admin.from('contract_signers').insert({
     workspace_id: row.workspace_id, contract_id: row.id, role: `added${n}`, label, sort: place.sort,
     recipient_type: type, name: (r.name ?? '').trim() || null, email, phone, delivery,

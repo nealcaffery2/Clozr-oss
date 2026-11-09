@@ -7,7 +7,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { BackLink } from '@/components/ds/BackLink';
+import { ScreenFrame, ScreenHeader } from '@/components/ds/Screen';
 import type { ClozrView } from '@/app/clozr/view';
 import { dbId } from '@/lib/crm';
 import { ReadOnlyNote } from '@/components/ViewAs';
@@ -25,10 +25,14 @@ import { DealFiles } from '@/components/DealFiles';
 import { PropertyRecords } from '@/components/PropertyRecords';
 import { PriceAmendments } from '@/components/PriceAmendments';
 import { AiButton } from '@/components/AiButton';
-import { DEAL_TYPES, dispoAssignment, parseDealType } from '@/lib/deal-types';
+import { CLOSING_STRUCTURES, DEAL_TYPES, dispoAssignment, parseDealType, teamSeatsFor } from '@/lib/deal-types';
 import { canSeeBuyers } from '@/lib/team';
 import { DEMO_DEAL } from '@/lib/deal-sheet-demo';
+import { loadComprOutcomes, sendComprOutcome, type ComprOutcomeStatus } from '@/lib/compr';
+import { isOutcomeStage } from '@/supabase/functions/_shared/compr-outcome';
 import { underContractBlanks } from '@/lib/section-gaps';
+import { DealSmartSummary } from '@/app/components/record/DealSmartSummary';
+import { demoDealMemory } from '@/lib/deal-memory';
 
 // The sample-data page has no workspace, so /demo alone shows one deal from memory.
 const onDemoRoute = () => typeof window !== 'undefined' && window.location.pathname.startsWith('/demo');
@@ -48,11 +52,11 @@ const sub: React.CSSProperties = { margin: '0 0 12px', fontSize: '12px', color: 
 type Team = 'deal' | 'acq' | 'dispo' | 'tc' | 'money' | 'dead';
 const TEAM: Record<Team, { name: string; ink: string; tint: string; line: string }> = {
   deal: { name: 'Deal', ink: 'var(--ink-3, #3f3f46)', tint: 'var(--surface-2, #f4f4f5)', line: 'var(--divider, #e4e4e7)' },
-  acq: { name: 'Acquisitions', ink: '#1d4ed8', tint: '#eff4ff', line: '#b4c8f5' },
-  dispo: { name: 'Dispositions', ink: '#6d28d9', tint: '#f5f3ff', line: '#d4c6f7' },
-  tc: { name: 'Transaction coordination', ink: '#0A8560', tint: 'var(--mint-dim, #e7f8f1)', line: '#9fdcc4' },
-  money: { name: 'Money', ink: '#334155', tint: '#f1f5f9', line: '#cbd5e1' },
-  dead: { name: 'If it fell through', ink: '#b91c1c', tint: 'var(--tint-red, #fef2f2)', line: '#f5c2c2' },
+  acq: { name: 'Acquisitions', ink: 'var(--tx-blue, #1d4ed8)', tint: 'var(--tint-blue, #eff4ff)', line: '#b4c8f5' },
+  dispo: { name: 'Dispositions', ink: 'var(--tx-violet, #6d28d9)', tint: 'var(--tint-violet, #f5f3ff)', line: '#d4c6f7' },
+  tc: { name: 'Transaction coordination', ink: 'var(--tx-mint, #0a8560)', tint: 'var(--mint-dim, #e7f8f1)', line: '#9fdcc4' },
+  money: { name: 'Money', ink: 'var(--ink-3, #334155)', tint: 'var(--surface-2, #f1f5f9)', line: '#cbd5e1' },
+  dead: { name: 'If it fell through', ink: 'var(--tx-red, #b91c1c)', tint: 'var(--tint-red, #fef2f2)', line: '#f5c2c2' },
 };
 const SECTIONS: Array<{ id: string; title: string; team: Team }> = [
   { id: 'ds-type', title: 'Deal type', team: 'deal' },
@@ -87,7 +91,7 @@ function jump(id: string) {
 /** Sticky row of the sections, coloured by team; a click scrolls there. */
 function JumpBar() {
   return (
-    <nav aria-label="Deal sheet sections" style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', gap: '6px', flexWrap: 'wrap', padding: '8px 0', marginBottom: '8px', background: 'var(--c-page, #fafafa)' }}>
+    <nav aria-label="Deal sheet sections" style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', gap: '6px', flexWrap: 'wrap', padding: '8px 0', marginBottom: '8px', background: 'var(--canvas, #fafafa)' }}>
       {SECTIONS.map((x) => {
         const t = TEAM[x.team];
         return (
@@ -166,8 +170,13 @@ export function DealSheet({ V }: { V: ClozrView }) {
   const cur = state && state.key === key ? state : demo && V.isLiveData === false ? { key, deal: DEMO_DEAL, pickers: { team: [], vendors: [], buyers: [], sources: [] } as Pickers, err: null } : null;
   const deal = cur?.deal ?? null;
   const [note, setNote] = useState<string | null>(null);
+  const savedTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (savedTimer.current) window.clearTimeout(savedTimer.current); }, []);
   const [orderReq, setOrderReq] = useState(0);
   const [teamRev, setTeamRev] = useState(0);
+  const [sending, setSending] = useState(false);
+  // What has gone to Compr for this deal: moving it to Closed or Terminated sends on its own (migration 143).
+  const [outcomes, setOutcomes] = useState<{ id: number; rows: ComprOutcomeStatus[] } | null>(null);
   const dealDbId = deal?.id ?? null;
   // COMPR writes ARV and the offer onto the deal from its own tab. Coming back
   // to this window reads the deal again, at most once every 30 s, so the new
@@ -192,6 +201,27 @@ export function DealSheet({ V }: { V: ClozrView }) {
       document.removeEventListener('visibilitychange', again);
     };
   }, [dealDbId, workspaceId, key]);
+  const finished = !!deal && isOutcomeStage(deal.stage);
+  useEffect(() => {
+    if (dealDbId == null || !finished || !workspaceId) return;
+    let on = true;
+    void loadComprOutcomes(dealDbId).then((rows) => { if (on) setOutcomes({ id: dealDbId, rows }); });
+    return () => { on = false; };
+  }, [dealDbId, finished, workspaceId]);
+  const sentRows = outcomes && outcomes.id === dealDbId ? outcomes.rows : [];
+  const lastFailed = sentRows.find((r) => r.status === 'failed');
+  const anySent = sentRows.some((r) => r.status === 'sent');
+
+  // A finished deal's actuals back to Compr, so its ARV, rehab and offer calibration learns from it.
+  async function sendOutcome() {
+    if (!deal || !workspaceId) return;
+    setSending(true);
+    const r = await sendComprOutcome(workspaceId, deal.id);
+    setSending(false);
+    setNote(r.ok ? 'Sent to Compr' : r.message);
+    const rows = await loadComprOutcomes(deal.id);
+    setOutcomes({ id: deal.id, rows });
+  }
 
   // Whether the contract price was amended (the drop is then already in it): read once per deal.
   const [amended, setAmended] = useState<{ id: number; yes: boolean } | null>(null);
@@ -240,7 +270,8 @@ export function DealSheet({ V }: { V: ClozrView }) {
       void logActivity(workspaceId, 'deal', deal.id, 'tc', 'Friday close kept', fridayOverrideNote(patch.close_date, override, 'deal sheet'), s.user?.id ?? null).catch(() => {});
     }
     setNote('Saved');
-    setTimeout(() => setNote(null), 1200);
+    if (savedTimer.current) window.clearTimeout(savedTimer.current);
+    savedTimer.current = window.setTimeout(() => { savedTimer.current = null; setNote(null); }, 1200);
     // A field that only lives on the deal re-reads this deal and its seller
     // (five reads); one that also writes the TC file, the checklist or the
     // stage re-reads the workspace.
@@ -269,25 +300,20 @@ export function DealSheet({ V }: { V: ClozrView }) {
 
   if (V.isLiveData === false && !demo) {
     return (
-      <section data-screen-label="Deal sheet" style={{ flex: 1, minWidth: 0, padding: '20px' }}>
+      <ScreenFrame data-screen-label="Deal sheet" header={<ScreenHeader back={V.backFor('deals')} title="Deal sheet" actions={<AiButton kind="lane" onClick={() => V.openLane(V.dealSheetFor.personId)} />} />}>
         <div style={card}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><h2 style={{ ...h2, flex: 1 }}>Deal sheet</h2><AiButton kind="lane" onClick={() => V.openLane(V.dealSheetFor.personId)} /></div>
-          <p style={sub}>The full Podio-style deal record — acquisition, dispo, TC, COGS and profit. It edits a real deal, so it is not part of the sample-data demo. Sign in to use it.</p>
+          <p style={{ ...sub, margin: 0 }}>The full Podio-style deal record — acquisition, dispo, TC, COGS and profit. It edits a real deal, so it is not part of the sample-data demo. Sign in to use it.</p>
         </div>
-      </section>
+      </ScreenFrame>
     );
   }
 
   return (
-    <section data-screen-label="Deal sheet" style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: V.isMobile ? '14px' : '18px 22px', background: 'var(--canvas, #fafafa)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: 'var(--meta, #71717a)', marginBottom: '12px', flexWrap: 'wrap' }}>
-        <BackLink to={V.backFor('deals')} />
-        <span aria-hidden>/</span>
-        {V.dealSheetFor.personId
-          ? <button className="dc12" onClick={V.openThisPerson} style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'var(--meta, #71717a)', fontSize: '12.5px' }}>{V.dealSheetFor.name}</button>
-          : <span style={{ color: 'var(--meta, #71717a)' }}>{V.dealSheetFor.name}</span>}
-        <span>/</span>
-        <span style={{ color: 'var(--ink, #18181b)', fontWeight: 600 }}>Deal sheet · {V.dealSheetFor.addr}</span>
+    <ScreenFrame data-screen-label="Deal sheet" header={<ScreenHeader back={V.backFor('deals')} title={V.dealSheetFor.addr || 'Deal sheet'} titleTitle={`Deal sheet · ${V.dealSheetFor.addr}`}
+      meta={<>Deal sheet · {V.dealSheetFor.personId
+          ? <button className="dc12" onClick={V.openThisPerson} title="Open the seller" style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'var(--tx-mint, #0a8560)', font: 'inherit' }}>{V.dealSheetFor.name}</button>
+          : <span>{V.dealSheetFor.name}</span>}</>}
+      after={<>
         {deal && V.dealStageOfDb(deal.id) != null ? (
           // The deal's stage, movable here: the same save as dragging its card on the board.
           <select aria-label="Deal stage" data-testid="dealsheet-stage" title="Move this deal to another stage"
@@ -304,12 +330,26 @@ export function DealSheet({ V }: { V: ClozrView }) {
             Seller · {v.company && v.company !== v.name ? `${v.name} · ${v.company}` : v.name}
           </button>
         ))}
-        <span style={{ flex: 1 }} />
-        {note ? <span style={{ fontSize: '12px', color: note === 'Saved' ? '#0A8560' : '#b91c1c', fontWeight: 600 }}>{note}</span> : null}
+      </>}
+      actions={<>
+        {note ? <span style={{ fontSize: '12px', color: note === 'Saved' || note === 'Sent to Compr' ? '#0A8560' : '#b91c1c', fontWeight: 600 }}>{note}</span> : null}
+        {deal && workspaceId && finished && sentRows.length && !note ? (
+          <span data-testid="dealsheet-compr-status" title={lastFailed?.error ?? undefined} style={{ fontSize: '12px', fontWeight: 600, color: lastFailed ? 'var(--tx-red, #b91c1c)' : '#0A8560' }}>
+            {lastFailed ? `Compr: not sent${lastFailed.error ? ` (${lastFailed.error})` : ''}` : `Sent to Compr ${new Date(sentRows[0]!.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+          </span>
+        ) : null}
+        {deal && workspaceId && finished ? (
+          <button type="button" data-testid="dealsheet-compr-outcome" disabled={sending} onClick={() => void sendOutcome()}
+            title="Send what this deal really did to Compr so its ARV, rehab and offer calibration learns from it. It goes on its own when the deal moves to Closed or Terminated; this sends it again."
+            style={{ height: '28px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px', fontWeight: 600, color: 'var(--muted, #52525b)', cursor: sending ? 'wait' : 'pointer' }}>
+            {sending ? 'Sending…' : lastFailed ? 'Retry sending to Compr' : anySent ? 'Resend outcome to Compr' : 'Send outcome to Compr'}
+          </button>
+        ) : null}
         {deal && workspaceId ? (
           <button type="button" data-testid="header-order-photos" onClick={() => setOrderReq((n) => n + 1)}
             title="Order iVueit photos of this house. A local Vuer shoots it and the photos land under Files & photos."
-            style={{ height: '28px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px', fontWeight: 600, color: 'var(--ink, #18181b)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            style={{ height: '28px', padding: '0 11px', borderRadius: '8px', border: '1px solid #0A8560', background: '#0A8560', fontSize: '12px', fontWeight: 600, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" /><circle cx="12" cy="13" r="3" /></svg>
             Order photos
           </button>
         ) : null}
@@ -321,10 +361,15 @@ export function DealSheet({ V }: { V: ClozrView }) {
           </button>
         ) : null}
         <AiButton kind="lane" onClick={() => V.openLane(V.dealSheetFor.personId)} />
-      </div>
+      </>} />}>
 
       <ReadOnlyNote />
       {!cur ? <div style={card}><p style={sub}>Loading the deal…</p></div> : null}
+      {deal ? (
+        // The deal's Smart Summary at the top: conflicts across the contracts, the sheet and the mail first.
+        <DealSmartSummary key={deal.id} workspaceId={demoSheet ? null : workspaceId} dealId={demoSheet ? null : deal.id}
+          demo={demoSheet ? demoDealMemory({ dealId: deal.id, address: V.dealSheetFor.addr, closeDate: deal.close_date }) : null} />
+      ) : null}
       {cur && !deal ? (
         <div style={card}>
           <p style={{ ...sub, color: cur.err ? 'var(--tx-red, #b91c1c)' : 'var(--meta, #71717a)' }}>{cur.err ?? 'No deal on this seller yet.'}</p>
@@ -339,7 +384,7 @@ export function DealSheet({ V }: { V: ClozrView }) {
           if (missing) V.showToast(`Deal saved · ${missing} detail${missing === 1 ? '' : 's'} still blank, your reminders will ask`);
         }} />
       ) : null}
-      {deal ? <DealTeam dealId={deal.id} onCall={V.callParty} onOpenSeller={(id) => V.openPerson('s' + id)} onOpenBuyer={(id) => V.openBuyerRecord('b' + id)} onOpenVendor={V.openVendorContact} onChanged={() => void refreshDeal()} /> : null}
+      {deal ? <DealTeam dealId={deal.id} onCall={V.callParty} onOpenSeller={(id) => V.openPerson('s' + id)} onOpenBuyer={(id) => V.openBuyerRecord('b' + id)} onOpenVendor={V.openVendorContact} onChanged={() => void refreshDeal()} seats={teamSeatsFor(deal.transaction_type, deal.closing_structure)} /> : null}
       {deal && fee ? <Sections key={teamRev} deal={deal} pickers={cur!.pickers} grid={grid} save={save} readOnly={readOnly} seeBuyers={seeBuyers} onOpenSeller={V.dealSheetFor.personId ? V.openThisPerson : undefined} buyerOpts={sheetBuyerOptions(V.sheetBuyers, deal.buyer_id)} fee={fee} /> : null}
       {deal && workspaceId ? (
         <div style={sec('deal')}>
@@ -377,7 +422,7 @@ export function DealSheet({ V }: { V: ClozrView }) {
           canWrite onToast={V.showToast} onChanged={V.reloadCrm}
         />
       ) : null}
-    </section>
+    </ScreenFrame>
   );
 }
 
@@ -446,6 +491,28 @@ function DealTypeBanner({ value, onPick, disabled }: { value: string | null; onP
   );
 }
 
+/** How the deal closes (migration 406). A second click on the picked one clears it. */
+function ClosingStructurePick({ value, onPick, disabled }: { value: string | null | undefined; onPick: (key: string | null) => void; disabled?: boolean }) {
+  const cur = CLOSING_STRUCTURES.find((c) => c.key === value);
+  return (
+    <div data-testid="dealsheet-closing-structure" style={{ marginTop: '14px' }}>
+      <span style={label}>Closing structure</span>
+      <div role="group" aria-label="Closing structure" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+        {CLOSING_STRUCTURES.map((c) => {
+          const on = c.key === value;
+          return (
+            <button key={c.key} type="button" aria-pressed={on} disabled={disabled} onClick={() => onPick(on ? null : c.key)}
+              style={{ height: '32px', padding: '0 12px', borderRadius: '999px', border: on ? '1px solid var(--ink-3, #3f3f46)' : '1px solid var(--divider, #e4e4e7)', background: on ? 'var(--surface-2, #f4f4f5)' : 'var(--surface, #fff)', color: 'var(--ink-2, #27272a)', fontWeight: on ? 700 : 600, fontSize: '12.5px', cursor: disabled ? 'default' : 'pointer' }}>
+              {c.label}
+            </button>
+          );
+        })}
+      </div>
+      {cur ? <div style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', marginTop: '6px', lineHeight: 1.4 }}>{cur.hint}</div> : null}
+    </div>
+  );
+}
+
 function Total({ l, v, strong }: { l: string; v: number; strong?: boolean }) {
   return (
     <div style={{ padding: '10px 12px', borderRadius: '10px', background: strong ? 'var(--positive-soft, #dcfce7)' : 'var(--canvas, #fafafa)', border: `1px solid ${strong ? 'var(--tint-green-3, #bbf7d0)' : 'var(--divider-2, #f0f0f1)'}` }}>
@@ -503,6 +570,8 @@ function Sections({ deal, pickers, grid, save, readOnly, seeBuyers, onOpenSeller
   const onTeam = 'Set on the deal team above';
   const g: React.CSSProperties = { display: 'grid', gridTemplateColumns: grid, gap: '10px 12px' };
   const yesNo: InlineOption[] = [{ value: 'no', label: 'No' }, { value: 'yes', label: 'Yes' }];
+  const novation = parseDealType(deal.transaction_type)?.key === 'novation';
+  const liquid = deal.closing_structure === 'liquid_double_close';
 
   return (
     <>
@@ -511,6 +580,7 @@ function Sections({ deal, pickers, grid, save, readOnly, seeBuyers, onOpenSeller
         <SectionHead title="Deal type" team="deal" />
         <p style={sub}>Assignment, JV, double close, or novation. Novation with no dispo yet is dealt by the dispositions round robin. Assignment and double close keep whoever is selling it. Novation uses the novation TC checklist. The other three use the assignment checklist. Property #, lead source and contract status fill in from the deal — they are not typed here again.</p>
         <DealTypeBanner value={deal.transaction_type} disabled={!!readOnly} onPick={(label) => void save({ transaction_type: label })} />
+        <ClosingStructurePick value={deal.closing_structure} disabled={!!readOnly} onPick={(k) => void save({ closing_structure: k as Sheet['closing_structure'] })} />
         <div style={{ ...g, marginTop: '12px' }}>
           <Info l="Property #" testId="dealsheet-tracker-no" v={deal.tracker_no != null ? `Property ${deal.tracker_no}` : 'Assigned when the deal hits the board'} />
           <Info l="Lead source" testId="dealsheet-lead-source" v={deal.lead_source || 'From the seller\'s source'} />
@@ -580,6 +650,20 @@ function Sections({ deal, pickers, grid, save, readOnly, seeBuyers, onOpenSeller
             </div>
           </div>
         </div>
+        {novation ? (
+          // The agents on a novation are paid a percent of the sold price, out of our wholesale fee (and counted in COGS).
+          <div data-testid="dealsheet-novation-agents" style={{ ...g, marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
+            <F f={f} k="lac_pct" l="Listing agent %" type="number" ph="0" zero />
+            <F f={f} k="bac_pct" l="Buyer's agent %" type="number" ph="0" zero />
+            <Total l="Listing agent commission" v={deal.listing_agent_commission} />
+            <Total l="Buyer's agent commission" v={deal.buyers_agent_commission} />
+            <div>
+              {/* From the assignment fee and the sold (else marketed) price, so an unsold deal shows a projection, not a negative contract price. Sold, this matches the database's commissions. */}
+              <Total l={fee.projected ? 'Fee after agents (projected)' : 'Fee after agents'} v={(fee.fee ?? 0) - ((fee.buyer ?? 0) * (Number(deal.lac_pct) + Number(deal.bac_pct))) / 100} strong={!fee.projected} />
+              <div style={{ fontSize: '11px', color: 'var(--meta, #71717a)', marginTop: '4px', lineHeight: 1.4 }}>Percents are of the sold price (the marketed price until it sells). Both come out of the fee and count in Admin / COGS.</div>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div style={sec('tc')} id="ds-tc">
@@ -610,10 +694,16 @@ function Sections({ deal, pickers, grid, save, readOnly, seeBuyers, onOpenSeller
           <F f={f} k="cogs_earnest_lost" l="Earnest money lost" type="money" zero />
           <F f={f} k="cogs_notary" l="Notary fees" type="money" zero />
           <F f={f} k="cogs_title_fees" l="Title fees" type="money" zero />
-          <F f={f} k="cogs_transactional" l="Transactional funding" type="money" zero />
+          <F f={f} k="cogs_transactional" l={liquid ? 'Transactional funding fee' : 'Transactional funding'} type="money" zero
+            note={liquid && !Number(deal.cogs_transactional) ? <span data-testid="dealsheet-funding-fee" style={{ fontSize: '11.5px', color: 'var(--tx-amber-deep, #92400e)', fontWeight: 600, marginTop: '4px', lineHeight: 1.4 }}>Liquid double close: add the funder&rsquo;s fee.</span> : undefined} />
           <F f={f} k="cogs_realtor" l="Realtor commissions" type="money" zero />
-          <F f={f} k="lac_pct" l="LAC %" type="number" ph="0" zero />
-          <F f={f} k="bac_pct" l="BAC %" type="number" ph="0" zero />
+          {novation ? null : (
+            // A novation sets these in Disposition, next to the fee they come out of.
+            <>
+              <F f={f} k="lac_pct" l="LAC %" type="number" ph="0" zero />
+              <F f={f} k="bac_pct" l="BAC %" type="number" ph="0" zero />
+            </>
+          )}
           <Total l="Listing agent commission" v={deal.listing_agent_commission} />
           <Total l="Buyer's agent commission" v={deal.buyers_agent_commission} />
           <F f={f} k="cogs_flat_fee" l="Flat fee cost" type="money" zero />

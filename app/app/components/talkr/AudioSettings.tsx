@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactN
 import {
   NOTIFY_EVENTS,
   RINGTONES,
+  audioLinkProblem,
   TONES,
   micConstraints,
   outputSelectionSupported,
@@ -257,68 +258,6 @@ function CardHead({ icon, title, right }: { icon: 'mic' | 'phone' | 'msg' | 'voi
 type RingSlot = 'incoming' | 'outgoing';
 
 /**
- * Dial-out ringback: its own tone, or wait music, or neither.
- *
- * "Same as incoming" is the default and is what this did before the choice
- * existed, so an upgrade changes nothing for anyone. Picking a tone here
- * overrides an incoming custom file too — a dial-out choice that lost to the
- * incoming MP3 would look broken.
- */
-function OutboundRingback() {
-  const p = useAudioPrefs();
-  const custom = p.outgoingCustomRingtoneUrl;
-  const same = !custom && !p.outgoingRingtone;
-  return (
-    <div className="flex flex-col">
-      <label className="flex cursor-pointer items-center gap-2.5 py-2" style={{ borderTop: '1px solid var(--line-soft)' }}>
-        <input
-          type="radio"
-          name="outgoing-ringtone"
-          checked={same}
-          onChange={() => setAudioPrefs({ outgoingRingtone: null, outgoingCustomRingtoneUrl: null })}
-          style={{ accentColor: 'var(--accent)' }}
-        />
-        <span className="mr-auto" style={{ font: `${same ? 600 : 500} 12.5px/1 var(--sans)` }}>Same as incoming</span>
-        <Button tone="quiet" onClick={() => previewActiveRingtone(p, true)} style={{ padding: '6px 9px', font: '600 11px/1 var(--sans)' }}>
-          <Icon name="play" size={11} />
-          Preview
-        </Button>
-      </label>
-      {(Object.keys(RINGTONES) as RingtoneId[]).map((id) => {
-        const on = !custom && p.outgoingRingtone === id;
-        return (
-          <label key={id} className="flex cursor-pointer items-center gap-2.5 py-2" style={{ borderTop: '1px solid var(--line-soft)' }}>
-            <input
-              type="radio"
-              name="outgoing-ringtone"
-              checked={on}
-              onChange={() => setAudioPrefs({ outgoingRingtone: id, outgoingCustomRingtoneUrl: null })}
-              style={{ accentColor: 'var(--accent)' }}
-            />
-            <span className="mr-auto" style={{ font: `${on ? 600 : 500} 12.5px/1 var(--sans)` }}>{RINGTONES[id].label}</span>
-            <Button tone="quiet" onClick={() => previewRingtone(id, p)} style={{ padding: '6px 9px', font: '600 11px/1 var(--sans)' }}>
-              <Icon name="play" size={11} />
-              Preview
-            </Button>
-          </label>
-        );
-      })}
-      <div className="flex flex-col gap-2 py-2.5" style={{ borderTop: '1px solid var(--line-soft)' }}>
-        <label className="flex cursor-pointer items-center gap-2.5">
-          <input type="radio" name="outgoing-ringtone" checked={!!custom} readOnly style={{ accentColor: 'var(--accent)' }} />
-          <span className="mr-auto" style={{ font: `${custom ? 600 : 500} 12.5px/1 var(--sans)` }}>Your MP3</span>
-          <Button tone="quiet" disabled={!custom} onClick={() => previewActiveRingtone(p, true)} style={{ padding: '6px 9px', font: '600 11px/1 var(--sans)' }}>
-            <Icon name="play" size={11} />
-            Preview
-          </Button>
-        </label>
-        <CustomRingtoneFields target="outgoing" />
-      </div>
-    </div>
-  );
-}
-
-/**
  * The URL box and upload button for one custom sound. `target` says which:
  * the incoming ringtone, or the dial-out wait music.
  */
@@ -340,7 +279,7 @@ function CustomRingtoneFields({ target = 'incoming' }: { target?: RingSlot }) {
     setUrlDraft(current);
   }, [current]);
 
-  const applyUrl = () => {
+  const applyUrl = async () => {
     setError(null);
     const url = urlDraft.trim();
     if (!url) {
@@ -348,8 +287,17 @@ function CustomRingtoneFields({ target = 'incoming' }: { target?: RingSlot }) {
       if (!isUploadedSound(current)) write(null);
       return;
     }
+    if (url === current) return;
     if (!/^https?:\/\//i.test(url) && !url.startsWith('data:audio')) {
       setError('Use an https:// link (or upload a file).');
+      return;
+    }
+    // A link that will not play must not replace a working upload.
+    setBusy(true);
+    const problem = await audioLinkProblem(url);
+    setBusy(false);
+    if (problem) {
+      setError(problem);
       return;
     }
     write(url);
@@ -378,14 +326,14 @@ function CustomRingtoneFields({ target = 'incoming' }: { target?: RingSlot }) {
           type="url"
           value={urlDraft}
           onChange={(e) => setUrlDraft(e.target.value)}
-          onBlur={applyUrl}
-          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), applyUrl())}
+          onBlur={() => void applyUrl()}
+          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), void applyUrl())}
           placeholder={target === 'outgoing' ? 'https://example.com/hold-music.mp3' : 'https://example.com/ringtone.mp3'}
           aria-label={target === 'outgoing' ? 'Custom wait music URL' : 'Custom ringtone URL'}
           className="min-w-0 flex-1 outline-none"
           style={{ ...FIELD, padding: '7px 9px' }}
         />
-        <Button tone="ghost" className="shrink-0" onClick={applyUrl}>
+        <Button tone="ghost" className="shrink-0" disabled={busy} onClick={() => void applyUrl()}>
           Use link
         </Button>
       </div>
@@ -409,7 +357,7 @@ function CustomRingtoneFields({ target = 'incoming' }: { target?: RingSlot }) {
         )}
       </div>
       {isUploadedSound(current) && (
-        <span style={HELP}>Using uploaded file in this browser (max 10 MB). HTTPS links sync better across devices.</span>
+        <span style={HELP}>Using uploaded file. It follows you to every computer or phone you sign in on.</span>
       )}
       {error && <span style={{ ...HELP, color: 'var(--red)' }}>{error}</span>}
     </div>
@@ -548,10 +496,9 @@ export function AudioSettings({ who, workspaceId = null, userId = null }: { who:
           </div>
         </div>
 
-        <Row title="Outbound waiting music" hint="The piano you hear while their phone rings is the phone company's hold music. Upload an MP3 and that plays instead until they pick up.">
+        <Row title="Outbound ringback" hint="The standard ring you hear while their phone rings, on your call speaker. Off: you hear the phone company's hold music instead.">
           <Toggle on={p.outgoingRingback} onChange={(v) => setAudioPrefs({ outgoingRingback: v })} label="Outbound ringback" />
         </Row>
-        {p.outgoingRingback && <OutboundRingback />}
 
         <Volume label="Ringtone volume" value={p.ringVolume} onChange={(v) => setAudioPrefs({ ringVolume: v })} />
         <div className="flex flex-col gap-1.5">
@@ -629,8 +576,8 @@ export function AudioSettings({ who, workspaceId = null, userId = null }: { who:
         <p style={HELP}>
           Browsers only play sound after you have clicked somewhere in CLOZR once, so the first alert after a fresh load
           may be silent. Each switch is the same one the bell uses: Mute on a row turns these off for an hour and
-          Unmute turns them back on. Desktop notifications use the same switches. Saved in this browser
-          {who ? ` for ${who}` : ''}.
+          Unmute turns them back on. Desktop notifications use the same switches. Saved
+          {who ? ` for ${who}` : ''} and follow you to every browser you sign in on.
         </p>
       </Card>
     </div>

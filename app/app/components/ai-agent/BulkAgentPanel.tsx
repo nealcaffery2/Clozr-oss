@@ -102,8 +102,7 @@ export function BulkAgentPanel({ kind = 'buyer', workspaceId, canWrite, selected
       <AiaStyles />
       <div role="dialog" aria-modal="true" aria-labelledby="aia-bulk-title" className="aia-modal"
         style={{ width: 'min(100%, 640px)', maxHeight: 'min(100%, 760px)', overflow: 'auto', background: 'var(--surface, #fff)', borderRadius: 20, boxShadow: '0 30px 80px -20px rgba(15,23,42,.45), 0 0 0 1px rgba(15,23,42,.06)', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ position: 'relative', padding: '16px 18px', background: 'linear-gradient(120deg, #1f2937 0%, #334155 55%, #08694C 140%)', color: '#fff', display: 'flex', alignItems: 'center', gap: 14 }}>
-        <div aria-hidden className="aia-glow" />
+      <div style={{ position: 'relative', padding: '16px 18px', background: '#27272a', color: '#fff', display: 'flex', alignItems: 'center', gap: 14 }}>
         <AgentAvatar name={face} src={agent?.avatar_url} size={54} ring="rgba(255,255,255,.85)" />
         <div style={{ minWidth: 0, flex: 1, position: 'relative' }}>
           <h2 id="aia-bulk-title" style={{ margin: 0, fontSize: 18, fontWeight: 750, letterSpacing: '-0.02em' }}>{face}</h2>
@@ -149,7 +148,7 @@ export function BulkAgentPanel({ kind = 'buyer', workspaceId, canWrite, selected
                 <button key={c} type="button" aria-pressed={sel} disabled={callOff && !sel} onClick={() => toggle(c)}
                   title={callOff ? 'Calls need the agent published with an ElevenLabs phone number id' : c === 'rvm' ? RVM_HELP : undefined}
                   style={{ height: 28, padding: '0 10px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, cursor: callOff ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
-                    border: `1px solid ${sel ? 'rgba(10,133,96,.35)' : 'var(--divider, #e4e4e7)'}`, background: sel ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: sel ? GREEN : callOff ? 'var(--subtle, #a1a1aa)' : 'var(--muted, #52525b)' }}>
+                    border: `1px solid ${sel ? 'rgba(10,133,96,.35)' : 'var(--divider, #e4e4e7)'}`, background: sel ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: sel ? GREEN : callOff ? 'var(--meta, #71717a)' : 'var(--muted, #52525b)' }}>
                   {ICON[c]}{CHANNEL_LABEL[c]}
                 </button>
               );
@@ -189,7 +188,7 @@ export function BulkAgentPanel({ kind = 'buyer', workspaceId, canWrite, selected
               style={{ height: 34, padding: '0 12px', borderRadius: 10, border: '1px solid var(--tint-red-2, #fecaca)', background: 'var(--surface, #fff)', color: 'var(--tx-hot, #dc2626)', fontWeight: 600, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>
               {busy === 'off' ? 'Turning off…' : 'Turn off for selected'}
             </button>
-            <span style={{ fontSize: 11.5, color: 'var(--subtle, #a1a1aa)' }}>Touches go out 9am to 8pm, at most one a day per {w.one}, and stop the moment someone replies STOP.</span>
+            <span style={{ fontSize: 11.5, color: 'var(--meta, #71717a)' }}>Touches go out 9am to 8pm, at most one a day per {w.one}, and stop the moment someone replies STOP.</span>
           </div>
         </>
       )}

@@ -31,7 +31,7 @@ export const ASSIGNABLE_ROLES: Role[] = ['admin', 'acquisitions', 'dispositions'
  * Acquisitions runs leads through contract and never sees dispo, Genius, or
  * any buyers surface (nav, lists, match UI, buyer PII on deals). Dispositions
  * see everything — including TC and notary flows — so they can work a deal
- * end to end. TC sees the closing file and the Inbox. Owner and admin see
+ * end to end. TC sees the closing file, the Inbox and the dialer. Owner and admin see
  * everything; `member` is a read-mostly baseline for anyone who does not fit.
  */
 const SCREENS: Record<Role, ReadonlySet<string> | 'all'> = {
@@ -42,22 +42,26 @@ const SCREENS: Record<Role, ReadonlySet<string> | 'all'> = {
   dispositions: 'all',
   acquisitions: new Set([
     // Today is where they land: the list they call, and the call loop.
-    'today', 'home', 'people', 'person', 'import', 'inbox', 'tasks', 'calendar', 'deals', 'dealSheet', 'reporting',
-    'talkr', 'dialer', 'plans', 'automations', 'leaderboard', 'settings', 'account', 'liveLists',
+    'today', 'home', 'people', 'person', 'vendor', 'import', 'inbox', 'tasks', 'calendar', 'deals', 'dealSheet', 'reporting',
+    'dialer', 'plans', 'automations', 'leaderboard', 'settings', 'account', 'liveLists',
     // Coaching: their own graded calls, scorecard and roleplay practice.
     'coaching',
     // Purchase agreements go out from acquisitions.
     'contracts',
     // Deal Machine is where their raw leads come from.
     'dealMachine',
-    // Buyr snipes aged Deal Machine deals; buyer records stay behind RLS.
-    'buyr',
+    // Bulk texts to the lists they work.
+    'campaigns',
   ]),
   tc: new Set([
     'home', 'inbox', 'tasks', 'calendar', 'deals', 'dealSheet', 'tc', 'reporting', 'settings', 'account', 'liveLists',
     'person',
+    // Title, lenders and the rest of a deal's team.
+    'vendor',
     // The closing file runs on the signed contracts.
     'contracts',
+    // Calls to sellers, buyers and title on the deals they close.
+    'dialer',
   ]),
   // A notary stamps documents. They do not work the pipeline or the buyer list.
   // Contracts is visible to every role: the server still decides who may send.
@@ -66,14 +70,16 @@ const SCREENS: Record<Role, ReadonlySet<string> | 'all'> = {
   // acquisitions seller lists. People stays for the Submissions and Vendors
   // rails (seesSellerLists hides the rest of it), and the record for COMPR.
   // Calls (the dialer), texts and email (Inbox, the record) to partners.
-  partnerships: new Set(['home', 'people', 'person', 'import', 'inbox', 'talkr', 'dialer', 'tasks', 'calendar', 'deals', 'dealSheet', 'settings', 'account', 'contracts']),
+  partnerships: new Set(['home', 'people', 'person', 'vendor', 'import', 'inbox', 'dialer', 'tasks', 'calendar', 'deals', 'dealSheet', 'settings', 'account', 'contracts']),
   // An SDR sells a software product (Compr) to its signups and prospects: the
   // contacts list (Buyers), their records, the dialer and texts on their own
   // Talkr lines, email and RVM, the action plans and their own numbers. No
   // sellers, deals, contracts or wholesaling tools (migration 263).
   sdr: new Set([
-    'buyers', 'buyer', 'import', 'inbox', 'talkr', 'dialer', 'tasks', 'calendar', 'plans', 'automations',
+    'buyers', 'buyer', 'import', 'inbox', 'dialer', 'tasks', 'calendar', 'plans', 'automations',
     'reporting', 'leaderboard', 'coaching', 'settings', 'account',
+    // Bulk texts to the contacts list (migration 378: buyer campaigns).
+    'campaigns',
   ]),
 };
 
@@ -83,11 +89,18 @@ const SCREENS: Record<Role, ReadonlySet<string> | 'all'> = {
  */
 export const DEMO_ROLE: Role = 'owner';
 
+/**
+ * A role this build does not know (added by a migration before the client
+ * ships its entry, or a typo written through SQL) gets the landing screen
+ * and the user's own settings, not everything.
+ */
+const UNKNOWN_ROLE_SCREENS: ReadonlySet<string> = new Set(['home', 'settings', 'account']);
+
 export function canSee(role: Role | null | undefined, screen: string): boolean {
   // No role is a membership that didn't load or doesn't exist: show nothing
   // rather than everything. The demo passes DEMO_ROLE.
   if (!role) return false;
-  const allowed = SCREENS[role] ?? 'all';
+  const allowed = Object.prototype.hasOwnProperty.call(SCREENS, role) ? SCREENS[role] : UNKNOWN_ROLE_SCREENS;
   return allowed === 'all' || allowed.has(screen);
 }
 
@@ -211,8 +224,9 @@ export async function addTeammate(
 }
 
 /**
- * Re-mail a teammate their invite with a fresh temporary password. Resets the
- * auth password so the emailed one is the one that works.
+ * Re-mail a teammate their invite. An account that has never signed in gets
+ * a fresh temporary password (reset so the emailed one works); a live account
+ * keeps its password and is told to sign in with it.
  */
 export async function resendTeammateInvite(
   workspaceId: number, email: string, fullName?: string | null,

@@ -42,7 +42,7 @@ function emit() { for (const l of listeners) l(); }
 // follows it. One with a button (Undo) stays long enough to reach for it.
 function arm() {
   if (timer) clearTimeout(timer);
-  timer = setTimeout(dismissToast, snapshot.tone === 'error' ? 6000 : snapshot.action ? 5000 : 2600);
+  timer = setTimeout(dismissToast, snapshot.tone === 'error' || snapshot.action ? 5000 : 2600);
 }
 
 export function raiseToast(msg: string, tone: ToastTone = 'info', action?: ToastAction | null) {

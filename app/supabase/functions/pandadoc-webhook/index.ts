@@ -16,7 +16,7 @@
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { guessKindFromName, pickPacket, pickPerson, recipientEmails, webhookFields, type PdWebhookDoc, type PersonHit } from '../_shared/pandadoc-match.ts';
+import { guessKindFromName, peopleInOneWorkspace, pickPacket, pickPerson, recipientEmails, webhookFields, type PdWebhookDoc, type PersonHit } from '../_shared/pandadoc-match.ts';
 
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } });
 const hex = (buf: ArrayBuffer) => Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -84,7 +84,8 @@ async function findOrCreate(admin: SupabaseClient, doc: PdWebhookDoc): Promise<R
   if (!docId) return null;
   // A blank copy made to import a template into CLOZR (pandadoc import_template): not a contract.
   if (doc.metadata?.clozr_import) return null;
-  let { data: row } = await admin.from('contracts').select('*').eq('pandadoc_id', docId).maybeSingle();
+  // Oldest row first: an earlier sync may have filed the same document twice.
+  let { data: row } = await admin.from('contracts').select('*').eq('pandadoc_id', docId).order('id').limit(1).maybeSingle();
   if (row) return row as Row;
 
   const contractId = metaNum(doc, 'clozr_contract_id');
@@ -130,7 +131,14 @@ async function findOrCreate(admin: SupabaseClient, doc: PdWebhookDoc): Promise<R
   }
 
   const emails = recipientEmails(doc);
-  const people = await peopleForEmails(admin, emails, ws);
+  const found = await peopleForEmails(admin, emails, ws);
+  // No workspace metadata: the PandaDoc key is shared, so file the document
+  // only when every matching seller/buyer is in one workspace.
+  const people = ws ? found : peopleInOneWorkspace(doc, found);
+  if (!people) {
+    console.warn('pandadoc-webhook: left unfiled, recipients match people in more than one workspace', docId, [...new Set(found.map((p) => p.workspace_id))]);
+    return null;
+  }
   const person = pickPerson(doc, people);
   if (!person) return null;
   const kind = guessKindFromName(doc.name ?? '');

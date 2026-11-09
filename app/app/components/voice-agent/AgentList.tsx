@@ -46,7 +46,7 @@ export function AgentList({ agents, stats, selected, dirtyKeys, canEdit, isMobil
             <li key={a.agent_key} style={{ flex: isMobile ? '0 0 min(82%, 270px)' : undefined, scrollSnapAlign: 'start', minWidth: 0 }}>
               <div className="va-agent" data-on={on ? '' : undefined} style={{ height: '100%', display: 'flex', flexDirection: 'column', borderRadius: 12, background: 'var(--surface, #fff)', border: `1px solid ${on ? GREEN : 'var(--edge)'}`, boxShadow: on ? `0 0 0 1px ${GREEN}, var(--elev-2)` : 'var(--elev-1)', overflow: 'hidden' }}>
                 <button type="button" className="va-btn" aria-current={on ? 'true' : undefined} aria-label={`Open ${agentTitle(a)}, ${roleLabel(a.role)}, ${STATUS_LABEL[status]}`} onClick={() => onSelect(a.agent_key)}
-                  style={{ flex: 1, textAlign: 'left', padding: '12px 14px 10px', border: 0, background: on ? '#f4fbf8' : 'transparent', cursor: 'pointer', fontFamily: 'inherit', display: 'block', width: '100%' }}>
+                  style={{ flex: 1, textAlign: 'left', padding: '12px 14px 10px', border: 0, background: on ? 'var(--c-genius-soft, #f4fbf8)' : 'transparent', cursor: 'pointer', fontFamily: 'inherit', display: 'block', width: '100%' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <AgentAvatar name={agentTitle(a)} src={a.avatar_url} size={30} live={a.enabled && a.live_version > 0} />
                     <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, color: on ? GREEN : INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agentTitle(a)}</span>

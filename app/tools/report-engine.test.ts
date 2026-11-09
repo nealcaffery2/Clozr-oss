@@ -2,7 +2,7 @@
 // edge function's copy identical to the library. Run: npx tsx tools/report-engine.test.ts
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { abbreviate, compute, evalFormula, formulaError, normalize, presetRange, rangeFor, withComparison, type EngineRaw, type Spec, type Token } from '../lib/report-engine';
+import { abbreviate, compute, evalFormula, formulaError, normalize, presetRange, rangeFor, rangeLabel, withComparison, type EngineRaw, type Spec, type Token } from '../lib/report-engine';
 
 const NOW = new Date(2026, 8, 21, 12, 0, 0); // Sep 21 2026, local
 const ago = (days: number, hours = 0) => new Date(NOW.getTime() - days * 86_400_000 - hours * 3_600_000).toISOString();
@@ -109,6 +109,45 @@ const y = presetRange('Yesterday', null, NOW);
 assert.equal(new Date(y.start).getDate(), 20);
 assert.equal(new Date(y.end).getDate(), 20);
 const cmp = withComparison(presetRange('Last 7 days', null, NOW), 'year');
+// The Monday after the clocks fall back (2026-11-01): every preset still starts at a local
+// midnight, and the hour the day gained does not move the start (run under TZ=America/Chicago too).
+const afterFallBack = new Date(2026, 10, 2, 12, 0, 0);
+for (const p of ['Yesterday', 'Last 7 days', 'Last 30 days', 'Last 90 days', 'This week', 'Last week']) {
+  const r = presetRange(p, null, afterFallBack);
+  assert.equal(new Date(r.start).getHours(), 0, p + ' starts at local midnight');
+  assert.equal(new Date(r.start).getMinutes(), 0, p + ' starts at local midnight');
+}
+assert.equal(new Date(presetRange('Last 7 days', null, afterFallBack).start).getDate(), 27);
+assert.equal(new Date(presetRange('Last week', null, afterFallBack).end).getHours(), 23, 'last week ends at the last millisecond of Sunday');
+assert.equal(new Date(presetRange('Next 7 days', null, afterFallBack).end).getDate(), 9);
+const afterSpring = new Date(2026, 2, 9, 12, 0, 0); // the Monday after 2026-03-08
+assert.equal(new Date(presetRange('Yesterday', null, afterSpring).start).getHours(), 0, 'yesterday starts at midnight after spring forward');
+assert.equal(new Date(presetRange('Yesterday', null, afterSpring).start).getDate(), 8);
+// A scheduled email counts days in the schedule's zone whatever zone the runtime is in
+// (the edge runtime is UTC): "Yesterday" at 08:00 Chicago is Chicago midnight to midnight.
+{
+  const chicago8am = new Date(Date.UTC(2026, 9, 30, 13, 0, 0)); // 2026-10-30 08:00 CDT (UTC-5)
+  const yc = presetRange('Yesterday', null, chicago8am, 'America/Chicago');
+  assert.equal(new Date(yc.start).toISOString(), '2026-10-29T05:00:00.000Z', 'yesterday starts at Chicago midnight');
+  assert.equal(new Date(yc.end).toISOString(), '2026-10-30T04:59:59.999Z', 'yesterday ends at the last millisecond before Chicago midnight');
+  assert.equal(rangeLabel(yc, 'America/Chicago'), 'Oct 29 – Oct 29, 2026');
+  assert.equal(new Date(presetRange('Today', null, chicago8am, 'America/Chicago').start).toISOString(), '2026-10-30T05:00:00.000Z');
+  assert.equal(new Date(presetRange('This week', null, chicago8am, 'America/Chicago').start).toISOString(), '2026-10-25T05:00:00.000Z', 'this week starts Sunday in Chicago');
+  assert.equal(new Date(presetRange('This month', null, chicago8am, 'America/Chicago').start).toISOString(), '2026-10-01T05:00:00.000Z');
+  // Across the fall-back (2026-11-01 02:00 CDT): Sunday is 25 hours, and Monday starts at 06:00 UTC.
+  const afterFall = new Date(Date.UTC(2026, 10, 2, 14, 0, 0)); // 2026-11-02 08:00 CST (UTC-6)
+  const lw = presetRange('Last week', null, afterFall, 'America/Chicago');
+  assert.equal(new Date(lw.start).toISOString(), '2026-10-25T05:00:00.000Z');
+  assert.equal(new Date(lw.end).toISOString(), '2026-11-01T04:59:59.999Z');
+  const ys = presetRange('Yesterday', null, afterFall, 'America/Chicago');
+  assert.equal(new Date(ys.start).toISOString(), '2026-11-01T05:00:00.000Z');
+  assert.equal(new Date(ys.end).toISOString(), '2026-11-02T05:59:59.999Z');
+  const cu = presetRange('Custom', { from: '2026-10-01', to: '2026-10-07' }, chicago8am, 'America/Chicago');
+  assert.equal(new Date(cu.start).toISOString(), '2026-10-01T05:00:00.000Z');
+  assert.equal(new Date(cu.end).toISOString(), '2026-10-08T04:59:59.999Z');
+  // An unknown zone falls back to the runtime's, as when no zone is given.
+  assert.deepEqual(presetRange('Yesterday', null, chicago8am, 'Not/AZone'), presetRange('Yesterday', null, chicago8am));
+}
 assert.equal(new Date(cmp.prevStart!).getFullYear(), 2025);
 assert.equal(withComparison({ start: 0, end: 10 }, 'none').prevStart, null);
 

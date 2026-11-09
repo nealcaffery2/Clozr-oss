@@ -129,7 +129,7 @@ export function errorMessage(e: unknown): string {
 const CHIP: CSSProperties = {
   padding: '2.5px 6px',
   borderRadius: 5,
-  font: '700 8.5px/1 var(--sans)',
+  font: '700 11px/1 var(--sans)',
   whiteSpace: 'nowrap',
 };
 
@@ -221,7 +221,7 @@ export function TemperatureBadge({
         {degrees(score)}
       </span>
       {locked && (
-        <span aria-label="Locked" title="Locked" style={{ font: '600 8.5px/1 var(--sans)', letterSpacing: '0.08em', color: 'var(--muted-2)' }}>
+        <span aria-label="Locked" title="Locked" style={{ font: '600 11px/1 var(--sans)', letterSpacing: '0.08em', color: 'var(--muted-2)' }}>
           LOCK
         </span>
       )}
@@ -291,7 +291,7 @@ export function FilterChip({
     >
       {children}
       {count !== undefined && (
-        <span style={{ font: '600 10px/1 var(--sans)', color: active ? 'rgba(255,255,255,.7)' : 'var(--muted-2)' }}>{count}</span>
+        <span style={{ font: '600 11px/1 var(--sans)', color: active ? 'rgba(255,255,255,.7)' : 'var(--muted-2)' }}>{count}</span>
       )}
     </button>
   );
@@ -322,7 +322,7 @@ export function IconButton({
       title={title ?? label}
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex h-7 w-7 shrink-0 items-center justify-center disabled:cursor-not-allowed disabled:opacity-40"
+      className="inline-flex h-7 w-7 shrink-0 items-center justify-center disabled:cursor-not-allowed disabled:opacity-50"
       style={{
         borderRadius: 8,
         border: '1px solid var(--line)',

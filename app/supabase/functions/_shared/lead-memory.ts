@@ -8,7 +8,8 @@
 import { WRITING_RULE } from './no-ai-slop.ts';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { CLAUDE_MODEL } from './models.ts';
+import { CLAUDE_HAIKU_MODEL, cachedSystem } from './models.ts';
+import { recordUsage } from './ai-usage.ts';
 import { UNTRUSTED_RULE, fence } from './security.ts';
 import {
   MEMORY_SCHEMA, fallbackMemory, historyRows, historyText, ourSide, parseModelMemory, rowToMemory,
@@ -219,15 +220,16 @@ export async function refreshLeadMemory(admin: SupabaseClient, ws: number, kind:
   } else {
     try {
       const res = await anthropicClient(apiKey).messages.create({
-        model: CLAUDE_MODEL,
+        model: CLAUDE_HAIKU_MODEL,
         max_tokens: 4000,
-        system: SYSTEM,
+        system: cachedSystem(SYSTEM),
         output_config: { effort: 'low', format: { type: 'json_schema', schema: MEMORY_SCHEMA } },
         messages: [{
           role: 'user',
           content: `Today: ${asOf.slice(0, 10)}.\n\n${fence('lead_history', historyText(h), 60_000)}`,
         }],
       } as Anthropic.MessageCreateParamsNonStreaming);
+      await recordUsage(admin, { ws, feature: 'lead_memory', model: res.model, usage: res.usage });
       if (res.stop_reason === 'refusal') {
         message = 'The model declined to summarise this record. Showing the latest touches instead.';
       } else {
@@ -247,7 +249,7 @@ export async function refreshLeadMemory(admin: SupabaseClient, ws: number, kind:
   const row = {
     workspace_id: ws, record_kind: kind, record_id: id, brief: mem.brief, facts: mem.facts,
     source_count: h.items.length, last_source_at: times.length ? new Date(Math.max(...times)).toISOString() : null,
-    model: source === 'ai' ? CLAUDE_MODEL : 'fallback', updated_at: asOf,
+    model: source === 'ai' ? CLAUDE_HAIKU_MODEL : 'fallback', updated_at: asOf,
   };
   const { error } = await admin.from('lead_memory').upsert(row, { onConflict: 'workspace_id,record_kind,record_id' });
   if (error) throw new Error(`lead_memory upsert: ${error.message}`);

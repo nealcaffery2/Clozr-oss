@@ -290,31 +290,70 @@ export const DATE_PRESETS = [
 ] as const;
 export type DatePreset = (typeof DATE_PRESETS)[number];
 
-/** The window a preset means right now; Custom takes from/to as YYYY-MM-DD (inclusive). */
-export function presetRange(preset: string, custom?: { from: string; to: string } | null, now = new Date()): { start: number; end: number } {
+/** A usable IANA zone name, or null (unknown names fall back to the runtime's own zone). */
+function zoneOrNull(tz: string | null | undefined): string | null {
+  if (!tz) return null;
+  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return tz; } catch { return null; }
+}
+
+/** The calendar date (month 0-based) and weekday at instant `t` in `tz`. */
+function dateIn(t: number, tz: string): { y: number; mo: number; d: number; wd: number } {
+  const p: Record<string, string> = {};
+  for (const x of new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: 'numeric', day: 'numeric', weekday: 'short' }).formatToParts(new Date(t))) p[x.type] = x.value;
+  return { y: Number(p.year), mo: Number(p.month) - 1, d: Number(p.day), wd: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday) };
+}
+
+/** The instant `tz`'s calendar day (y, mo, d) begins; mo and d may overflow, as with `new Date(y, mo, d)`. */
+function midnightIn(y: number, mo: number, d: number, tz: string): number {
+  const want = Date.UTC(y, mo, d);
+  const f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' });
+  // Start at UTC midnight and correct by the zone's offset (twice, for DST edges).
+  let t = want;
+  for (let i = 0; i < 2; i++) {
+    const p: Record<string, string> = {};
+    for (const x of f.formatToParts(new Date(t))) p[x.type] = x.value;
+    t -= Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour) % 24, Number(p.minute)) - want;
+  }
+  return t;
+}
+
+/**
+ * The window a preset means right now; Custom takes from/to as YYYY-MM-DD (inclusive).
+ * Days start at midnight in `tz` when given (a scheduled email uses the schedule's
+ * zone); without it, in the runtime's own zone (the browser's, for the viewer).
+ */
+export function presetRange(preset: string, custom?: { from: string; to: string } | null, now = new Date(), tz?: string | null): { start: number; end: number } {
   const t = now.getTime();
-  const y = now.getFullYear(), mo = now.getMonth(), d = now.getDate();
-  const midnight = new Date(y, mo, d).getTime();
+  const zone = zoneOrNull(tz);
+  const today = zone ? dateIn(t, zone) : { y: now.getFullYear(), mo: now.getMonth(), d: now.getDate(), wd: now.getDay() };
+  const { y, mo, d } = today;
+  // Midnight of a calendar day, in the zone.
+  const at = (yy: number, mm: number, dd: number) => (zone ? midnightIn(yy, mm, dd, zone) : new Date(yy, mm, dd).getTime());
+  const midnight = at(y, mo, d);
+  // Local midnight `n` days from today, by the calendar: a day across a DST
+  // change is 23 or 25 hours, so `midnight - n * DAY` started an hour off.
+  const dayStart = (n: number) => at(y, mo, d + n);
   const q = Math.floor(mo / 3) * 3;
-  const endOfDay = (x: number) => x + DAY - 1;
+  const endOfDay = (x: number) => { const l = new Date(x); const e = zone ? dateIn(x, zone) : { y: l.getFullYear(), mo: l.getMonth(), d: l.getDate() }; return at(e.y, e.mo, e.d + 1) - 1; };
+  const dayOf = (iso: string): number | null => { const m = zone ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso) : null; return m ? at(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : ts(iso); };
   switch (preset) {
     case 'Today': return { start: midnight, end: t };
-    case 'Yesterday': return { start: midnight - DAY, end: midnight - 1 };
-    case 'Last 7 days': return { start: midnight - 6 * DAY, end: t };
-    case 'Last 30 days': return { start: midnight - 29 * DAY, end: t };
-    case 'Last 90 days': return { start: midnight - 89 * DAY, end: t };
-    case 'This week': return { start: midnight - now.getDay() * DAY, end: t };
-    case 'Last week': return { start: midnight - (now.getDay() + 7) * DAY, end: midnight - now.getDay() * DAY - 1 };
-    case 'This month': return { start: new Date(y, mo, 1).getTime(), end: t };
-    case 'Last month': return { start: new Date(y, mo - 1, 1).getTime(), end: new Date(y, mo, 1).getTime() - 1 };
-    case 'This quarter': return { start: new Date(y, q, 1).getTime(), end: t };
-    case 'Last quarter': return { start: new Date(y, q - 3, 1).getTime(), end: new Date(y, q, 1).getTime() - 1 };
-    case 'This year': return { start: new Date(y, 0, 1).getTime(), end: t };
-    case 'Last year': return { start: new Date(y - 1, 0, 1).getTime(), end: new Date(y, 0, 1).getTime() - 1 };
-    case 'Next 7 days': return { start: t, end: midnight + 8 * DAY - 1 };
+    case 'Yesterday': return { start: dayStart(-1), end: midnight - 1 };
+    case 'Last 7 days': return { start: dayStart(-6), end: t };
+    case 'Last 30 days': return { start: dayStart(-29), end: t };
+    case 'Last 90 days': return { start: dayStart(-89), end: t };
+    case 'This week': return { start: dayStart(-today.wd), end: t };
+    case 'Last week': return { start: dayStart(-(today.wd + 7)), end: dayStart(-today.wd) - 1 };
+    case 'This month': return { start: at(y, mo, 1), end: t };
+    case 'Last month': return { start: at(y, mo - 1, 1), end: at(y, mo, 1) - 1 };
+    case 'This quarter': return { start: at(y, q, 1), end: t };
+    case 'Last quarter': return { start: at(y, q - 3, 1), end: at(y, q, 1) - 1 };
+    case 'This year': return { start: at(y, 0, 1), end: t };
+    case 'Last year': return { start: at(y - 1, 0, 1), end: at(y, 0, 1) - 1 };
+    case 'Next 7 days': return { start: t, end: dayStart(8) - 1 };
     case 'Custom': {
-      const a = ts(custom?.from ?? '') ?? midnight - 29 * DAY;
-      const b = ts(custom?.to ?? '');
+      const a = dayOf(custom?.from ?? '') ?? dayStart(-29);
+      const b = dayOf(custom?.to ?? '');
       return { start: a, end: b === null ? t : Math.min(endOfDay(b), Math.max(t, endOfDay(b))) };
     }
     default: return { start: -Infinity, end: t };
@@ -336,12 +375,13 @@ export function rangeFor(preset: string, comparison: Comparison, custom?: { from
   return withComparison(presetRange(preset, custom, now), comparison === 'report' ? 'previous' : comparison);
 }
 
-/** "Sep 1 – Sep 21, 2026" for the page header. */
-export function rangeLabel(r: { start: number; end: number }): string {
+/** "Sep 1 – Sep 21, 2026" for the page header; dates in `tz` when given. */
+export function rangeLabel(r: { start: number; end: number }, tz?: string | null): string {
   if (!Number.isFinite(r.start)) return 'All time';
   const a = new Date(r.start), b = new Date(r.end);
-  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
-  const sameYear = a.getFullYear() === b.getFullYear();
+  const zone = zoneOrNull(tz);
+  const opts: Intl.DateTimeFormatOptions = zone ? { month: 'short', day: 'numeric', timeZone: zone } : { month: 'short', day: 'numeric' };
+  const sameYear = zone ? dateIn(r.start, zone).y === dateIn(r.end, zone).y : a.getFullYear() === b.getFullYear();
   return `${a.toLocaleDateString('en-US', sameYear ? opts : { ...opts, year: 'numeric' })} – ${b.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`;
 }
 
@@ -457,7 +497,8 @@ function bucketSeries(rows: Row[], dateField: string, win: { start: number; end:
   });
 }
 
-export type ComputeOpts = { now?: number; me?: string | null; chart?: Chart };
+/** `tz`: the zone a widget's own date preset counts days in (the runtime's when omitted). */
+export type ComputeOpts = { now?: number; me?: string | null; chart?: Chart; tz?: string | null };
 
 /**
  * One widget's numbers for a range. `range` is the report's; a spec with its own
@@ -468,7 +509,7 @@ export type ComputeOpts = { now?: number; me?: string | null; chart?: Chart };
 export function compute(spec: Spec, range: Range, data: Record<Source, Row[]>, raw: EngineRaw, opts: ComputeOpts = {}): Result {
   const now = opts.now ?? Date.now();
   const names: Names = new Map(raw.members.map((m) => [m.id, m.name]));
-  const r = spec.datePreset ? withComparison(presetRange(spec.datePreset, null, new Date(now)), spec.comparison && spec.comparison !== 'report' ? spec.comparison : 'previous')
+  const r = spec.datePreset ? withComparison(presetRange(spec.datePreset, null, new Date(now), opts.tz), spec.comparison && spec.comparison !== 'report' ? spec.comparison : 'previous')
     : spec.comparison && spec.comparison !== 'report' ? withComparison(range, spec.comparison) : range;
   const all = data[spec.source] ?? [];
   const filtered = all.filter((row) => matches(row, spec.filters ?? [], spec.source, names, opts.me ?? null));

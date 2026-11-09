@@ -12,11 +12,14 @@
 import React from 'react';
 import { Icon } from '@/app/components/talkr/Icon';
 import type { ClozrRecord } from '@/app/components/talkr/MessagesScreen';
+import { NotHere } from './Elsewhere';
 
-export function InboxRow({ name, time, title, preview, record, active, unread, icon, onOpen, trailing }: {
+export function InboxRow({ name, time, title, preview, record, phone, active, unread, icon, onOpen, trailing }: {
   name: string; time: string; title?: string; preview: string;
   /** undefined outside CLOZR; null when no record has this address or number. */
   record?: ClozrRecord | null;
+  /** Their number, so a record in another workspace can be named. */
+  phone?: string | null;
   active: boolean; unread?: boolean; icon?: React.ReactNode; onOpen: () => void; trailing?: React.ReactNode;
 }) {
   return (
@@ -33,7 +36,7 @@ export function InboxRow({ name, time, title, preview, record, active, unread, i
           <span style={{ font: '400 14px/1.3 var(--sans)', color: '#8e8e93', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{preview}</span>
           {record !== undefined && (
             <span className="truncate" style={{ font: '600 11px/1.3 var(--sans)', color: record ? (record.kind === 'seller' ? '#15803d' : '#1d4ed8') : 'var(--muted-2)' }}>
-              {record ? [record.kind === 'seller' ? 'Seller' : 'Buyer', record.name, record.address].filter(Boolean).join(' · ') : 'Not in CLOZR'}
+              {record ? [record.kind === 'seller' ? 'Seller' : 'Buyer', record.name, record.address].filter(Boolean).join(' · ') : <NotHere phone={phone} />}
             </span>
           )}
         </span>

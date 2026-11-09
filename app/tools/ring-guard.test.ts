@@ -1,6 +1,6 @@
 // The ring guard: when to hang up a rep left alone on an outbound call. Run: npx tsx tools/ring-guard.test.ts
 import assert from 'node:assert/strict';
-import { NEVER_DIALED_AFTER_MS, ringOutReason, ringVerdict } from '../lib/ring-guard';
+import { NEVER_DIALED_AFTER_MS, ringOutReason, ringVerdict, sellerState } from '../lib/ring-guard';
 
 const rep = { role: 'agent', state: 'joined' };
 const seller = (state: string) => ({ role: 'customer', state });
@@ -24,4 +24,12 @@ assert.equal(ringVerdict({ status: 'in_progress', roster: [rep, seller('ringing'
 assert.equal(ringVerdict({ status: 'in_progress', roster: [], upForMs: 60_000 }), null);
 assert.equal(ringVerdict({ status: 'in_progress', roster: null, upForMs: 60_000 }), null);
 
+
+// Seller pickup on a conference hand-dial: the rep's own answer comes before the claim.
+const ev = (type: string, t: string) => ({ type, occurred_at: `2026-11-05T22:40:${t}Z` });
+const repUp = [ev('call.initiated', '43.6'), ev('call.answered', '46.1'), ev('call.customer_dial_claimed', '46.7'), ev('call.ringing', '47.9')];
+assert.equal(sellerState(repUp), 'ringing', 'the rep answering is not the seller');
+assert.equal(sellerState([...repUp, ev('call.answered', '59.8')]), 'answered');
+assert.equal(sellerState([ev('call.answered', '46.1')]), 'no_claim', 'bridge or Twilio: nothing to wait for');
+assert.equal(sellerState(null), 'no_claim');
 console.log('ring-guard ok');

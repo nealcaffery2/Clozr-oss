@@ -3,7 +3,8 @@
 // file claims the reply (one per inbound event, so a redelivery never texts
 // twice), then sends it through Talkr as the line's owner, else as the admin
 // who set the flow up, from the line itself. Best effort: it never throws, and
-// a line with no flow does exactly what it did before.
+// a line with no flow does exactly what it did before. A text that asks to
+// stop, or one from a number on a do-not-contact list, gets no reply.
 
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { autoReplyFor, type SmsFlow } from '../../../lib/sms-flow.ts';
@@ -11,6 +12,9 @@ import { activeTalkrBinding, gateTalkrWrite, readTalkrOrg } from './talkr-bindin
 import { loadTalkrConnections } from './talkr-connect.ts';
 import { TALKR_DEFAULT_URL, partnerToken } from './talkr-outreach.ts';
 import { carrierCheck, carrierReport } from '../../../lib/carrier-safe.ts';
+import { asksToStop } from './ai-agent.ts';
+import { phoneKey, resolveCaller } from './voice-agent.ts';
+import { loadCandidates } from './voice-agent-db.ts';
 
 const e164 = (raw: unknown): string | null => {
   const d = String(raw ?? '').replace(/\D/g, '');
@@ -36,6 +40,11 @@ export async function smsAutoReply(admin: SupabaseClient, ws: number, msg: Inbou
     const at = msg.at ?? new Date();
     const decision = autoReplyFor(flow as unknown as SmsFlow, { body: String(msg.body ?? ''), at, lastReplyAt: last?.created_at ?? null });
     if (!decision.send) return `auto-reply skipped: ${decision.reason}`;
+    // "Please stop texting me" is no keyword, and the carrier lets it through.
+    if (asksToStop(String(msg.body ?? ''))) return 'auto-reply skipped: asked to stop';
+    // The voice agent's rule: any seller or buyer on this number who is
+    // blacklisted or do-not-call blocks the whole number.
+    if (resolveCaller(await loadCandidates(admin, ws, phoneKey(theirs)!)).status === 'blocked') return 'auto-reply skipped: do not contact';
 
     // The claim: a second delivery of the same event stops here.
     const { data: claim, error: claimErr } = await admin.from('line_sms_auto_replies')
@@ -58,7 +67,7 @@ export async function smsAutoReply(admin: SupabaseClient, ws: number, msg: Inbou
     const token = await partnerToken({ id: senderId, email: (profile?.email as string | null) ?? null });
     if (!token) return await done('failed', 'server texting is not configured (TALKR_PARTNER_JWT_SECRET)');
 
-    const base = String((wsRow?.settings as Record<string, unknown> | null)?.talkr_url || Deno.env.get('TALKR_API_URL') || TALKR_DEFAULT_URL).replace(/\/$/, '');
+    const base = String((wsRow?.settings as Record<string, unknown> | null)?.talkr_url || (globalThis as { Deno?: { env: { get(k: string): string | undefined } } }).Deno?.env.get('TALKR_API_URL') || TALKR_DEFAULT_URL).replace(/\/$/, '');
     const call = async (path: string, init: RequestInit = {}) => {
       try {
         const res = await fetch(`${base}${path}`, { ...init, signal: AbortSignal.timeout(8000), headers: { authorization: `Bearer ${token}`, ...(init.body ? { 'content-type': 'application/json' } : {}) } });

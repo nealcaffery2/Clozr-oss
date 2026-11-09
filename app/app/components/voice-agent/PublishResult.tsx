@@ -32,7 +32,7 @@ export function PublishResultView({ result, chosenModel, error }: { result: Publ
             const pass = result.checks[c.key];
             return (
               <li key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderTop: i ? '1px solid var(--divider-2, #f0f0f1)' : 'none' }}>
-                <span aria-hidden="true" style={{ width: 20, height: 20, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 999, background: pass ? GREEN : 'var(--surface-2, #f4f4f5)', color: pass ? 'var(--surface, #fff)' : 'var(--subtle, #a1a1aa)', border: pass ? 0 : `1px solid ${LINE}` }}>
+                <span aria-hidden="true" style={{ width: 20, height: 20, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 999, background: pass ? GREEN : 'var(--surface-2, #f4f4f5)', color: pass ? 'var(--surface, #fff)' : 'var(--meta, #71717a)', border: pass ? 0 : `1px solid ${LINE}` }}>
                   {pass ? <Check size={13} strokeWidth={3} /> : <Minus size={13} strokeWidth={3} />}
                 </span>
                 <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: INK }}>{c.label}</span>

@@ -21,6 +21,7 @@ import { api, type AiAgentDto, type HoldMusicDto, type MeDto, type MessageTempla
 import { SAFE_WINDOW, callWindow, localZone, tzTime } from '@/lib/talkr-web/time';
 import { displayName, useSession } from '@/lib/session';
 import { everyWhileVisible } from '@/lib/visible-timer';
+import { useBuyerListProfile } from '@/lib/buyer-list-profile';
 import { type Role, isAdmin } from '@/lib/team';
 import { type WorkspaceSettings, loadSettings, saveSettings } from '@/lib/integrations';
 import { elsewhereIds, forgetElsewhere } from '@/lib/talkr-elsewhere';
@@ -32,13 +33,18 @@ import { TemplateManager, canManageTemplates } from '@/app/components/talkr/Mess
 import { ScriptsManager } from '@/app/components/talkr/ScriptsManager';
 import { AudioSettings } from '@/app/components/talkr/AudioSettings';
 import { NumbersPage } from '@/app/components/phone/NumbersPage';
+import { CallerIdHealth } from '@/app/components/phone/CallerIdHealth';
 import { TalkrPhone } from './TalkrPhone';
-import type { TalkrSettingsTab } from './settingsTab';
-import '@/app/clozr/talkr-dialer.css';
+import { RecordingToggles, type RecordingSwitches } from '@/app/components/talkr/DialerParts';
+import type { DialerSettingsTab } from '@/lib/settings-sections';
+/** The dialer's panes; SMS templates moved to Settings › Sequences › Templates, and the pane stays for anything that still names it. */
+export type TalkrSettingsTab = DialerSettingsTab | 'templates';
+// Styles: talkr-dialer.css, loaded once by ClozrShell (see the note there).
 
 const TABS: Array<{ id: TalkrSettingsTab; label: string; icon: IconName }> = [
-  { id: 'account', label: 'Account', icon: 'user' },
+  { id: 'account', label: 'Connection', icon: 'user' },
   { id: 'numbers', label: 'Numbers', icon: 'phone' },
+  { id: 'health', label: 'Caller ID health', icon: 'award' },
   { id: 'audio', label: 'Audio & sounds', icon: 'speaker' },
   { id: 'scripts', label: 'Scripts', icon: 'mic' },
   { id: 'templates', label: 'SMS templates', icon: 'template' },
@@ -72,8 +78,10 @@ function Head({ icon, title, right }: { icon: IconName; title: string; right?: R
   );
 }
 
-export function TalkrSettings({ tab, onTab, isMobile, nav = true }: { tab: TalkrSettingsTab; onTab: (t: TalkrSettingsTab) => void; isMobile: boolean; /** False when Settings' own nav already picks the tab. */ nav?: boolean }) {
+export function TalkrSettings({ tab, onTab, isMobile, nav = true, recording }: { tab: TalkrSettingsTab; onTab: (t: TalkrSettingsTab) => void; isMobile: boolean; /** False when Settings' own nav already picks the tab. */ nav?: boolean; /** Record call and AI transcription (the view model's switches), shown on Calling. */ recording?: RecordingSwitches }) {
   const s = useSession();
+  // A Compr workspace imports the Compr SDR playbook instead of the Acme Homes one.
+  const comprWs = useBuyerListProfile(s.workspace?.id ?? null) === 'compr';
   const { authed } = useSoftphone();
   const [me, setMe] = useState<MeDto | null>(null);
   const [talkrUrl, setTalkrUrl] = useState<string | null>(null);
@@ -127,11 +135,21 @@ export function TalkrSettings({ tab, onTab, isMobile, nav = true }: { tab: Talkr
 
       {tab === 'numbers' && <NumbersPage isMobile={isMobile} />}
 
+      {tab === 'health' && <CallerIdHealth isMobile={isMobile} />}
+
       {tab === 'audio' && <AudioSettings who={s.user ? displayName(s) : null} workspaceId={s.workspace?.id ?? null} userId={s.user?.id ?? null} />}
 
-      {tab === 'scripts' && (offline ? <Notice>{offline}</Notice> : <ScriptsManager authed={authed} role={role} repName={me?.display_name ?? null} />)}
+      {tab === 'scripts' && (offline ? <Notice>{offline}</Notice> : <ScriptsManager authed={authed} role={role} repName={me?.display_name ?? null} playbook={comprWs ? 'compr' : 'acme-homes'} />)}
 
       {tab === 'templates' && (offline ? <Notice>{offline}</Notice> : <Templates role={role} />)}
+
+      {/* CLOZR's own switches: they work with or without Talkr, so above the notice. */}
+      {tab === 'calling' && recording ? (
+        <Card className="flex flex-col gap-3.5">
+          <Head icon="mic" title="Call recording" />
+          <RecordingToggles V={recording} />
+        </Card>
+      ) : null}
 
       {tab === 'calling' && (offline ? <Notice>{offline}</Notice> : (
         <>
@@ -236,7 +254,7 @@ function TalkrOrigin({ workspaceId, admin, demo, onSaved }: { workspaceId: numbe
       <Card className="flex flex-col gap-3">
         <Head icon="settings" title="Talkr API" right={note ? <StatusMarker color={note.ok ? 'var(--green)' : 'var(--red)'} label={note.text} /> : null} />
         <p style={BODY}>Talkr needs no key — it trusts this workspace&rsquo;s sign-in. Set an origin only if you run your own Talkr; leave it empty for Talkr&rsquo;s production API.</p>
-        <input value={v.talkr_url ?? ''} onChange={(e) => setDraft({ ...v, talkr_url: e.target.value })} disabled={locked} placeholder="https://talkr.example.com" autoComplete="off" aria-label="Talkr API origin" className="outline-none disabled:opacity-60" style={FIELD} />
+        <input value={v.talkr_url ?? ''} onChange={(e) => setDraft({ ...v, talkr_url: e.target.value })} disabled={locked} placeholder="https://talkr.example.com" autoComplete="off" aria-label="Talkr API origin" className="outline-none disabled:opacity-50" style={FIELD} />
         {!locked && (
           <div>
             <Button tone="accent" type="submit" disabled={busy || !draft}>{busy ? 'Saving…' : 'Save'}</Button>
@@ -560,7 +578,7 @@ function DialingWindows() {
             <span style={{ color: w ? w.color : 'var(--muted-2)', display: 'inline-flex' }}><Mark label="clock" /></span>
             <span className="mr-auto flex flex-col gap-1">
               <span style={{ font: '600 12px/1 var(--sans)' }}>{label}</span>
-              <span style={{ font: '500 10px/1 var(--sans)', color: 'var(--muted)' }}>{SAFE_WINDOW.startHour}:00 AM — {SAFE_WINDOW.endHour - 12}:00 PM local</span>
+              <span style={{ font: '500 11px/1 var(--sans)', color: 'var(--muted)' }}>{SAFE_WINDOW.startHour}:00 AM — {SAFE_WINDOW.endHour - 12}:00 PM local</span>
             </span>
             <span style={{ font: '600 12px/1 var(--sans)' }}>{now === null ? '—' : tzTime(tz, now)}</span>
             <span style={{ font: '600 11px/1 var(--sans)', color: w ? w.color : 'var(--muted-2)', width: 74, textAlign: 'right' }}>{w ? (w.safe ? 'Open' : 'Quiet hours') : '—'}</span>

@@ -36,7 +36,7 @@ const item = {
   created_by: { name: 'Morgan Lane' },
   fields: [
     text('Entity Name', 'Mark Spain - NC'),
-    loc('Property Address', '425 Lakeshore Avenue, High Point, NC 27263', { street_number: '425', street_address: 'Lakeshore Avenue', city: 'High Point', state: 'NC', postal_code: '27263' }),
+    loc('Property Address', '3283 Lakeshore Avenue, High Point, NC 27263', { street_number: '425', street_address: 'Lakeview Avenue', city: 'High Point', state: 'NC', postal_code: '27263' }),
     text('First Name', 'Dana'), text('Last Name', 'Kline'),
     phone('Phone', 'mobile', '(336) 555-0142'), email('Email', 'work', 'Dana@MarkSpain.com'),
     cat('Stage', 'Underwriting  Complete'),
@@ -66,7 +66,7 @@ check('facts read with the Excel import\'s bounds', s.facts.beds === 3);
 
 // The same submission as an Excel row: the snapshot's source_id starts with the prefix the sync looks up.
 const row: Row = {
-  'Entity Name': 'Mark Spain - NC', 'Property Address': '425 Lakeshore Avenue, High Point, NC 27263', 'First Name': 'Dana', 'Last Name': 'Kline',
+  'Entity Name': 'Mark Spain - NC', 'Property Address': '3283 Lakeshore Avenue, High Point, NC 27263', 'First Name': 'Dana', 'Last Name': 'Kline',
   'Phone - Mobile': '(336) 555-0142', 'Email - Work': 'dana@markspain.com', Stage: 'Underwriting Complete', 'Created on': '2026-08-02T14:03:11',
 };
 const plan = buildPlan({ submissions: [row], dealStage: [], activeDeals: [] });
@@ -75,7 +75,7 @@ check('live item finds the Excel import\'s source_id by prefix', s.address_keys.
 check('a new submission gets the Excel shape', submissionSourceId(s) === sid, [submissionSourceId(s), sid]);
 check('partner read back out of a source_id', partnerOfSourceId(sid) === 'markspain' && partnerOfSourceId('submission:1 A ST|78254|-|2026') === null);
 
-const street = readSubmission({ ...item, fields: item.fields.map((f) => (f.label === 'Property Address' ? loc('Property Address', '425 Lakeshore Ave., High Point, North Carolina, 27263') : f)) });
+const street = readSubmission({ ...item, fields: item.fields.map((f) => (f.label === 'Property Address' ? loc('Property Address', '3283 Lakeshore Ave., High Point, North Carolina, 27263') : f)) });
 check('"Avenue" / "Ave." / state name all key the same', street.address_keys[0] === s.address_keys[0], [street.address_keys, s.address_keys]);
 
 const blankStage = readSubmission({ ...item, fields: item.fields.filter((f) => f.label !== 'Stage') });
@@ -164,21 +164,21 @@ const acq = readAcquisition({
   fields: [
     text('Seller Name', 'Maria Lopez'),
     { field_id: ++fid, external_id: 'seller-phone', type: 'phone', label: 'Seller Phone', values: [{ type: 'mobile', value: '(210) 555-0101' }, { type: 'work', value: '210.555.0102' }] },
-    email('Seller Email', 'home', 'Maria@Example.com'), loc('Property Location', '425 Lakeshore Ave, High Point, NC 27263'),
+    email('Seller Email', 'home', 'Maria@Example.com'), loc('Property Location', '3283 Lakeshore Ave, High Point, NC 27263'),
     cat('Lead Stage', 'offer made'), money("Seller's Asking Price", '185000'), text('Seller Notes', 'Wants to move by spring'),
     text('Bedrooms', '3'), text('YEAR BUILD', '1978'),
   ],
 });
 check('acquisition: name, phones, email', acq.name === 'Maria Lopez' && acq.phones.join() === '+12105550101,+12105550102' && acq.emails.join() === 'maria@example.com', acq);
-check('acquisition: address and stage label', acq.address?.line1 === '425 Lakeshore Ave' && acq.podio_stage === 'offer made' && acq.address_keys.length > 0);
+check('acquisition: address and stage label', acq.address?.line1 === '3283 Lakeshore Ave' && acq.podio_stage === 'offer made' && acq.address_keys.length > 0);
 check('acquisition: columns and facts', acq.cols.asking_price === 185000 && acq.cols.notes === 'Wants to move by spring' && acq.facts.beds === 3 && acq.facts.year_built === 1978, acq.cols);
-const la = leadAddress('44111 Ohio 3232 W 110th St');
-check('lead address: zip and state in front', la?.line1 === '3232 W 110th St' && la.state === 'OH' && la.zip === '44111', la);
-check('lead address: state code in front', leadAddress('OH 6340 Larkspur Drive')?.line1 === '6340 Larkspur Drive' && leadAddress('OH 6340 Larkspur Drive')?.state === 'OH');
-const lb = leadAddress('76112 Texas 5528 Fernley St, Fort Worth, TX 76112, USA');
-check('lead address: prefix then a full address', lb?.line1 === '5528 Fernley St' && lb.city === 'Fort Worth' && lb.state === 'TX', lb);
+const la = leadAddress('44111 Ohio 3232 W 100th St');
+check('lead address: zip and state in front', la?.line1 === '3232 W 100th St' && la.state === 'OH' && la.zip === '44111', la);
+check('lead address: state code in front', leadAddress('OH 792 Larkspur Drive')?.line1 === '792 Larkspur Drive' && leadAddress('OH 792 Larkspur Drive')?.state === 'OH');
+const lb = leadAddress('76112 Texas 3895 Goldfinch St, Fort Worth, TX 76112, USA');
+check('lead address: prefix then a full address', lb?.line1 === '3895 Goldfinch St' && lb.city === 'Fort Worth' && lb.state === 'TX', lb);
 check('lead address: a plain address untouched', leadAddress('123 Main St, Dayton, OH 45402')?.line1 === '123 Main St');
-check('acquisition: "Property Address" label', readAcquisition({ item_id: 3, fields: [text('Property Address', 'TX 3250 Hollis Avenue')] }).address?.line1 === '3250 Hollis Avenue');
+check('acquisition: "Property Address" label', readAcquisition({ item_id: 3, fields: [text('Property Address', 'TX 5406 Heron Avenue')] }).address?.line1 === '5406 Heron Avenue');
 check('acquisition: an address is not a name', readAcquisition({ item_id: 1, fields: [text('Seller Name', '12 Oak St')] }).name === null);
 check('seller stage: same vocabulary, forgiving case', sellerStageOf('offer made', ['Lead', 'Offer Made']) === 'Offer Made' && sellerStageOf('Hot', ['Lead']) === null);
 
@@ -193,16 +193,18 @@ const comm = readComm({
   item_id: 43316, created_on: '2026-10-03 03:45:00',
   fields: [
     { field_id: ++fid, external_id: 'contact', type: 'app', label: 'Contact', values: [{ value: { item_id: 9001, title: 'Maria Lopez' } }] },
-    text('Call ID', 'da3529b1'), phone('smrtPhone Number', 'main', '+12105550182'), phone('Contact Number', 'main', '+19715550185'),
-    cat('Type', 'Incoming Text'), text('Text Message', 'Sorry, on the road all afternoon'), text('Call Owner', 'Jamie Brooks'),
+    text('Call ID', 'da3529b1'), phone('smrtPhone Number', 'main', '+12105558722'), phone('Contact Number', 'main', '+19715555622'),
+    cat('Type', 'Incoming Text'), text('Text Message', 'Sorry, on the road all afternoon'), text('Call Owner', 'Riley Price'),
     { field_id: ++fid, external_id: 'created', type: 'date', label: 'Created Date', values: [{ start: '2026-10-02 22:45:00', start_utc: '2026-10-03 03:45:00' }] },
   ],
 });
-check('comm: inbound text, their number is from', comm?.row.channel === 'sms' && comm.row.direction === 'inbound' && comm.row.from_phone === '+19715550185' && comm.row.to_phone === '+12105550182', comm?.row);
-check('comm: body, UTC time, contact link, owner', comm?.row.body === 'Sorry, on the road all afternoon' && comm.row.occurred_at === '2026-10-03T03:45:00Z' && comm.contact_item_ids[0] === 9001 && comm.owner === 'Jamie Brooks');
-const call = readComm({ item_id: 1, created_on: '2026-10-02 19:04:00', fields: [phone('smrtPhone Number', 'main', '+18175550184'), phone('Contact Number', 'main', '+15205550183'), cat('Type', 'Outgoing Call'), text('Outbound Status', 'Busy / No Answer'), text('Duration', '45 Seconds')] });
-check('comm: outbound call, status and duration', call?.row.channel === 'call' && call.row.to_phone === '+15205550183' && call.row.status === 'busy_no_answer' && call.row.duration_s === 45, call?.row);
-check('comm: no type → skipped', readComm({ item_id: 2, fields: [phone('Contact Number', 'main', '+15205550183')] }) === null);
+check('comm: inbound text, their number is from', comm?.row.channel === 'sms' && comm.row.direction === 'inbound' && comm.row.from_phone === '+19715555622' && comm.row.to_phone === '+12105558722', comm?.row);
+check('comm: body, UTC time, contact link, owner', comm?.row.body === 'Sorry, on the road all afternoon' && comm.row.occurred_at === '2026-10-03T03:45:00Z' && comm.contact_item_ids[0] === 9001 && comm.owner === 'Riley Price');
+const call = readComm({ item_id: 1, created_on: '2026-10-02 19:04:00', fields: [phone('smrtPhone Number', 'main', '+18175556225'), phone('Contact Number', 'main', '+15205554790'), cat('Type', 'Outgoing Call'), text('Outbound Status', 'Busy / No Answer'), text('Duration', '45 Seconds')] });
+check('comm: outbound call, status and duration', call?.row.channel === 'call' && call.row.to_phone === '+15205554790' && call.row.status === 'busy_no_answer' && call.row.duration_s === 45, call?.row);
+const recorded = readComm({ item_id: 3, created_on: '2026-10-02 19:04:00', fields: [phone('smrtPhone Number', 'main', '+18175556225'), phone('Contact Number', 'main', '+15205554790'), cat('Type', 'Incoming Call'), text('Call Recording', '**[Listen](https://rec.smrtphone.io/bc2d5d46-1783960476385957.mp3)**')] });
+check('comm: markdown recording link → bare URL', recorded?.row.recording_url === 'https://rec.smrtphone.io/bc2d5d46-1783960476385957.mp3', recorded?.row.recording_url);
+check('comm: no type → skipped', readComm({ item_id: 2, fields: [phone('Contact Number', 'main', '+15205554790')] }) === null);
 
 // ---- history: a revision diff → timeline lines ---------------------------------
 const diff = [
@@ -272,10 +274,10 @@ const tied = pickAnySourceDeal([
 ], { partner_key: null, phone: null, email: null });
 check('two live deals, nothing to choose by → ambiguous, nothing written', !!tied && 'ambiguous' in tied && tied.ambiguous.length === 2, tied);
 
-const south = parseAddress('405 S Birchwood Ave, Durham, NC 27701');
-const plain = parseAddress('405 Birchwood Ave, Durham, NC 27701');
-check('Podio "405 S Birchwood Ave" is the property "405 Birchwood Ave"', sameProperty(south, plain), [addressKey(south!), addressKey(plain!)]);
-const variants = addressVariants('405 S Birchwood Ave, Durham, NC 27701');
+const south = parseAddress('3130 S Birchwood Ave, Durham, NC 27701');
+const plain = parseAddress('3130 Birchwood Ave, Durham, NC 27701');
+check('Podio "3130 S Birchwood Ave" is the property "3130 Birchwood Ave"', sameProperty(south, plain), [addressKey(south!), addressKey(plain!)]);
+const variants = addressVariants('3130 S Birchwood Ave, Durham, NC 27701');
 check('every address variant includes the directional-stripped line', variants.some((v) => addressKey(v) === addressKey(plain!)), variants.map((v) => v.line1));
 
 check('only an archived duplicate → not recreated',
@@ -333,7 +335,7 @@ check('an empty block removes the section and leaves the user\'s text', mergePod
 const roster = [
   { user_id: 'u-morgan', full_name: 'Morgan Lane', email: 'morgan@yourcompany.com' },
   { user_id: 'u-alex', full_name: 'Alex Lee', email: 'alex@yourcompany.com' },
-  { user_id: 'u-morgan-2', full_name: 'Morgan Lane', email: 'morgan2@example.com' },
+  { user_id: 'u-morgan-2', full_name: 'Morgan Lane', email: 'tyler2@example.com' },
 ];
 check('underwriter matches the roster by email', matchRoster(roster, read.underwriters[0]) === 'u-morgan', read.underwriters);
 check('acquisitions matches the roster by name when the email is absent', matchRoster(roster, { name: 'Alex Lee', email: null }) === 'u-alex');

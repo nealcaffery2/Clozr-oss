@@ -59,6 +59,11 @@ export function WeekView({ start, days, events, reps, selectedId, onOpen, onCrea
     setDrag(null);
     if (d) onCreate(timeOf(d.day, d.from), timeOf(d.day, d.to));
   };
+  // A drag that leaves the grid is dropped, not committed.
+  const onLeave = () => {
+    dragging.current = null;
+    setDrag(null);
+  };
 
   const allDay = (day: Date) => events.filter((ev) => ev.allDay && ev.start < addDays(day, 1) && ev.end >= day);
   const timed = (day: Date) => events.filter((ev) => !ev.allDay && sameDay(ev.start, day));
@@ -93,7 +98,7 @@ export function WeekView({ start, days, events, reps, selectedId, onOpen, onCrea
           const today = isToday(d);
           return (
             <div key={d.toISOString()} style={{ padding: '8px 4px 6px', textAlign: 'center', borderLeft: `1px solid ${SOFT}` }}>
-              <div style={{ font: `500 11px/1 var(--font-sans)`, color: today ? MINT : '#70757a', marginBottom: 4 }}>
+              <div style={{ font: `500 11px/1 var(--font-sans)`, color: today ? MINT : 'var(--muted, #52525b)', marginBottom: 4 }}>
                 {d.toLocaleDateString('en-US', { weekday: 'short' })}
               </div>
               <div
@@ -104,7 +109,7 @@ export function WeekView({ start, days, events, reps, selectedId, onOpen, onCrea
                   font: `${today ? 500 : 400} ${days === 1 ? 22 : 26}px/1 var(--font-sans)`,
                   letterSpacing: '-0.02em',
                   background: today ? MINT : 'transparent',
-                  color: today ? 'var(--on-dark, #fff)' : 'var(--ink-4, #3c4043)',
+                  color: today ? 'var(--on-dark, #fff)' : 'var(--ink, #18181b)',
                 }}
               >
                 {d.getDate()}
@@ -135,11 +140,11 @@ export function WeekView({ start, days, events, reps, selectedId, onOpen, onCrea
         })}
       </div>
 
-      <div ref={gridRef} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp} style={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative', userSelect: drag ? 'none' : undefined, cursor: 'cell' }}>
+      <div ref={gridRef} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onLeave} style={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative', userSelect: drag ? 'none' : undefined, cursor: 'cell' }}>
         <div style={{ display: 'grid', gridTemplateColumns: `${GUTTER}px repeat(${days}, 1fr)`, height: `${HOURS * 2 * ROW}px`, position: 'relative' }}>
           <div style={{ position: 'relative' }}>
             {Array.from({ length: HOURS }, (_, h) => (
-              <div key={h} style={{ position: 'absolute', top: `${h * 2 * ROW - 7}px`, right: 8, font: '400 10px/1 var(--font-sans)', color: '#70757a' }}>
+              <div key={h} style={{ position: 'absolute', top: `${h * 2 * ROW - 7}px`, right: 8, font: '400 11px/1 var(--font-sans)', color: 'var(--muted, #52525b)' }}>
                 {h === 0 ? '' : fmtTime(new Date(2000, 0, 1, FIRST_HOUR + h))}
               </div>
             ))}

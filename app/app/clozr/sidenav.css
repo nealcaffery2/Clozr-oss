@@ -5,18 +5,22 @@
   flex: none;
   width: 236px;
   box-sizing: border-box;
-  height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: none;
+  /* The shell has no bound height, so 100% was the content's height and the
+     foot (the account avatar) scrolled out of view on a short window. Pin the
+     menu to the viewport instead. Only the sections scroll (.cz-side-list),
+     and only once the short-window rows below are not enough: search, Ask
+     CLOZR, the account and Collapse always stay on screen. */
+  height: 100dvh;
+  position: sticky;
+  top: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 12px 12px 8px;
   background: var(--nav-bg, #fcfcfc);
   border-right: 1px solid #e4e4e7;
-  position: relative;
-  z-index: 41;
+  z-index: calc(var(--z-sticky) + 1);
 }
 .cz-side.is-folded {
   width: 64px;
@@ -83,6 +87,27 @@
 .is-folded .cz-side-search,
 .is-folded .cz-side-add { width: 40px; flex: none; padding: 0; justify-content: center; }
 
+/* The sections between the search and the foot. It takes the height left
+   over and scrolls inside itself when that is too little. The 3px inset keeps
+   the focus ring clear of the scroll edge. */
+.cz-side-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: -3px;
+  padding: 3px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #d4d4d8 transparent;
+  position: relative;
+  isolation: isolate;
+}
+.is-folded .cz-side-list { align-items: center; width: calc(100% + 6px); box-sizing: border-box; }
+
 .cz-side-group {
   display: flex;
   flex-direction: column;
@@ -101,6 +126,8 @@
 }
 
 .cz-side-link {
+  box-sizing: border-box;
+  text-decoration: none;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -119,6 +146,24 @@
   position: relative;
 }
 .cz-side-link.is-tool { height: 28px; font-size: 13px; }
+/* Tools' name folds and unfolds its rows (SideNav.tsx). */
+.cz-side-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cz-side-label.cz-side-toggle { width: 100%; padding-top: 2px; }
+.cz-side-toggle > svg { flex: none; color: var(--meta, #71717a); }
+.cz-side-toggle:disabled { cursor: default; }
+.cz-side-toggle:disabled > svg { opacity: .4; }
+.is-folded .cz-side-toggle.is-rail { height: 24px; gap: 0; margin-top: -2px; }
 .cz-side-link[aria-current='page'] {
   background: var(--surface, #fff);
   color: var(--ink, #18181b);
@@ -143,11 +188,11 @@
   background: var(--surface, #fff);
   box-shadow: 0 0 0 1px rgba(24, 24, 27, .07), 0 1px 2px rgba(24, 24, 27, .05);
   pointer-events: none;
-  /* Under every label and link it passes on the way (the nav is its own stacking context). */
+  /* Under every label and link it passes on the way (the list is its own stacking context). */
   z-index: -1;
 }
 .is-folded .cz-side-pill { background: var(--c-accent-soft, #e7f8f1); box-shadow: none; }
-.cz-side[data-pill='on'] .cz-side-link[aria-current='page'] { background: transparent; box-shadow: none; }
+.cz-side[data-pill='on'] .cz-side-list .cz-side-link[aria-current='page'] { background: transparent; box-shadow: none; }
 
 .cz-side-tool {
   width: 18px;
@@ -232,7 +277,7 @@
   text-align: left;
   cursor: pointer;
 }
-.is-folded .cz-side-me { width: auto; padding: 8px 0 4px; justify-content: center; }
+.is-folded .cz-side-me { width: auto; padding: 4px 0 2px; justify-content: center; }
 .cz-side-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .cz-side-name { font-size: 13px; font-weight: 600; color: var(--ink, #18181b); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cz-side-role { font-size: 11.5px; color: var(--meta, #71717a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -251,6 +296,53 @@
   cursor: pointer;
 }
 .is-folded .cz-side-fold { width: 40px; padding: 0; justify-content: center; }
+.cz-side-head,
+.cz-side-actions,
+.cz-side-foot { flex: none; }
+/* Ask CLOZR with the dialer button beside it; stacked on the icon rail. */
+.cz-side-row { display: flex; align-items: center; gap: 2px; width: 100%; }
+.cz-side-row > .cz-side-link { flex: 1; min-width: 0; }
+.is-folded .cz-side-row { flex-direction: column; width: auto; }
+.is-folded .cz-side-row > .cz-side-link { flex: none; }
+.cz-side-icon { color: var(--ink-3, #3f3f46); }
+@media (hover: hover) and (pointer: fine) {
+  .cz-side-icon:hover { background: var(--nav-hover, #f1f1f2) !important; }
+}
+.is-folded .cz-side-icon { width: 40px !important; height: 36px !important; }
+
+/* Shorter windows (a 1366x768 laptop, a browser with its bars) tighten the
+   rows so the whole menu fits without scrolling. Rows stay 24px or taller. */
+@media (max-height: 900px) {
+  .cz-side { gap: 8px; padding-top: 10px; }
+  .cz-side-list { gap: 8px; }
+  .cz-side-group.has-rule { padding-top: 8px; }
+  .cz-side-label { padding-bottom: 2px; }
+  .cz-side-link { height: 28px; }
+  .cz-side-link.is-tool { height: 26px; }
+  .is-folded .cz-side-link { height: 32px; }
+  .cz-side-me { padding-top: 4px; padding-bottom: 4px; margin-top: 2px; }
+  .cz-side-fold { height: 26px; }
+}
+@media (max-height: 760px) {
+  .cz-side { gap: 6px; padding-top: 8px; padding-bottom: 6px; }
+  .cz-side-head { min-height: 30px; }
+  .cz-side-search,
+  .cz-side-add { height: 30px; }
+  .cz-side-list { gap: 6px; }
+  .cz-side-group.has-rule { padding-top: 6px; }
+  .cz-side-label { padding-bottom: 1px; font-size: 11px; }
+  .cz-side-link { height: 26px; font-size: 13px; }
+  .cz-side-link.is-tool { height: 24px; }
+  .is-folded .cz-side-link { height: 28px; }
+  .cz-side-foot { padding-top: 4px; gap: 0; }
+  .cz-side-fold { height: 24px; }
+}
+/* Shorter still, the group names go: the rules between groups still mark them. */
+@media (max-height: 640px) {
+  .cz-side-label { display: none; }
+  /* Tools keeps its toggle, or its rows could not be reached. */
+  .cz-side-label.cz-side-toggle { display: flex; }
+}
 
 .cz-side :is(button):focus-visible {
   outline: 2px solid var(--c-accent, #0a8560);
@@ -261,6 +353,8 @@
 }
 @media (hover: hover) and (pointer: fine) {
   .cz-side :is(.cz-side-link:not([aria-current='page']), .cz-side-icon, .cz-side-fold, .cz-side-logo):hover { background: var(--nav-hover, #f1f1f2); }
+  .cz-side .cz-side-label.cz-side-toggle:not(:disabled):hover,
+  .cz-side .cz-side-label.cz-side-toggle:not(:disabled):hover > svg { color: var(--ink, #18181b); }
   .cz-side .cz-side-me:hover { background: var(--surface-2, #f4f4f5); }
   .cz-side .cz-side-search:hover { background: var(--canvas, #fafafa); }
   .cz-side .cz-side-add:hover { background: var(--ink-2, #27272a); }

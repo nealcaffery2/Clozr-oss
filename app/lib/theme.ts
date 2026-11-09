@@ -1,38 +1,38 @@
 // Theme (Settings → Account → Theme, and ⌘K "Toggle dark mode").
 //
-// The choice is `<html data-theme="light" | "dark">`; tokens.css carries the
-// dark values under `:root[data-theme="dark"]`. "System" is no attribute at
-// all: the `prefers-color-scheme` block in tokens.css (guarded by
-// `:root:not([data-theme="light"])`) follows the OS, so it tracks live OS
-// changes without a listener. Per browser, in localStorage, like prefs.ts.
+// The choice is `<html data-theme="light" | "dark" | "system">`; tokens.css
+// carries the dark values under `:root[data-theme="dark"]`, and the
+// `prefers-color-scheme` block (guarded by `:root[data-theme="system"]`)
+// follows the OS live without a listener. Nothing stored = light, the default.
+// Per browser, in localStorage, like prefs.ts.
 
 export type Theme = 'light' | 'dark' | 'system';
 
 export const THEME_KEY = 'clozr-theme';
 
 /** Inline in <head>, before any paint, so a dark tab never flashes white. */
-export const THEME_BOOT = `try{var t=localStorage.getItem('${THEME_KEY}');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}`;
+export const THEME_BOOT = `try{var t=localStorage.getItem('${THEME_KEY}');if(t==='dark'||t==='system')document.documentElement.setAttribute('data-theme',t)}catch(e){}`;
 
 const listeners = new Set<() => void>();
 
 export function getTheme(): Theme {
   try {
     const t = localStorage.getItem(THEME_KEY);
-    return t === 'dark' || t === 'light' ? t : 'system';
+    return t === 'dark' || t === 'system' ? t : 'light';
   } catch {
-    return 'system';
+    return 'light';
   }
 }
 
 function apply(t: Theme) {
   const el = document.documentElement;
-  if (t === 'system') el.removeAttribute('data-theme');
+  if (t === 'light') el.removeAttribute('data-theme');
   else el.setAttribute('data-theme', t);
 }
 
 export function setTheme(t: Theme) {
   try {
-    if (t === 'system') localStorage.removeItem(THEME_KEY);
+    if (t === 'light') localStorage.removeItem(THEME_KEY);
     else localStorage.setItem(THEME_KEY, t);
   } catch {
     // Private mode: the change still applies for this tab.
@@ -68,10 +68,10 @@ export function isDark(): boolean {
   }
 }
 
-/** ⌘K "Toggle dark mode": flips what is on screen and pins it. */
+/** ⌘K "Toggle dark mode" and the shell's theme bubble: flips what is on screen and pins it. */
 export function toggleTheme() {
   setTheme(isDark() ? 'light' : 'dark');
 }
 
 /** The prerender has no localStorage. */
-export const serverTheme = (): Theme => 'system';
+export const serverTheme = (): Theme => 'light';

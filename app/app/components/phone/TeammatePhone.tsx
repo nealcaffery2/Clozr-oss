@@ -77,12 +77,18 @@ export async function syncTeamToTalkr(rows: { email: string | null; full_name?: 
     const email = r.email?.trim().toLowerCase();
     const name = r.full_name?.trim().toLowerCase();
     const m = members.find((x) => (email && x.email.toLowerCase() === email) || (name && x.display_name?.trim().toLowerCase() === name));
-    if (!m || m.status === 'active' || m.status === 'disabled') continue;
+    if (!m || m.status === 'disabled') continue;
+    // A CLOZR admin made after they were put on Talkr stayed a Talkr rep
+    // (Casey, 2026-11-06): no Numbers page, no template management. Follow the CLOZR role.
+    const role = talkrRole(r.role);
+    const patch = { ...(m.status !== 'active' ? { status: 'active' as const } : {}), ...(m.role !== 'owner' && m.role !== role ? { role } : {}) };
+    if (!Object.keys(patch).length) continue;
     try {
-      await talkr.updateTeamMember(m.id, { status: 'active' });
-      activated++;
+      const { member } = await talkr.updateTeamMember(m.id, patch);
+      m.role = member.role;
+      if (patch.status) activated++;
     } catch (err) {
-      errors.push(`${m.email}: still ${m.status} (${err instanceof Error ? err.message : 'Talkr refused'})`);
+      errors.push(`${m.email}: still ${m.status}${patch.role ? ` ${m.role}` : ''} (${err instanceof Error ? err.message : 'Talkr refused'})`);
     }
   }
   if (added || activated) await refreshPhoneAdmin();

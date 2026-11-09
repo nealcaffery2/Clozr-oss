@@ -28,12 +28,14 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 // border entirely, and the `font:` shorthand failed whole because of
 // var(--sans). White on white, no boxes. The stylesheet comes with the
 // component now, and the root carries the scope.
-import '@/app/clozr/talkr-inbox.css';
+// Styles: talkr-inbox.css, loaded once by ClozrShell (see the note there).
 import {
   type Block, type MessageTemplate, MERGE_FIELDS,
   blocksToEmail, renderEmail, saveTemplate,
 } from '@/lib/message-templates';
 import { MAX_BODY, MAX_RECIPIENTS, type Recipient, type SendContext, renderMerge, textMany } from '@/lib/sms';
+import { MERGE_SOURCES, blankNames, bulkGapSummary, dealGaps, fieldsIn } from '@/lib/merge-gaps';
+import { MergeGapNotice } from '@/components/MergeGapNotice';
 import { claimBulkEmail, releaseBulkEmail, sendEmail } from '@/lib/google';
 import { queueBulkRvm } from '@/lib/crm-write';
 import { RvmRecordingPicker } from '@/app/components/talkr/RvmRecordingPicker';
@@ -98,6 +100,10 @@ export type BulkComposeProps = {
   /** After a send that reached somebody: the deal it was about and who got it. */
   onSent?: (r: { channel: Channel; dealId: number | null; sentDbIds: number[] }) => void | Promise<void>;
   onClose: () => void;
+  /** Where a blank deal field ({{beds}} …) is filled in: the deal's record. Closes the composer first. */
+  onOpenDeal?: (dealId: number) => void;
+  /** Saves one property fact ('property.beds' …) on the deal's house. */
+  onSaveDealFact?: (dealId: number, field: string, value: string) => Promise<{ ok: true } | { ok: false; message?: string }>;
 };
 
 type Row = BulkPerson & { to: string; skip?: string };
@@ -145,7 +151,7 @@ export function BulkCompose(props: BulkComposeProps) {
 
 function Composer({
   kind, people, deals = [], requireDeal = false, channel: channel0 = 'sms',
-  workspaceId, canWrite, userId, rep, testTo = null, toast, onSent, onClose, t, blast,
+  workspaceId, canWrite, userId, rep, testTo = null, toast, onSent, onClose, onOpenDeal, onSaveDealFact, t, blast,
 }: BulkComposeProps & { t: ReturnType<typeof useTemplates>; blast: MessageTemplate | null }) {
   const [channel, setChannel] = useState<Channel>(channel0);
   const [dealId, setDealId] = useState<string>(deals.length === 1 ? String(deals[0].id) : '');
@@ -176,6 +182,9 @@ function Composer({
     const ids = people.map((p) => p.dbId);
     void loadSendPreview(workspaceId, kind === 'seller' ? ids : [], kind === 'buyer' ? ids : []).then((r) => {
       if (!gone) setRvmFacts(r.ok ? { key: rvmKey, data: r.data, error: null } : { key: rvmKey, data: null, error: r.message });
+    }, (e: unknown) => {
+      // A network failure rejects outright; the check shows it instead of spinning for good.
+      if (!gone) setRvmFacts({ key: rvmKey, data: null, error: e instanceof Error ? e.message : 'The pre-send check could not run.' });
     });
     return () => { gone = true; };
     // The key carries the selection's ids: the parent rebuilds `people` on every render.
@@ -220,6 +229,13 @@ function Composer({
   const go = rows.filter((r) => !r.skip);
   const skipped = rows.filter((r) => r.skip);
 
+  // Deal facts typed into the blank-field notice, by deal, so they apply at
+  // once (a saved one also comes back on the deal's fields after the re-read).
+  const [fill, setFill] = useState<Record<string, Record<string, string>>>({});
+  const dealFill = useMemo(() => {
+    const own = deal ? fill[deal.id] ?? {} : {};
+    return Object.fromEntries(Object.entries(own).filter(([k]) => !String(deal?.fields[k] ?? '').trim()));
+  }, [deal, fill]);
   /** Everything a message can merge for one person: the deal, then them, then who they are and who is writing. */
   const fieldsOf = useCallback((r: Row): Record<string, string> => ({
     // A blast has no campaign facts about each buyer, so the per-buyer dispo
@@ -227,6 +243,7 @@ function Composer({
     // rather than going out as a literal {{purchase_note}}.
     purchase_note: '', purchase_count: '', last_purchase_address: '', last_purchase_ago: '', last_purchase_type: '', deal_distance: '', similar_size: '',
     ...(deal?.fields ?? {}),
+    ...dealFill,
     ...(r.fields ?? {}),
     first_name: r.name.trim().split(/\s+/)[0] ?? '',
     name: r.name,
@@ -238,7 +255,7 @@ function Composer({
     rep_phone: rep.repPhone ?? '',
     rep_email: rep.repEmail ?? '',
     company: rep.company ?? '',
-  }), [deal, rep.repName, rep.repPhone, rep.repEmail, rep.company]);
+  }), [deal, dealFill, rep.repName, rep.repPhone, rep.repEmail, rep.company]);
 
   const pickChannel = (c: Channel) => {
     if (c === channel) return;
@@ -276,6 +293,20 @@ function Composer({
   const first = go[0];
   const sample = useMemo(() => (first ? fieldsOf(first) : null), [first, fieldsOf]);
   const preview = useMemo(() => (sample ? renderEmail({ subject, body_html: html, body_text: body }, sample) : null), [sample, subject, html, body]);
+  // Deal and property fields each recipient's message would show blank:
+  // counted per person (a seller's own address rides on their row), named
+  // above the message and repeated in the review line before anything sends.
+  const gapCounts = useMemo(() => {
+    if (channel === 'rvm') return {} as Record<string, number>;
+    const names = fieldsIn(...(channel === 'email' ? [subject, html, body] : [body]));
+    const c: Record<string, number> = {};
+    if (!names.length) return c;
+    for (const r of go) for (const b of dealGaps(blankNames(names, fieldsOf(r)))) c[b] = (c[b] ?? 0) + 1;
+    return c;
+  }, [channel, subject, html, body, go, fieldsOf]);
+  const gapNames = Object.keys(gapCounts);
+  const gapLine = bulkGapSummary(gapCounts, go.length, kind === 'buyer' ? 'buyers' : kind === 'vendor' ? 'vendors' : 'sellers',
+    { noDeal: !deal }).join(' ');
   const smsOut = sample ? renderMerge(body, sample) : '';
   const s = smsSegments(smsOut);
   const culprit = s.encoding === 'ucs2' ? firstNonGsmChar(smsOut) : null;
@@ -317,9 +348,14 @@ function Composer({
     const r = await saveTemplate(workspaceId, {
       name: name.slice(0, 120), channel: channel === 'sms' ? 'sms' : 'email',
       audience: kind === 'buyer' ? 'buyer' : kind === 'vendor' ? 'general' : 'seller', category: null,
-      subject: channel === 'email' ? subject : null, body_text: body, body_html: null,
-      // An email keeps its blocks: saveTemplate renders body_html from them, and the editor reopens them.
-      blocks: channel === 'email' ? ownBlocks : null, shared: false,
+      subject: channel === 'email' ? subject : null, body_text: body,
+      // A designed template keeps its HTML, with this text as its plain-text part.
+      // Otherwise an email keeps its blocks: saveTemplate renders body_html from
+      // them, and the editor reopens them.
+      ...(channel === 'email' && tpl?.body_html
+        ? { body_html: tpl.body_html, customHtml: true, blocks: [{ id: 'body', type: 'paragraph', text: body }] }
+        : { body_html: null, blocks: channel === 'email' ? ownBlocks : null }),
+      shared: false,
     });
     setSavingTpl(false);
     if (!r.ok) { toast(r.message); return; }
@@ -522,6 +558,16 @@ function Composer({
               </label>
             )}
 
+            {gapNames.length && go.length ? (
+              <MergeGapNotice blank={gapNames} where={deal ? deal.fields.address || deal.label : 'this send'} extra={gapLine}
+                next={deal ? undefined : deals.length ? 'Pick the deal above, or take those fields out of the message.' : 'No deal is ready to attach, so take those fields out of the message.'}
+                openLabel="Open the deal's property facts"
+                onOpen={deal && onOpenDeal && gapNames.some((b) => MERGE_SOURCES[b]?.fix === 'property') ? () => onOpenDeal(deal.id) : undefined}
+                onSave={deal && onSaveDealFact ? (field, _name, value) => onSaveDealFact(deal.id, field, value) : undefined}
+                onUse={deal ? (name, value) => { setFill((x) => ({ ...x, [deal.id]: { ...(x[deal.id] ?? {}), [name]: name === 'sqft' && /^\d+$/.test(value) ? Number(value).toLocaleString('en-US') : value } })); setConfirming(false); } : undefined}
+                testId="bulk-merge-gaps" />
+            ) : null}
+
             {channel === 'rvm' ? (
               <RvmRecordingPicker workspaceId={workspaceId} value={rvmClip?.id ?? null} label="Voicemail to drop"
                 defaultName={deal ? `RVM · ${deal.fields.address || deal.label}` : kind === 'buyer' ? 'Buyer voicemail' : 'Voicemail'}
@@ -580,7 +626,7 @@ function Composer({
                     {...track(setBody)}
                     placeholder={channel === 'sms' ? 'Hi {{first_name}}, new deal at {{address}} — interested?' : 'Hi {{first_name}},\n\nWe just picked up {{address}}…'}
                   />
-                  <MergeChips fields={MERGE_FIELDS} onInsert={insert} />
+                  <MergeChips fields={MERGE_FIELDS} onInsert={insert} explain />
                   {channel === 'email' && <span style={{ font: '400 11px/1.4 var(--sans)', color: 'var(--muted)' }}>Your words go out in the same branded shell a template uses, signed as you.</span>}
                 </>
               )}
@@ -598,7 +644,7 @@ function Composer({
                           {x.body_html && <span style={{ font: '700 11px/1 var(--sans)', color: 'var(--accent)' }}>Designed</span>}
                         </span>
                         <span className="truncate" style={{ font: '400 11.5px/1.3 var(--sans)', color: 'var(--muted)' }}>{x.subject ? `${x.subject} — ` : ''}{x.body_text.replace(/\s+/g, ' ').slice(0, 120)}</span>
-                        <span style={{ font: '500 10px/1 var(--sans)', color: 'var(--muted-2)' }}>{ownerLabel(x, userId, t.team)}</span>
+                        <span style={{ font: '500 11px/1 var(--sans)', color: 'var(--muted-2)' }}>{ownerLabel(x, userId, t.team)}</span>
                       </button>
                     ))}
                   </div>
@@ -686,6 +732,7 @@ function Composer({
           ) : confirming ? (
             <span className="mr-auto" style={{ font: '500 12.5px/1.4 var(--sans)' }}>
               {channelName(channel)} <b>{who}</b>{deal ? ` about ${deal.fields.address || deal.label}` : ''}{skipped.length ? ` · ${skipped.length} skipped` : ''}. {channel === 'rvm' ? (rvmCheck ? `${previewSentence(rvmCheck, fmtWhen)}.` : 'This sends the ringless voicemail now.') : 'This sends now.'}
+              {gapLine ? <span className="block" style={{ color: 'var(--tx-amber, #b45309)', textWrap: 'pretty' }} data-testid="bulk-merge-summary">{gapLine}</span> : null}
             </span>
           ) : (
             <span className="mr-auto" style={{ font: '400 12px/1.4 var(--sans)', color: 'var(--muted)' }}>

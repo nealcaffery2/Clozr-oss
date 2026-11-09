@@ -23,7 +23,7 @@ export function SpamRiskBadge({ subject, html, text, recipients, kind }: { subje
             ? <span style={{ display: 'block', color: 'var(--tx-mint, #0a8560)', fontWeight: 600 }}>Nothing in the content looks like bulk mail.</span>
             : r.findings.map((f: SpamFinding) => (
               <span key={f.key} style={{ display: 'block', padding: '4px 0', borderBottom: '1px solid var(--surface-2, #f4f4f5)' }}>
-                <strong>{f.label}</strong> <span style={{ color: 'var(--subtle, #a1a1aa)' }}>+{f.points}</span><br />
+                <strong>{f.label}</strong> <span style={{ color: 'var(--meta, #71717a)' }}>+{f.points}</span><br />
                 <span style={{ color: 'var(--muted, #52525b)' }}>{f.detail}</span>
               </span>
             ))}

@@ -9,6 +9,9 @@ export function SignaturePad({ onChange, height = 150 }: { onChange: (png: strin
   const drawing = useRef(false);
   const last = useRef<{ x: number; y: number } | null>(null);
   const [empty, setEmpty] = useState(true);
+  // What up() reads. `empty` is the render-time value, and a quick stroke can
+  // end before React re-renders after the first move.
+  const inked = useRef(false);
 
   // Draw at device resolution so the stamped signature is crisp.
   useEffect(() => {
@@ -32,6 +35,7 @@ export function SignaturePad({ onChange, height = 150 }: { onChange: (png: strin
     const p = pos(e);
     ctx.beginPath(); ctx.moveTo(last.current.x, last.current.y); ctx.lineTo(p.x, p.y); ctx.stroke();
     last.current = p;
+    inked.current = true;
     if (empty) setEmpty(false);
   };
   const up = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -39,19 +43,19 @@ export function SignaturePad({ onChange, height = 150 }: { onChange: (png: strin
     drawing.current = false; last.current = null;
     // A tap with no stroke leaves the pad blank: report nothing, so the
     // "draw your signature" check can refuse an empty signature.
-    onChange(empty ? null : e.currentTarget.toDataURL('image/png'));
+    onChange(inked.current ? e.currentTarget.toDataURL('image/png') : null);
   };
   const clear = () => {
     const c = ref.current; const ctx = c?.getContext('2d'); if (!c || !ctx) return;
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, c.width, c.height); ctx.restore();
-    setEmpty(true); onChange(null);
+    inked.current = false; setEmpty(true); onChange(null);
   };
 
   return (
     <div>
       <div style={{ position: 'relative', border: '1px dashed #c4c4c8', borderRadius: '10px', background: 'var(--surface, #fff)', overflow: 'hidden' }}>
         <canvas ref={ref} style={{ display: 'block', width: '100%', height: `${height}px`, touchAction: 'none', cursor: 'crosshair' }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onPointerLeave={up} />
-        {empty ? <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none', color: 'var(--subtle, #a1a1aa)', fontSize: '13px' }}>Draw your signature here</div> : null}
+        {empty ? <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none', color: 'var(--meta, #71717a)', fontSize: '13px' }}>Draw your signature here</div> : null}
         <div style={{ position: 'absolute', left: '16px', right: '16px', bottom: '28px', borderTop: '1px solid var(--divider, #e4e4e7)', pointerEvents: 'none' }} />
       </div>
       <button type="button" onClick={clear} style={{ marginTop: '6px', fontSize: '12px', color: 'var(--muted, #52525b)', background: 'none', border: 0, cursor: 'pointer', padding: 0 }}>Clear</button>

@@ -41,8 +41,8 @@ const MINT = '#0A8560';
 const MINT_TEXT = 'var(--tx-mint-deep, #08694c)';
 const MINT_TINT = 'var(--mint-dim, #e7f8f1)';
 const MINT_LINE = '#A8ECD2';
-const AMBER = '#B45309';
-const LINK_BLUE = '#0369A1';
+const AMBER = 'var(--tx-amber, #b45309)';
+const LINK_BLUE = 'var(--tx-sky, #0369a1)';
 const FONT = "var(--font-inter), 'Inter', 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
 
 const TAG_COLOR: Record<string, string> = { muted: MUTED, due: AMBER, overdue: '#B91C1C', money: INK, mint: MINT_TEXT };
@@ -85,7 +85,7 @@ const TEXT = 'M2.5 3.5h11v7.5h-6l-3 2.5V11h-2z';
 const LOG = 'M4.5 2.5h7a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 12V4a1.5 1.5 0 0 1 1.5-1.5zM5.5 8.2 7.2 10l3.3-3.5';
 const CHEVRON = 'M6 3.5 10.5 8 6 12.5';
 const CHECK = 'M4.5 8.2 6.9 10.5 11.5 5.5';
-const RED = '#B91C1C';
+const RED = 'var(--tx-red, #b91c1c)';
 
 /** "10:12 AM their time", amber outside the calling window. Nothing when the number has no known zone. */
 function TheirTime({ e164, size = 13 }: { e164: string; size?: number }) {
@@ -212,7 +212,7 @@ function EmptyDay({ V }: { V: ClozrView }) {
       style={{ flex: '1 0 auto', boxSizing: 'border-box', padding: '20px 24px 32px', display: 'flex', flexDirection: 'column', gap: 16, color: INK, fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }}
     >
       <header style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, lineHeight: 1.2, letterSpacing: '-0.01em' }}>Today</h1>
+        <h1 className="ds-title">Today</h1>
         <p data-testid="today-empty" style={{ margin: 0, fontSize: 13, fontWeight: 500, lineHeight: 1.45, color: MUTED }}>
           Nobody on your call list. New leads, tasks due today and offers waiting on an answer join it as they arrive.
         </p>
@@ -325,7 +325,7 @@ function TaskLine({ t, phone, first }: { t: Band['tasks'][number]; phone: boolea
         style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, padding: phone ? '8px 14px 8px 0' : '7px 14px 7px 0', minHeight: phone ? 52 : 44, border: 0, background: 'var(--surface, #ffffff)', textAlign: 'left', color: INK, cursor: 'pointer' }}
       >
         <span style={{ display: 'flex', alignItems: 'baseline', gap: 10, width: '100%', minWidth: 0 }}>
-          <span style={{ flex: 1, minWidth: 0, fontSize: phone ? 14 : 13, fontWeight: 600, lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</span>
+          <span className="t-title" style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</span>
           <span style={{ flexShrink: 0, fontSize: 12, fontWeight: t.late ? 600 : 500, color: t.late ? RED : MUTED, whiteSpace: 'nowrap' }}>{t.due}</span>
         </span>
         <span style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.4, color: MUTED, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
@@ -355,7 +355,7 @@ function DealsPanel({ B, size }: { B: Band; size: BandSize }) {
             style={{ width: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, padding: phone ? '8px 14px' : '7px 14px', minHeight: phone ? 52 : 44, border: 0, background: 'var(--surface, #ffffff)', textAlign: 'left', color: INK, cursor: 'pointer' }}
           >
             <span style={{ display: 'flex', alignItems: 'baseline', gap: 10, width: '100%', minWidth: 0 }}>
-              <span style={{ flex: 1, minWidth: 0, fontSize: phone ? 14 : 13, fontWeight: 600, lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.addr || 'No address'}</span>
+              <span className="t-name" style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.addr || 'No address'}</span>
               <span style={{ flexShrink: 0, fontSize: 13, fontWeight: 600, color: d.key ? INK : MUTED, whiteSpace: 'nowrap' }}>
                 {d.key ? <><span style={{ fontSize: 12, fontWeight: 500, color: MUTED }}>{d.key.label} </span>{d.key.value}</> : <span style={{ fontSize: 12, fontWeight: 500 }}>No price yet</span>}
               </span>
@@ -404,7 +404,7 @@ function TodayDesk({ V }: { V: ClozrView }) {
       >
         <div style={{ padding: '20px 16px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, lineHeight: 1.2, letterSpacing: '-0.01em' }}>Today</h1>
+            <h1 className="ds-title">Today</h1>
             <span data-testid="today-left" style={{ fontSize: 12, fontWeight: 500, color: MUTED }}>{T.allDone ? 'All done' : `${T.left} left`}</span>
           </div>
           <p style={{ margin: 0, fontSize: 12, fontWeight: 500, lineHeight: 1.4, color: MUTED }}>Power dial runs this list top to bottom. New leads first.</p>
@@ -438,7 +438,7 @@ function TodayDesk({ V }: { V: ClozrView }) {
             <section data-testid="today-lead" aria-label="Seller" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '24px 28px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                  <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.name}</h2>
+                  <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, lineHeight: 1.25, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.name}</h2>
                   <span data-testid="today-stage"><StageChip stage={lead.stage} /></span>
                   <button type="button" className="today-link" onClick={lead.open} style={{ marginLeft: 'auto', border: 0, background: 'none', padding: 0, color: MINT_TEXT, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', minHeight: 32 }}>
                     Open full record
@@ -524,7 +524,7 @@ function DeskRow({ r }: { r: Row }) {
       }}
     >
       <span style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', minWidth: 0 }}>
-        <span style={{ fontSize: 13, fontWeight: 600, flexGrow: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+        <span className="t-name" style={{ flexGrow: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
         <span data-testid={`today-tag-${r.pid}`} style={{ fontSize: 12, fontWeight: r.tone === 'money' ? 600 : 500, color: TAG_COLOR[r.tone] ?? MUTED, whiteSpace: 'nowrap' }}>{r.tagText}</span>
       </span>
       <span data-testid={r.done ? 'today-done' : undefined} style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.4, color: r.done ? MINT_TEXT : MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{r.line}</span>
@@ -565,7 +565,7 @@ function CallStrip({ V, lead }: { V: ClozrView; lead: Lead }) {
         <span aria-hidden style={{ width: 8, height: 8, borderRadius: 999, background: SUBTLE, flexShrink: 0 }} />
         <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <span style={{ fontSize: 13, fontWeight: 600 }}>{wrap ? 'Call ended' : T.target?.mode === 'log' ? `Logging ${lead.first} without a call` : `Ready to call ${lead.first}`}</span>
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--subtle, #a1a1aa)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--meta, #71717a)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {wrap ? `${V.callTarget.name}, ${V.callDuration}` : lead.e164 ? lead.phone : 'No phone number on the record'}
           </span>
         </span>
@@ -700,7 +700,7 @@ function TodayPhone({ V }: { V: ClozrView }) {
     >
       <header style={{ flexShrink: 0, boxSizing: 'border-box', minHeight: 60, padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, lineHeight: 1.2, letterSpacing: '-0.01em' }}>Today</h1>
+          <h1 className="ds-title">Today</h1>
           <span data-testid="today-left" style={{ fontSize: 12, fontWeight: 500, color: MUTED }}>{T.allDone ? 'All done' : `${T.left} left`}</span>
         </div>
         <button
@@ -747,7 +747,7 @@ function TodayPhone({ V }: { V: ClozrView }) {
                     }}
                   >
                     <span style={{ display: 'flex', alignItems: 'baseline', gap: 12, width: '100%' }}>
-                      <span style={{ flexGrow: 1, minWidth: 0, fontSize: 15, fontWeight: 600, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
+                      <span className="t-name" style={{ flexGrow: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
                       <span data-testid={`today-tag-${r.pid}`} style={{ flexShrink: 0, fontSize: 12, fontWeight: r.tone === 'money' || r.tone === 'due' || r.tone === 'overdue' ? 600 : 500, lineHeight: 1.4, color: TAG_COLOR[r.tone] ?? MUTED }}>{r.tagText}</span>
                     </span>
                     <span data-testid={r.done ? 'today-done' : undefined} style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.4, color: r.done ? MINT_TEXT : INK2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{r.line}</span>
@@ -773,7 +773,7 @@ function TodayPhone({ V }: { V: ClozrView }) {
         <div ref={barRef} data-testid="today-bar" style={{ flexShrink: 0, background: 'var(--surface, #ffffff)', borderTop: `1px solid ${LINE}` }}>
           <section aria-label={`Actions for ${lead.name}`} style={{ padding: '0 16px 12px', display: 'flex', flexDirection: 'column' }}>
             <div style={{ minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <button type="button" onClick={lead.open} aria-label={`Open record for ${lead.name}`} className="today-link" style={{ minHeight: 44, minWidth: 0, display: 'flex', alignItems: 'center', gap: 4, border: 0, background: 'none', padding: 0, color: INK, fontSize: 15, fontWeight: 600, lineHeight: 1.3, cursor: 'pointer' }}>
+              <button type="button" onClick={lead.open} aria-label={`Open record for ${lead.name}`} className="today-link" style={{ minHeight: 44, minWidth: 0, display: 'flex', alignItems: 'center', gap: 4, border: 0, background: 'none', padding: 0, color: INK, fontSize: 15, fontWeight: 700, lineHeight: 1.3, cursor: 'pointer' }}>
                 <span data-testid="today-bar-name" style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.name}</span>
                 <Icon d={CHEVRON} color={MUTED} />
               </button>

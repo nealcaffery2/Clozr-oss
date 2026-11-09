@@ -11,15 +11,19 @@
 import React, { useEffect, useState } from 'react';
 import {
   ADDABLE_ROLES, CHAIN_POSITIONS, type ChainPosition, type DealPartyWithDeal, type PartyInput, PARTY_ROLE_LABEL, type TitleSuggestion,
-  chainOf, loadDealParties, removeDealParty, resolveSellerDeal, saveDealParty, setDealPartyPoc, titleSuggestions,
+  type SeatVendor, chainOf, favoriteFunders, FAVORITE_FUNDERS, loadDealParties, removeDealParty, resolveSellerDeal, saveDealParty, searchSeatVendors,
+  roleForContact, setDealPartyPoc, titleSuggestions,
 } from '@/lib/deal-parties';
+import { type Contact, KIND_LABEL } from '@/lib/contact-search';
+import { RecipientPicker } from '@/components/RecipientPicker';
+import type { SeatRole } from '@/lib/deal-types';
 import { loadDealPickers } from '@/lib/deal-sheet';
 import { sessionRole, useSession } from '@/lib/session';
 import { reachClick } from '@/app/components/record/reach';
 import { READ_ONLY_TITLE, useCanWrite } from '@/lib/read-only-context';
 import { canSee, canSeeBuyers } from '@/lib/team';
 import { buyerContactProblem } from '@/lib/buyer-contact';
-import { patchRecord } from '@/lib/crm-write';
+import { createVendor, patchRecord } from '@/lib/crm-write';
 import { supabase } from '@/lib/supabase';
 import { RepPicker, type RepRole } from '@/components/ds/RepPicker';
 import { useConfirm } from '@/components/ds/Confirm';
@@ -40,6 +44,8 @@ type Props = {
   onChanged?: (role: string) => void;
   /** No card chrome — for the record screens' narrow side columns. */
   bare?: boolean;
+  /** Seats this deal asks to have filled (lib/deal-types teamSeatsFor): novation agents and lender, second title, funder. */
+  seats?: SeatRole[];
 };
 
 type Pickers = Awaited<ReturnType<typeof loadDealPickers>>;
@@ -92,18 +98,15 @@ const act: React.CSSProperties = { fontSize: '11.5px', color: 'var(--tx-mint, #0
 const input: React.CSSProperties = { width: '100%', height: '30px', padding: '0 8px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '7px', fontSize: '12.5px', outline: 0, background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)', minWidth: 0 };
 const btn: React.CSSProperties = { height: '28px', padding: '0 12px', borderRadius: '7px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px', cursor: 'pointer', color: 'var(--ink, #18181b)' };
 
-/** Vendor service types that fit a team role, so picking a title company is not a scroll through every wholesaler. */
-const VENDOR_KIND_FOR_ROLE: Partial<Record<PartyInput['role'], RegExp>> = {
-  title: /title|attorney/i, photographer: /photo|notary/i, wholesaler: /wholesal/i, lender: /lend/i, attorney: /attorney|law/i,
-  listing_agent: /realtor|agent/i, buyers_agent: /realtor|agent/i, contractor: /contract/i,
-};
+/** A form's `who` (u:, s:, b:, v: and the id) as the contact kind its link badge names. */
+const WHO_KIND: Record<string, Contact['kind']> = { u: 'team', s: 'seller', b: 'buyer', v: 'vendor' };
 
 const blank = (role: PartyInput['role'] = 'other'): Form => ({ role, who: '', name: '', company: '', email: '', phone: '', position: '', poc: false });
 
 const chip: React.CSSProperties = { display: 'inline-block', marginTop: '3px', padding: '0 6px', borderRadius: '999px', background: 'var(--c-genius-soft, #f0faf5)', color: 'var(--tx-mint-deep, #08694c)', fontSize: '10.5px', fontWeight: 700, letterSpacing: '.04em', lineHeight: '17px' };
-const star = (on: boolean): React.CSSProperties => ({ background: 'none', border: 0, padding: '0 4px 0 0', fontSize: '14px', lineHeight: 1, color: on ? '#f59e0b' : 'var(--line, #d4d4d8)', verticalAlign: '-1px' });
+const star = (on: boolean): React.CSSProperties => ({ background: 'none', border: 0, padding: '0 4px 0 0', fontSize: '14px', lineHeight: 1, color: on ? 'var(--tx-amber, #b45309)' : 'var(--line, #d4d4d8)', verticalAlign: '-1px' });
 
-export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSeller, onOpenDeal, onOpenBareDeal, onOpenBuyer, onOpenVendor, onChanged, bare }: Props) {
+export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSeller, onOpenDeal, onOpenBareDeal, onOpenBuyer, onOpenVendor, onChanged, bare, seats }: Props) {
   const session = useSession();
   const workspaceId = session.workspace?.id ?? null;
   // A View-as preview reads the team but cannot change it (lib/read-only.ts).
@@ -153,8 +156,12 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
   }, [key, nonce, dealId, sellerId, buyerId, vendorId, workspaceId]); // eslint-disable-line react-hooks/exhaustive-deps -- pickers load once
 
   const cur = state?.key === key ? state : null;
-  const rows = (cur?.rows ?? []).filter((r) => seeBuyers || (r.role !== 'buyer' && !r.buyer_id));
-  if (onDeals && !rows.length) return null;
+  const allRows = (cur?.rows ?? []).filter((r) => seeBuyers || (r.role !== 'buyer' && !r.buyer_id));
+  if (onDeals && !allRows.length) return null;
+  // The first row in each seat's role shows in that seat; anyone else in the role stays in the list.
+  const seated = new Map((onDeals ? [] : seats ?? []).map((role) => [role, allRows.find((r) => r.role === role) ?? null]));
+  const seatedIds = new Set([...seated.values()].flatMap((r) => (r ? [r.id] : [])));
+  const rows = allRows.filter((r) => !seatedIds.has(r.id));
 
   const teamDeal = cur?.dealId ?? null;
   const canEdit = !!teamDeal && !!workspaceId && canWrite;
@@ -167,25 +174,20 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
     if (!pickers && workspaceId) void loadDealPickers(workspaceId).then(setPickers);
   }
   function edit(r: DealPartyWithDeal) {
-    const who = r.user_id ? `u:${r.user_id}` : r.vendor_id ? `v:${r.vendor_id}` : r.buyer_id ? `b:${r.buyer_id}` : '';
+    const who = r.user_id ? `u:${r.user_id}` : r.vendor_id ? `v:${r.vendor_id}` : r.buyer_id ? `b:${r.buyer_id}` : r.seller_id ? `s:${r.seller_id}` : '';
     open({
       id: r.id, role: r.role, who, name: r.name ?? '', company: r.company ?? '', email: r.email ?? '', phone: r.phone ?? '',
       position: r.chain_position ?? '', poc: !!r.is_poc, had: { position: !!r.chain_position, poc: !!r.is_poc },
     });
   }
-  // Picking someone fills their details in; the fields stay editable.
-  function pick(who: string) {
+  // Picking someone from contacts fills their details and their role from what they are (lib/deal-parties
+  // roleForContact): a seller is the Seller, a title company Title. Every field, the role too, stays editable.
+  function pickContact(c: Contact) {
     if (!form) return;
-    const [t, id] = [who.slice(0, 1), who.slice(2)];
-    const u = t === 'u' ? pickers?.team.find((x) => x.id === id) : null;
-    const v = t === 'v' ? pickers?.vendors.find((x) => String(x.id) === id) : null;
-    const b = t === 'b' ? pickers?.buyers.find((x) => String(x.id) === id) : null;
+    const seat = c.kind === 'team' ? pickers?.team.find((u) => u.id === c.id)?.role : c.trade;
     setForm({
-      ...form, who,
-      name: u?.label ?? v?.contact ?? b?.name ?? form.name,
-      company: v?.label ?? b?.company ?? (u ? '' : form.company),
-      email: u?.email ?? v?.email ?? b?.email ?? form.email,
-      phone: v?.phone ?? b?.phone ?? form.phone,
+      ...form, who: `${c.kind === 'team' ? 'u' : c.kind[0]}:${c.id}`, role: roleForContact(c.kind, seat),
+      name: c.name, company: c.company ?? '', email: c.email ?? '', phone: c.phone ?? '',
     });
   }
   // New buyer rows typed in, not picked from Buyers. Edits of older rows keep the old rule.
@@ -197,12 +199,13 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
     const p: PartyInput = {
       role: form.role,
       user_id: t === 'u' ? id : null, vendor_id: t === 'v' ? Number(id) : null, buyer_id: t === 'b' ? Number(id) : null,
+      seller_id: t === 's' ? Number(id) : null,
       name: clean(form.name), company: clean(form.company), email: clean(form.email), phone: clean(form.phone),
       // Only sent when set (or cleared on an edit), so a row with neither saves the way it always has.
       ...(form.position || form.had?.position ? { chain_position: form.position || null } : {}),
       ...(form.poc || form.had?.poc ? { is_poc: form.poc } : {}),
     };
-    if (!p.user_id && !p.vendor_id && !p.buyer_id && !p.name && !p.company) return setErr('Pick someone or type a name.');
+    if (!p.user_id && !p.vendor_id && !p.buyer_id && !p.seller_id && !p.name && !p.company) return setErr('Pick someone or type a name.');
     // A buyer typed in by hand needs a phone and an email, same as Quick Add.
     if (typedBuyer) { const c = buyerContactProblem(p); if (c) return setErr(c); }
     setBusy(true);
@@ -253,21 +256,17 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
 
   const formEl = form ? (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '6px', padding: '10px 0', borderBottom: '1px solid var(--divider-2, #f0f0f1)' }}>
+      {workspaceId ? (
+        <RecipientPicker workspaceId={workspaceId} value={form.name} autoFocus={!form.id} style={{ gridColumn: '1 / -1' }}
+          placeholder="Search contacts: people, buyers, vendors, title, team. Or type a new name"
+          kinds={seeBuyers ? undefined : ['seller', 'vendor', 'team']}
+          linked={form.who ? KIND_LABEL[WHO_KIND[form.who.slice(0, 1)]] : null}
+          onUnlink={() => setForm({ ...form, who: '' })}
+          onChange={(name) => setForm({ ...form, name })} onPick={pickContact} />
+      ) : null}
       <select aria-label="Role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Form['role'] })} style={input}>
         {(addableRoles.includes(form.role) ? addableRoles : [form.role, ...addableRoles]).map((r) => <option key={r} value={r}>{PARTY_ROLE_LABEL[r] ?? r}</option>)}
       </select>
-      <select aria-label="Who" value={form.who} onChange={(e) => pick(e.target.value)} style={input}>
-        <option value="">{pickers ? 'Someone outside (type below)' : 'Loading…'}</option>
-        {pickers?.team.length ? <optgroup label="Our team">{pickers.team.map((u) => <option key={u.id} value={`u:${u.id}`}>{u.label}</option>)}</optgroup> : null}
-        {(() => {
-          // The role narrows the vendor list: Title shows title companies, Photographer shows photographers/notaries.
-          const want = VENDOR_KIND_FOR_ROLE[form.role];
-          const vs = (pickers?.vendors ?? []).filter((v) => !want || want.test(v.kind ?? '') || form.who === `v:${v.id}`);
-          return vs.length ? <optgroup label={want ? PARTY_ROLE_LABEL[form.role] + ' vendors' : 'Vendors'}>{vs.map((v) => <option key={v.id} value={`v:${v.id}`}>{v.label}{v.contact ? ` · ${v.contact}` : ''}{v.state ? ` (${v.state})` : ''}</option>)}</optgroup> : null;
-        })()}
-        {seeBuyers && pickers?.buyers.length ? <optgroup label="Buyers">{pickers.buyers.map((b) => <option key={b.id} value={`b:${b.id}`}>{b.label}</option>)}</optgroup> : null}
-      </select>
-      <input aria-label="Name" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={input} />
       <input aria-label="Company" placeholder="Company" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} style={input} />
       <input aria-label="Email" type="email" placeholder={typedBuyer ? 'Email *' : 'Email'} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={input} />
       <input aria-label="Phone" type="tel" placeholder={typedBuyer ? 'Phone *' : 'Phone'} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} style={input} />
@@ -292,7 +291,7 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
         <h2 style={{ margin: 0, fontSize: '13.5px', fontWeight: 650, color: 'var(--ink, #18181b)', flex: 1 }}>{onDeals ? 'On deals' : 'Deal team'}</h2>
         {!onDeals && !form ? <button style={{ ...act, opacity: canEdit ? 1 : 0.4, cursor: canEdit ? 'pointer' : 'default' }} disabled={!canEdit} title={canWrite ? undefined : READ_ONLY_TITLE} onClick={() => open(blank())}>+ Add</button> : null}
       </div>
-      {!onDeals && cur && !teamDeal ? <div style={{ fontSize: '12px', color: 'var(--subtle, #a1a1aa)', marginTop: '6px' }}>No deal yet.</div> : null}
+      {!onDeals && cur && !teamDeal ? <div style={{ fontSize: '12px', color: 'var(--meta, #71717a)', marginTop: '6px' }}>No deal yet.</div> : null}
       {err ? <div role="alert" style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)', marginTop: '6px' }}>{err}</div> : null}
       {!onDeals && teamDeal && pickers ? (
         <div data-testid="deal-reps" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px 10px', padding: '10px 0', borderBottom: '1px solid var(--divider-2, #f0f0f1)' }}>
@@ -304,6 +303,14 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
           ))}
         </div>
       ) : null}
+      {!onDeals && teamDeal && workspaceId && seated.size ? (
+        <div data-testid="deal-seats" style={{ padding: '6px 0', borderBottom: '1px solid var(--divider-2, #f0f0f1)' }}>
+          {[...seated].map(([role, party]) => (
+            <Seat key={role} role={role} party={party} workspaceId={workspaceId} dealId={teamDeal} canEdit={canEdit}
+              onSaved={() => { setNonce((n) => n + 1); onChanged?.(role); }} onRemove={(r) => void remove(r)} />
+          ))}
+        </div>
+      ) : null}
       {form && !form.id ? formEl : null}
       {!onDeals && chainOf(rows).length ? (
         <div data-testid="deal-chain" style={{ margin: '8px 0 2px', padding: '7px 10px', borderRadius: '9px', background: 'var(--c-genius-soft, #f0faf5)', border: '1px solid var(--c-action-line, #a7dcc5)', fontSize: '12px', color: 'var(--tx-mint-deep, #08694c)', lineHeight: 1.6 }}>
@@ -311,7 +318,7 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
           {chainOf(rows).map((r, i) => (
             <React.Fragment key={r.id}>
               {i ? <span style={{ color: 'var(--c-action-line, #a7dcc5)', margin: '0 5px' }}>→</span> : null}
-              <b>{r.chain_position}</b> {r.is_poc ? <span style={{ color: '#f59e0b' }} title="Point of contact">★</span> : null}{r.name || r.company || '—'}
+              <b>{r.chain_position}</b> {r.is_poc ? <span style={{ color: 'var(--tx-amber, #b45309)' }} title="Point of contact">★</span> : null}{r.name || r.company || '—'}
             </React.Fragment>
           ))}
         </div>
@@ -378,4 +385,155 @@ export function DealTeam({ dealId, sellerId, buyerId, vendorId, onCall, onOpenSe
     </>
   );
   return bare ? <div style={{ marginTop: '14px' }}>{body}</div> : <div style={card}>{body}</div>;
+}
+
+/** What each seat searches first and files a new vendor as. */
+const SEAT: Record<SeatRole, { fits: RegExp; kind: string }> = {
+  listing_agent: { fits: /realtor|agent/i, kind: 'Realtor' },
+  buyers_agent: { fits: /realtor|agent/i, kind: 'Realtor' },
+  lender: { fits: /lend/i, kind: 'Lender' },
+  second_title: { fits: /title/i, kind: 'Title Company' },
+  transactional_funder: { fits: /fund|lend/i, kind: 'Transactional Funder' },
+};
+
+type NewVendor = { name: string; company: string; email: string; phone: string };
+const NO_VENDOR: NewVendor = { name: '', company: '', email: '', phone: '' };
+
+/**
+ * One seat the deal asks for (listing agent, buyer's agent, lender, second
+ * title, transactional funder). Empty, it searches Vendors and fills the
+ * contact in from the pick; someone not in Vendors is added there and to the
+ * team in one step. A transactional funder seat offers the favorites first.
+ */
+function Seat({ role, party, workspaceId, dealId, canEdit, onSaved, onRemove }: {
+  role: SeatRole; party: DealPartyWithDeal | null; workspaceId: number; dealId: number; canEdit: boolean;
+  onSaved: () => void; onRemove: (r: DealPartyWithDeal) => void;
+}) {
+  const session = useSession();
+  const cfg = SEAT[role];
+  const label = PARTY_ROLE_LABEL[role] ?? role;
+  const [mode, setMode] = useState<'view' | 'search' | 'new'>('view');
+  const [q, setQ] = useState('');
+  const [hits, setHits] = useState<{ q: string; list: SeatVendor[] } | null>(null);
+  const [fresh, setFresh] = useState<NewVendor>(NO_VENDOR);
+  const [favs, setFavs] = useState<SeatVendor[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const empty = !party;
+
+  useEffect(() => {
+    if (q.trim().length < 2) return;
+    let live = true;
+    const t = window.setTimeout(() => { void searchSeatVendors(workspaceId, q, cfg.fits).then((list) => { if (live) setHits({ q, list }); }); }, 250);
+    return () => { live = false; window.clearTimeout(t); };
+  }, [q, workspaceId, cfg.fits]);
+  useEffect(() => {
+    if (role !== 'transactional_funder' || !empty) return;
+    let live = true;
+    void favoriteFunders(workspaceId).then((f) => { if (live) setFavs(f); });
+    return () => { live = false; };
+  }, [role, empty, workspaceId]);
+
+  async function put(v: { vendor_id: number; company: string; name: string | null; email: string | null; phone: string | null }) {
+    setBusy(true);
+    const e = await saveDealParty(workspaceId, dealId, {
+      role, user_id: null, buyer_id: null, vendor_id: v.vendor_id,
+      name: v.name || v.company, company: v.company, email: v.email, phone: v.phone,
+    }, party?.id);
+    setBusy(false);
+    if (e) return setErr(e);
+    setErr(null); setMode('view'); setQ(''); setHits(null);
+    onSaved();
+  }
+  async function addNew() {
+    const name = fresh.name.trim(), company = fresh.company.trim(), email = fresh.email.trim(), phone = fresh.phone.trim();
+    if (!name && !company) return setErr('Type a name or a company.');
+    setBusy(true);
+    const r = await createVendor(workspaceId, { name: company || name, contact: name, email, phone, kind: cfg.kind }, session.user?.id ?? null);
+    setBusy(false);
+    if (!r.ok || !r.id) return setErr(r.message ?? 'Could not add the vendor.');
+    setFresh(NO_VENDOR);
+    await put({ vendor_id: r.id, company: company || name, name: name || null, email: email || null, phone: phone || null });
+  }
+  // What was typed in the search carries into the new vendor form.
+  function startNew(name = '') {
+    const t = q.trim();
+    setErr(null);
+    setFresh({ ...NO_VENDOR, name: name || (/[\d@]/.test(t) ? '' : t), email: t.includes('@') ? t : '', phone: /^[\d\s()+.-]{7,}$/.test(t) ? t : '' });
+    setMode('new');
+  }
+
+  const missingFavs = role === 'transactional_funder' && favs
+    ? FAVORITE_FUNDERS.filter((n) => !favs.some((f) => (f.name ?? '').toLowerCase() === n.toLowerCase()))
+    : [];
+  const list = hits && hits.q === q && q.trim().length >= 2 ? hits.list : null;
+  const editing = !party || mode !== 'view';
+
+  return (
+    <div data-testid={`seat-${role}`} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 120px) 1fr', gap: '10px', alignItems: 'start', padding: '6px 0', fontSize: '12.5px' }}>
+      <span style={{ color: 'var(--meta, #71717a)', paddingTop: '6px' }}>{label}</span>
+      <div style={{ minWidth: 0 }}>
+        {party && !editing ? (
+          <>
+            <span style={{ fontWeight: 600 }}>{party.name || party.company || '—'}</span>
+            {party.company && party.company !== party.name ? <span style={{ color: 'var(--meta, #71717a)' }}> · {party.company}</span> : null}
+            {party.phone || party.email ? <span style={{ display: 'block', color: 'var(--meta, #71717a)', fontSize: '11.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[party.phone, party.email].filter(Boolean).join(' · ')}</span> : null}
+            {canEdit ? (
+              <span style={{ display: 'flex', gap: '10px', marginTop: '2px' }}>
+                <button type="button" style={{ ...act, color: 'var(--meta, #71717a)' }} onClick={() => { setErr(null); setMode('search'); }}>Change</button>
+                <button type="button" style={{ ...act, color: 'var(--meta, #71717a)' }} onClick={() => onRemove(party)}>Remove</button>
+              </span>
+            ) : null}
+          </>
+        ) : !canEdit ? (
+          <span style={{ color: 'var(--meta, #71717a)', display: 'inline-block', paddingTop: '6px' }}>Not set</span>
+        ) : mode === 'new' ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '6px' }}>
+            <label style={cap}>Name<input value={fresh.name} onChange={(e) => setFresh({ ...fresh, name: e.target.value })} style={{ ...input, marginTop: '3px' }} /></label>
+            <label style={cap}>Company<input value={fresh.company} onChange={(e) => setFresh({ ...fresh, company: e.target.value })} style={{ ...input, marginTop: '3px' }} /></label>
+            <label style={cap}>Email<input type="email" value={fresh.email} onChange={(e) => setFresh({ ...fresh, email: e.target.value })} style={{ ...input, marginTop: '3px' }} /></label>
+            <label style={cap}>Phone<input type="tel" value={fresh.phone} onChange={(e) => setFresh({ ...fresh, phone: e.target.value })} style={{ ...input, marginTop: '3px' }} /></label>
+            <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button type="button" style={{ ...btn, background: '#0A8560', borderColor: '#0A8560', color: '#fff' }} disabled={busy} onClick={() => void addNew()}>{busy ? 'Adding…' : 'Add to vendors and the deal'}</button>
+              <button type="button" style={btn} onClick={() => { setMode('search'); setErr(null); }}>Back to search</button>
+              <span style={cap}>Saved in Vendors as {cfg.kind}</span>
+            </div>
+          </div>
+        ) : (
+          <>
+            {role === 'transactional_funder' && (favs?.length || missingFavs.length) ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
+                {(favs ?? []).map((f) => (
+                  <button key={f.vendor_id} type="button" disabled={busy} onClick={() => void put(f)} title={[f.phone, f.email].filter(Boolean).join(' · ') || undefined}
+                    style={{ ...btn, display: 'inline-flex', alignItems: 'center', gap: '5px', borderColor: '#fcd34d', background: 'var(--tint-amber, #fffbeb)' }}>
+                    <span style={star(true)} aria-hidden>★</span><b>{f.name}</b><span style={{ color: 'var(--meta, #71717a)' }}>· {f.company}</span>
+                  </button>
+                ))}
+                {missingFavs.map((n) => <button key={n} type="button" style={btn} onClick={() => startNew(n)}>+ {n}</button>)}
+              </div>
+            ) : null}
+            <input aria-label={`Find a ${label.toLowerCase()} in Vendors`} placeholder="Search Vendors: name, company, email or phone" value={q}
+              onChange={(e) => setQ(e.target.value)} style={input} />
+            {list ? (
+              <div style={{ marginTop: '4px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', overflow: 'hidden' }}>
+                {list.map((v) => (
+                  <button key={v.vendor_id} type="button" disabled={busy} onClick={() => void put(v)}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 9px', minHeight: '32px', border: 0, borderBottom: '1px solid var(--divider-2, #f0f0f1)', background: 'var(--surface, #fff)', cursor: 'pointer', fontSize: '12.5px', color: 'var(--ink, #18181b)' }}>
+                    <b>{v.name || v.company}</b>{v.name && v.company !== v.name ? <span style={{ color: 'var(--meta, #71717a)' }}> · {v.company}</span> : null}
+                    <span style={{ display: 'block', fontSize: '11px', color: 'var(--meta, #71717a)' }}>{[v.kind, v.phone, v.email].filter(Boolean).join(' · ')}</span>
+                  </button>
+                ))}
+                {!list.length ? <div style={{ padding: '7px 9px', fontSize: '12px', color: 'var(--meta, #71717a)' }}>No vendor matches “{q.trim()}”.</div> : null}
+              </div>
+            ) : null}
+            <span style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+              <button type="button" style={act} onClick={() => startNew()}>+ New vendor</button>
+              {party ? <button type="button" style={{ ...act, color: 'var(--meta, #71717a)' }} onClick={() => { setMode('view'); setQ(''); }}>Cancel</button> : null}
+            </span>
+          </>
+        )}
+        {err ? <div role="alert" style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)', marginTop: '4px' }}>{err}</div> : null}
+      </div>
+    </div>
+  );
 }

@@ -14,7 +14,7 @@ import { type DealPartyWithDeal, loadDealParties } from '@/lib/deal-parties';
 import { type Teammate, listTeam } from '@/lib/team';
 import { type EmailScope, type EmailThread, groupThreads, loadEmailRows } from '../data';
 import { type Receipt, useEmailReceipts } from '../receipts';
-import { emailOpenLabel } from '@/lib/link-views';
+import { emailReceiptView, type EmailReceiptView } from '@/lib/link-views';
 
 export type MailFile = {
   id: number; communication_id: number; filename: string; content_type: string | null;
@@ -125,5 +125,5 @@ export const FOLDERS: { key: DealFolder; label: string }[] = [
 export const fmtBytes = (n: number | null) =>
   n == null ? '' : n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
 
-/** "Opened 2:14 PM · 3 opens · 1 click", "Not opened yet", or null when the send was not tracked. */
-export const receiptLabel = (r: Receipt | undefined): string | null => emailOpenLabel(r);
+/** "Clicked 2:14 PM", "Opened 2:14 PM · 3 opens", "Not opened yet" with its tooltip, or null when the send was not tracked. */
+export const receiptView = (r: Receipt | undefined): EmailReceiptView | null => emailReceiptView(r);

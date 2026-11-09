@@ -179,8 +179,39 @@ Deno.serve(async (req) => {
     if (logErr) console.error('number_guard_runs insert', logErr.message);
     results.push(run);
   }
+
+  // The morning run never guards a workspace without a Talkr connection, but
+  // that workspace's lines still belong on the 10DLC campaign, and attaching
+  // them needs only CLOZR's Telnyx key (ten-dlc-register attach).
+  if (onlyWorkspace === null) {
+    const guarded = new Set(workspaces.map((w) => w.id));
+    const { data: regs } = await admin.from('ten_dlc_registrations').select('workspace_id').not('campaign_id', 'is', null);
+    for (const r of (regs ?? []) as Any[]) {
+      const wsId = Number(r.workspace_id);
+      if (!Number.isFinite(wsId) || guarded.has(wsId)) continue;
+      results.push({ workspace_id: wsId, ...(await attachKnownLines(url, serviceKey, wsId)) });
+    }
+  }
   return json({ ok: results.every((r) => r.ok), configured, runs: results });
 });
+
+/** Every line CLOZR knows in the workspace, put on its 10DLC campaign; the counts and any refusal, for the run log. */
+async function attachKnownLines(url: string, serviceKey: string, wsId: number): Promise<Record<string, unknown>> {
+  try {
+    const res = await fetch(`${url.replace(/\/$/, '')}/functions/v1/ten-dlc-register`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'attach', workspace_id: wsId }),
+    });
+    const body = await res.json().catch(() => ({})) as Any;
+    if (body?.waiting) return { ok: true, attach: 'campaign not approved yet' };
+    const counts = { attached: (body?.attached ?? []).length, already: (body?.already ?? []).length };
+    if (!body?.ok) console.error('number-guard attach', wsId, body?.error ?? `HTTP ${res.status}`);
+    return { ok: !!body?.ok, attach: counts, ...(body?.ok ? {} : { error: `10DLC attach: ${body?.error ?? `HTTP ${res.status}`}` }) };
+  } catch (e) {
+    return { ok: false, error: `10DLC attach: ${e instanceof Error ? e.message : 'unreachable'}` };
+  }
+}
 
 /**
  * Push a filing somebody already started to its next stage.

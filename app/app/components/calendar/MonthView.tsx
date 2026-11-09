@@ -19,7 +19,7 @@ export function MonthView({ month, events, reps, selectedId, onOpen, onCreate, c
     <div className="cal-grid" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1, background: 'var(--surface, #fff)', borderTop: `1px solid ${LINE}`, overflow: 'hidden' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: `1px solid ${SOFT}` }}>
         {DOW.map((d) => (
-          <div key={d} style={{ padding: '8px 4px', font: '500 11px/1 var(--font-sans)', color: '#70757a', textAlign: 'center' }}>
+          <div key={d} style={{ padding: '8px 4px', font: '500 11px/1 var(--font-sans)', color: 'var(--muted, #52525b)', textAlign: 'center' }}>
             {compact ? d[0] : d}
           </div>
         ))}
@@ -38,13 +38,13 @@ export function MonthView({ month, events, reps, selectedId, onOpen, onCreate, c
                 minHeight: compact ? 64 : 96, padding: '4px 2px',
                 borderRight: (i % 7) === 6 ? 0 : `1px solid ${SOFT}`,
                 borderBottom: i >= 35 ? 0 : `1px solid ${SOFT}`,
-                background: inMonth ? '#fff' : '#f8f9fa', cursor: 'cell', minWidth: 0,
+                background: inMonth ? 'var(--surface, #fff)' : 'var(--canvas, #f8f9fa)', cursor: 'cell', minWidth: 0,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 2 }}>
                 <span style={{
                   font: `${today ? 700 : 500} 12px/1 var(--font-sans)`,
-                  color: today ? 'var(--on-dark, #fff)' : inMonth ? 'var(--ink-4, #3c4043)' : 'var(--line-2, #dadce0)',
+                  color: today ? 'var(--on-dark, #fff)' : inMonth ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)',
                   background: today ? MINT : 'transparent',
                   borderRadius: '50%', width: 24, height: 24,
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -81,7 +81,7 @@ export function MonthView({ month, events, reps, selectedId, onOpen, onCreate, c
                 );
               })}
               {extra > 0 ? (
-                <span style={{ font: '500 11px/1 var(--font-sans)', color: '#70757a', paddingLeft: 6 }}>+{extra} more</span>
+                <span style={{ font: '500 11px/1 var(--font-sans)', color: 'var(--muted, #52525b)', paddingLeft: 6 }}>+{extra} more</span>
               ) : null}
             </div>
           );

@@ -15,6 +15,8 @@ export const ACTIVE_WORKSPACE_KEY = 'clozr.activeWorkspace';
 
 export type MembershipRow = {
   role: string;
+  /** The role the shell draws for this person when it differs from `role` (migration 455); the database keeps enforcing `role`. */
+  nav_role?: string | null;
   workspaces: { id: number; name: string; owner_id: string } | { id: number; name: string; owner_id: string }[] | null;
 };
 
@@ -25,7 +27,7 @@ export function membershipsFromRows(rows: readonly MembershipRow[] | null | unde
     const ws = Array.isArray(row.workspaces) ? row.workspaces[0] : row.workspaces;
     const id = Number(ws?.id);
     if (!ws || !Number.isInteger(id)) continue;
-    out.push({ id, name: ws.name, owner_id: ws.owner_id, role: row.role });
+    out.push({ id, name: ws.name, owner_id: ws.owner_id, role: row.nav_role || row.role });
   }
   return orderMemberships(out);
 }

@@ -21,11 +21,13 @@ export type CommHit = {
   recordName: string | null;
   /** The text around the match, matched words between \u0002 and \u0003. */
   snippet: string;
+  /** The other side's number (migration 430): where a hit on no record opens, its Inbox thread. */
+  phone: string | null;
 };
 
 type Row = {
   id: number; channel: string; direction: string | null; occurred_at: string; duration_s: number | null;
-  seller_id: number | null; buyer_id: number | null; deal_id: number | null; record_name: string | null; snippet: string | null;
+  seller_id: number | null; buyer_id: number | null; deal_id: number | null; record_name: string | null; snippet: string | null; phone?: string | null;
 };
 
 /** Shorter than this, a query matches too much to be worth a round trip. */
@@ -61,6 +63,21 @@ export function hitTitle(h: Pick<CommHit, 'channel' | 'direction' | 'recordName'
 }
 
 /**
+ * A hit on no seller, buyer or deal: someone not in CLOZR yet. Their number
+ * (E.164, for the Inbox thread) and the row's title. Null when the hit is on a
+ * record or a deal, or carries no US number.
+ */
+export function strangerHit(h: Pick<CommHit, 'channel' | 'direction' | 'recordName' | 'sellerId' | 'buyerId' | 'dealId' | 'phone'>): { phone: string; title: string } | null {
+  if (h.sellerId != null || h.buyerId != null || h.dealId != null) return null;
+  let d = (h.phone ?? '').replace(/\D/g, '');
+  if (d.length === 11 && d[0] === '1') d = d.slice(1);
+  if (d.length !== 10) return null;
+  const shown = `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  const with_ = h.channel === 'call' || h.channel === 'note' ? 'with' : h.direction === 'outbound' ? 'to' : 'from';
+  return { phone: '+1' + d, title: `${hitTitle({ ...h, recordName: null })} ${with_} ${shown}` };
+}
+
+/**
  * The best matches for `q` in the workspace, newest among equals. Null when
  * the read failed (the bar says so); [] when nothing matched.
  */
@@ -74,6 +91,6 @@ export async function searchConversations(
   if (error) return null;
   return ((data ?? []) as Row[]).map((r) => ({
     id: Number(r.id), channel: r.channel, direction: r.direction, occurredAt: r.occurred_at, durationS: r.duration_s,
-    sellerId: r.seller_id, buyerId: r.buyer_id, dealId: r.deal_id, recordName: r.record_name, snippet: r.snippet ?? '',
+    sellerId: r.seller_id, buyerId: r.buyer_id, dealId: r.deal_id, recordName: r.record_name, snippet: r.snippet ?? '', phone: r.phone ?? null,
   }));
 }

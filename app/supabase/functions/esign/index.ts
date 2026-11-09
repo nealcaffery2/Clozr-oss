@@ -20,7 +20,7 @@
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { ALLOW_HEADERS } from '../_shared/security.ts';
+import { ALLOW_HEADERS, clientIp } from '../_shared/security.ts';
 import { type Any, completeContract, emailSigners, loadCompany, logContractFeed, logEvent, notifySigned, parse, signUrl, toHtml } from '../_shared/docs.ts';
 import { allSigned, canSignNow, isDone, signs, turn } from '../_shared/signing-order.ts';
 import { approvalDecision, maskPhone, normalizeDelivery, phoneGateOk, phoneKey, phonesMatch } from '../_shared/docs-people.ts';
@@ -40,6 +40,8 @@ import {
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': ALLOW_HEADERS, 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
+/** contract_signers.status values a recipient can still sign or fill from (migration 114's check lists the rest: closed). */
+const SIGNABLE = ['pending', 'viewed'];
 
 /**
  * The sender hears the first time a seller or buyer opens their link. A text
@@ -115,7 +117,8 @@ async function notaryDoor(admin: Any, b: Any, token: string): Promise<Response> 
     await logContractFeed(admin, feedRow, 'Notary stamped', `${contract?.name ?? 'Document'} · digital seal applied ${now}`);
     return json({ ok: true });
   }
-  return json({ error: 'This signing link is not valid.' }, 404);
+  // Edit & resend gives every recipient a new link, so an old one lands here.
+  return json({ error: 'This signing link is no longer active. The document may have been updated and sent again: use the link in the newest email, or ask the sender to resend it.' }, 404);
 }
 
 // ---------------------------------------------------------------- parity
@@ -186,10 +189,13 @@ Deno.serve(async (req) => {
   let b: Any;
   try { b = await req.json(); } catch { return json({ error: 'body is not valid JSON' }, 400); }
   const token = String(b.token ?? '').trim();
-  if (!/^[a-f0-9]{48}$/.test(token)) return json({ error: 'This signing link is not valid.' }, 404);
+  if (!/^[a-f0-9]{48}$/.test(token)) return json({ error: 'This signing link is not valid. Check that the whole link was copied from the email.' }, 404);
 
   const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
-  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null;
+  // The hop the nearest proxy appended (security.ts clientIp), never the client-supplied first
+  // X-Forwarded-For value: this address goes on the signature block, certificate and audit trail.
+  const seenIp = clientIp(req);
+  const ip = seenIp === 'unknown' ? null : seenIp;
   const ua = req.headers.get('user-agent')?.slice(0, 300) ?? null;
   const { data: signer } = await admin.from('contract_signers').select('*').eq('token', token).maybeSingle();
   if (!signer) return notaryDoor(admin, b, token);
@@ -358,7 +364,13 @@ Deno.serve(async (req) => {
       if (png && png.length > 400_000) png = null;
       const now = new Date().toISOString();
       const viewed = addViewSeconds(signer.view_open_at, Number(signer.view_seconds ?? 0));
-      await admin.from('contract_signers').update({ status: 'signed', signed_at: now, consented_at: now, signature_name: name, signature_png: png, name: signer.name || name, ip, user_agent: ua, view_seconds: viewed.view_seconds, view_open_at: null }).eq('id', signer.id);
+      // Only the request that flips the row from a signable status goes on to events,
+      // notices and completion; a double submit finds it already signed and stops here.
+      const { data: flipped, error: flipErr } = await admin.from('contract_signers')
+        .update({ status: 'signed', signed_at: now, consented_at: now, signature_name: name, signature_png: png, name: signer.name || name, ip, user_agent: ua, view_seconds: viewed.view_seconds, view_open_at: null })
+        .eq('id', signer.id).in('status', SIGNABLE).select('id');
+      if (flipErr) return json({ error: flipErr.message }, 500);
+      if (!flipped?.length) return json({ ok: true, completed: row.status === 'completed' });
       await logEvent(admin, row, 'consented', { signer: signer.role, disclosure: 'esign-v1' }, who);
       await logEvent(admin, row, 'signed', { signer: signer.role, name, email: signer.email, ip, drawn: !!png, view_seconds: viewed.view_seconds }, who);
       publishContract(admin, row, 'contract.signed', { signer: { ...signer, name: signer.name || name } });
@@ -475,7 +487,11 @@ Deno.serve(async (req) => {
       if (left) return json({ error: left }, 422);
       const now = new Date().toISOString();
       const viewed = addViewSeconds(signer.view_open_at, Number(signer.view_seconds ?? 0));
-      await admin.from('contract_signers').update({ status: 'filled', filled_at: now, consented_at: signer.consented_at ?? now, ip, user_agent: ua, view_seconds: viewed.view_seconds, view_open_at: null }).eq('id', signer.id);
+      const { data: flipped, error: flipErr } = await admin.from('contract_signers')
+        .update({ status: 'filled', filled_at: now, consented_at: signer.consented_at ?? now, ip, user_agent: ua, view_seconds: viewed.view_seconds, view_open_at: null })
+        .eq('id', signer.id).in('status', SIGNABLE).select('id');
+      if (flipErr) return json({ error: flipErr.message }, 500);
+      if (!flipped?.length) return json({ ok: true, completed: row.status === 'completed' });
       await logEvent(admin, row, 'consented', { signer: signer.role, disclosure: 'esign-v1', filler: true }, who);
       await logEvent(admin, row, 'filled', { signer: signer.role, name: signer.name, email: signer.email, ip, view_seconds: viewed.view_seconds }, who);
       await logContractFeed(admin, row, `${signer.label || signer.role} filled in their fields`, [signer.name, signer.email].filter(Boolean).join(' · ') || null);
@@ -485,11 +501,15 @@ Deno.serve(async (req) => {
     case 'pdf': {
       const denied = requireGate();
       if (denied) return denied;
+      // Before everyone signs, pdf_path is still the blank source form: there is nothing worth downloading yet.
+      if (row.status !== 'completed') return json({ error: 'The signed copy is ready once every party has signed. We will email it to you then.' }, 409);
       if (!row.pdf_path) return json({ error: 'no PDF yet' }, 404);
       const { data, error } = await admin.storage.from('contracts').createSignedUrl(row.pdf_path, 600);
       if (error || !data) return json({ error: 'could not fetch the PDF' }, 500);
+      const auditPath = String(row.pdf_path).replace(/[^/]+$/, 'audit-trail.pdf');
+      const { data: audit } = await admin.storage.from('contracts').createSignedUrl(auditPath, 600);
       await logEvent(admin, row, 'downloaded', { by: signer.role }, who);
-      return json({ url: data.signedUrl });
+      return json({ url: data.signedUrl, audit_url: audit?.signedUrl ?? null });
     }
     default: return json({ error: 'unknown action' }, 400);
   }

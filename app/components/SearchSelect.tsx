@@ -69,12 +69,12 @@ export function SearchSelect({ value, options, placeholder, onChange, ariaLabel,
         <div role="listbox" id={listId} style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, top: '38px', maxHeight: '260px', overflow: 'auto', background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', boxShadow: '0 10px 30px rgba(0,0,0,.12)' }}>
           {shown.map((o, i) => (
             <div key={o.v} role="option" aria-selected={o.v === value} onMouseDown={(e) => { e.preventDefault(); choose(o); }} onMouseEnter={() => setHi(i)}
-              style={{ padding: '7px 10px', fontSize: '13px', cursor: 'pointer', background: i === hi ? '#F0FBF6' : o.v === value ? '#fafafa' : '#fff', fontWeight: o.v === value ? 650 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              style={{ padding: '7px 10px', fontSize: '13px', cursor: 'pointer', background: i === hi ? 'var(--c-genius-soft, #f0fbf6)' : o.v === value ? 'var(--canvas, #fafafa)' : 'var(--surface, #fff)', fontWeight: o.v === value ? 650 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {o.label}
             </div>
           ))}
           {!shown.length ? <div style={{ padding: '10px', fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>No match for “{q}”.</div> : null}
-          {options.length > shown.length && shown.length === 200 ? <div style={{ padding: '6px 10px', fontSize: '11.5px', color: 'var(--subtle, #a1a1aa)' }}>Showing 200 of {options.length}; type to narrow.</div> : null}
+          {options.length > shown.length && shown.length === 200 ? <div style={{ padding: '6px 10px', fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>Showing 200 of {options.length}; type to narrow.</div> : null}
         </div>
       ) : null}
     </div>

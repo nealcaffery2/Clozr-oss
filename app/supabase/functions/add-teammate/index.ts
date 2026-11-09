@@ -15,7 +15,8 @@
  *
  * Body:    { workspace_id, email, full_name?, role, resend?, origin?,
  *            notary_state?, notary_expires?, notary_commission_number?, notary_county? }
- *          resend: true → reset password for an existing member and re-mail.
+ *          resend: true → re-mail an existing member; their password is reset
+ *          only when they have never signed in.
  *          origin: live Clozr browser origin for the invite sign-in link
  *          (preferred over APP_URL; Talkr hosts are rejected).
  * Returns: { ok, user_id, email, temp_password?, existing, emailed, error? }
@@ -151,9 +152,16 @@ Deno.serve(async (req) => {
     if (!mem) return json({ error: 'that person is not on this workspace' }, 404);
     if (mem.role === 'owner') return json({ error: 'cannot reset the owner this way' }, 422);
 
-    const password = tempPassword();
-    const { error: updErr } = await admin.auth.admin.updateUserById(existing.id, { password });
-    if (updErr) return serverError(CORS, 'add-teammate resend updateUser', updErr);
+    // Never signed in → mint a password and email it, as the add path does.
+    // Signed in → their password stays (the account may also own another
+    // workspace) and the mail says to use the one they have.
+    const neverSignedIn = !existing.last_sign_in_at;
+    let password: string | null = null;
+    if (neverSignedIn) {
+      password = tempPassword();
+      const { error: updErr } = await admin.auth.admin.updateUserById(existing.id, { password });
+      if (updErr) return serverError(CORS, 'add-teammate resend updateUser', updErr);
+    }
 
     const role = mem.role as string;
     const name = fullName
@@ -168,9 +176,14 @@ Deno.serve(async (req) => {
       origin: inviteOrigin,
     });
     return json({
-      ok: true, user_id: existing.id, email, temp_password: password,
+      ok: true, user_id: existing.id, email,
+      ...(password ? { temp_password: password } : {}),
       existing: true, emailed, resend: true,
-      ...(emailed ? {} : { warning: 'Account password was reset, but the invite email did not send. Share the password manually.' }),
+      ...(emailed ? {} : {
+        warning: password
+          ? 'Account password was reset, but the invite email did not send. Share the password manually.'
+          : 'The invite email did not send. They can sign in with the password they already have, or use Forgot password on the login page.',
+      }),
     });
   }
 
@@ -198,6 +211,20 @@ Deno.serve(async (req) => {
     };
   }
 
+  // Someone already on the roster keeps their role. The membership upsert
+  // below writes `role`, so without this check an admin could "add" the
+  // owner's email as a member and take the workspace over; roles change
+  // under Settings > Team (setRole), and only the owner may change them here.
+  const existing = await findUserByEmail(admin, email);
+  if (existing) {
+    const { data: current } = await admin.from('workspace_members').select('role')
+      .eq('workspace_id', workspaceId).eq('user_id', existing.id).maybeSingle();
+    if (current?.role === 'owner') return json({ error: "the owner's role cannot be changed here" }, 422);
+    if (current && current.role !== role && me.role !== 'owner') {
+      return json({ error: `${email} is already on this workspace as ${ROLE_LABEL[current.role as string] ?? current.role}. Only the owner can change a role.` }, 403);
+    }
+  }
+
   // Record the invite first: the signup trigger reads it when the auth row is
   // inserted, so it has to exist before createUser.
   const { error: invErr } = await admin.from('workspace_invites').upsert(
@@ -211,7 +238,6 @@ Deno.serve(async (req) => {
     return serverError(CORS, 'add-teammate invite upsert', invErr);
   }
 
-  const existing = await findUserByEmail(admin, email);
   if (existing) {
     const { error: memErr } = await admin.from('workspace_members').upsert(
       { workspace_id: workspaceId, user_id: existing.id, role, ...notaryPatch },

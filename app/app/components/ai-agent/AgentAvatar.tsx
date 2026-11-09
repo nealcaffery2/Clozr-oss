@@ -1,6 +1,6 @@
 'use client';
 
-// An AI agent's face: its generated picture, or its initials on a gradient
+// An AI agent's face: its generated picture, or its initials on a flat colour
 // until it has one. `live` adds the green pulse an agent at work wears.
 
 import React from 'react';
@@ -20,7 +20,7 @@ export function AgentAvatar({ name, src, size = 32, live, ring }: { name: string
         <span aria-label={`${name} avatar`} role="img"
           style={{
             width: size, height: size, borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 700, letterSpacing: '-0.02em',
-            fontSize: Math.round(size * 0.38), background: `linear-gradient(135deg, ${fb.from}, ${fb.to})`, boxShadow: ring ? `0 0 0 2px ${ring}` : '0 1px 2px rgba(15,23,42,.18)',
+            fontSize: Math.max(11, Math.round(size * 0.38)), background: fb.from, boxShadow: ring ? `0 0 0 2px ${ring}` : '0 1px 2px rgba(15,23,42,.18)',
           }}>
           {fb.initials}
         </span>

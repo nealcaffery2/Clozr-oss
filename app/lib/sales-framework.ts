@@ -378,10 +378,23 @@ export function sectionsOf(review: unknown): ReviewSections | null {
 
 // ---- call scoring types (Submit a call for review) ----------------------------------
 
+/**
+ * A call selling Compr (the Compr workspace, settings.buyer_profile = 'compr'),
+ * graded against Alex's launch kit (03 · Call Scripts, 00 · Start Here in
+ * Drive). The seller stages do not apply; the ten categories carry the grade.
+ */
+export const COMPR_SALE_PROMPT = [
+  'Call type: the rep is selling Compr, an underwriting tool that comps a property in about 60 seconds (ARV and comps, a condition grade from the photos, six exits, max offer), to a real-estate investor, wholesaler, flipper, agent or lender. This is not a seller acquisitions call: mark every seller stage na, set not_a_seller true, and grade the ten categories on this call flow.',
+  'The flow the rep is coached to run: 1. Open with name, Compr and one question about how they run numbers today. 2. Ask for an address they are working ("Give me an address you are looking at, I will run it right now"), early and plainly. 3. Run it live and walk the result in order: ARV and the comps, condition grade, the six exits and which one leads, the max offer. 4. Close a plan, yearly first (Growth yearly, Growth monthly, Light yearly, Light monthly, the $9.99 single report only after a hard no), and book the setup call before hanging up. 5. On a no, ask what would have to change, and set a next step date.',
+  "By prospect: wholesalers care about speed on the seller call and one standard across reps; flippers about checking a wholesaler's ARV and rehab before they wire earnest money; agents get the single report or Light and a callback, never an agent price; lenders get a 15 minute call booked with Sam, not a close.",
+  'Count against the rep: offering a free trial (the free offer is one free comp on underwriting.example.com), quoting a price that is not on underwriting.example.com/pricing, naming the AI, data vendors or customers, promising features that are not built, no address asked for, no yearly ask after a yes, and hanging up without a booked setup call or a dated next step.',
+].join(' ');
+
 export const CALL_TYPES = [
   { id: 'seller_acquisitions', label: 'Seller acquisitions call', seller: true, prompt: 'Call type: a seller acquisitions call. Grade every stage.' },
   { id: 'seller_follow_up', label: 'Seller follow-up call', seller: true, prompt: 'Call type: a follow-up with a seller the rep has spoken to before. Stages plainly covered on an earlier call are na, not miss; the price anchor, commitment and close still count.' },
   { id: 'buyer_dispositions', label: 'Dispositions / buyer call', seller: false, prompt: 'Call type: a dispositions call with a cash buyer, not a seller. Mark the seller stages na unless they truly apply, set not_a_seller true, and grade the ten categories on how the rep qualified the buyer and moved the deal.' },
+  { id: 'compr_sale', label: 'Compr sales call', seller: false, prompt: COMPR_SALE_PROMPT },
 ] as const;
 export type CallTypeId = (typeof CALL_TYPES)[number]['id'];
 export const callTypeById = (id: unknown) => CALL_TYPES.find((c) => c.id === id) ?? null;

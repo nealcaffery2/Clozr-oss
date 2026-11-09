@@ -16,17 +16,23 @@ import { Mark } from '@/components/ds/mark';
 import { OptionTimers } from '@/components/OptionTimers';
 import { PropertyPhoto } from '@/components/PropertyPhoto';
 import { openReach } from '@/app/components/record/reach';
-import { DEAL_SHEET_BTN } from '@/app/components/record/deal-sheet-style';
+import { Button, buttonClass } from '@/components/ds/Button';
+import { Badge, SectionLabel } from '@/components/ds/Text';
+import { textTone } from '@/lib/text-tone';
+import { ArrowDown, ArrowUp, FileText } from 'lucide-react';
 import { DEAL_COL_LABELS, DEAL_TABLE_DEFAULT } from '@/lib/deal-tracker-sheet';
 import { FilterPanel } from '@/app/components/filters/FilterPanel';
 import { AttackGapFields, DateRangeFields } from '@/app/components/filters/RangeFilters';
 import { DealsRvm, dealSellers } from '@/app/components/bulk/DealsRvm';
 import { CloseBar } from '@/app/components/deals/CloseBar';
+import { ScreenHeader } from '@/components/ds/Screen';
 
 function DealTypeBadge({ label }: { label?: string }) {
   const tone = DEAL_TYPES.find((t) => t.label === label);
-  const text = label || 'Deal type —';
-  return <span style={{ display: 'inline-flex', alignItems: 'center', height: '18px', padding: '0 7px', borderRadius: '999px', background: tone?.bg ?? 'rgba(255,255,255,.92)', color: tone?.fg ?? '#71717a', fontSize: '10px', fontWeight: 750, letterSpacing: '.02em', border: tone ? '0' : '1px solid #e4e4e7' }}>{text}</span>;
+  // No type yet: nothing to badge. A dash in a pill read as a value.
+  if (!label) return null;
+  const text = label;
+  return <span style={{ display: 'inline-flex', alignItems: 'center', height: '18px', padding: '0 7px', borderRadius: '999px', background: tone?.bg ?? 'var(--surface, rgba(255,255,255,.92))', color: tone?.fg ?? 'var(--meta, #71717a)', fontSize: '11px', fontWeight: 750, letterSpacing: '.02em', border: tone ? '0' : '1px solid #e4e4e7' }}>{text}</span>;
 }
 
 /**
@@ -162,6 +168,77 @@ function useColumnCap() {
   return cap;
 }
 
+/** A checkbox in the deals table and on a phone card: 18px, the accent when ticked, the row click kept off it. */
+const pickBox: React.CSSProperties = { width: '18px', height: '18px', margin: 0, accentColor: 'var(--c-accent, #0a8560)', cursor: 'pointer', display: 'block' };
+
+/**
+ * The bulk bar for the ticked deals (V.dealsBulk): Change stage and Assign are
+ * pickers, Archive asks in the archive prompt. On a desk it sits under the
+ * toolbar; on a phone it docks above the bottom tabs, like People's.
+ */
+function DealsBulkBar({ V, ids, onClear, phone }: { V: ClozrView; ids: string[]; onClear: () => void; phone: boolean }) {
+  useEffect(() => {
+    if (!phone) return;
+    document.documentElement.style.setProperty('--clozr-dock', '96px');
+    return () => { document.documentElement.style.removeProperty('--clozr-dock'); };
+  }, [phone]);
+  const [busy, setBusy] = useState(false);
+  // A write that throws (offline, a rejected confirm) frees the bar and says so.
+  const run = (p: Promise<boolean>) => { setBusy(true); void p.then((ok) => { setBusy(false); if (ok) onClear(); }, () => { setBusy(false); V.showToast('That did not save.', 'error'); }); };
+  const n = ids.length;
+  const field: React.CSSProperties = { height: phone ? '36px' : '30px', borderRadius: '8px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', color: 'var(--ink, #18181b)', fontSize: phone ? '16px' : '12.5px', fontWeight: 600, padding: '0 8px', cursor: 'pointer', minWidth: 0, flex: phone ? 1 : 'none' };
+  const stage = (
+    <select aria-label="Change stage" data-testid="deals-bulk-stage" value="" disabled={busy} style={field}
+      onChange={(e) => { const st = e.target.value; e.target.value = ''; if (st) run(V.dealsBulk.setStage(ids, st)); }}>
+      <option value="">Change stage…</option>
+      {V.dealStageChoices.map((st) => <option key={st} value={st}>{st}</option>)}
+    </select>
+  );
+  const assign = (
+    <select aria-label="Assign" data-testid="deals-bulk-assign" value="" disabled={busy} style={field}
+      onChange={(e) => { const v = e.target.value; e.target.value = ''; if (v) run(V.dealsBulk.assign(ids, v === 'nobody' ? null : v)); }}>
+      <option value="">Assign to…</option>
+      {V.dealsBulk.team.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+      <option value="nobody">Nobody</option>
+    </select>
+  );
+  const archive = (
+    <button type="button" data-testid="deals-bulk-archive" disabled={busy} onClick={() => { V.dealsBulk.archive(ids); onClear(); }}
+      title="Archive: off the board, the list and Dispo. Asks first."
+      style={{ ...field, flex: 'none', color: 'var(--tx-red, #b91c1c)', padding: '0 10px', fontSize: phone ? '13px' : '12.5px' }}>
+      Archive
+    </button>
+  );
+  const count = <span role="status" data-testid="deals-bulk-count" style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--c-accent-2, #08694c)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{n} selected</span>;
+  const clear = <button type="button" className="pp-link" onClick={onClear} style={{ height: '28px', background: 'none', border: 0, cursor: 'pointer', fontSize: '12.5px', fontWeight: 600, color: 'var(--muted, #52525b)' }}>Clear</button>;
+  if (phone) {
+    return (
+      <div data-screen-label="Selected" style={{ position: 'fixed', left: 0, right: 0, bottom: 'calc(58px + env(safe-area-inset-bottom, 0px) + var(--clozr-callbar, 0px))', zIndex: 47, background: 'var(--surface, #fff)', borderTop: '1px solid var(--divider, #e4e4e7)', boxShadow: '0 -8px 24px -12px rgba(18,22,45,.25)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px 0' }}>
+          {count}
+          <span style={{ flex: 1 }} />
+          {clear}
+        </div>
+        <div style={{ display: 'flex', gap: '6px', padding: '8px 12px 10px' }}>
+          {stage}
+          {assign}
+          {archive}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div data-screen-label="Selected" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 20px', background: 'var(--mint-dim, #e7f8f1)', borderBottom: '1px solid var(--divider, #e4e4e7)' }}>
+      {count}
+      {stage}
+      {assign}
+      {archive}
+      <span style={{ flex: 1 }} />
+      {clear}
+    </div>
+  );
+}
+
 export function Deals({ V }: { V: ClozrView }) {
   // The search, the opened columns, the sort and the look below are kept for
   // the session (lib/screen-memory): the board unmounts while a deal is open,
@@ -172,6 +249,9 @@ export function Deals({ V }: { V: ClozrView }) {
   // The Prospect column and the table page through what they hold (thousands of lead sheets).
   const [prospectLimit, setProspectLimit] = useState(PAGE);
   const [tableLimit, setTableLimit] = useState(PAGE);
+  // The ticked deals (the table's checkboxes, a phone's Select mode), by deal id.
+  const [picked, setPicked] = useState<Record<string, boolean>>({});
+  const [selectMode, setSelectMode] = useState(false);
   const [sort, setSort] = useRemembered('deals.sort', DEAL_DEFAULT_SORT);
   const cap = useColumnCap();
 
@@ -226,6 +306,13 @@ export function Deals({ V }: { V: ClozrView }) {
     return [...list].sort((a, b) => cmpSort(dealSortValue(a, sort.key), dealSortValue(b, sort.key), sort.dir));
   };
   const rows = order((V.dealRows || []).filter((d) => !needle || d.search.includes(needle)));
+  // Only deals still on this list count as selected: a filter change or an archive drops the rest.
+  const selectedIds = Object.keys(picked).filter((id) => picked[id] && rows.some((d) => d.dealId === id));
+  const togglePick = (id: string) => setPicked((cur) => ({ ...cur, [id]: !cur[id] }));
+  const clearPicks = () => { setPicked({}); setSelectMode(false); };
+  const tableShown = rows.slice(0, tableLimit);
+  const allShownPicked = tableShown.length > 0 && tableShown.every((d) => picked[d.dealId]);
+  const toggleAllShown = () => setPicked(allShownPicked ? {} : Object.fromEntries(tableShown.map((d) => [d.dealId, true])));
   // Deals → RVM sellers: the sellers of the deals this list shows (its filters and search).
   const [rvmOpen, setRvmOpen] = useState(false);
   // On the board, a hidden stage's deals are not on screen, so they are not sent to either.
@@ -286,20 +373,20 @@ export function Deals({ V }: { V: ClozrView }) {
     <section data-screen-label="Deals" style={{flex: "1", minWidth: "0", display: "flex", flexDirection: "column"}}>
       {(V.isMobile) ? (
         <>
-        <div style={{flex: "none", background: "var(--surface, #fff)", borderBottom: "1px solid var(--divider, #e4e4e7)", padding: "10px 0 10px 12px"}}>
-          <div style={{display: "flex", alignItems: "baseline", gap: "8px", paddingRight: "12px"}}>
-            <h1 style={{margin: "0", fontSize: "19px", fontWeight: "700", letterSpacing: "-0.03em"}}>
+        <div style={{flex: "none", background: "var(--surface, #fff)", borderBottom: "1px solid var(--divider, #e4e4e7)", padding: "10px 0 10px 16px"}}>
+          <div style={{display: "flex", alignItems: "baseline", gap: "8px", paddingRight: "16px"}}>
+            <h1 className="ds-title">
               Deals
             </h1>
             {totals}
           </div>
-          <div style={{marginTop: "9px", paddingRight: "12px"}}>{search}</div>
-          <div style={{display: "flex", gap: "6px", overflowX: "auto", marginTop: "9px", paddingRight: "12px", paddingBottom: "2px"}}>
+          <div style={{marginTop: "9px", paddingRight: "16px"}}>{search}</div>
+          <div data-tray style={{display: "flex", gap: "6px", overflowX: "auto", marginTop: "9px", paddingRight: "16px", paddingBottom: "2px"}}>
             {V.can.tc ? (
             <button className="dc2" onClick={V.openTcFiles} style={{...trayBtn(), border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)"}}>
               <span style={{ color: "var(--tx-green-deep, #1f7a4d)", display: 'inline-flex' }}><Mark label={'TC files'} /></span>
               TC files
-              <span style={{fontSize: "11px", color: "var(--subtle, #a1a1aa)"}}>
+              <span style={{fontSize: "11px", color: "var(--meta, #71717a)"}}>
                 {V.tcOpenCount}
               </span>
             </button>
@@ -308,6 +395,11 @@ export function Deals({ V }: { V: ClozrView }) {
             <button type="button" data-testid="deals-archived-m" onClick={() => V.setDealsArchived(!V.dealsArchived)} aria-pressed={V.dealsArchived}
               style={{...trayBtn(V.dealsArchived), flex: "none"}}>
               {V.dealsArchived ? 'Back to live deals' : `Archived · ${V.archivedDealCount}`}
+            </button>
+            <button type="button" data-testid="deals-select-m" onClick={() => (selectMode ? clearPicks() : setSelectMode(true))} aria-pressed={selectMode}
+              title={selectMode ? 'Leave select mode' : 'Tick deals to move, assign or archive them together'}
+              style={{...trayBtn(selectMode), flex: "none"}}>
+              {selectMode ? 'Done' : 'Select'}
             </button>
             {viewMenu}
             {sortMenu}
@@ -322,7 +414,7 @@ export function Deals({ V }: { V: ClozrView }) {
                 {(f.open) ? (
                   <>
                   <div onClick={V.closeFilterMenus} style={{position: "fixed", inset: "0", zIndex: "44"}}></div>
-                  <div ref={keepInView} style={{position: "absolute", top: "36px", left: "0", minWidth: "190px", maxHeight: "44vh", overflow: "auto", background: "var(--c-menu-bg)", border: "1px solid var(--c-menu-line)", borderRadius: "12px", boxShadow: "0 2px 6px rgba(18,20,28,0.06),0 28px 60px -24px rgba(18,22,45,0.26)", zIndex: "45", padding: "4px"}}>
+                  <div ref={keepInView} className="cz-menu" style={{position: "absolute", top: "36px", left: "0", minWidth: "190px", maxHeight: "44vh", overflow: "auto", background: "var(--c-menu-bg)", border: "1px solid var(--c-menu-line)", borderRadius: "12px", boxShadow: "0 2px 6px rgba(18,20,28,0.06),0 28px 60px -24px rgba(18,22,45,0.26)", zIndex: "45", padding: "4px"}}>
                     {(f.options || []).map((o, o__i) => (
                       <React.Fragment key={o__i}>
                       <button className="dc2" onClick={o.go} style={{display: "block", width: "100%", textAlign: "left", padding: "9px 10px", border: "0", borderRadius: "7px", background: o.on ? "var(--mint-dim, #e7f8f1)" : "none", cursor: "pointer", fontSize: "13px", color: o.on ? "var(--tx-mint, #0a8560)" : "var(--ink-2, #27272a)", whiteSpace: "nowrap"}}>
@@ -340,12 +432,7 @@ export function Deals({ V }: { V: ClozrView }) {
         </div>
         </>
       ) : null}
-      <div style={{display: V.isMobile ? "none" : "flex", flexWrap: "wrap", alignItems: "center", gap: "8px 10px", padding: "12px 20px", background: "var(--surface, #fff)", borderBottom: "1px solid var(--divider, #e4e4e7)"}}>
-        <h1 style={{margin: "0", fontSize: "16px", fontWeight: "700", letterSpacing: "-0.02em"}}>
-          Deals
-        </h1>
-        {totals}
-        <div style={{flex: "1"}}></div>
+      {V.isMobile ? null : <ScreenHeader title="Deals" meta={totals} actions={<>
         {search}
         <AiButton kind="lane" onClick={() => V.openLane()} />
         <div role="tablist" aria-label="Deals layout" style={segWrap}>
@@ -387,7 +474,7 @@ export function Deals({ V }: { V: ClozrView }) {
         <button className="dc2" onClick={V.openTcFiles} title="Open transaction coordination" style={{height: "32px", padding: "0 10px", borderRadius: "8px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12.5px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "7px", whiteSpace: "nowrap", color: "var(--ink, #18181b)"}}>
           <span style={{ color: "var(--tx-green-deep, #1f7a4d)", display: 'inline-flex' }}><Mark label={'Transaction coordination'} /></span>
           Transaction coordination
-          <span style={{fontSize: "11px", color: "var(--subtle, #a1a1aa)", fontVariantNumeric: "tabular-nums"}}>
+          <span style={{fontSize: "11px", color: "var(--meta, #71717a)", fontVariantNumeric: "tabular-nums"}}>
             {V.tcOpenCount}
           </span>
         </button>
@@ -400,7 +487,22 @@ export function Deals({ V }: { V: ClozrView }) {
           Automations
         </button>
         ) : null}
-      </div>
+      </>} />}
+      {/* The board is built from the full workspace read. Until it lands, or
+          when it fails, the columns read "Nothing here yet", which is the same
+          as a workspace with no deals: say which one it is. */}
+      {V.crmPartial || !V.crmOk ? (
+        <div role="status" aria-live="polite" data-testid="deals-load-state"
+          style={{display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", padding: "8px 20px", borderBottom: "1px solid var(--divider, #e4e4e7)", background: !V.crmOk ? "var(--tint-red, #fef2f2)" : "var(--surface, #fff)", fontSize: "13px", color: !V.crmOk ? "var(--tx-red, #b91c1c)" : "var(--muted, #52525b)"}}>
+          {!V.crmOk ? 'Deals didn’t load, so the board is empty. Your deals are still there.' : 'Loading every deal…'}
+          {!V.crmOk && V.reload ? (
+            <button type="button" data-testid="deals-load-retry" onClick={() => V.reload?.()}
+              style={{height: "28px", padding: "0 12px", borderRadius: "8px", border: "1px solid var(--c-btn-line, #d4d4d8)", background: "var(--surface, #fff)", fontSize: "12.5px", fontWeight: 600, color: "var(--ink, #18181b)", cursor: "pointer"}}>
+              Retry
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {(V.isPipeline && !V.isMobile) ? (
         <div style={{flex: "1", minHeight: "0", overflow: "auto", padding: "18px 20px 24px", background: "var(--page)"}}>
         <div style={{display: "flex", gap: "14px", alignItems: V.dealDragging ? "stretch" : "flex-start", minHeight: "100%", width: "max-content", margin: "0 auto"}}>
@@ -416,23 +518,22 @@ export function Deals({ V }: { V: ClozrView }) {
               onDragOver={(e) => { col.over(e); if (e.dataTransfer) e.dataTransfer.dropEffect = isFrom ? 'none' : 'move'; if (over !== col.stage) setOver(col.stage); }}
               onDragLeave={(e) => { if (e.currentTarget.contains(e.relatedTarget as Node | null)) return; setOver((o) => (o === col.stage ? null : o)); }}
               onDrop={(e) => { setOver(null); col.drop(e); }}
-              style={{width: "264px", flex: "none", background: target ? tint(col.color, 20) : dragging ? tint(col.color, 8) : "var(--trough)", border: `1px solid ${target ? col.color : dragging ? tint(col.color, 40) : "var(--trough-line)"}`, borderRadius: "16px", padding: "0 8px 8px", minHeight: "220px", boxShadow: target ? `inset 0 0 0 2px ${col.color}, 0 10px 28px -12px ${tint(col.color, 70, 'transparent')}` : "var(--elev-inset)", transition: "background .12s,border-color .12s,box-shadow .12s"}}>
-              <div style={{position: "sticky", top: "-18px", zIndex: 1, margin: "0 -8px 8px", padding: "12px 14px 10px", borderRadius: "16px 16px 0 0", background: target ? tint(col.color, 32) : dragging ? tint(col.color, 14) : "var(--band)", boxShadow: target || dragging ? "none" : "0 1px 0 var(--band-line), 0 5px 8px -6px rgba(20,30,55,.28)", borderTop: `3px solid ${col.color}`, transition: "background .12s"}}>
+              style={{width: "264px", flex: "none", background: target ? tint(col.color, 20) : dragging ? tint(col.color, 8) : "var(--trough)", border: `1px solid ${target ? col.color : dragging ? tint(col.color, 40) : "var(--trough-line)"}`, borderRadius: "var(--r-card)", padding: "0 8px 8px", minHeight: "220px", boxShadow: target ? `inset 0 0 0 2px ${col.color}` : "var(--elev-inset)", transition: "background .12s,border-color .12s,box-shadow .12s"}}>
+              <div style={{position: "sticky", top: "-18px", zIndex: 1, margin: "0 -8px 8px", padding: "12px 14px 10px", borderRadius: "var(--r-card) var(--r-card) 0 0", background: target ? tint(col.color, 32) : dragging ? tint(col.color, 14) : "var(--band)", boxShadow: target || dragging ? "none" : "0 1px 0 var(--band-line)", transition: "background .12s"}}>
                 <div style={{display: "flex", alignItems: "center", gap: "8px"}}>
                   <span style={{ color: col.color, display: 'inline-flex', flex: 'none' }}><Mark label={col.stage} /></span>
-                  <span style={{fontSize: "11px", fontWeight: "800", letterSpacing: ".09em", textTransform: "uppercase", color: "var(--ink, #18181b)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>{col.stage}</span>
-                  <span style={{minWidth: "20px", height: "20px", padding: "0 6px", borderRadius: "999px", background: tint(col.color, 16), color: "#18181b", boxShadow: `inset 0 0 0 1px ${tint(col.color, 55)}`, fontSize: "11px", fontWeight: "700", display: "inline-grid", placeItems: "center"}}>{col.count}</span>
+                  <span className="t-title" style={{whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>{col.stage}</span>
+                  <span style={{minWidth: "20px", height: "20px", padding: "0 6px", borderRadius: "999px", background: tint(col.color, 16), color: "var(--ink, #18181b)", boxShadow: `inset 0 0 0 1px ${tint(col.color, 55)}`, fontSize: "11px", fontWeight: "700", display: "inline-grid", placeItems: "center", fontVariantNumeric: "tabular-nums"}}>{col.count}</span>
                 </div>
                 {dragging && (target || isFrom) ? (
-                  <div style={{fontSize: "12px", fontWeight: 700, marginTop: "3px", color: target ? col.color : "var(--meta, #71717a)"}}>{target ? 'Drop to move here' : 'Current stage'}</div>
+                  <div style={{fontSize: "12px", fontWeight: 700, marginTop: "3px", color: target ? textTone(col.color) : "var(--meta, #71717a)"}}>{target ? 'Drop to move here' : 'Current stage'}</div>
                 ) : (
                   <div style={{fontSize: "12px", color: "var(--meta, #71717a)", marginTop: "3px", fontVariantNumeric: "tabular-nums"}}>{col.count ? `${col.count} deal${col.count === 1 ? '' : 's'} · ${money(col.cards.reduce((a, c) => a + (c.feeRaw || 0), 0))} fees` : 'Nothing here yet'}</div>
                 )}
               </div>
-              {shown.map((c, c__i) => (
-                <div key={c__i} className="dc22" draggable="true" onDragStart={c.dragStart} onDragEnd={c.dragEnd} onClick={c.open}
-                  style={{position: "relative", background: "var(--surface, #fff)", border: "1px solid var(--edge)", borderRadius: "12px", padding: "0 0 10px", marginBottom: "8px", cursor: "grab", transition: "transform .15s,box-shadow .15s,opacity .12s", boxShadow: "var(--elev-1)", overflow: "hidden", opacity: V.dealDragId === c.dragId ? 0.45 : 1}}>
-                  <span aria-hidden style={{position: "absolute", left: 0, top: 0, bottom: 0, width: "3px", background: col.color, opacity: .85, zIndex: 1}} />
+              {shown.map((c) => (
+                <div key={c.dealId || c.id} className="dc22" draggable="true" onDragStart={c.dragStart} onDragEnd={c.dragEnd} onClick={c.open}
+                  style={{position: "relative", background: "var(--surface, #fff)", border: "1px solid var(--edge)", borderRadius: "12px", padding: "0 0 10px", marginBottom: "8px", cursor: "grab", transition: "transform .15s,box-shadow .15s,opacity .12s", boxShadow: "var(--elev-1)", overflow: "hidden", opacity: V.dealDragId === c.dragId ? 0.45 : 1, contentVisibility: "auto", containIntrinsicHeight: "auto 382px"}}>
                   {c.dealId ? (
                     <button type="button" className="deal-card-archive" draggable={false} onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => { e.stopPropagation(); if (c.archived) V.unarchiveDeal(c.dealId); else V.archiveDeal(c.dealId); }}
@@ -444,7 +545,7 @@ export function Deals({ V }: { V: ClozrView }) {
                   <button type="button" data-testid="deal-photo" draggable={false} onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); if (c.photos.length) V.openPhotoShow(c.addr, c.photos, c.dealDbId); else if (c.streetOnly) window.open('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(c.addr + ' ' + c.city), 'clozr-Street View', 'popup=yes,width=1200,height=850'); }}
                     title={c.photos.length ? 'View photos' : 'Street view'}
-                    style={{display: "block", width: "100%", height: "118px", padding: 0, border: 0, borderBottom: "1px solid #eee", background: "#e9ebf0", cursor: "pointer", position: "relative"}}>
+                    style={{display: "block", width: "100%", height: "118px", padding: 0, border: 0, borderBottom: "1px solid #eee", background: "var(--photo-bg, #e9ebf0)", cursor: "pointer", position: "relative"}}>
                     <PropertyPhoto photo={c.photos?.[0] || (c.streetOnly ? '' : c.img)} street={c.street || (c.streetOnly ? c.img : '')} alt={'Photo of ' + c.addr} />
                     {c.photos.length > 1 ? <span style={{position: "absolute", right: "8px", bottom: "8px", background: "rgba(12,14,18,.72)", color: "#fff", fontSize: "11px", fontWeight: 700, borderRadius: "999px", padding: "2px 7px"}}>{c.photos.length} photos</span> : null}
                     <span style={{position: "absolute", left: "8px", top: "8px"}}><DealTypeBadge label={c.dealType} /></span>
@@ -452,10 +553,10 @@ export function Deals({ V }: { V: ClozrView }) {
                   <CloseBar badge={c.closeBadge} edge />
                   <div style={{display: "flex", alignItems: "flex-start", gap: "8px", padding: "10px 12px 0 14px"}}>
                     <div style={{minWidth: 0, flex: 1}}>
-                      <div style={{fontWeight: "650", fontSize: "13.5px", letterSpacing: "-0.01em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>{c.addr}</div>
+                      <div className="t-name" style={{whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>{c.addr}</div>
                       {show('seller') ? <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", marginTop: "1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>{[c.city, c.seller].filter((x) => x && x !== '—').join(' · ')}</div> : null}
-                      {c.added && c.added !== '—' ? <div style={{fontSize: "11px", color: "var(--subtle, #a1a1aa)", marginTop: "2px"}}>Added {c.added}</div> : null}
-                      {c.archived ? <div style={{display: "inline-block", marginTop: "4px", fontSize: "10px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--tx-orange-deep, #9a3412)", background: "var(--tint-orange-2, #ffedd5)", borderRadius: "999px", padding: "1px 7px"}}>Archived</div> : null}
+                      {c.added && c.added !== '—' ? <div style={{fontSize: "11px", color: "var(--meta, #71717a)", marginTop: "2px"}}>Added {c.added}</div> : null}
+                      {c.archived ? <Badge tone="warn" style={{marginTop: "4px"}}>Archived</Badge> : null}
                     </div>
                     {show('health') ? <span title="Health" style={{width: "8px", height: "8px", borderRadius: "50%", background: c.health, flex: "none", marginTop: "5px", boxShadow: `0 0 0 3px ${c.health}22`}} /> : null}
                   </div>
@@ -463,14 +564,14 @@ export function Deals({ V }: { V: ClozrView }) {
                   <div style={{display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "8px", marginTop: "10px", padding: "0 12px 0 14px"}}>
                     {show('contract') ? (
                     <div>
-                      <div style={{fontSize: "9.5px", letterSpacing: ".08em", textTransform: "uppercase", color: "var(--subtle, #a1a1aa)", fontWeight: "600"}}>Contract</div>
+                      <SectionLabel>Contract</SectionLabel>
                       <div style={{fontSize: "13px", fontWeight: "650", fontVariantNumeric: "tabular-nums"}}>{c.price}</div>
                     </div>
                     ) : <span />}
                     {show('fee') ? (
                     <div style={{textAlign: "right"}}>
-                      <div style={{fontSize: "9.5px", letterSpacing: ".08em", textTransform: "uppercase", color: "var(--subtle, #a1a1aa)", fontWeight: "600"}}>Fee</div>
-                      <div style={{display: "inline-block", marginTop: "1px", padding: "2px 8px", borderRadius: "999px", background: c.profit !== '—' ? "var(--positive-soft, #dcfce7)" : "var(--surface-2, #f4f4f5)", color: c.profit !== '—' ? "#15803d" : "var(--subtle, #a1a1aa)", fontSize: "13px", fontWeight: "750", fontVariantNumeric: "tabular-nums"}}>{c.profit}</div>
+                      <SectionLabel>Fee</SectionLabel>
+                      <div style={{display: "inline-block", marginTop: "1px", padding: "2px 8px", borderRadius: "999px", background: c.profit !== '—' ? "var(--positive-soft, #dcfce7)" : "var(--surface-2, #f4f4f5)", color: c.profit !== '—' ? "var(--tx-green, #15803d)" : "var(--meta, #71717a)", fontSize: "13px", fontWeight: "750", fontVariantNumeric: "tabular-nums"}}>{c.profit}</div>
                     </div>
                     ) : null}
                   </div>
@@ -493,20 +594,18 @@ export function Deals({ V }: { V: ClozrView }) {
                   ) : null}
                   {show('rep') || show('next') || show('days') ? (
                   <div style={{display: "flex", alignItems: "center", gap: "7px", margin: "9px 12px 0 14px", paddingTop: "8px", borderTop: "1px dashed #ececee"}}>
-                    {show('rep') ? <span title={c.rep} style={{width: "20px", height: "20px", borderRadius: "999px", background: "var(--ink, #18181b)", color: "var(--surface, #fff)", fontSize: "8.5px", fontWeight: "700", display: "grid", placeItems: "center", flex: "none"}}>{c.repInit}</span> : null}
+                    {show('rep') ? <span title={c.rep} style={{width: "20px", height: "20px", borderRadius: "999px", background: "var(--ink, #18181b)", color: "var(--surface, #fff)", fontSize: "10.5px", fontWeight: "700", display: "grid", placeItems: "center", flex: "none"}}>{c.repInit}</span> : null}
                     <span style={{fontSize: "11px", color: "var(--muted, #52525b)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "1"}}>{show('next') ? c.next : ''}</span>
-                    {c.noTitle ? <span title="No title company on this deal — open it to add one" style={{fontSize: "10.5px", fontWeight: "700", color: "var(--tx-amber, #b45309)", background: "var(--caution-soft, #fef3c7)", borderRadius: "6px", padding: "1px 6px", whiteSpace: "nowrap"}}>No title</span> : null}
-                    {show('days') ? <span title="Days in stage" style={{fontSize: "10.5px", fontWeight: "600", color: "var(--muted, #52525b)", background: "var(--surface-2, #f4f4f5)", borderRadius: "6px", padding: "1px 6px", fontVariantNumeric: "tabular-nums"}}>{c.days}</span> : null}
+                    {c.noTitle ? <Badge tone="warn" title="No title company on this deal — open it to add one">No title</Badge> : null}
+                    {show('days') ? <Badge title="Days in stage">{c.days}</Badge> : null}
                   </div>
                   ) : null}
                   <div onMouseDown={(e) => e.stopPropagation()} style={{display: "flex", flexDirection: "column", gap: "6px", margin: "9px 12px 0 14px"}}>
                     {c.setStage ? <StageSelect stage={col.stage} color={col.color} choices={V.dealStageChoices} onPick={c.setStage} height="28px" /> : null}
-                    <button type="button" className="dc9" data-testid="deal-sheet" onClick={c.openSheet} draggable={false}
-                      title="Open the deal sheet"
-                      style={{...DEAL_SHEET_BTN, width: "100%", height: "36px", fontSize: "13px"}}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>
+                    <Button data-testid="deal-sheet" onClick={c.openSheet} draggable={false} title="Open the deal sheet"
+                      icon={<FileText size={13} aria-hidden />} style={{width: "100%"}}>
                       Deal sheet
-                    </button>
+                    </Button>
                     {V.can.tc ? (
                       <button type="button" className="dc2" data-testid="deal-tc" onClick={c.openTc} draggable={false}
                         title="Open transaction coordination"
@@ -529,7 +628,7 @@ export function Deals({ V }: { V: ClozrView }) {
                 </button>
               ) : null}
               {col.cards.length === 0 ? (
-                <div style={{border: "1.5px dashed #dcdcde", borderRadius: "12px", padding: "18px 10px", textAlign: "center", fontSize: "12px", color: "var(--subtle, #a1a1aa)"}}>{needle ? 'No match' : 'Drop a deal here'}</div>
+                <div style={{border: "1.5px dashed #dcdcde", borderRadius: "12px", padding: "18px 10px", textAlign: "center", fontSize: "12px", color: "var(--meta, #71717a)"}}>{needle ? 'No match' : 'Drop a deal here'}</div>
               ) : null}
             </div>
             );
@@ -540,42 +639,39 @@ export function Deals({ V }: { V: ClozrView }) {
       {(V.isMobile) ? (
         <>
         <div style={{flex: "1", minHeight: "0", overflow: "auto", background: "var(--canvas, #fafafa)", padding: "10px 10px calc(96px + env(safe-area-inset-bottom, 0px))"}}>
-          {mobileCards.map((d, d__i) => (
-            <React.Fragment key={d__i}>
-            <div role="button" tabIndex={0} onClick={d.open} onKeyDown={V.cardKey} style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "13px", padding: "0 0 12px", marginBottom: "8px", cursor: "pointer", overflow: "hidden"}}>
+          {mobileCards.map((d) => (
+            <React.Fragment key={d.dealId}>
+            <div role="button" tabIndex={0} onClick={selectMode ? () => togglePick(d.dealId) : d.open} onKeyDown={V.cardKey} aria-pressed={selectMode ? !!picked[d.dealId] : undefined} data-testid={selectMode ? 'deal-card-pick' : undefined}
+              style={{position: "relative", background: "var(--surface, #fff)", border: `1px solid ${selectMode && picked[d.dealId] ? 'var(--c-accent, #0a8560)' : 'var(--divider, #e4e4e7)'}`, boxShadow: selectMode && picked[d.dealId] ? 'inset 0 0 0 1px var(--c-accent, #0a8560)' : undefined, borderRadius: "13px", padding: "0 0 12px", marginBottom: "8px", cursor: "pointer", overflow: "hidden", contentVisibility: "auto", containIntrinsicHeight: "auto 471px"}}>
+              {selectMode ? (
+                <span style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 2, display: 'grid', placeItems: 'center', width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(255,255,255,.92)', boxShadow: 'var(--shadow-ring, 0 0 0 1px rgba(0,0,0,.08))' }}>
+                  <input type="checkbox" aria-label={`Select ${d.addr}`} checked={!!picked[d.dealId]} onChange={() => togglePick(d.dealId)} onClick={(e) => e.stopPropagation()} style={{ ...pickBox, width: '20px', height: '20px' }} />
+                </span>
+              ) : null}
               <button type="button" data-testid="deal-photo" onClick={(e) => { e.stopPropagation(); if (d.photos.length) V.openPhotoShow(d.addr, d.photos, d.dealDbId); }}
                 title={d.photos.length ? 'View photos' : 'Street view'}
-                style={{display: "block", width: "100%", height: "140px", padding: 0, border: 0, background: "#e9ebf0", cursor: "pointer", position: "relative"}}>
+                style={{display: "block", width: "100%", height: "140px", padding: 0, border: 0, background: "var(--photo-bg, #e9ebf0)", cursor: "pointer", position: "relative"}}>
                 <PropertyPhoto photo={d.photos?.[0] || ''} street={d.street || d.img} alt={'Photo of ' + d.addr} />
                 {d.photos.length > 1 ? <span style={{position: "absolute", right: "8px", bottom: "8px", background: "rgba(12,14,18,.72)", color: "#fff", fontSize: "11px", fontWeight: 700, borderRadius: "999px", padding: "2px 7px"}}>{d.photos.length} photos</span> : null}
                 <span style={{position: "absolute", left: "8px", top: "8px"}}><DealTypeBadge label={d.dealType} /></span>
               </button>
-              {d.dealId ? (
-                <div style={{display: "flex", justifyContent: "flex-end", padding: "8px 13px 0"}}>
-                  <button type="button" data-testid="deal-archive-m" onClick={(e) => { e.stopPropagation(); if (d.archived) V.unarchiveDeal(d.dealId); else V.archiveDeal(d.dealId); }}
-                    style={{height: "30px", padding: "0 12px", borderRadius: "8px", border: "1px solid var(--divider, #e4e4e7)", background: "var(--surface, #fff)", fontSize: "12.5px", fontWeight: 600, color: d.archived ? "var(--tx-mint, #0a8560)" : "var(--muted, #52525b)", cursor: "pointer"}}>
-                    {d.archived ? 'Restore deal' : 'Archive deal'}
-                  </button>
-                </div>
-              ) : null}
               <div style={{display: "flex", alignItems: "baseline", gap: "8px", padding: "12px 13px 0"}}>
-                <span style={{fontSize: "15px", fontWeight: "600", letterSpacing: "-0.01em", minWidth: "0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
+                <span className="t-name" style={{minWidth: "0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
                   {d.addr}
                 </span>
-                <DealTypeBadge label={d.dealType} />
                 <span style={{flex: "1"}}></span>
-                <span style={{display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "10px", fontWeight: "700", letterSpacing: ".08em", textTransform: "uppercase", color: d.healthColor, whiteSpace: "nowrap"}}>
+                <span style={{display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", fontWeight: "600", color: d.healthColor, whiteSpace: "nowrap"}}>
                   <Mark label={d.health} />
-                  {d.health}
+                  {d.health.charAt(0).toUpperCase() + d.health.slice(1)}
                 </span>
               </div>
-              <div style={{fontSize: "12.5px", color: "var(--meta, #71717a)", marginTop: "1px", padding: "0 13px"}}>
-                {d.seller}
+              <div style={{fontSize: "12.5px", color: "var(--meta, #71717a)", marginTop: "1px", padding: "0 13px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
+                {d.seller}{d.added && d.added !== '—' ? ` · Added ${d.added}` : ''}{d.closeBadge || !d.close || d.close === '—' ? '' : ` · Close ${d.close}`}
               </div>
               {d.closeBadge ? <div style={{ margin: "10px 13px 0" }}><CloseBar badge={d.closeBadge} /></div> : null}
               <div style={{display: "flex", alignItems: "flex-end", gap: "14px", marginTop: "10px", padding: "0 13px"}}>
                 <span>
-                  <span style={{display: "block", fontSize: "10px", letterSpacing: ".1em", textTransform: "uppercase", color: "var(--subtle, #a1a1aa)", fontWeight: "600"}}>
+                  <span className="t-meta" style={{display: "block"}}>
                     Contract
                   </span>
                   <span style={{display: "block", fontSize: "17px", fontWeight: "700", letterSpacing: "-0.02em"}}>
@@ -584,18 +680,18 @@ export function Deals({ V }: { V: ClozrView }) {
                   {d.gapLine ? <span title={d.gapTitle} style={{display: "block", marginTop: "2px", fontSize: "11.5px", fontWeight: 650, color: d.gapUp ? "var(--tx-green, #15803d)" : "#b45309"}}>{d.gapLine}</span> : null}
                 </span>
                 <span>
-                  <span style={{display: "block", fontSize: "10px", letterSpacing: ".1em", textTransform: "uppercase", color: "var(--subtle, #a1a1aa)", fontWeight: "600"}}>
+                  <span className="t-meta" style={{display: "block"}}>
                     Profit
                   </span>
-                  <span style={{display: "block", fontSize: "17px", fontWeight: "700", letterSpacing: "-0.02em", color: "#16a34a"}}>
+                  <span style={{display: "block", fontSize: "17px", fontWeight: "700", letterSpacing: "-0.02em", color: "var(--tx-green, #15803d)", fontVariantNumeric: "tabular-nums"}}>
                     {d.profit}
                   </span>
                 </span>
               </div>
               <div onClick={(e) => e.stopPropagation()} style={{display: "flex", flexDirection: "column", gap: "6px", margin: "10px 13px 0"}}>
-                <button className="dc2" data-testid="deal-sheet" onClick={d.openSheet} title="Open the deal sheet" style={{...DEAL_SHEET_BTN, width: "100%", height: "38px"}}>
+                <Button data-testid="deal-sheet" onClick={d.openSheet} title="Open the deal sheet" icon={<FileText size={13} aria-hidden />} style={{width: "100%"}}>
                   Deal sheet
-                </button>
+                </Button>
                 {V.can.tc ? (
                   <button className="dc2" data-testid="deal-tc" onClick={d.openTc} title="Open transaction coordination" style={{height: "32px", borderRadius: "8px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12px", fontWeight: "650", color: "var(--tx-green-deep, #1f7a4d)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px"}}>
                     <Mark label="TC" />
@@ -605,16 +701,18 @@ export function Deals({ V }: { V: ClozrView }) {
               </div>
               <div style={{display: "flex", alignItems: "center", gap: "10px", margin: "10px 13px 0", paddingTop: "8px", borderTop: "1px solid var(--divider-2, #f0f0f1)"}}>
                 {d.setStage ? <StageSelect stage={d.stage} color={d.stageColor} choices={V.dealStageChoices} onPick={d.setStage} height="32px" /> : (
-                <span style={{display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "10.5px", fontWeight: "700", letterSpacing: ".08em", textTransform: "uppercase", color: d.stageColor}}>
+                <span style={{display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11.5px", fontWeight: "600", color: textTone(d.stageColor)}}>
                   <Mark label={d.stage} />
                   {d.stage}
                 </span>
                 )}
                 <span style={{flex: "1"}}></span>
-                <span style={{fontSize: "11.5px", color: "var(--subtle, #a1a1aa)", textAlign: "right"}}>
-                  {d.added && d.added !== '—' ? <span style={{display: "block"}}>Added {d.added}</span> : null}
-                  {d.closeBadge ? null : <span style={{display: "block"}}>close {d.close}</span>}
-                </span>
+                {d.dealId ? (
+                  <button type="button" data-testid="deal-archive-m" onClick={(e) => { e.stopPropagation(); if (d.archived) V.unarchiveDeal(d.dealId); else V.archiveDeal(d.dealId); }}
+                    style={{height: "32px", padding: "0 10px", borderRadius: "8px", border: "1px solid var(--divider, #e4e4e7)", background: "var(--surface, #fff)", fontSize: "12px", fontWeight: 600, color: d.archived ? "var(--tx-mint, #0a8560)" : "var(--muted, #52525b)", cursor: "pointer", whiteSpace: "nowrap"}}>
+                    {d.archived ? 'Restore deal' : 'Archive deal'}
+                  </button>
+                ) : null}
               </div>
               <div style={{ margin: '8px 13px 0' }}>
                 <OptionTimers seller={d.optionSeller} buyer={d.optionBuyer} />
@@ -625,6 +723,8 @@ export function Deals({ V }: { V: ClozrView }) {
         </div>
         </>
       ) : null}
+      {(V.isTable && !V.isMobile && selectedIds.length) ? <DealsBulkBar V={V} ids={selectedIds} onClear={clearPicks} phone={false} /> : null}
+      {(V.isMobile && selectMode && selectedIds.length) ? <DealsBulkBar V={V} ids={selectedIds} onClear={clearPicks} phone /> : null}
       {(V.isTable && !V.isMobile) ? (
         <>
         <div className="clozr-scroll-well" style={{flex: "1", minHeight: "0", overflow: "auto", background: "var(--page)", padding: "14px 20px 20px", scrollPadding: "54px 20px 20px"}}>
@@ -632,6 +732,9 @@ export function Deals({ V }: { V: ClozrView }) {
           <table className="cz-zebra" style={{width: "100%", borderCollapse: "separate", borderSpacing: "0", fontSize: "12.5px", minWidth: `${Math.max(760, visibleFields.length * 118)}px`}}>
             <thead>
               <tr>
+                <th style={{position: "sticky", top: "0", zIndex: 2, background: "var(--surface, #fff)", borderBottom: "1px solid #ececee", padding: "0 0 0 12px", height: "40px", width: "30px"}}>
+                  <input type="checkbox" data-testid="deals-pick-all" aria-label={allShownPicked ? 'Clear the selection' : `Select all ${tableShown.length} deals shown`} checked={allShownPicked} onChange={toggleAllShown} disabled={!tableShown.length} style={pickBox} />
+                </th>
                 {visibleFields.map((f) => {
                   const i = f.key === ACTIONS ? -1 : Number(f.key.slice(1));
                   const right = isMoneyCol(i) || i === C.daysToClose;
@@ -641,7 +744,7 @@ export function Deals({ V }: { V: ClozrView }) {
                   <th key={f.key} aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined} style={{position: "sticky", top: "0", zIndex: f.key === ACTIONS ? 3 : 2, ...(f.key === ACTIONS ? {right: 0, boxShadow: "-8px 0 12px -10px rgba(18,20,28,.25)"} : null), background: "var(--surface, #fff)", borderBottom: "1px solid #ececee", padding: "0 12px", height: "40px", textAlign: right ? "right" : "left", fontSize: "12px", fontWeight: "500", color: active ? "var(--tx-mint, #0a8560)" : "var(--meta, #71717a)", whiteSpace: "nowrap"}}>
                     {sk ? (
                       <button type="button" onClick={() => setSort((cur) => toggleSort(cur, sk, firstDealDir(sk)))} style={{background: "none", border: 0, padding: 0, font: "inherit", letterSpacing: "inherit", textTransform: "inherit", color: "inherit", cursor: "pointer", fontWeight: 500}}>
-                        {f.label}{active ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : ''}
+                        {f.label}{active ? (sort.dir === 'asc' ? <ArrowUp size={12} aria-hidden style={{marginLeft: 3, verticalAlign: "-2px"}} /> : <ArrowDown size={12} aria-hidden style={{marginLeft: 3, verticalAlign: "-2px"}} />) : null}
                       </button>
                     ) : null}
                   </th>
@@ -651,17 +754,20 @@ export function Deals({ V }: { V: ClozrView }) {
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td colSpan={visibleFields.length} style={{padding: "28px 12px", textAlign: "center", color: "var(--subtle, #a1a1aa)"}}>{needle ? `No deal matches “${q.trim()}”.` : 'No deals yet.'}</td></tr>
+                <tr><td colSpan={visibleFields.length + 1} style={{padding: "28px 12px", textAlign: "center", color: "var(--meta, #71717a)"}}>{needle ? `No deal matches “${q.trim()}”.` : 'No deals yet.'}</td></tr>
               ) : null}
-              {rows.slice(0, tableLimit).map((d, d__i) => (
-                <React.Fragment key={d__i}>
-                <tr className="dc2" onClick={d.open} style={{cursor: "pointer"}}>
+              {rows.slice(0, tableLimit).map((d) => (
+                <React.Fragment key={d.dealId}>
+                <tr className="dc2" onClick={d.open} aria-selected={picked[d.dealId] || undefined} style={{cursor: "pointer", background: picked[d.dealId] ? 'var(--mint-dim, #e7f8f1)' : undefined}}>
+                  <td onClick={(e) => e.stopPropagation()} style={{padding: "0 0 0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", width: "30px"}}>
+                    <input type="checkbox" data-testid="deal-pick" aria-label={`Select ${d.addr}`} checked={!!picked[d.dealId]} onChange={() => togglePick(d.dealId)} style={pickBox} />
+                  </td>
                   {visibleFields.map((f) => {
                     if (f.key === ACTIONS) {
                       return (
                         <td key={f.key} className="cz-sticky-col" onClick={(e) => e.stopPropagation()} style={{position: "sticky", right: 0, zIndex: 1, boxShadow: "-8px 0 12px -10px rgba(18,20,28,.25)", padding: "0 10px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap"}}>
                           <span style={{display: "inline-flex", flexDirection: "column", gap: "4px", padding: "6px 0"}}>
-                            <button className="dc9" data-testid="deal-sheet" onClick={d.openSheet} title="Open the deal sheet" style={{...DEAL_SHEET_BTN, height: "30px", padding: "0 14px", fontSize: "12.5px"}}>
+                            <button className={buttonClass('ghost', 28)} data-testid="deal-sheet" onClick={d.openSheet} title="Open the deal sheet">
                               Deal sheet
                             </button>
                             {d.setStage ? <StageSelect stage={d.stage} color={d.stageColor} choices={V.dealStageChoices} onPick={d.setStage} height="26px" /> : null}
@@ -672,7 +778,7 @@ export function Deals({ V }: { V: ClozrView }) {
                               </button>
                             ) : null}
                             {V.can.tc ? (
-                              <button className="dc2" data-testid="deal-tc" onClick={d.openTc} title="Open transaction coordination" style={{display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px", height: "24px", padding: "0 9px", borderRadius: "7px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "10.5px", fontWeight: "700", letterSpacing: ".08em", textTransform: "uppercase", color: "var(--tx-green-deep, #1f7a4d)", cursor: "pointer"}}>
+                              <button className="dc2" data-testid="deal-tc" onClick={d.openTc} title="Open transaction coordination" style={{display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px", height: "24px", padding: "0 9px", borderRadius: "7px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "11px", fontWeight: "600", color: "var(--tx-green-deep, #1f7a4d)", cursor: "pointer"}}>
                                 <Mark label={'TC'} />
                                 TC
                               </button>
@@ -685,7 +791,7 @@ export function Deals({ V }: { V: ClozrView }) {
                     const cell = d.cells[i] ?? '—';
                     const isContact = (i === C.phone || i === C.email) && cell !== '—';
                     return (
-                    <td key={f.key} style={{padding: "0 12px", height: "48px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", fontWeight: i === C.address ? "600" : "400", color: i === C.dispoFee && cell !== '—' ? "#15803d" : isMoneyCol(i) ? "var(--ink, #18181b)" : "var(--muted, #52525b)", textAlign: isMoneyCol(i) || i === C.daysToClose ? "right" : "left", fontVariantNumeric: "tabular-nums"}}>
+                    <td key={f.key} style={{padding: "0 12px", height: "48px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", fontWeight: i === C.address ? "700" : "400", fontSize: i === C.address ? "15px" : undefined, color: i === C.dispoFee && cell !== '—' ? "#15803d" : (isMoneyCol(i) || i === C.address) ? "var(--ink, #18181b)" : "var(--muted, #52525b)", textAlign: isMoneyCol(i) || i === C.daysToClose ? "right" : "left", fontVariantNumeric: "tabular-nums"}}>
                       {i === C.status ? (
                         <span style={{display: "inline-flex", alignItems: "center", gap: "6px", height: "24px", padding: "0 9px", borderRadius: "6px", fontSize: "12px", fontWeight: "600", color: `color-mix(in srgb, ${d.stageColor} 55%, var(--ink, #18181b))`, background: `color-mix(in srgb, ${d.stageColor} 11%, var(--surface, #fff))`}}>
                           <span style={{color: d.stageColor, display: "inline-flex"}}><Mark label={cell} /></span>
@@ -693,7 +799,7 @@ export function Deals({ V }: { V: ClozrView }) {
                         </span>
                       ) : i === C.address ? (
                         <span style={{display: "inline-flex", alignItems: "center", gap: "8px"}}>
-                          <button type="button" data-testid="deal-photo" onClick={(e) => { e.stopPropagation(); if (d.photos.length) V.openPhotoShow(d.addr, d.photos, d.dealDbId); }} title={d.photos.length ? 'View photos' : 'Street view'} style={{width: "46px", height: "32px", padding: 0, border: 0, borderRadius: "6px", overflow: "hidden", background: "#e9ebf0", cursor: "pointer", flex: "none"}}>
+                          <button type="button" data-testid="deal-photo" onClick={(e) => { e.stopPropagation(); if (d.photos.length) V.openPhotoShow(d.addr, d.photos, d.dealDbId); }} title={d.photos.length ? 'View photos' : 'Street view'} style={{width: "46px", height: "32px", padding: 0, border: 0, borderRadius: "6px", overflow: "hidden", background: "var(--photo-bg, #e9ebf0)", cursor: "pointer", flex: "none"}}>
                             <PropertyPhoto photo={d.photos?.[0] || ''} street={d.street || d.img} alt="" />
                           </button>
                           <span>{cell}{d.amended ? <span title={'Amended: ' + d.amended} style={{marginLeft: "6px", fontSize: "11px", fontWeight: "600", color: "var(--tx-amber, #b45309)", background: "var(--tint-amber, #fffbeb)", borderRadius: "6px", padding: "2px 6px"}}>Amended</span> : null}</span>

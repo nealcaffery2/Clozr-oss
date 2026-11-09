@@ -10,12 +10,52 @@ import { type PlaceParts, type Suggestion, comprPlace, comprSuggest, googlePlace
 type Field = {
   key: string; value: string; ph: string; addr?: boolean;
   set: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  /** Given, the field keeps what is typed to itself and hands it over a beat after typing stops, on blur, and on flushAddInputs(). */
+  setValue?: (v: string) => void;
 };
+
+// Quick Add's form lives in the CLOZR view's state, so handing it every
+// keystroke redrew the whole app per letter. Buffered fields hand it over
+// when typing pauses; anything that reads the form first (Enter, Save) calls
+// flushAddInputs() so nothing typed is left behind.
+const COMMIT_MS = 150;
+const pending = new Set<() => void>();
+export function flushAddInputs() {
+  for (const commit of [...pending]) commit();
+}
 
 export function AddInput({ f, placesKey, onPlace, style }: {
   f: Field; placesKey: string | null | undefined; onPlace: (p: PlaceParts) => void; style?: React.CSSProperties;
 }) {
   const ref = useRef<HTMLInputElement>(null);
+  const buffered = !!f.setValue;
+  const [text, setText] = useState(f.value);
+  const [shown, setShown] = useState(f.value);
+  // What this field last handed over. That coming back is not news; any other
+  // new value from outside (Clear, an address pick, a draft) replaces the box.
+  const [sent, setSent] = useState(f.value);
+  if (f.value !== shown) { setShown(f.value); if (f.value !== sent) setText(f.value); }
+  const value = buffered ? text : f.value;
+  const setValueRef = useRef(f.setValue);
+  useEffect(() => { setValueRef.current = f.setValue; }, [f.setValue]);
+  const timer = useRef<number | null>(null);
+  const commitRef = useRef<(() => void) | null>(null);
+  const hold = (v: string) => {
+    if (timer.current != null) window.clearTimeout(timer.current);
+    const commit = () => {
+      if (timer.current != null) window.clearTimeout(timer.current);
+      timer.current = null;
+      pending.delete(commit);
+      commitRef.current = null;
+      setSent(v);
+      setValueRef.current?.(v);
+    };
+    if (commitRef.current) pending.delete(commitRef.current);
+    commitRef.current = commit;
+    pending.add(commit);
+    timer.current = window.setTimeout(commit, COMMIT_MS);
+  };
+  useEffect(() => () => { commitRef.current?.(); }, []);
   // The latest onPlace, kept in a ref so a pick always calls the current one.
   // Written from an effect, not during render.
   const onPlaceRef = useRef(onPlace);
@@ -32,7 +72,7 @@ export function AddInput({ f, placesKey, onPlace, style }: {
   const typed = useRef(false);
   useEffect(() => {
     if (!viaCompr || !typed.current) return;
-    const q = f.value.trim();
+    const q = value.trim();
     let live = true;
     const t = window.setTimeout(() => {
       if (q.length < 3) { setItems([]); return; }
@@ -42,7 +82,7 @@ export function AddInput({ f, placesKey, onPlace, style }: {
       void ask.then((r) => { if (live) { setItems(r); setHi(0); setOpen(r.length > 0); } }).catch(() => {});
     }, 250);
     return () => { live = false; window.clearTimeout(t); };
-  }, [viaCompr, f.value, placesKey]);
+  }, [viaCompr, value, placesKey]);
   const pick = (s: Suggestion) => {
     setOpen(false); setItems([]); typed.current = false;
     const get = google.current && placesKey ? googlePlace(placesKey, s.place_id).catch(() => comprPlace(s)) : comprPlace(s);
@@ -52,15 +92,21 @@ export function AddInput({ f, placesKey, onPlace, style }: {
   const input = (
     <input
       ref={ref}
-      value={f.value}
-      onChange={(e) => { typed.current = true; f.set(e); }}
+      value={value}
+      onChange={(e) => {
+        typed.current = true;
+        if (buffered) { setText(e.target.value); hold(e.target.value); } else f.set(e);
+      }}
       onKeyDown={viaCompr && open ? (e) => {
         if (e.key === 'ArrowDown') { e.preventDefault(); setHi((h) => Math.min(h + 1, items.length - 1)); }
         else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
         else if (e.key === 'Enter' && items[hi]) { e.preventDefault(); pick(items[hi]); }
         else if (e.key === 'Escape') setOpen(false);
       } : undefined}
-      onBlur={viaCompr ? () => window.setTimeout(() => setOpen(false), 150) : undefined}
+      onBlur={() => {
+        commitRef.current?.();
+        if (viaCompr) window.setTimeout(() => setOpen(false), 150);
+      }}
       placeholder={f.addr ? 'Start typing an address…' : f.ph}
       autoComplete={f.addr ? 'off' : undefined}
       role={viaCompr ? 'combobox' : undefined}

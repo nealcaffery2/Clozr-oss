@@ -1,13 +1,14 @@
 // Cold email pool, from the browser. Writes go through the cold-pool function,
-// which checks the caller's role. The locked domains (your company's own; edit the list) are the same list
-// the worker refuses (supabase/functions/_shared/cold-campaign.ts).
+// which checks the caller's role. The three locked domains are the same list
+// the worker refuses (supabase/functions/_shared/cold-campaign.ts) until an
+// admin allows them for the workspace (migration 442); the overview says which.
 
 import { supabase } from './supabase';
 import type { Check } from '../supabase/functions/_shared/deliverability-rules';
 // Vendor rows can carry an object where a string belongs (#321); every value put into a sentence goes through this.
 import { textValue } from '../supabase/functions/_shared/resend-rules';
 
-export const LOCKED_SENDING_DOMAINS = ['yourcompany.com'] as const;
+export const LOCKED_SENDING_DOMAINS = ['yourcompany.com', 'underwriting.example.com', 'underwriting.example.com'] as const;
 
 export type ColdDomain = {
   id: number; domain: string; daily_cap: number; dkim_selectors: string[]; score: number | null;
@@ -47,7 +48,12 @@ export type ColdOverview = {
   admin: boolean;
   /** The workspace runs cold autopilot (a Compr workspace), so auto_enroll does something. */
   autopilot?: boolean;
+  /** What the worker refuses outright: the company domains, unless allow_company_domains is on. */
   locked_domains: string[];
+  /** Migration 442: an owner or admin let cold mail send from the company domains, health-checked. */
+  allow_company_domains?: boolean;
+  /** The three company domains, whatever the workspace allows. */
+  company_domains?: string[];
   blocked: string[];
   blocked_extra: string[];
   fallback_timezone: string;

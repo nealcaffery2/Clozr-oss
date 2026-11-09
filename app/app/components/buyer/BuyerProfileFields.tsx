@@ -33,7 +33,7 @@ export function BuyerHeadFields({ V }: { V: ClozrView }) {
   const company = row ? (row.company == null ? null : String(row.company)) : (V.B.company && V.B.company !== '—' ? V.B.company : null);
   return (
     <div style={{ minWidth: 0, display: 'grid', gap: '2px' }}>
-      <span style={{ fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em' }}>
+      <span style={{ fontSize: '18px', fontWeight: 700, letterSpacing: '-0.03em', color: 'var(--ink, #18181b)' }}>
         <InlineField recordId={`buyer${id}`} field="name" label="Buyer name" type="text" value={name} readOnly={readOnly} onSave={save('name')} />
       </span>
       <span style={{ fontSize: '12.5px', color: 'var(--muted, #52525b)' }}>
@@ -62,9 +62,22 @@ export function BuyerProfileFields({ V }: { V: ClozrView }) {
     <div style={rowStyle(m)}><span style={{ color: 'var(--meta, #71717a)' }}>{label}</span><span style={{ minWidth: 0 }}>{el}</span></div>
   );
   const rid = `buyer${id}`;
+  // A Compr contact is a software prospect: entity, VIP, vetted, price range and proof of funds mean nothing there.
+  const compr = V.buyerListProfile === 'compr';
+  if (compr) return (
+    <>
+      {banner}
+      {f('Title', <InlineField recordId={rid} field="title" label="Job title" type="text" value={row ? (row.title as string | null) ?? null : null} placeholder="Add a title" readOnly={readOnly} onSave={save('title')} />)}
+      {f('Type', <InlineField recordId={rid} field="buyer_type" label="Type" type="select" options={TYPES} value={row ? (row.buyer_type as string | null) ?? null : null} format={(v) => TYPES.find((t) => t.value === v)?.label ?? V.B.type ?? ''} readOnly={readOnly} onSave={save('buyer_type')} />)}
+      {f('Markets', <InlineField recordId={rid} field="markets" label="Markets, separated by semicolons" type="text" value={markets || null} placeholder="Add markets" readOnly={readOnly} onSave={save('markets')} />)}
+      {f('Website', <InlineField recordId={rid} field="website" label="Website" type="text" value={row ? (row.website as string | null) ?? null : null} placeholder="Add a website" readOnly={readOnly} onSave={save('website')} />)}
+      {f('Notes', <InlineField recordId={rid} field="notes" label="Notes" type="textarea" value={row ? (row.notes as string | null) ?? null : null} placeholder="Add notes" readOnly={readOnly} onSave={save('notes')} />)}
+    </>
+  );
   return (
     <>
       {banner}
+      {f('Title', <InlineField recordId={rid} field="title" label="Job title" type="text" value={row ? (row.title as string | null) ?? null : null} placeholder="Add a title" readOnly={readOnly} onSave={save('title')} />)}
       {f('Type', <InlineField recordId={rid} field="buyer_type" label="Buyer type" type="select" options={TYPES} value={row ? (row.buyer_type as string | null) ?? null : null} format={(v) => TYPES.find((t) => t.value === v)?.label ?? V.B.type ?? ''} readOnly={readOnly} onSave={save('buyer_type')} />)}
       {f('Entity', <InlineField recordId={rid} field="entity_type" label="Entity" type="select" options={ENTITIES} value={row ? (row.entity_type as string | null) ?? null : null} format={(v) => ENTITIES.find((t) => t.value === v)?.label ?? ''} placeholder="Add entity" readOnly={readOnly} onSave={save('entity_type')} />)}
       {f('VIP', <InlineField recordId={rid} field="vip" label="VIP" type="select" options={YES_NO} value={row ? yes(row.vip) : yes(V.B.status === 'VIP')} readOnly={readOnly} onSave={save('vip')} />)}
@@ -76,6 +89,8 @@ export function BuyerProfileFields({ V }: { V: ClozrView }) {
       {f('Price max', <InlineField recordId={rid} field="price_max" label="Highest price they buy at" type="money" value={box.price.max ?? null} placeholder="No maximum" readOnly={readOnly} onSave={save('price_max')} />)}
       {f('POF link', <InlineField recordId={rid} field="pof_url" label="Proof of funds link" type="text" value={row ? (row.pof_url as string | null) ?? null : null} placeholder="Add a link" readOnly={readOnly} onSave={save('pof_url')} />)}
       {f('Website', <InlineField recordId={rid} field="website" label="Website" type="text" value={row ? (row.website as string | null) ?? null : null} placeholder="Add a website" readOnly={readOnly} onSave={save('website')} />)}
+      {f('Mailing', <InlineField recordId={rid} field="mailing_address" label="Mailing address (street, city, ST zip)" type="text" value={row ? (row.mailing_address as string | null) ?? null : null} placeholder="Add mailing address" readOnly={readOnly} onSave={save('mailing_address')} />)}
+      {f('Owns', <InlineField recordId={rid} field="property_address" label="A property they own (street, city, ST zip)" type="text" value={row ? (row.property_address as string | null) ?? null : null} placeholder="Add a property they own" readOnly={readOnly} onSave={save('property_address')} />)}
       {f('Notes', <InlineField recordId={rid} field="notes" label="Notes on this buyer" type="textarea" value={row ? (row.notes as string | null) ?? null : null} placeholder="Add notes" readOnly={readOnly} onSave={save('notes')} />)}
       {f('POF verified', <InlineField recordId={rid} field="pof_verified" label="Proof of funds verified" type="select" options={YES_NO} value={row ? yes(row.pof_verified_at) : 'no'} readOnly={readOnly} onSave={save('pof_verified')} />)}
     </>

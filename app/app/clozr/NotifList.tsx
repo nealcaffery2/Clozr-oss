@@ -76,7 +76,7 @@ const NotifRow = ({ row, onOpen, onMark, onGone }: { row: Row; onOpen: (id: stri
               <span style={{ fontSize: '11px', fontWeight: 600, color: row.catColor }}>
                 {row.cat}
               </span>
-              <span style={{ fontSize: '11px', color: 'var(--subtle, #a1a1aa)' }}>{row.time}</span>
+              <span style={{ fontSize: '11px', color: 'var(--meta, #71717a)' }}>{row.time}</span>
               {row.tone === 'good' || row.tone === 'bad' ? (
                 <span data-testid="notif-tone" style={{ fontSize: '10.5px', fontWeight: 600, padding: '1px 6px', borderRadius: '999px', background: row.tone === 'good' ? '#E7F8F1' : '#fdecec', color: row.tone === 'good' ? '#0A8560' : '#b42318' }}>
                   {row.tone === 'good' ? 'Good' : 'Not interested'}

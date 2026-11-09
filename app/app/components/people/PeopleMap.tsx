@@ -8,7 +8,7 @@
 
 import React, { useMemo, useState } from 'react';
 import type { ClozrView } from '@/app/clozr/view';
-import type { MapPin } from '@/components/genius/GeniusMap';
+import type { MapPin } from '@/components/maps/PinMap';
 import { ListMap, MapStatus, PopupButton, useCentroids, type LegendItem } from '@/components/ListMap';
 import { fanOut, locate } from '@/lib/geo-centroids';
 import { resolveMarket } from '@/lib/market-geo';
@@ -60,17 +60,17 @@ export function PeopleMap({ V, height }: { V: ClozrView; height: number | string
     return (
       <div style={{ display: 'grid', gap: '8px', paddingRight: '18px' }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 650, fontSize: '13px', color: '#18181b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
-          <div style={{ fontSize: '11.5px', color: '#71717a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[r.addr, r.city, r.st].filter(Boolean).join(', ') || 'No address'}</div>
+          <div style={{ fontWeight: 650, fontSize: '13px', color: 'var(--ink, #18181b)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
+          <div style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[r.addr, r.city, r.st].filter(Boolean).join(', ') || 'No address'}</div>
         </div>
-        <div style={{ fontSize: '11.5px', color: '#3f3f46', lineHeight: 1.45 }}>
+        <div style={{ fontSize: '11.5px', color: 'var(--ink-3, #3f3f46)', lineHeight: 1.45 }}>
           <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: r.color, marginRight: 6 }} />{r.stage}
-          {r.offer ? <span style={{ color: '#71717a' }}> · offer {r.offer}</span> : null}
-          {r.lat == null ? <span style={{ color: '#b45309' }}> · pinned at its town, not the house</span> : null}
+          {r.offer ? <span style={{ color: 'var(--meta, #71717a)' }}> · offer {r.offer}</span> : null}
+          {r.lat == null ? <span style={{ color: 'var(--tx-amber, #b45309)' }}> · pinned at its town, not the house</span> : null}
         </div>
         <div style={{ display: 'flex', gap: '6px' }}>
           <PopupButton primary={!on} onClick={() => m.toggle(id)}>{on ? 'Unselect' : 'Select'}</PopupButton>
-          <PopupButton onClick={r.open}>Open</PopupButton>
+          <PopupButton onClick={r.open}>Open record</PopupButton>
         </div>
       </div>
     );

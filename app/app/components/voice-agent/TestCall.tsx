@@ -7,14 +7,16 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, Mic, MicOff, Phone, PhoneOff, Search, Wrench, X } from 'lucide-react';
-import { searchRecords, type Api, type RecordHit } from '@/lib/voice-agent-client';
+import { ChevronDown, Mic, MicOff, Phone, PhoneOff, Search, X } from 'lucide-react';
+import { searchRecords, type Api, type RecordHit, type TestVersion } from '@/lib/voice-agent-client';
 import { DEMO_RECORDS } from '@/lib/voice-agent-demo';
-import { startDemoCall, startLiveCall, type CallHandle, type CallStatus } from '@/lib/voice-agent-session';
-import { formatDuration, levelPercent, orderVariables, pushLine, type TestLine, type TestSession } from '@/lib/voice-agent';
-import { Banner, Empty, GREEN, INK, LINE, MUTED, Segmented, Spinner, card, eyebrow, ghost, h2, input, mono, primary, sub } from './kit';
+import { asComprProspect, formatDuration, levelPercent, orderVariables } from '@/lib/voice-agent';
+import { Banner, GREEN, INK, LINE, MUTED, Segmented, Spinner, card, eyebrow, ghost, h2, input, mono, primary, sub } from './kit';
+import { Meter, StatusPill, Transcript } from './CallParts';
+import { useCallSession, type CallEnd } from './useCallSession';
 
-type Phase = 'idle' | 'starting' | 'connecting' | 'live' | 'ended';
+export type { CallEnd } from './useCallSession';
+
 type Kind = 'seller' | 'buyer';
 type Target = { kind: 'sample' } | ({ kind: Kind } & Pick<RecordHit, 'id' | 'name' | 'sub'>);
 const SAMPLE: Record<Kind, [string, string]> = {
@@ -26,25 +28,19 @@ const ME: Record<Kind, [string, string]> = {
   seller: ['You, as a test seller', 'Mock seller data under your name. Talk here or have the agent ring a phone.'],
   buyer: ['You, as a test cash buyer', 'Mock buyer data (buy box, a deal we sent) under your name. Talk here or have the agent ring a phone.'],
 };
-type ToolNote = { key: number; name: string; phase: 'start' | 'done' | 'error'; after: number };
-
-const TOOL_TEXT: Record<string, [string, string]> = {
-  lead_context: ['Looking up the lead brief…', 'Looked up the lead brief'],
-};
-const toolText = (n: ToolNote) => {
-  const [running, done] = TOOL_TEXT[n.name] ?? [`Running ${n.name}…`, `Ran ${n.name}`];
-  return n.phase === 'start' ? running : n.phase === 'error' ? `${n.name} failed` : done;
-};
-
-export type CallEnd = { conversationId: string | null; lines: number };
-
+/** A COMPR agent's caller is a COMPR prospect (a buyer record), never a seller or cash buyer. */
+const COMPR_SAMPLE: [string, string] = ['Sample COMPR prospect', 'A made-up wholesaler on a COMPR trial: two addresses run, no demo booked'];
+const COMPR_ME: [string, string] = ['You, as a test COMPR prospect', 'Mock COMPR trial data under your name. Talk here or have the agent ring a phone.'];
 /**
  * `callerAs` is who the tester plays (the Test tab's seller or buyer switch): the
  * sample follows it, and picking a caller here reports its kind back through `onCallerAs`.
+ * `version` picks what the call runs: the draft (read when Start is pressed, so a tweak
+ * is in the next call) or, when omitted, the published agent. `compr` is a COMPR agent:
+ * the caller is a COMPR prospect, and there is no seller or cash buyer to pick.
  */
-export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, onEnded, onStarted, callerAs = 'seller', onCallerAs }: {
-  api: Api; workspaceId: number | null; admin: boolean; agentKey: string; ready: boolean; agentName: string; onEnded?: (e: CallEnd) => void; onStarted?: () => void;
-  callerAs?: Kind; onCallerAs?: (k: Kind) => void;
+export function TestCall({ api, workspaceId, agentKey, ready, agentName, onEnded, onStarted, callerAs = 'seller', onCallerAs, version, compr = false }: {
+  api: Api; workspaceId: number | null; agentKey: string; ready: boolean; agentName: string; onEnded?: (e: CallEnd) => void; onStarted?: () => void;
+  callerAs?: Kind; onCallerAs?: (k: Kind) => void; version?: () => TestVersion; compr?: boolean;
 }) {
   const demo = api.demo;
   const [target, setTarget] = useState<Target>({ kind: 'sample' });
@@ -53,29 +49,16 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
   const [me, setMe] = useState(false);
   const [phone, setPhone] = useState('');
   const [note, setNote] = useState<string | null>(null);
-  const sampleAs: Kind = onCallerAs ? callerAs : ownAs;
+  const sampleAs: Kind = compr ? 'buyer' : onCallerAs ? callerAs : ownAs;
   const ringPhone = me && target.kind === 'sample' && phone.trim() !== '';
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<RecordHit[] | null>(null);
   const [searching, setSearching] = useState(false);
-  const [phase, setPhase] = useState<Phase>('idle');
-  const [error, setError] = useState<string | null>(null);
-  const [session, setSession] = useState<TestSession | null>(null);
-  const [lines, setLines] = useState<TestLine[]>([]);
-  const [tools, setTools] = useState<ToolNote[]>([]);
-  const [speaking, setSpeaking] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [mic, setMic] = useState(0);
-  const [out, setOut] = useState(0);
-  const [elapsed, setElapsed] = useState(0);
   const [knowsOpen, setKnowsOpen] = useState(false);
-  const handle = useRef<CallHandle | null>(null);
-  const scroller = useRef<HTMLDivElement | null>(null);
-  const toolSeq = useRef(0);
-  const spoken = useRef(0);
   const livePanel = useRef<HTMLElement | null>(null);
   const live = workspaceId != null && !demo;
-  const convId = useRef<string | null>(null);
+  const call = useCallSession({ live, onStarted, onEnded });
+  const { phase, error, setError, session, lines, tools, speaking, muted, mic, out, elapsed, busy, inCall, run, setPhase, setSession } = call;
 
   // The picker: sample records in /demo, a debounced name search otherwise.
   useEffect(() => {
@@ -96,82 +79,27 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
     return () => { alive = false; clearTimeout(t); };
   }, [q, live, workspaceId]);
 
-  // Meter and clock while a call is up.
-  useEffect(() => {
-    if (phase !== 'live') return;
-    const t0 = Date.now();
-    const id = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - t0) / 1000));
-      setMic(handle.current?.micLevel() ?? 0);
-      convId.current = handle.current?.conversationId() ?? convId.current;
-      setOut(handle.current?.agentLevel() ?? 0);
-    }, 90);
-    return () => clearInterval(id);
-  }, [phase]);
-
-  useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' }); }, [lines.length, tools.length]);
-  useEffect(() => () => { void handle.current?.end().catch(() => undefined); }, []);
-
-  const end = useCallback(async () => {
-    const h = handle.current;
-    handle.current = null;
-    try { await h?.end(); } catch { /* already closed */ }
-    setPhase((p) => (p === 'idle' ? p : 'ended'));
-    setSpeaking(false); setMic(0); setOut(0);
-  }, []);
-
-  useEffect(() => {
-    if (phase === 'ended') onEnded?.({ conversationId: convId.current, lines: spoken.current });
-    // Only the phase changing to ended is an event; the callback identity is not.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase]);
-
   const start = useCallback(async () => {
-    setError(null); setNote(null); setLines([]); setTools([]); spoken.current = 0; setElapsed(0); setMuted(false); setSpeaking(false);
-    setPhase('starting');
+    setNote(null);
     const tt = target.kind === 'sample' ? (me ? { sample: 'me' as const, as: sampleAs } : { sample: sampleAs }) : { kind: target.kind, id: target.id };
+    const v = version?.() ?? {};
     if (ringPhone) {
-      const p = await api.phoneTest(agentKey, tt, phone.trim());
+      setError(null);
+      setPhase('starting');
+      const p = await api.phoneTest(agentKey, tt, phone.trim(), v);
       setPhase('idle');
       if (!p.ok) return setError(p.error);
       setSession(p.data);
       return setNote(p.data.note);
     }
-    const r = await api.startTestSession(agentKey, tt);
-    if (!r.ok) { setPhase('idle'); return setError(r.error); }
-    const s: TestSession = r.data;
-    convId.current = null;
-    onStarted?.();
-    setSession(s);
-    setPhase('connecting');
     // Stacked on a phone, the transcript sits below the controls: bring it into view.
     if (window.innerWidth < 760) livePanel.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    const ev = {
-      onStatus: (st: CallStatus) => {
-        if (st === 'connected') setPhase('live');
-        if (st === 'ended') { handle.current = null; setPhase((p) => (p === 'idle' ? p : 'ended')); setSpeaking(false); setMic(0); setOut(0); }
-      },
-      onSpeaking: setSpeaking,
-      onLine: (role: TestLine['role'], text: string) => { if (text.trim()) spoken.current += 1; setLines((l) => pushLine(l, role, text)); },
-      onTool: (name: string, ph: ToolNote['phase']) => setTools((t) => {
-        if (ph === 'start') return [...t, { key: ++toolSeq.current, name, phase: 'start', after: spoken.current }];
-        const i = t.map((x) => x.name === name && x.phase === 'start').lastIndexOf(true);
-        return i < 0 ? [...t, { key: ++toolSeq.current, name, phase: ph, after: spoken.current }] : t.map((x, j) => (j === i ? { ...x, phase: ph } : x));
-      }),
-      onError: (m: string) => setError(m),
-    };
-    try {
-      handle.current = live ? await startLiveCall(s, ev) : startDemoCall(s, ev);
-    } catch (e) {
-      handle.current = null;
-      setPhase('idle');
-      setError(e instanceof Error ? e.message : 'The call could not start.');
-    }
-  }, [agentKey, api, live, me, onStarted, phone, ringPhone, sampleAs, target]);
+    // A COMPR agent's sample rides on the sample buyer; the prospect's brief replaces the buy box.
+    const prospect = compr && target.kind === 'sample';
+    await run(() => api.startTestSession(agentKey, tt, v).then((r) => (r.ok && prospect ? { ...r, data: asComprProspect(r.data) } : r)));
+  }, [agentKey, api, compr, me, phone, ringPhone, run, sampleAs, setError, setPhase, setSession, target, version]);
 
-  const busy = phase === 'starting' || phase === 'connecting';
-  const inCall = busy || phase === 'live';
-  const canStart = admin && (demo || ready) && !inCall;
+  const canStart = (demo || ready) && !inCall;
   const showResults = q.trim().length >= 2;
   const pickSample = (k: Kind | 'me') => {
     const as = k === 'me' ? sampleAs : k;
@@ -179,15 +107,8 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
   };
   const pick = (t: Exclude<Target, { kind: 'sample' }>) => { setTarget(t); setQ(''); setHits(null); setMe(false); onCallerAs?.(t.kind); };
   const sampleKey = me ? 'me' : sampleAs;
-  const who = target.kind === 'sample' ? (me ? ME : SAMPLE)[sampleAs][0] : target.name;
-  const toolsAfter = (n: number) => tools.filter((t) => t.after === n).map((t) => (
-    <div key={t.key} className="va-in" role="status" style={{ alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 7, height: 26, padding: '0 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
-      background: t.phase === 'error' ? 'var(--tint-red, #fef2f2)' : 'var(--tint-amber, #fffbeb)', color: t.phase === 'error' ? '#b91c1c' : '#92400e', border: `1px solid ${t.phase === 'error' ? 'var(--tint-red-2, #fecaca)' : 'var(--tint-amber-2, #fde68a)'}` }}>
-      {t.phase === 'start' ? <Spinner size={12} /> : <Wrench size={12} aria-hidden="true" />}
-      {toolText(t)}
-    </div>
-  ));
-
+  const sampleText: [string, string] = compr ? (me ? COMPR_ME : COMPR_SAMPLE) : (me ? ME : SAMPLE)[sampleAs];
+  const who = target.kind === 'sample' ? sampleText[0] : target.name;
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: '0 12px', alignItems: 'start' }}>
       <div style={{ minWidth: 0 }}>
@@ -196,8 +117,7 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
           <p style={{ ...sub, marginBottom: 14 }}>Talk to it from this browser. It is given the same brief a real caller&apos;s record would give it.</p>
 
           {demo ? <div style={{ marginBottom: 12 }}><Banner tone="info"><strong style={{ color: INK }}>Demo.</strong> This plays a scripted conversation. No microphone, no ElevenLabs, no model.</Banner></div> : null}
-          {!admin ? <div style={{ marginBottom: 12 }}><Banner tone="info">Only owners and admins can start a test call.</Banner></div> : null}
-          {!demo && admin && !ready ? <div style={{ marginBottom: 12 }}><Banner tone="warn">Publish the agent first. The test call talks to the published agent, so there is nothing to call yet.</Banner></div> : null}
+          {!demo && !ready ? <div style={{ marginBottom: 12 }}><Banner tone="warn">Publish the agent once. A test call runs on its ElevenLabs agent, so there is nothing to call until it exists.</Banner></div> : null}
           <div style={{ marginBottom: 12 }}>
             <Banner tone="info">{target.kind === 'sample'
               ? <>The sample callers are made up, so the agent&apos;s <span style={{ ...mono, whiteSpace: 'nowrap' }}>lead_context</span> tool finds no record. It works from the brief below.</>
@@ -208,14 +128,17 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
           <div style={{ marginBottom: 8 }}>
             <Segmented<Kind | 'me'> label="Caller type" disabled={inCall} value={target.kind === 'sample' ? sampleKey : target.kind}
               onChange={pickSample}
-              options={[{ id: 'seller', label: 'Seller', hint: 'A homeowner the agent is buying from.' }, { id: 'buyer', label: 'Cash buyer', hint: 'An investor the agent is selling deals to.' },
-                { id: 'me', label: 'Me (test)', hint: `You, the CRM owner, with mock ${sampleAs} data. Optionally rings your phone.` }]} />
+              options={compr
+                ? [{ id: 'buyer', label: 'COMPR prospect', hint: 'An investor on a COMPR trial the agent books a demo with Alex for.' },
+                  { id: 'me', label: 'Me (test)', hint: 'You, the CRM owner, as a COMPR prospect. Optionally rings your phone.' }]
+                : [{ id: 'seller', label: 'Seller', hint: 'A homeowner the agent is buying from.' }, { id: 'buyer', label: 'Cash buyer', hint: 'An investor the agent is selling deals to.' },
+                  { id: 'me', label: 'Me (test)', hint: `You, the CRM owner, with mock ${sampleAs} data. Optionally rings your phone.` }]} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px 8px 12px', borderRadius: 10, border: `1px solid ${LINE}`, background: 'var(--canvas, #fafafa)' }}>
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{who}</span>
               <span style={{ display: 'block', fontSize: 12, color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {target.kind === 'sample' ? (me ? ME : SAMPLE)[sampleAs][1] : target.sub}
+                {target.kind === 'sample' ? sampleText[1] : target.sub}
               </span>
             </span>
             {target.kind !== 'sample' && !inCall ? (
@@ -230,7 +153,7 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
               <label htmlFor="va-test-phone" style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: INK, marginBottom: 4 }}>Phone to ring (optional)</label>
               <input id="va-test-phone" className="va-field" type="tel" inputMode="tel" autoComplete="tel" name="phone" placeholder="(210) 555-0100…" value={phone} style={input}
                 onChange={(e) => setPhone(e.target.value)} />
-              <p style={{ margin: '4px 0 0', fontSize: 12, color: MUTED }}>Leave empty to talk from this browser. With a number, the published agent calls it from its line. Nothing is saved to the CRM.</p>
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: MUTED }}>Leave empty to talk from this browser. With a number, the agent calls it from its line. Nothing is saved to the CRM.</p>
             </div>
           ) : null}
 
@@ -266,7 +189,7 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
 
           <div style={{ marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {inCall ? (
-              <button type="button" className="va-btn" onClick={() => void end()} style={{ ...ghost, height: 40, flex: 1, background: '#dc2626', border: '1px solid #dc2626', color: '#fff', fontSize: 13.5 }}>
+              <button type="button" className="va-btn" onClick={() => void call.end()} style={{ ...ghost, height: 40, flex: 1, background: '#dc2626', border: '1px solid #dc2626', color: '#fff', fontSize: 13.5 }}>
                 <PhoneOff size={16} aria-hidden="true" /> End call
               </button>
             ) : (
@@ -275,7 +198,7 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
               </button>
             )}
             {phase === 'live' ? (
-              <button type="button" className="va-btn va-ghost" aria-pressed={muted} onClick={() => { const m = !muted; setMuted(m); handle.current?.setMuted(m); }} style={{ ...ghost, height: 40, minWidth: 92 }}>
+              <button type="button" className="va-btn va-ghost" aria-pressed={muted} onClick={call.toggleMute} style={{ ...ghost, height: 40, minWidth: 92 }}>
                 {muted ? <MicOff size={16} aria-hidden="true" /> : <Mic size={16} aria-hidden="true" />} {muted ? 'Unmute' : 'Mute'}
               </button>
             ) : null}
@@ -331,58 +254,8 @@ export function TestCall({ api, workspaceId, admin, agentKey, ready, agentName, 
             <Meter label="Agent" pct={levelPercent(out)} />
           </div>
         ) : null}
-        <div ref={scroller} role="log" aria-live="polite" aria-label="Transcript" style={{ height: 360, maxHeight: '55vh', overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--surface, #fff)' }}>
-          {lines.length === 0 && phase !== 'live' && phase !== 'connecting' ? (
-            <Empty title={phase === 'ended' ? 'The call ended before anyone spoke' : 'The transcript shows here'}>
-              {phase === 'ended' ? 'Start another test call to try again.' : 'Start a test call and both sides appear as they speak.'}
-            </Empty>
-          ) : null}
-          {lines.length === 0 && (phase === 'live' || phase === 'connecting') ? (
-            <div style={{ margin: 'auto', display: 'flex', alignItems: 'center', gap: 8, color: MUTED, fontSize: 13 }}><Spinner /> {phase === 'connecting' ? 'Connecting…' : 'Listening. Say hello.'}</div>
-          ) : null}
-          {toolsAfter(0)}
-          {lines.map((l, i) => (
-            <React.Fragment key={l.id}>
-              <div className="va-in" style={{ alignSelf: l.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '86%' }}>
-                <div style={{ fontSize: 11.5, fontWeight: 600, color: MUTED, margin: '0 4px 3px', textAlign: l.role === 'user' ? 'right' : 'left' }}>
-                  {l.role === 'user' ? 'You' : agentName || 'Agent'}
-                </div>
-                <div style={{ padding: '9px 12px', borderRadius: l.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px', fontSize: 13, lineHeight: 1.5, overflowWrap: 'anywhere',
-                  background: l.role === 'user' ? GREEN : 'var(--surface-2, #f4f4f5)', color: l.role === 'user' ? 'var(--surface, #fff)' : INK }}>
-                  {l.text}
-                </div>
-              </div>
-              {toolsAfter(i + 1)}
-            </React.Fragment>
-          ))}
-        </div>
+        <Transcript scroller={call.scroller} phase={phase} lines={lines} tools={tools} agentName={agentName} idleHint="Start a test call and both sides appear as they speak." style={{ height: 360, maxHeight: '55vh' }} />
       </section>
-    </div>
-  );
-}
-
-function StatusPill({ phase, speaking, muted }: { phase: Phase; speaking: boolean; muted: boolean }) {
-  const s = phase === 'live'
-    ? (speaking ? { t: 'Agent is speaking', c: GREEN, bg: 'var(--mint-dim, #e7f8f1)', dot: true } : muted ? { t: 'Muted', c: '#92400e', bg: 'var(--caution-soft, #fef3c7)', dot: false } : { t: 'Listening', c: GREEN, bg: 'var(--mint-dim, #e7f8f1)', dot: true })
-    : phase === 'connecting' ? { t: 'Connecting', c: '#92400e', bg: 'var(--caution-soft, #fef3c7)', dot: false }
-    : phase === 'starting' ? { t: 'Getting the session ready', c: '#92400e', bg: 'var(--caution-soft, #fef3c7)', dot: false }
-    : phase === 'ended' ? { t: 'Call ended', c: 'var(--muted, #52525b)', bg: 'var(--surface-2, #f4f4f5)', dot: false }
-    : { t: 'Not on a call', c: 'var(--muted, #52525b)', bg: 'var(--surface-2, #f4f4f5)', dot: false };
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 26, padding: '0 11px', borderRadius: 999, background: s.bg, color: s.c, fontSize: 12.5, fontWeight: 600 }}>
-      {phase === 'connecting' || phase === 'starting' ? <Spinner size={12} /> : <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 999, background: s.c, opacity: s.dot ? 1 : 0.55 }} />}
-      {s.t}
-    </span>
-  );
-}
-
-function Meter({ label, pct, off }: { label: string; pct: number; off?: boolean }) {
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr)', alignItems: 'center', gap: 10, fontSize: 12, color: MUTED }}>
-      <span>{off ? 'Muted' : label}</span>
-      <div role="meter" aria-label={`${label} level`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} style={{ height: 8, borderRadius: 999, background: 'var(--divider, #e4e4e7)', overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, background: pct > 85 ? '#f59e0b' : GREEN, transition: 'width .09s linear' }} />
-      </div>
     </div>
   );
 }

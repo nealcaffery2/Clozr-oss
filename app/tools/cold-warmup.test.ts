@@ -228,6 +228,16 @@ async function main() {
     assert.equal(importRefusal('x@outreach.example.com', ['outreach.example.com']), 'Blocked sending domain.');
     assert.equal(importRefusal('nope', []), 'Not an email address.');
     assert.equal(importRefusal('x@localhost', []), 'Not a domain name.');
+    // 441: the workspace override opens the three on every import path, subdomains with them; blocked_extra still wins.
+    const allow = { allowCompanyDomains: true };
+    for (const d of DEFAULT_BLOCKED_SENDING_DOMAINS) {
+      assert.equal(importRefusal(`alex@${d}`, [], allow), null, `${d} imports when allowed`);
+      assert.equal(importRefusal(`x@mail.${d}`, [], allow), null, 'subdomains follow the parent');
+      assert.equal(importRefusal(`x@${d}`, [d], allow), 'Blocked sending domain.', 'listed in blocked_extra, still refused');
+      assert.equal(importRefusal(`x@${d}`, [], { allowCompanyDomains: false }), 'Blocked sending domain.');
+      assert.equal(importRefusal(`x@${d}`, []), 'Blocked sending domain.', 'no opts is the lock');
+    }
+    assert.equal(importRefusal('x@outreach.example.com', ['outreach.example.com'], allow), 'Blocked sending domain.');
   }
 
   // ------------------------------------------------- inboxkit workspaces

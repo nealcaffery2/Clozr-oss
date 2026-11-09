@@ -64,6 +64,8 @@ export type Deal = {
   contract: number | null; arv: number | null; rehab: number | null;
   assignment: number | null; profit: number | null;
   close: string | null; daysInStage: number; health: string; owner: string | null;
+  /** Live rows only: close_date as stored (YYYY-MM-DD), for anything that buckets by month. */
+  closeIso?: string | null;
   /** Who underwrites this submission (deals.underwriter_id, migration 130). */
   underwriter?: string | null;
   /** YYYY-MM-DD. Seller purchase option, and the buyer's option on an assignment. */
@@ -100,7 +102,7 @@ export type Deal = {
   photos?: string[];
   /** Source photo links (Podio Photos, a Drive folder, a listing). Not drawn as tiles. */
   sourcePhotos?: string[];
-  /** Live rows only: public COMPR buyer report (thecompr.com/v/<token>). */
+  /** Live rows only: public COMPR buyer report (underwriting.example.com/v/<token>). */
   buyerReportUrl?: string | null;
   /** Live rows only: downloadable buyer CMA PDF from COMPR comps. */
   cmaPdfUrl?: string | null;
@@ -109,6 +111,12 @@ export type Deal = {
   photosUrl?: string | null;
   /** Live rows only: the deal's own property row, which a partner contact's record matches against its address. */
   propertyId?: string;
+  /**
+   * Live rows only: the deal's own property facts (properties.beds … on deals.property_id).
+   * The seller's property can be another house, so merge fields and the
+   * record read these first when they are here.
+   */
+  home?: Pick<Property, 'beds' | 'baths' | 'sqft' | 'year' | 'type'>;
   addr?: string; city?: string; leadStage?: string | null; asking?: number | null; submittedAt?: string | null; targetAssignment?: number | null;
   /** Live rows only: the property's state, ZIP and geocoded point, for the People map. */
   st?: string; zip?: string; lat?: number; lng?: number;
@@ -188,6 +196,8 @@ export type TimelineEntry = {
   entity?: string;
   /** Live rows only: the deal a message is about ("d12"), so a partner's submission shows its own messages. */
   dealId?: string;
+  /** Live rows only: the house a message is filed on, so a house's duplicate deals share their mail. */
+  propertyId?: string;
   /** Pinned to the top of the record's feed (migration 43): when, and by whom. */
   pinnedAt?: string; pinnedBy?: string | null;
   ai?: { summary: string; objections: string[]; next: string };
@@ -386,6 +396,8 @@ export type Vendor = {
   phone: string; email: string; market: string; rating: number; note: string;
   /** Live only (migration 80): location, every market served, office line, main point of contact. */
   city?: string; state?: string; markets?: string[]; office?: string; mainPoc?: boolean;
+  /** Job title at the company (migration 398). */
+  title?: string;
   /** Live only (migration 91): deals this source sent us, offered on, accepted, closed. */
   subs?: number; offered?: number; accepted?: number; closed?: number;
 };

@@ -11,7 +11,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   AUDIENCE_LABEL, type Channel, type MessageTemplate, type TemplateDraft,
-  archiveTemplate, importTalkrTemplates, newBlock, saveTemplate, toBlocks,
+  archiveTemplate, importTalkrTemplates, isCustomHtml, newBlock, restoreTemplate, saveTemplate, toBlocks,
 } from '@/lib/message-templates';
 import { api } from '@/lib/talkr-web/api';
 import type { Teammate } from '@/lib/team';
@@ -28,7 +28,10 @@ const blank = (channel: Channel): TemplateDraft => ({
   blocks: channel === 'email' ? [newBlock('paragraph'), newBlock('signature')] : null,
 });
 
+// customHtml is read off the stored row, before the stand-in paragraph below
+// fills empty blocks, so Duplicate and Share keep a hand-made design too.
 const draftOf = (t: MessageTemplate): TemplateDraft => ({
+  customHtml: t.channel === 'email' && isCustomHtml(t),
   id: t.id, name: t.name, channel: t.channel, audience: t.audience, category: t.category, shared: t.shared,
   subject: t.subject, body_text: t.body_text, body_html: t.body_html,
   blocks: t.channel === 'email' ? (toBlocks(t.blocks).length ? toBlocks(t.blocks) : [{ ...newBlock('paragraph'), text: t.body_text } as ReturnType<typeof newBlock>]) : null,
@@ -39,7 +42,7 @@ const LINE = 'var(--line, #e4e4e7)';
 const MUTED = 'var(--muted, #71717a)';
 
 export function TemplatesManager({ data, userId, isAdmin, talkrAuthed, ctx, initialChannel = 'any', onClose, embedded }: {
-  data: { templates: MessageTemplate[]; team: Teammate[]; loading: boolean; error: string | null; reload: () => void };
+  data: { templates: MessageTemplate[]; archived?: MessageTemplate[]; team: Teammate[]; loading: boolean; error: string | null; reload: () => void };
   userId: string | null; isAdmin: boolean; talkrAuthed: boolean; ctx: EditorContext;
   initialChannel?: TemplateFilter['channel']; onClose: () => void;
   /** When true, fills the parent pane instead of covering the viewport. */
@@ -48,7 +51,10 @@ export function TemplatesManager({ data, userId, isAdmin, talkrAuthed, ctx, init
   const [f, setF] = useState<TemplateFilter>({ channel: initialChannel, audience: 'any', owner: 'any', q: '' });
   const [editing, setEditing] = useState<TemplateDraft | null>(null);
   const [busy, setBusy] = useState(false);
-  const shown = filterTemplates(data.templates, f, userId);
+  // Show archived: the deleted templates in place of the live ones, each with Restore.
+  const [showArchived, setShowArchived] = useState(false);
+  const archived = data.archived ?? [];
+  const shown = filterTemplates(showArchived ? archived : data.templates, f, userId);
   const canEdit = (t: MessageTemplate) => t.owner_id === userId || (t.shared && isAdmin);
 
   const counts = useMemo(() => ({
@@ -100,7 +106,7 @@ export function TemplatesManager({ data, userId, isAdmin, talkrAuthed, ctx, init
 
   return (
     <div role={embedded ? 'region' : 'dialog'} aria-label="Templates" className="flex flex-col" style={shellStyle}>
-      <header className="glass-bar flex items-center gap-2 px-4 py-3" style={{ borderBottom: `1px solid ${LINE}`, flex: 'none', background: 'var(--panel, #fff)' }}>
+      <header className="glass-bar flex flex-wrap items-center gap-2 px-4 py-3" style={{ borderBottom: `1px solid ${LINE}`, flex: 'none', background: 'var(--panel, #fff)' }}>
         {!embedded || editing ? (
           <button type="button" aria-label="Back" onClick={editing ? () => setEditing(null) : onClose} style={{ color: ACCENT, cursor: 'pointer' }}>
             <Icon name="chevron-left" size={20} strokeWidth={2.4} />
@@ -135,7 +141,7 @@ export function TemplatesManager({ data, userId, isAdmin, talkrAuthed, ctx, init
       {editing ? (
         <TemplateEditor key={editing.id ?? `new-${editing.channel}`} initial={editing} ctx={ctx} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); data.reload(); }} />
       ) : (
-        <div className="flex min-h-0 flex-1" style={{ flexDirection: embedded && typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches ? 'column' : 'row' }}>
+        <div className="flex min-h-0 flex-1" style={{ flexDirection: typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches ? 'column' : 'row' }}>
           <aside style={{
             width: 168, flex: 'none', borderRight: `1px solid ${LINE}`, background: 'var(--panel, #fff)',
             padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 4, overflow: 'auto',
@@ -168,6 +174,20 @@ export function TemplatesManager({ data, userId, isAdmin, talkrAuthed, ctx, init
               );
             })}
             <div style={{ height: 1, background: LINE, margin: '10px 4px' }} />
+            <button type="button" data-testid="templates-archived" onClick={() => setShowArchived((v) => !v)} aria-pressed={showArchived}
+              title={showArchived ? 'Back to the live templates' : 'Deleted templates, each with Restore'}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                height: 34, padding: '0 10px', borderRadius: 8, border: 0, cursor: 'pointer',
+                background: showArchived ? 'var(--tint-green, #ecfdf5)' : 'transparent', color: showArchived ? ACCENT : 'var(--ink-2, #27272a)',
+                font: `${showArchived ? 650 : 500} 12.5px/1 var(--sans)`, textAlign: 'left',
+              }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <Icon name="trash" size={13} />
+                {showArchived ? 'Live templates' : 'Show archived'}
+              </span>
+              <span style={{ font: '600 11px/1 var(--sans)', color: showArchived ? ACCENT : 'var(--muted-2, #a1a1aa)' }}>{archived.length}</span>
+            </button>
             <p style={{ margin: 0, padding: '0 8px', font: '400 11px/1.45 var(--sans)', color: MUTED }}>
               Merge fields fill when you insert. Share a template so the whole team can use it.
             </p>
@@ -177,7 +197,14 @@ export function TemplatesManager({ data, userId, isAdmin, talkrAuthed, ctx, init
             <TemplateFilters f={f} set={(p) => setF((cur) => ({ ...cur, ...p }))} team={data.team} lockChannel />
             <div className="min-h-0 flex-1 overflow-auto rounded-xl" style={{ background: 'var(--panel, #fff)', border: `1px solid ${LINE}` }}>
               {data.error && <p className="p-4" style={{ font: '400 12.5px/1.5 var(--sans)', color: 'var(--red)' }}>{data.error}</p>}
-              {!data.error && !data.loading && shown.length === 0 && (
+              {!data.error && !data.loading && shown.length === 0 && showArchived && (
+                <div className="flex flex-col items-center gap-2 p-10 text-center">
+                  <p style={{ margin: 0, font: '600 14px/1.3 var(--sans)' }}>Nothing archived</p>
+                  <p style={{ margin: 0, font: '400 12.5px/1.5 var(--sans)', color: MUTED, maxWidth: 320 }}>A deleted template lands here and can be restored.</p>
+                  <Button tone="ghost" className="dc2" onClick={() => setShowArchived(false)}>Back to live templates</Button>
+                </div>
+              )}
+              {!data.error && !data.loading && shown.length === 0 && !showArchived && (
                 <div className="flex flex-col items-center gap-3 p-10 text-center">
                   <span className="inline-grid place-items-center rounded-full" style={{ width: 48, height: 48, background: 'var(--tint-green, #ecfdf5)', color: ACCENT }}>
                     <Icon name="template" size={22} />
@@ -221,16 +248,25 @@ export function TemplatesManager({ data, userId, isAdmin, talkrAuthed, ctx, init
                         </span>
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
-                        {canEdit(t) && <Button tone="ghost" className="dc2" style={{ padding: '6px 10px' }} onClick={() => setEditing(draftOf(t))}>Edit</Button>}
-                        <Button tone="ghost" className="dc2" style={{ padding: '6px 10px' }} disabled={busy}
-                          onClick={() => void act(saveTemplate(ctx.workspaceId, { ...draftOf(t), id: undefined, name: `${t.name} (copy)`, shared: false }), `Duplicated “${t.name}”`)}>Duplicate</Button>
-                        {t.owner_id === userId && (
+                        {showArchived ? (
+                          <>
+                            <span style={{ font: '600 11px/1 var(--sans)', color: MUTED }}>Archived{t.archived_at ? ` ${new Date(t.archived_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</span>
+                            {canEdit(t) && (
+                              <Button tone="ghost" className="dc2" style={{ padding: '6px 10px' }} disabled={busy}
+                                onClick={() => void act(restoreTemplate(t.id), `Restored “${t.name}”`)}>Restore</Button>
+                            )}
+                          </>
+                        ) : null}
+                        {!showArchived && canEdit(t) && <Button tone="ghost" className="dc2" style={{ padding: '6px 10px' }} onClick={() => setEditing(draftOf(t))}>Edit</Button>}
+                        {!showArchived && <Button tone="ghost" className="dc2" style={{ padding: '6px 10px' }} disabled={busy}
+                          onClick={() => void act(saveTemplate(ctx.workspaceId, { ...draftOf(t), id: undefined, name: `${t.name} (copy)`, shared: false }), `Duplicated “${t.name}”`)}>Duplicate</Button>}
+                        {!showArchived && t.owner_id === userId && (
                           <Button tone="ghost" className="dc2" style={{ padding: '6px 10px' }} disabled={busy}
                             onClick={() => void act(saveTemplate(ctx.workspaceId, { ...draftOf(t), shared: !t.shared }), t.shared ? 'Now private' : 'Shared with the team')}>
                             {t.shared ? 'Unshare' : 'Share'}
                           </Button>
                         )}
-                        {canEdit(t) && (
+                        {!showArchived && canEdit(t) && (
                           <button type="button" aria-label={`Delete ${t.name}`} disabled={busy} style={{ color: 'var(--red)', cursor: 'pointer', padding: 6 }}
                             onClick={() => { if (window.confirm(`Delete “${t.name}”?`)) void act(archiveTemplate(t.id), 'Template deleted'); }}>
                             <Icon name="trash" size={14} />

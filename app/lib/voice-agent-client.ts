@@ -10,7 +10,7 @@ import {
   cleanQuery, interpretReply, normalizeAgents, normalizeCalls, normalizeDetail, normalizeDiff, normalizeEnabled, normalizePreview, normalizePublish, normalizeScenarios,
   normalizeScore, normalizeSettings, normalizeStats, normalizeSummary, normalizeTemplates, normalizeToolInfo, normalizeVersions, normalizeVoices, savePayload,
   type AgentCall, type AgentDetail, type AgentSettings, type AgentSummary, type DiffResult, type PromptPreview, type PublishResult, type RecordKind,
-  type Result, type Scenario, type ScoreResult, type StatsResult, type TemplateInfo, type TestSession, type ToolInfo, type Tuning, type VersionRow, type Voice,
+  normalizeOverrides, type Result, type Scenario, type ScoreResult, type StatsResult, type TemplateInfo, type TestSession, type ToolInfo, type Tuning, type VersionRow, type Voice,
 } from './voice-agent';
 
 const FN = 'voice-agent-admin';
@@ -26,6 +26,11 @@ export type PreviewAudio = { audio_base64: string; mime: string; model: string |
 export type PreviewOptions = Partial<Tuning> & { tts_model?: string };
 /** `as` on "me": which side the tester plays, so a buyer-side agent hears a test cash buyer, not a seller. */
 export type TestTarget = { kind: RecordKind; id: number } | { sample: RecordKind | 'me'; as?: RecordKind };
+/**
+ * Which version a test talks to. `draft` runs the saved draft through session overrides; with
+ * `settings` it runs that unsaved form instead. Either way nothing is published.
+ */
+export type TestVersion = { draft?: boolean; settings?: AgentSettings };
 /** A phone test: the agent rang `to` with this session's brief. */
 export type PhoneTest = TestSession & { note: string; conversation_id: string | null };
 export type SaveDraftResult = { settings: AgentSettings; warnings: string[]; has_unpublished_changes: boolean };
@@ -54,9 +59,9 @@ export type Api = {
   setEnabled: (key: string, enabled: boolean) => Promise<Result<{ agent_key: string; enabled: boolean }>>;
   voices: (key: string) => Promise<Result<Voice[]>>;
   previewVoice: (key: string, voiceId: string, text: string, opts?: PreviewOptions) => Promise<Result<PreviewAudio>>;
-  startTestSession: (key: string, target: TestTarget) => Promise<Result<TestSession>>;
-  /** Owners and admins: the published agent rings `phone` with the target's brief. */
-  phoneTest: (key: string, target: TestTarget, phone: string) => Promise<Result<PhoneTest>>;
+  startTestSession: (key: string, target: TestTarget, version?: TestVersion) => Promise<Result<TestSession>>;
+  /** Owners and admins: the agent's line rings `phone` with the target's brief (the draft, with `version.draft`). */
+  phoneTest: (key: string, target: TestTarget, phone: string, version?: TestVersion) => Promise<Result<PhoneTest>>;
   scenarios: () => Promise<Result<Scenario[]>>;
   scoreCall: (key: string, conversationId: string, scenarioId: string) => Promise<Result<ScoreResult>>;
   calls: (key: string) => Promise<Result<AgentCall[]>>;
@@ -74,11 +79,15 @@ async function publishCall(body: Record<string, unknown>): Promise<PublishOutcom
   return { ok: false, error: r.error, data: b && (b.checks || b.manual || b.errors) ? normalizePublish(b) : null };
 }
 
-const testBody = (t: TestTarget) => ('sample' in t ? { record_kind: t.sample, sample: true, ...(t.as ? { me_as: t.as } : {}) } : { record_kind: t.kind, record_id: t.id });
+const testBody = (t: TestTarget, v: TestVersion = {}) => ({
+  ...('sample' in t ? { record_kind: t.sample, sample: true, ...(t.as ? { me_as: t.as } : {}) } : { record_kind: t.kind, record_id: t.id }),
+  ...(v.draft ? { draft: true, ...(v.settings ? { settings: savePayload(v.settings) } : {}) } : {}),
+});
 const testSession = (r: Record<string, unknown>, key: string, signed: string): TestSession => ({
   signed_url: signed, agent_id: String(r.agent_id ?? ''), agent_key: String(r.agent_key ?? key), live_version: Number(r.live_version) || 0,
   dynamic_variables: (r.dynamic_variables && typeof r.dynamic_variables === 'object' ? r.dynamic_variables : {}) as TestSession['dynamic_variables'],
   first_message: String(r.first_message ?? ''), resolution: typeof r.resolution === 'string' && r.resolution ? r.resolution : null,
+  draft: r.draft === true, overrides: r.draft === true ? normalizeOverrides(r.overrides) : null,
 });
 
 export function liveApi(workspaceId: number): Api {
@@ -107,15 +116,15 @@ export function liveApi(workspaceId: number): Api {
       if (!b64) throw new Error('No audio came back.');
       return { audio_base64: b64, mime: typeof r.mime === 'string' && r.mime ? r.mime : 'audio/mpeg', model: typeof r.model === 'string' && r.model ? r.model : null };
     }),
-    startTestSession: (key, target) => call(
-      at('test_session', key, testBody(target)),
+    startTestSession: (key, target, version) => call(
+      at('test_session', key, testBody(target, version)),
       (r): TestSession => {
         const signed = String(r.signed_url ?? '');
         if (!signed) throw new Error('The function did not return a session link.');
         return testSession(r, key, signed);
       },
     ),
-    phoneTest: (key, target, phone) => call(at('test_session', key, { ...testBody(target), phone }), (r): PhoneTest => ({
+    phoneTest: (key, target, phone, version) => call(at('test_session', key, { ...testBody(target, version), phone }), (r): PhoneTest => ({
       ...testSession(r, key, ''), note: String(r.note ?? 'Calling now.'), conversation_id: typeof r.conversation_id === 'string' ? r.conversation_id : null,
     })),
     scenarios: () => call(at('scenarios'), (r) => normalizeScenarios(r.scenarios)),

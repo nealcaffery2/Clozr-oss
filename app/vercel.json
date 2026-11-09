@@ -1,15 +1,47 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "pnpm build",
+  "buildCommand": "node scripts/deploy-supabase.mjs && pnpm build",
   "outputDirectory": "dist/client",
   "installCommand": "pnpm install --frozen-lockfile",
   "cleanUrls": true,
   "trailingSlash": false,
+  "redirects": [
+    {
+      "source": "/clozr",
+      "destination": "/app/calendar",
+      "permanent": false
+    },
+    {
+      "source": "/clozr/:rest*",
+      "destination": "/app/calendar",
+      "permanent": false
+    },
+    {
+      "source": "/docs",
+      "has": [
+        {
+          "type": "query",
+          "key": "contract",
+          "value": "(?<id>\\d+)"
+        }
+      ],
+      "destination": "/app/contracts/k:id",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/oauth/google/callback",
       "destination": "https://your-project-ref.supabase.co/functions/v1/google-oauth/callback"
+    },
+    {
+      "source": "/app/:path+",
+      "destination": "/app"
+    },
+    {
+      "source": "/demo/:path+",
+      "destination": "/demo"
     }
   ],
   "headers": [
@@ -42,7 +74,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://maps.googleapis.com https://js.hcaptcha.com https://*.hcaptcha.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' https: data: blob:; media-src 'self' blob: data: https://*.twilio.com https://*.supabase.co https://storage.googleapis.com https://*.elevenlabs.io; connect-src 'self' data: https: wss:; worker-src 'self' blob:; frame-src 'self' https://*.hcaptcha.com https://docs.google.com https://thecompr.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://maps.googleapis.com https://js.hcaptcha.com https://*.hcaptcha.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' https: data: blob:; media-src 'self' blob: data: https://*.twilio.com https://*.supabase.co https://storage.googleapis.com https://*.elevenlabs.io; connect-src 'self' data: https: wss:; worker-src 'self' blob:; frame-src 'self' https://*.hcaptcha.com https://docs.google.com https://lookerstudio.google.com https://datastudio.google.com https://*.notion.site https://airtable.com https://*.airtable.com https://app.hex.tech https://*.metabaseapp.com https://public.tableau.com https://underwriting.example.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
         }
       ]
     },
@@ -56,7 +88,20 @@
       ]
     },
     {
-      "source": "/(app|login|login/reset|demo|playground/jev-triage)",
+      "source": "/(app|demo)(/.*)?",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive, nosnippet"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/(login|login/reset|playground/jev-triage)",
       "headers": [
         {
           "key": "X-Robots-Tag",
@@ -90,7 +135,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://maps.googleapis.com https://js.hcaptcha.com https://*.hcaptcha.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' https: data: blob:; media-src 'self' blob: data: https://*.twilio.com https://*.supabase.co https://storage.googleapis.com https://*.elevenlabs.io; connect-src 'self' data: https: wss:; worker-src 'self' blob:; frame-src 'self' https://*.hcaptcha.com https://docs.google.com https://thecompr.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; upgrade-insecure-requests"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://maps.googleapis.com https://js.hcaptcha.com https://*.hcaptcha.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' https: data: blob:; media-src 'self' blob: data: https://*.twilio.com https://*.supabase.co https://storage.googleapis.com https://*.elevenlabs.io; connect-src 'self' data: https: wss:; worker-src 'self' blob:; frame-src 'self' https://*.hcaptcha.com https://docs.google.com https://lookerstudio.google.com https://datastudio.google.com https://*.notion.site https://airtable.com https://*.airtable.com https://app.hex.tech https://*.metabaseapp.com https://public.tableau.com https://underwriting.example.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; upgrade-insecure-requests"
         }
       ]
     }

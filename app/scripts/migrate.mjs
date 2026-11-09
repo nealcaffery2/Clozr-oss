@@ -24,8 +24,20 @@
 // Files are ordered by their leading number ("23_", "122_"), then by name. Each
 // migration runs in one transaction with its own ledger row, so a failing
 // migration leaves no trace and the run stops there — nothing after it runs.
-// A file that contains CREATE INDEX CONCURRENTLY (or VACUUM) cannot run inside
-// a transaction and is run plain, with a warning.
+// A file with a CREATE INDEX CONCURRENTLY (or VACUUM) statement cannot run
+// inside a transaction and is run plain, with a warning; the word in a comment
+// does not count. Before such a file runs, an index it creates that an
+// earlier interrupted run left INVALID (pg_index.indisvalid = false) is
+// dropped (drop index concurrently), so `if not exists` does not keep the
+// broken one; only the indexes named in the file are touched.
+//
+// One run at a time: the Vercel production build and the GitHub workflow can
+// start on the same merge. A run that writes (apply, --baseline, --mark) takes
+// the row in public.migration_lock (migration 435) before it reads the ledger
+// and clears it when done; another run waits for it, up to 15 minutes. A lock
+// older than 30 minutes is a dead run's and is taken over. Until 435 is
+// applied there is no table, and the run goes ahead without a lock, with a
+// warning. scripts/migrate-lock.mjs has the details.
 //
 // Nothing here depends on anything outside Node 22 (and psql for the DB URL
 // path — present on every GitHub runner and on any machine with Postgres).
@@ -36,7 +48,8 @@ import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { splitStatements } from './sql-split.mjs';
+import { concurrentIndexNames, runsOutsideTransaction, splitStatements } from './sql-split.mjs';
+import { STALE_MIN, acquireLock, keepLock, lockHolder, releaseSql } from './migrate-lock.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DIR = resolve(process.env.MIGRATIONS_DIR || join(HERE, '..', 'supabase', 'migrations'));
@@ -71,8 +84,6 @@ export function listMigrations(dir = DIR) {
     return { ...m, sql, sha256: createHash('sha256').update(sql).digest('hex') };
   });
 }
-
-const NO_TRANSACTION = /\bconcurrently\b|^\s*vacuum\b/im;
 
 // ---- the two ways to reach the database -----------------------------------
 
@@ -177,8 +188,33 @@ function fail(code, line) {
   flushSummary();
   process.exit(code);
 }
+/** A failure thrown from inside the locked part of a run, so the lock is released first. */
+const failure = (code, line) => Object.assign(new Error(line), { exitCode: code });
 function flushSummary() {
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary.map((l) => l.replace(/^(✓|✗|⚠|·)/, '$1')).join('  \n') + '\n');
+}
+
+// ---- invalid indexes ---------------------------------------------------------------
+
+/**
+ * An interrupted CREATE INDEX CONCURRENTLY (the Management API cuts a
+ * statement off after about a minute; a build can die) leaves the index
+ * behind marked INVALID, and `if not exists` then skips it on every re-run
+ * while the planner never uses it. So before a CONCURRENTLY file runs, any
+ * index it creates that exists and is invalid is dropped, and the file
+ * builds it again. Only the names in the file are touched.
+ */
+async function dropInvalidIndexes(runner, m) {
+  const names = concurrentIndexNames(m.sql);
+  if (!names.length) return;
+  const invalid = await runner.rows(`select n.nspname as schema, c.relname as name
+    from pg_index i join pg_class c on c.oid = i.indexrelid join pg_namespace n on n.oid = c.relnamespace
+    where not i.indisvalid and c.relname in (${names.map(lit).join(', ')})`);
+  for (const { schema, name } of invalid) {
+    const ident = (s) => `"${String(s).replace(/"/g, '""')}"`;
+    warn(`${m.name}: ${schema}.${name} was left INVALID by an interrupted build; dropping it so the file builds it again.`);
+    await runner.exec(`drop index concurrently if exists ${ident(schema)}.${ident(name)};\n`, { transaction: false });
+  }
 }
 
 // ---- main ------------------------------------------------------------------------
@@ -189,6 +225,24 @@ async function main() {
   if (!files.length) fail(2, `No NN_name.sql files in ${DIR}.`);
 
   await runner.exec(ENSURE_LEDGER, { transaction: true });
+  if (mode === 'status' || mode === 'dry-run') return runFiles(runner, files);
+
+  // Taken before the ledger is read, so a run that waited sees what the other applied.
+  const holder = lockHolder();
+  const db = { rows: (q) => runner.rows(q), exec: (q) => runner.exec(q, { transaction: true }), holder };
+  const lock = await acquireLock({ ...db, sleep: (ms) => new Promise((r) => setTimeout(r, ms)), log: (l) => console.log(l) });
+  if (!lock.taken) warn('public.migration_lock does not exist yet (migration 435), so this run takes no lock; another runner could apply the same files at the same time.');
+  try {
+    await runFiles(runner, files, lock.taken ? () => keepLock(db) : async () => {});
+  } finally {
+    // psql's exec is synchronous and the API's is async; await covers both.
+    if (lock.taken) {
+      try { await runner.exec(releaseSql(holder), { transaction: true }); } catch (e) { warn(`could not release the migration lock (${e.message}); the next run waits up to ${STALE_MIN} minutes for it.`); }
+    }
+  }
+}
+
+async function runFiles(runner, files, keep) {
   const applied = new Map((await runner.rows(`select name, sha256, applied_at from ${LEDGER}`)).map((r) => [r.name, r]));
   const pending = files.filter((m) => !applied.has(m.name));
   const changed = files.filter((m) => applied.has(m.name) && applied.get(m.name).sha256 !== m.sha256);
@@ -216,7 +270,7 @@ async function main() {
   if (mode === 'mark') {
     const chosen = files.filter((m) => marks.includes(m.name));
     const unknown = marks.filter((n) => !files.some((m) => m.name === n));
-    if (unknown.length) fail(2, `Not in ${DIR}: ${unknown.join(', ')}`);
+    if (unknown.length) throw failure(2, `Not in ${DIR}: ${unknown.join(', ')}`);
     const todo = chosen.filter((m) => !applied.has(m.name));
     if (!todo.length) { say('Already recorded.'); return flushSummary(); }
     await runner.exec(todo.map(record).join('\n'), { transaction: true });
@@ -229,20 +283,22 @@ async function main() {
   if (mode === 'dry-run') { say('Dry run: nothing applied.'); return flushSummary(); }
 
   for (const m of pending) {
-    const transaction = !NO_TRANSACTION.test(m.sql);
+    const transaction = !runsOutsideTransaction(m.sql);
     if (!transaction) warn(`${m.name} uses CONCURRENTLY or VACUUM, so it runs outside a transaction: a failure half way leaves whatever ran before it in place.`);
+    await keep();
     const started = Date.now();
     try {
+      if (!transaction) await dropInvalidIndexes(runner, m);
       const notices = await runner.exec(`${m.sql}\n\n${record(m)}\n`, { transaction });
       say(`✓ ${m.name}  applied in ${((Date.now() - started) / 1000).toFixed(1)}s`);
       for (const n of notices) say(`    ${n}`);
     } catch (e) {
       say(`✗ ${m.name}  failed after ${((Date.now() - started) / 1000).toFixed(1)}s and was rolled back; nothing after it ran.`);
-      fail(1, `${m.name}: ${e.message}`);
+      throw failure(1, `${m.name}: ${e.message}`);
     }
   }
   say(`${pending.length} applied. Done.`);
   flushSummary();
 }
 
-main().catch((e) => fail(1, e.message));
+main().catch((e) => fail(e.exitCode ?? 1, e.message));

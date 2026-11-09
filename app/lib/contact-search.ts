@@ -12,6 +12,8 @@ export type Contact = {
   sub: string | null;
   /** Vendors only: the trade (Lender, Title, Contractor), which the dialer shows in place of "Vendor". */
   trade?: string | null;
+  /** Buyers and vendors: the company on its own, for the deal team's Company field. */
+  company?: string | null;
 };
 
 /** How a recipient row remembers the record it came from (contract_signers, migration 114). */

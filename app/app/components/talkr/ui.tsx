@@ -26,7 +26,7 @@ export function StatusMarker({
       <span style={{ color, display: 'inline-flex' }}><Mark label={label} /></span>
       <span
         style={{
-          font: '600 9px/1 var(--sans)',
+          font: '600 11px/1 var(--sans)',
           color: 'var(--muted)',
         }}
       >
@@ -82,7 +82,8 @@ const TONES: Record<ButtonTone, CSSProperties> = {
   accent: { boxShadow: 'var(--shadow-rest)', background: 'var(--accent)', color: '#fff', border: '1px solid transparent' },
   dark: { boxShadow: 'var(--shadow-rest)', background: 'var(--dark-1)', color: '#fff', border: '1px solid transparent' },
   ghost: { background: 'var(--panel)', color: 'var(--text)', border: '1px solid var(--line)', boxShadow: 'var(--shadow-rest)' },
-  green: { boxShadow: 'var(--shadow-rest)', background: 'var(--green)', color: '#fff', border: '1px solid transparent' },
+  // "green" was the status green (#15803d), a second green beside the accent. It is the accent now: one action colour (DESIGN.md §2).
+  green: { boxShadow: 'var(--shadow-rest)', background: 'var(--accent)', color: '#fff', border: '1px solid transparent' },
   red: { boxShadow: 'var(--shadow-rest)', background: 'var(--red)', color: '#fff', border: '1px solid transparent' },
   quiet: { background: 'transparent', color: 'var(--muted)', border: '1px solid transparent' },
 };
@@ -117,7 +118,7 @@ export function Button({
       disabled={disabled}
       title={title}
       aria-label={ariaLabel}
-      className={`inline-flex items-center justify-center gap-2 transition-transform duration-100 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-45 ${className}`}
+      className={`inline-flex items-center justify-center gap-2 transition-transform duration-100 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
       style={{
         borderRadius: 'var(--r-btn)',
         padding: '9px 13px',
@@ -163,7 +164,7 @@ export function Toggle({
         border: 'none',
         background: on ? 'var(--accent)' : 'var(--line)',
         cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.6 : 1,
+        opacity: disabled ? 0.5 : 1,
         position: 'relative',
         transition: 'background .16s',
       }}

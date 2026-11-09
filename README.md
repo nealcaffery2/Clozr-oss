@@ -46,9 +46,7 @@ open-source phone platform.
 - **Data scrapers.** The deed scraper and the Facebook tooling behind
   wholesale sniping and Deal Machine (including the Deal Machine Chrome
   extension) are not in this repository. Those screens and their edge functions
-  remain and expect you to bring the data. Buyr's buyer search runs on your own
-  data API keys or a [Buyr](https://www.buyrs.app/) API key; see
-  [Buyr: your keys or ours](#buyr-your-keys-or-ours).
+  remain and expect you to bring the data.
 - **Company data.** No customer records, scripts or branding from any company
   are included. All demo data is made up.
 
@@ -202,9 +200,8 @@ are `owner`, `admin`, `acquisitions`, `dispositions`, `tc`, `member`, plus
   (assign, skip trace, send to a Talkr campaign, enroll in automated texts).
 - **Round robin**: each ingest key names the rotation its new leads are dealt
   to; dispositions rotations deal deals by type.
-- **Bulk skip trace** for sellers and buyers through Buyr's
-  `skiptrace` (RealEstateAPI for individuals, BatchData for LLCs), with a
-  monthly credit cap.
+- **Bulk skip trace** for sellers and buyers (`skip-trace`: RealEstateAPI
+  for individuals and LLCs, BatchData wired but off), with a monthly credit cap.
 - **Reactivation lists** and the nightly AI Autopilot pass over aged leads.
 - **Blacklist** and do-not-contact handling across People and Buyers.
 
@@ -276,34 +273,13 @@ are `owner`, `admin`, `acquisitions`, `dispositions`, `tc`, `member`, plus
 
 - **Buyers**: the buyer database, and the buyer record with buy box,
   activity, engagement and an AI score (`buyer-score`).
-- **Buyr** (formerly Genius, `genius-discover`): every cash buyer around an
-  address from public records, labelled by the method that found them, with
-  phones on demand. See [Buyr: your keys or ours](#buyr-your-keys-or-ours).
 - **Wholesaler database** (`dispo-contracts`): assignment PDFs in the team's
-  Drive folder become wholesaler deals and entities, so Buyr can answer "who
-  does this wholesaler sell to".
+  Drive folder become wholesaler deals and entities.
 - **InvestorBase** (`investorbase-import`) and **DispoGenius**
   (`dispogenius-import`, `dispogenius-sync`) buyer imports.
-- **Wholesale sniping and Facebook buyer comments** (`buyr`): over data you
-  bring.
 - **Deal Machine** (`deal-machine`, `deal-machine-cloud`): the run controls,
   log, buyers lists, results and settings. The Chrome extension is not
   included; the cloud runner calls Apify actors with your own Apify token.
-
-#### Buyr: your keys or ours
-
-Buyr (the buyer finder that used to be called Genius) is free to run. Two ways
-to power it:
-
-- **Bring your own APIs (free).** Set `REAL_ESTATE_API_API_KEY` (property
-  records and individual skip tracing) and `BATCHDATA_API_KEY` (LLC skip
-  tracing), plus `ATTOM_API_KEY` if you want ATTOM. See
-  [Data providers](#environment-variables-and-secrets). You pay those vendors
-  directly at their rates; CLOZR adds nothing.
-- **Use a Buyr API key (cheaper).** No data contracts of your own? Sign up at
-  [Buyr](https://www.buyrs.app/), get an API key, and connect it to your
-  CLOZR. Runs go through Buyr's pooled data plans, which cost less per search
-  than most teams pay on a starter plan with each vendor.
 
 ### Transaction coordination
 
@@ -581,7 +557,7 @@ of them may be secret.
 | `NEXT_PUBLIC_TALKR_WEB_URL` | optional | Talkr's web app, for the few inbox links that open there |
 | `NEXT_PUBLIC_HCAPTCHA_SITE_KEY` | optional | turns on hCaptcha on the auth forms |
 | `NEXT_PUBLIC_GOOGLE_PLACES_KEY` | optional | address autocomplete (Maps JavaScript API with Places); restrict it to your domain in Google Cloud |
-| `NEXT_PUBLIC_MAPBOX_TOKEN` | optional | Mapbox tiles on the Buyr map; without it, OpenStreetMap tiles |
+| `NEXT_PUBLIC_MAPBOX_TOKEN` | optional | Mapbox tiles on the maps; without it, OpenStreetMap tiles |
 | `NEXT_PUBLIC_COMPR_URL` | optional | origin of an underwriting app framed in the record, if yours has one |
 
 ### Edge function secrets
@@ -655,11 +631,11 @@ reads).
 
 | Secret | Purpose |
 | --- | --- |
-| `REAL_ESTATE_API_API_KEY` | Buyr (your own keys): property records and individual skip tracing |
-| `BATCHDATA_API_KEY` | Buyr (your own keys): LLC skip tracing; geocoding fallback |
-| `ATTOM_API_KEY` | Buyr (your own keys) and geocoding |
-| `DISPOGENIUS_API_KEY`, `DISPOGENIUS_API_URL` | DispoGenius import and sync |
+| `REAL_ESTATE_API_API_KEY` | Property records and skip tracing |
+| `BATCHDATA_API_KEY` | LLC skip tracing (off by default); geocoding fallback |
+| `ATTOM_API_KEY` | Owner lookups and geocoding |
 | `INVESTORBASE_API_KEY` | InvestorBase import fallback |
+| `DISPOGENIUS_API_KEY`, `DISPOGENIUS_API_URL` | DispoGenius import and sync |
 | `PANDADOC_API_KEY`, `PANDADOC_WEBHOOK_KEY` | PandaDoc |
 | `BREX_API_TOKEN`, `BREX_WORKSPACE_ID` | Brex profitability feed fallback |
 | `APIFY_TOKEN`, `APIFY_INVESTORLIFT_ACTOR`, `APIFY_FB_GROUPS_ACTOR`, `ZILLOW_APIFY_ACTOR` | Deal Machine cloud runner and photo lookups |
@@ -740,7 +716,7 @@ app/
                         /deal, /marketplace, /sign, /notary, /forms, /verify,
                         /unsubscribe, /playground
     clozr/              the shell, useClozr state, CommandBar, screens/*.tsx
-  components/           record, dispo, marketplace, genius, talkr and shared UI
+  components/           record, dispo, marketplace, talkr and shared UI
   lib/                  data access (crm.ts, use-crm.ts, crm-write.ts), the
                         Talkr client, pure business rules, demo data
   supabase/

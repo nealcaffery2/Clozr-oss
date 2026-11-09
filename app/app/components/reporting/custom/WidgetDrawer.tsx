@@ -48,7 +48,7 @@ export function WidgetDrawer({ tab, setTab, theme, onTheme, metrics, onAddWidget
   const searching = !!q || chart !== 'all';
 
   return (
-    <aside aria-label="Add to the report" style={{ width: '340px', flex: 'none', borderLeft: `1px solid ${LINE}`, background: '#fff', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+    <aside aria-label="Add to the report" style={{ width: '340px', flex: 'none', borderLeft: `1px solid ${LINE}`, background: 'var(--surface, #fff)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '2px', padding: '8px 10px 0', borderBottom: `1px solid ${SOFT}` }}>
         {([['widgets', 'Widgets'], ['elements', 'Elements'], ['themes', 'Themes'], ['metrics', 'Custom metrics']] as const).map(([k, l]) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} style={{ height: '32px', padding: '0 9px', border: 0, borderBottom: `2px solid ${tab === k ? INK : 'transparent'}`, background: 'none', fontSize: '12.5px', fontWeight: 600, color: tab === k ? INK : MUTED, cursor: 'pointer', whiteSpace: 'nowrap' }}>{l}</button>
@@ -77,8 +77,8 @@ export function WidgetDrawer({ tab, setTab, theme, onTheme, metrics, onAddWidget
                   {open ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingBottom: '10px' }}>
                       {c.items.map((w) => (
-                        <button key={w.key} type="button" onClick={() => onAddWidget(w)} className="dc2" style={{ display: 'grid', gridTemplateColumns: '26px 1fr', gap: '8px', alignItems: 'start', padding: '8px 9px', border: `1px solid ${LINE}`, borderRadius: '9px', background: '#fff', cursor: 'pointer', textAlign: 'left' }}>
-                          <span style={{ width: '26px', height: '26px', borderRadius: '7px', background: '#E7F8F1', display: 'grid', placeItems: 'center' }}><ChartGlyph chart={w.chart} /></span>
+                        <button key={w.key} type="button" onClick={() => onAddWidget(w)} className="dc2" style={{ display: 'grid', gridTemplateColumns: '26px 1fr', gap: '8px', alignItems: 'start', padding: '8px 9px', border: `1px solid ${LINE}`, borderRadius: '9px', background: 'var(--surface, #fff)', cursor: 'pointer', textAlign: 'left' }}>
+                          <span style={{ width: '26px', height: '26px', borderRadius: '7px', background: 'var(--mint-dim, #e7f8f1)', display: 'grid', placeItems: 'center' }}><ChartGlyph chart={w.chart} /></span>
                           <span style={{ minWidth: 0 }}>
                             <span style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, color: INK }}>{w.label}</span>
                             <span style={{ display: 'block', fontSize: '11.5px', color: MUTED, lineHeight: 1.4 }}>{w.description} · {CHART_LABEL[w.chart]}</span>
@@ -96,7 +96,7 @@ export function WidgetDrawer({ tab, setTab, theme, onTheme, metrics, onAddWidget
         {tab === 'elements' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {ELEMENTS.map((el) => (
-              <button key={el.kind} type="button" onClick={() => onAddElement(el.kind)} className="dc2" style={{ padding: '10px 11px', border: `1px solid ${LINE}`, borderRadius: '9px', background: '#fff', cursor: 'pointer', textAlign: 'left' }}>
+              <button key={el.kind} type="button" onClick={() => onAddElement(el.kind)} className="dc2" style={{ padding: '10px 11px', border: `1px solid ${LINE}`, borderRadius: '9px', background: 'var(--surface, #fff)', cursor: 'pointer', textAlign: 'left' }}>
                 <span style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, color: INK }}>{el.label}</span>
                 <span style={{ display: 'block', fontSize: '11.5px', color: MUTED }}>{el.hint}</span>
               </button>
@@ -110,7 +110,7 @@ export function WidgetDrawer({ tab, setTab, theme, onTheme, metrics, onAddWidget
               {THEMES.map((t) => {
                 const on = theme.id === t.id;
                 return (
-                  <button key={t.id} type="button" onClick={() => onTheme(t.id === 'custom' ? { ...theme, id: 'custom', name: 'Custom' } : t)} aria-pressed={on} style={{ padding: '8px', border: `2px solid ${on ? ACCENT : LINE}`, borderRadius: '10px', background: '#fff', cursor: 'pointer', textAlign: 'left' }}>
+                  <button key={t.id} type="button" onClick={() => onTheme(t.id === 'custom' ? { ...theme, id: 'custom', name: 'Custom' } : t)} aria-pressed={on} style={{ padding: '8px', border: `2px solid ${on ? ACCENT : LINE}`, borderRadius: '10px', background: 'var(--surface, #fff)', cursor: 'pointer', textAlign: 'left' }}>
                     <span style={{ display: 'block', height: '44px', borderRadius: '6px', background: t.bg, border: `1px solid ${SOFT}`, padding: '6px', boxSizing: 'border-box' }}>
                       <span style={{ display: 'block', height: '5px', width: '60%', background: t.title, borderRadius: '2px' }} />
                       <span style={{ display: 'flex', gap: '3px', marginTop: '6px', alignItems: 'flex-end', height: '16px' }}>

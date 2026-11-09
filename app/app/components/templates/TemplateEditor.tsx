@@ -1,10 +1,13 @@
 'use client';
+import { Sparkles } from 'lucide-react';
 
 // The template editors. SMS: a textarea with merge chips, the carrier's
 // segment count on what the sample recipient would actually receive, and the
 // bubble they would see. Email: two panes — the blocks on the left, the
 // rendered email on the right at desktop or phone width, sent to yourself on
 // demand — and an AI assist that writes a first draft from a goal and a tone.
+// An email with its own hand-made HTML (draft.customHtml) previews that HTML,
+// edits it in a source box, and its blocks edit only the plain-text part.
 
 import React, { useMemo, useState } from 'react';
 import {
@@ -13,6 +16,7 @@ import {
   blocksToEmail, draftTemplate, newBlock, renderEmail, saveTemplate, toBlocks,
 } from '@/lib/message-templates';
 import { renderMerge } from '@/lib/sms';
+import { useBuyerListProfile } from '@/lib/buyer-list-profile';
 import { sendEmail } from '@/lib/google';
 import { EmailHtml } from '@/app/components/email/EmailHtml';
 import { Icon } from '@/app/components/talkr/Icon';
@@ -45,7 +49,7 @@ export function TemplateEditor({ initial, ctx, onSaved, onCancel }: {
   const [d, setD] = useState<TemplateDraft>(initial);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const set = (patch: Partial<TemplateDraft>) => setD((cur) => ({ ...cur, ...patch }));
+  const set = (patch: Partial<TemplateDraft> | ((cur: TemplateDraft) => Partial<TemplateDraft>)) => setD((cur) => ({ ...cur, ...(typeof patch === 'function' ? patch(cur) : patch) }));
   const sample = useMemo(() => ({ ...SAMPLE_FIELDS[d.audience], ...ctx.rep }), [d.audience, ctx.rep]);
 
   // The last field the rep typed in, so a chip lands where the caret is.
@@ -107,7 +111,7 @@ export function TemplateEditor({ initial, ctx, onSaved, onCancel }: {
               <textarea rows={6} style={{ ...input, resize: 'vertical', lineHeight: 1.45 }} value={d.body_text}
                 onChange={(e) => set({ body_text: e.target.value })} {...track((v) => set({ body_text: v }))}
                 placeholder="Hi {{first_name}}, this is {{rep_name}} with {{company}} — still thinking about {{address}}?" />
-              <div className="mt-1.5"><MergeChips fields={MERGE_FIELDS} onInsert={insert} /></div>
+              <div className="mt-1.5"><MergeChips fields={MERGE_FIELDS} onInsert={insert} explain /></div>
               <p style={{ marginTop: 6, font: '500 11px/1.4 var(--sans)', color: s.segments > 1 && s.encoding === 'ucs2' ? 'var(--amber)' : 'var(--muted-2)' }}>
                 {s.chars} chars · {s.segments} segment{s.segments === 1 ? '' : 's'} · {s.encoding === 'ucs2' ? `UCS-2 (${culprit && /\p{Extended_Pictographic}/u.test(culprit) ? 'an emoji' : `“${culprit}”`}) — 70 per segment` : 'GSM-7'} <span>(counted on the sample)</span>
               </p>
@@ -129,7 +133,7 @@ export function TemplateEditor({ initial, ctx, onSaved, onCancel }: {
 }
 
 function EmailEditor({ d, set, ctx, sample, head, footer, track, insert }: {
-  d: TemplateDraft; set: (p: Partial<TemplateDraft>) => void; ctx: EditorContext; sample: Record<string, string>;
+  d: TemplateDraft; set: (p: Partial<TemplateDraft> | ((cur: TemplateDraft) => Partial<TemplateDraft>)) => void; ctx: EditorContext; sample: Record<string, string>;
   head: React.ReactNode; footer: React.ReactNode;
   track: (apply: (v: string) => void) => { onFocus: (e: React.FocusEvent<Field>) => void };
   insert: (token: string) => void;
@@ -139,7 +143,8 @@ function EmailEditor({ d, set, ctx, sample, head, footer, track, insert }: {
   const [drag, setDrag] = useState<number | null>(null);
   const [testing, setTesting] = useState(false);
   const setBlocks = (next: Block[]) => set({ blocks: next });
-  const patch = (id: string, p: Partial<Block>) => setBlocks(blocks.map((b) => (b.id === id ? ({ ...b, ...p } as Block) : b)));
+  // Over the current draft: a merge chip applies the closure tracked at focus time, after other block edits.
+  const patch = (id: string, p: Partial<Block>) => set((cur) => ({ blocks: ((cur.blocks ?? []) as Block[]).map((b) => (b.id === id ? ({ ...b, ...p } as Block) : b)) }));
   const move = (from: number, to: number) => {
     if (to < 0 || to >= blocks.length || from === to) return;
     const next = blocks.slice();
@@ -148,8 +153,13 @@ function EmailEditor({ d, set, ctx, sample, head, footer, track, insert }: {
     setBlocks(next);
   };
 
-  const built = useMemo(() => blocksToEmail(blocks), [blocks]);
-  const preview = useMemo(() => renderEmail({ subject: d.subject, body_html: built.html, body_text: built.text }, sample), [d.subject, built, sample]);
+  const brand = useBuyerListProfile(ctx.workspaceId) === 'compr' ? 'compr' : 'default';
+  const built = useMemo(() => blocksToEmail(blocks, brand), [blocks, brand]);
+  // A custom design previews (and sends as a test) its own HTML; the blocks give only the text part.
+  const custom = d.customHtml === true;
+  const html = custom ? d.body_html ?? '' : built.html;
+  const preview = useMemo(() => renderEmail({ subject: d.subject, body_html: html, body_text: built.text }, sample), [d.subject, html, built.text, sample]);
+  const [switching, setSwitching] = useState(false);
 
   const sendTest = async () => {
     if (!ctx.testTo) return;
@@ -165,15 +175,41 @@ function EmailEditor({ d, set, ctx, sample, head, footer, track, insert }: {
         {/* ── Left: what the email is made of ─────────────────────────── */}
         <div className="flex min-h-0 flex-col gap-3 overflow-auto p-4" style={{ borderRight: '1px solid var(--line)' }}>
           {head}
-          <AiAssist ctx={ctx} channel="email" audience={d.audience} onDraft={(r) => set({ name: d.name || r.name, subject: r.subject ?? d.subject, blocks: r.blocks.length ? r.blocks : blocks })} />
+          {!custom && <AiAssist ctx={ctx} channel="email" audience={d.audience} onDraft={(r) => set({ name: d.name || r.name, subject: r.subject ?? d.subject, blocks: r.blocks.length ? r.blocks : blocks })} />}
           <label><span style={label}>Subject</span>
             <input style={input} value={d.subject ?? ''} onChange={(e) => set({ subject: e.target.value })} {...track((v) => set({ subject: v }))} placeholder="Your offer for {{address}}" /></label>
           <div>
             <span style={label}>Merge fields — click to insert where you are typing</span>
-            <MergeChips fields={MERGE_FIELDS} onInsert={insert} />
+            <MergeChips fields={MERGE_FIELDS} onInsert={insert} explain />
           </div>
 
+          {custom && (
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="tpl-html" style={label}>HTML design</label>
+              <textarea id="tpl-html" rows={14} spellCheck={false} aria-describedby="tpl-html-help"
+                style={{ ...input, resize: 'vertical', font: '500 12px/1.5 var(--mono, ui-monospace, monospace)', whiteSpace: 'pre', overflowWrap: 'normal', overflowX: 'auto' }}
+                value={d.body_html ?? ''} onChange={(e) => set({ body_html: e.target.value })} {...track((v) => set({ body_html: v }))} />
+              <span id="tpl-html-help" style={{ font: '500 12px/1.45 var(--sans)', color: 'var(--muted)' }}>
+                Saved exactly as written. Merge fields work here too.
+              </span>
+              {!switching ? (
+                <Button tone="ghost" className="dc2" onClick={() => setSwitching(true)} style={{ alignSelf: 'flex-start', padding: '7px 11px' }}>Switch to the block editor</Button>
+              ) : (
+                <div role="group" aria-label="Switch to the block editor" className="flex flex-col gap-2 rounded-xl p-3" style={{ border: '1px solid var(--line)', background: 'var(--panel)' }}>
+                  <span style={{ font: '500 12.5px/1.45 var(--sans)', color: 'var(--ink-2)' }}>
+                    This deletes the HTML design when you save. The email is rebuilt from the blocks below.
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    <Button tone="red" className="dc3" onClick={() => { set({ customHtml: false, body_html: null }); setSwitching(false); }} style={{ padding: '7px 11px' }}>Delete design and use blocks</Button>
+                    <Button tone="ghost" className="dc2" onClick={() => setSwitching(false)} style={{ padding: '7px 11px' }}>Keep the design</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-col gap-2">
+            {custom && <span style={{ ...label, marginBottom: 0 }}>Plain-text version</span>}
             {blocks.map((b, i) => (
               <div
                 key={b.id}
@@ -215,7 +251,7 @@ function EmailEditor({ d, set, ctx, sample, head, footer, track, insert }: {
                 {b.type === 'property' && <span style={{ font: '400 11.5px/1.4 var(--sans)', color: 'var(--muted)' }}>Photo, address, price, beds and baths from the record: {'{{photo_url}} {{address}} {{asking_price}} {{beds}} {{baths}}'}.</span>}
               </div>
             ))}
-            {blocks.length === 0 && <p style={{ font: '400 12px/1.5 var(--sans)', color: 'var(--muted)' }}>Add blocks below, or let AI write a first draft.</p>}
+            {blocks.length === 0 && <p style={{ font: '400 12px/1.5 var(--sans)', color: 'var(--muted)' }}>{custom ? 'Add a paragraph below for the plain-text version.' : 'Add blocks below, or let AI write a first draft.'}</p>}
           </div>
 
           <div>
@@ -233,6 +269,11 @@ function EmailEditor({ d, set, ctx, sample, head, footer, track, insert }: {
 
         {/* ── Right: the email, as it lands ───────────────────────────── */}
         <div className="flex min-h-0 flex-col gap-3 overflow-auto p-4" style={{ background: 'var(--panel-2)' }}>
+          {custom && (
+            <p role="note" className="rounded-xl px-3 py-2.5" style={{ margin: 0, border: '1px solid var(--line)', background: 'var(--panel)', font: '500 12.5px/1.5 var(--sans)', color: 'var(--ink-2)' }}>
+              This email uses a custom HTML design, shown below. Edit it in the HTML design box. The blocks edit only the plain-text version.
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <span className="mr-auto" style={label}>Live preview · {AUDIENCE_LABEL[d.audience]} sample</span>
             <SpamRiskBadge subject={preview.subject} html={preview.html} text={preview.text} />
@@ -240,7 +281,7 @@ function EmailEditor({ d, set, ctx, sample, head, footer, track, insert }: {
               <button type="button" style={seg(width === 'desktop')} onClick={() => setWidth('desktop')}>Desktop</button>
               <button type="button" style={seg(width === 'mobile')} onClick={() => setWidth('mobile')}>Mobile</button>
             </span>
-            <Button tone="ghost" className="dc2" disabled={!ctx.testTo || testing || blocks.length === 0} title={ctx.testTo ? `Sends to ${ctx.testTo} from your Gmail` : 'Connect Gmail to send a test'} onClick={() => void sendTest()} style={{ padding: '7px 11px' }}>
+            <Button tone="ghost" className="dc2" disabled={!ctx.testTo || testing || (custom ? !html.trim() : blocks.length === 0)} title={ctx.testTo ? `Sends to ${ctx.testTo} from your Gmail` : 'Connect Gmail to send a test'} onClick={() => void sendTest()} style={{ padding: '7px 11px' }}>
               <Icon name="send" size={13} /> {testing ? 'Sending…' : 'Send test to me'}
             </Button>
           </div>
@@ -249,7 +290,7 @@ function EmailEditor({ d, set, ctx, sample, head, footer, track, insert }: {
               <span style={{ font: '700 14px/1.3 var(--sans)' }}>{preview.subject || <span style={{ color: 'var(--muted-2)' }}>(no subject)</span>}</span>
               <span style={{ font: '500 11.5px/1.3 var(--sans)', color: 'var(--muted)' }}>{sample.rep_name} &lt;{sample.rep_email}&gt; → {sample.name}</span>
             </div>
-            {/* Our own generated markup, merged with escaped values, in a sandbox with no scripts. */}
+            {/* Our generated markup or the template's own design, merged with escaped values, in a sandbox with no scripts. */}
             <EmailHtml html={preview.html ?? ''} title="Email preview" scrollHeight={620} />
           </div>
         </div>
@@ -271,7 +312,7 @@ function AiAssist({ ctx, channel, audience, onDraft }: {
   if (!open) {
     return (
       <button type="button" className="dc18" onClick={() => setOpen(true)} style={{ alignSelf: 'flex-start', padding: '7px 11px', borderRadius: 9, border: '1px solid rgba(10, 133, 96,.3)', background: 'var(--accent-soft)', color: 'var(--accent)', font: '600 12px/1 var(--sans)', cursor: 'pointer' }}>
-        ✦ Write this template with AI
+        <Sparkles size={13} aria-hidden style={{ verticalAlign: '-2px', marginRight: 6 }} />Write this template with AI
       </button>
     );
   }

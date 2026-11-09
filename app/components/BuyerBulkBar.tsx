@@ -5,19 +5,21 @@
 // live in lib/crm-write.ts. Nothing is sent or enrolled without a confirm.
 
 import React, { useState } from 'react';
+import { Sparkles } from 'lucide-react';
 import type { ClozrView } from '@/app/clozr/view';
-import { buyerFitsForDeal, deleteBuyers, enrollBuyersInPlan, exportBuyersCsv, markDealSent, setBuyerStage, tagBuyers, untagBuyers } from '@/lib/crm-write';
-import { BUYER_STAGES } from '@/lib/stages';
+import { archiveBuyers, backToNotContacted, buyerFitsForDeal, deleteBuyers, enrollBuyersInPlan, exportBuyersCsv, markDealSent, setBuyerStage, tagBuyers, untagBuyers } from '@/lib/crm-write';
+import { buyerStagesFor } from '@/lib/stages';
 import { useSession } from '@/lib/session';
 import { BulkCompose, type BulkPerson } from '@/app/components/bulk/BulkCompose';
 import { BulkSkipTrace } from '@/components/BulkSkipTrace';
 import { BulkAgentPanel } from '@/app/components/ai-agent/BulkAgentPanel';
 import { AssignPanel, SelectCount } from '@/app/components/bulk/AssignPanel';
 import { ActionsMenu } from '@/app/components/bulk/ActionsMenu';
+import { PushToCampaign } from '@/app/components/campaigns/PushToCampaign';
 import { firstN, inListOrder } from '@/lib/bulk-assign';
 
 type Bulk = ClozrView['buyerBulk'];
-type Mode = null | 'market' | 'email' | 'sms' | 'rvm' | 'plan' | 'campaign' | 'enroll' | 'unenroll' | 'trace' | 'ai' | 'assign' | 'stage';
+type Mode = null | 'market' | 'email' | 'sms' | 'smsCampaign' | 'rvm' | 'plan' | 'campaign' | 'enroll' | 'unenroll' | 'trace' | 'ai' | 'assign' | 'stage';
 
 const btn: React.CSSProperties = { flex: 'none', whiteSpace: 'nowrap', height: '28px', padding: '0 10px', borderRadius: '7px', border: '1px solid rgba(10, 133, 96,.25)', background: 'var(--surface, #fff)', fontSize: '12px', color: 'var(--ink, #18181b)', cursor: 'pointer', fontWeight: 500 };
 const field: React.CSSProperties = { height: '30px', borderRadius: '7px', border: '1px solid var(--divider, #e4e4e7)', padding: '0 8px', fontSize: '12.5px', background: 'var(--surface, #fff)' };
@@ -25,8 +27,10 @@ const label: React.CSSProperties = { fontSize: '11.5px', color: 'var(--meta, #71
 
 
 /** `compact`: one sideways-scrolling row, for a phone, where fourteen wrapped buttons took half the screen. */
-export function BuyerBulkBar({ bulk, selectedIds, onClear, compact, list = [], onSelect, compr, onPaymentLink }: {
+export function BuyerBulkBar({ bulk, selectedIds, onClear, compact, list = [], onSelect, compr, onPaymentLink, onGoCampaigns }: {
   bulk: Bulk; selectedIds: string[]; onClear: () => void; compact?: boolean;
+  /** Open the Campaigns screen, where a pushed selection lands in the builder (Text campaign). */
+  onGoCampaigns?: () => void;
   /** Compr workspace: open the payment link dialog for the selection. */
   onPaymentLink?: () => void;
   /** A Compr workspace sells software, not deals: the deal and Genius actions are left out. */
@@ -43,6 +47,12 @@ export function BuyerBulkBar({ bulk, selectedIds, onClear, compact, list = [], o
   const { toast } = bulk;
   const done = (msg: string) => { setBusy(false); setMode(null); onClear(); bulk.reload?.(); toast(msg); };
 
+  const archive = () => {
+    if (!window.confirm(`Archive ${n} buyer${n === 1 ? '' : 's'}? They leave every list; Settings, Archive puts them back.`)) return;
+    if (!bulk.canWrite) return toast(`Archived ${n} (demo)`);
+    setBusy(true);
+    void archiveBuyers(selectedIds).then((r) => (r.ok ? done(`${n} archived`) : (setBusy(false), toast(r.message || 'Nothing was archived.'))));
+  };
   const del = () => {
     if (!window.confirm(`Delete ${n} buyer${n === 1 ? '' : 's'}? Buyers a deal, offer or contract still names are set Inactive instead. This cannot be undone.`)) return;
     if (!bulk.canWrite) return toast(`Deleted ${n} (demo)`);
@@ -71,6 +81,13 @@ export function BuyerBulkBar({ bulk, selectedIds, onClear, compact, list = [], o
     setBusy(true);
     void setBuyerStage(selectedIds, to).then((r) => (r.ok ? done(`${n} moved to ${to}`) : (setBusy(false), toast(r.message || 'That did not save.'))));
   };
+  // Compr: undo a touch by mistake. Off plans, AI agent and call queues, back on Not contacted.
+  const revert = () => {
+    if (!window.confirm(`Move ${n} back to Not contacted? Any action plan or AI agent running for them stops, and they come off the call queue.`)) return;
+    if (!bulk.canWrite) return toast(`Moved ${n} back to Not contacted (demo)`);
+    setBusy(true);
+    void backToNotContacted(selectedIds).then((r) => (r.ok ? done(`${r.moved ?? n} back on Not contacted`) : (setBusy(false), toast(r.message || 'That did not save.'))));
+  };
   // The selection in list order (map picks, which are not rows, go last) so blocks follow the list.
   const ordered = (() => {
     const inList = inListOrder(list.map((b) => b.id), new Set(selectedIds));
@@ -90,8 +107,8 @@ export function BuyerBulkBar({ bulk, selectedIds, onClear, compact, list = [], o
         <span style={{ flex: 'none', fontSize: '12.5px', fontWeight: 600, color: 'var(--tx-mint-deep, #08694c)', marginRight: '8px', whiteSpace: 'nowrap' }}>{n.toLocaleString('en-US')} selected</span>
         <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'ai' ? null : 'ai')} aria-pressed={mode === 'ai'}
           title="Switch an AI agent on or off for these buyers. VIPs and funds are always skipped."
-          style={{ ...btn, border: '1px solid rgba(10,133,96,.35)', background: mode === 'ai' ? 'var(--c-action-soft, #e7f5ef)' : 'linear-gradient(90deg,var(--c-genius-soft, #f0faf5),var(--tint-green, #ecfdf5))', color: 'var(--tx-mint-deep, #08694c)', fontWeight: 700 }}>
-          ✦ AI agent
+          style={{ ...btn, border: '1px solid rgba(10,133,96,.35)', background: mode === 'ai' ? 'var(--c-action-soft, #e7f5ef)' : 'var(--c-genius-soft, #f0faf5)', color: 'var(--tx-mint-deep, #08694c)', fontWeight: 700 }}>
+          <Sparkles size={13} aria-hidden style={{ verticalAlign: '-2px', marginRight: 6 }} />AI agent
         </button>
         <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'assign' ? null : 'assign')} aria-pressed={mode === 'assign'}
           title="Assign to one teammate, or split between several in list order" style={{ ...btn, background: mode === 'assign' ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)' }}>
@@ -101,9 +118,11 @@ export function BuyerBulkBar({ bulk, selectedIds, onClear, compact, list = [], o
         {/* Straight to the selection, no deal needed: a note, a check-in, an offer of a demo. */}
         <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'email' ? null : 'email')} aria-pressed={mode === 'email'} style={btn}>Send email</button>
         <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'sms' ? null : 'sms')} aria-pressed={mode === 'sms'} style={btn}>Send text</button>
+        {onGoCampaigns ? <button className="dc11" disabled={busy || !bulk.canWrite} onClick={() => setMode('smsCampaign')} title={bulk.canWrite ? "Batched texts the server sends across your lines, in each contact's own hours" : 'Sign in to a workspace to build a campaign'} style={btn}>Text campaign</button> : null}
         {compr && onPaymentLink ? <button className="dc11" disabled={busy} onClick={onPaymentLink} title="Email or text each selected contact a Compr checkout link" style={btn}>Send payment link</button> : null}
         <button className="dc11" disabled={busy} onClick={() => setMode(mode === 'rvm' ? null : 'rvm')} aria-pressed={mode === 'rvm'} title="Ringless voicemail" style={btn}>Send RVM</button>
         <button className="dc11" disabled={busy} onClick={() => { onClear(); void bulk.addToCallQueue(selectedIds); }} style={btn}>Add to call queue</button>
+        {compr ? <button className="dc11" disabled={busy} onClick={revert} title="Undo a touch: stops their plan and AI agent, takes them off the call queue, and puts them back on Not contacted" style={btn}>Back to Not contacted</button> : null}
         {/* Everything else under Actions ▾ (app/components/bulk/ActionsMenu). */}
         <ActionsMenu accent="#0A8560" actions={[
           ...(compr ? [] : [
@@ -126,6 +145,7 @@ export function BuyerBulkBar({ bulk, selectedIds, onClear, compact, list = [], o
           } },
           { key: 'trace', label: 'Skip trace', group: 'Data', note: 'find phones & emails', run: () => setMode('trace') },
           { key: 'export', label: 'Export', group: 'Data', note: 'CSV', run: exportCsv },
+          { key: 'archive', label: 'Archive', group: 'Remove', note: 'restorable', run: archive },
           { key: 'delete', label: 'Delete', group: 'Remove', danger: true, run: del },
         ].map((a) => ({ ...a, disabled: busy }))} />
         <div style={{ flex: 1 }} />
@@ -141,13 +161,21 @@ export function BuyerBulkBar({ bulk, selectedIds, onClear, compact, list = [], o
       {mode === 'stage' ? (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '8px 14px', background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)' }}>
           <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600, alignSelf: 'center', marginRight: '4px' }}>Move to</span>
-          {BUYER_STAGES.map((st) => (
+          {buyerStagesFor(compr ? 'compr' : null).map((st) => (
             <button key={st} type="button" className="dc2" disabled={busy} onClick={() => stage(st)} style={{ ...btn, background: 'var(--surface, #fff)' }}>{st}</button>
           ))}
           <button type="button" onClick={() => setMode(null)} style={{ height: '28px', padding: '0 8px', border: 0, background: 'none', fontSize: '12px', cursor: 'pointer', color: 'var(--meta, #71717a)' }}>Cancel</button>
         </div>
       ) : null}
       {mode === 'market' ? <Market bulk={bulk} selectedIds={selectedIds} onClose={() => setMode(null)} /> : null}
+      {mode === 'smsCampaign' && onGoCampaigns ? (() => {
+        const ids = selectedIds.flatMap((id) => { const b = bulk.buyers[id]; return b && b.dbId > 0 ? [b.dbId] : []; });
+        return (
+          <PushToCampaign contact="buyer" audience={{ kind: 'ids', ids, label: `${ids.length.toLocaleString('en-US')} selected ${ids.length === 1 ? 'contact' : 'contacts'}` }}
+            workspaceId={bulk.workspaceId} toast={(m) => toast(m)} onClose={() => setMode(null)}
+            onGo={() => { setMode(null); onClear(); onGoCampaigns(); }} />
+        );
+      })() : null}
       {mode === 'email' || mode === 'sms' || mode === 'rvm' ? <Market key={mode} bulk={bulk} selectedIds={selectedIds} channel={mode} direct onClose={() => setMode(null)} /> : null}
       {mode === 'campaign' ? <Campaign bulk={bulk} selectedIds={selectedIds} onClose={() => setMode(null)} /> : null}
       {mode === 'plan' ? <Plan bulk={bulk} selectedIds={selectedIds} onClose={() => setMode(null)} onDone={done} /> : null}
@@ -224,6 +252,8 @@ function Market({ bulk, selectedIds, channel, direct, onClose }: { bulk: Bulk; s
       onSent={async ({ dealId, sentDbIds }) => { if (dealId) await markDealSent(dealId, sentDbIds); }}
       // The composer shows its own report, so closing just refreshes what it changed.
       onClose={() => { onClose(); bulk.reload?.(); }}
+      onOpenDeal={(id) => { onClose(); bulk.openDealFacts(id); }}
+      onSaveDealFact={bulk.saveDealFact}
     />
   );
 }

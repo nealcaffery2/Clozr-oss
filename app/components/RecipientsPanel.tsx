@@ -16,7 +16,7 @@ const field: React.CSSProperties = { width: '100%', height: '32px', padding: '0 
 const link: React.CSSProperties = { fontSize: '12px', color: 'var(--tx-mint, #0a8560)', background: 'none', border: 0, cursor: 'pointer', padding: 0, fontWeight: 500 };
 const btn = (primary = false, danger = false): React.CSSProperties => ({
   height: '32px', padding: '0 12px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
-  border: `1px solid ${danger ? 'var(--tint-red-2, #fecaca)' : primary ? '#0A8560' : 'var(--divider, #e4e4e7)'}`, background: primary ? '#0A8560' : '#fff', color: danger ? '#b91c1c' : primary ? '#fff' : '#18181b',
+  border: `1px solid ${danger ? 'var(--tint-red-2, #fecaca)' : primary ? '#0A8560' : 'var(--divider, #e4e4e7)'}`, background: primary ? '#0A8560' : 'var(--surface, #fff)', color: danger ? '#b91c1c' : primary ? '#fff' : '#18181b',
 });
 const OPEN = ['draft', 'awaiting_approval', 'sent', 'viewed'];
 const TYPE: Record<string, string> = { signer: 'Signer', approver: 'Approver', cc: 'CC', viewer: 'Viewer', filler: 'Filler' };
@@ -137,7 +137,7 @@ export function RecipientsPanel({ workspaceId, contract, canWrite, onToast, onCh
         </div>
       ) : null}
 
-      {list === null ? <div style={{ fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>Loading recipients…</div> : list.map((r) => {
+      {list === null ? <div style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>Loading recipients…</div> : list.map((r) => {
         const st = statusOf(r);
         const gone = r.status === 'delegated';
         const answered = ['signed', 'approved', 'delegated'].includes(r.status);
@@ -146,7 +146,7 @@ export function RecipientsPanel({ workspaceId, contract, canWrite, onToast, onCh
         if (edit?.id === r.id) {
           return (
             <div key={r.id} style={{ padding: '8px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 1fr) 130px', gap: '8px' }}>
+              <div data-signer-row style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 1fr) 130px', gap: '8px' }}>
                 <input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="Full name" style={field} aria-label="Name" />
                 <input value={edit.email} onChange={(e) => setEdit({ ...edit, email: e.target.value })} placeholder="email@example.com" type="email" style={field} aria-label="Email" />
                 <input value={edit.phone} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} placeholder="Mobile" style={field} aria-label="Mobile" />
@@ -165,10 +165,10 @@ export function RecipientsPanel({ workspaceId, contract, canWrite, onToast, onCh
         }
         return (
           <div key={r.id} style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', padding: '6px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)', fontSize: '12.5px', opacity: gone ? 0.6 : 1 }}>
-            <span style={{ fontWeight: 600, minWidth: '90px' }}>{r.label || r.role}<span style={{ display: 'block', fontSize: '10.5px', fontWeight: 500, color: 'var(--subtle, #a1a1aa)' }}>{TYPE[r.recipient_type ?? 'signer'] ?? 'Signer'} · {DELIVERY[r.delivery ?? 'email']}</span></span>
+            <span style={{ fontWeight: 600, minWidth: '90px' }}>{r.label || r.role}<span style={{ display: 'block', fontSize: '10.5px', fontWeight: 500, color: 'var(--meta, #71717a)' }}>{TYPE[r.recipient_type ?? 'signer'] ?? 'Signer'} · {DELIVERY[r.delivery ?? 'email']}</span></span>
             <span style={{ color: 'var(--muted, #52525b)', flex: 1, minWidth: '160px' }}>
               {r.name || '—'}{r.email ? ` · ${r.email}` : ''}{r.phone ? ` · ${r.phone}` : ''}
-              {linkLabel(r) ? <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: 700, color: 'var(--tx-mint, #0a8560)', background: 'var(--mint-dim, #e7f8f1)', borderRadius: '999px', padding: '1px 6px' }}>{linkLabel(r)}</span> : null}
+              {linkLabel(r) ? <span style={{ marginLeft: '6px', fontSize: '11px', fontWeight: 700, color: 'var(--tx-mint, #0a8560)', background: 'var(--mint-dim, #e7f8f1)', borderRadius: '999px', padding: '1px 6px' }}>{linkLabel(r)}</span> : null}
               {gone ? <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>Handed to {handedTo?.name || 'someone else'}{r.delegate_reason ? `: ${r.delegate_reason}` : ''}</span> : null}
               {from ? <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>For {from.name || from.label}{from.delegate_reason ? ` — ${from.delegate_reason}` : ''}</span> : null}
               {r.status === 'rejected' && r.reject_reason ? <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--tx-red, #b91c1c)' }}>{r.reject_reason}</span> : null}

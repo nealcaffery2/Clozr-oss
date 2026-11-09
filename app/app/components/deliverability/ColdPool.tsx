@@ -17,7 +17,7 @@ import React, { useState } from 'react';
 import { LOCKED_SENDING_DOMAINS, type ColdMailbox, type ColdOverview, type InboxRead, type WarmupReading, type WarmupSync, coldPool, coldReadiness } from '@/lib/cold-pool';
 import { textValue } from '@/lib/deliverability';
 import { type DomainGroup, groupByDomain, healthLine, mailboxIssue, mailboxPill, overLimit, shortDate } from '@/lib/deliverability-summary';
-import { Badge, Icon, Note, NotSetUp, Section, card, fieldLabel, fullDate, ghost, goTo, input, pct, primary, relDays, sub } from './ui';
+import { Badge, Icon, Note, NotSetUp, Section, Switch, card, fieldLabel, fullDate, ghost, goTo, input, pct, primary, relDays, sub } from './ui';
 import { domainAnchor } from './Domains';
 
 type StepDraft = { delay_business_days: number; subject: string; body: string; bSubject: string; bBody: string };
@@ -431,6 +431,7 @@ function Campaigns({ data, run, note }: { data: ColdOverview; run: Run; note: No
     setName('');
     setTag('');
     setViewId('');
+    setAutoEnroll(false);
     setSteps([{ ...emptyStep(), delay_business_days: 0 }]);
   }
 
@@ -439,6 +440,7 @@ function Campaigns({ data, run, note }: { data: ColdOverview; run: Run; note: No
     setName(textValue(c.name));
     setTag(textValue(c.audience_tag));
     setViewId(c.saved_view_id ? String(c.saved_view_id) : '');
+    setAutoEnroll(!!c.auto_enroll);
     setSteps(stepsFrom(c));
     setWriting(true);
   }
@@ -542,19 +544,29 @@ function Campaigns({ data, run, note }: { data: ColdOverview; run: Run; note: No
 /* ---- Safety rules ---------------------------------------------------------------- */
 
 /**
- * The rules every cold email follows, and the two things an admin can set:
- * extra domains that must never send cold mail, and the mailing address the
- * law requires in the footer.
+ * The rules every cold email follows, and the three things an admin can set:
+ * extra domains that must never send cold mail, whether the company domains
+ * may send at all (441, off by default), and the mailing address the law
+ * requires in the footer.
  */
 function Rules({ data, run, note }: { data: ColdOverview; run: Run; note: Notes }) {
   const [extra, setExtra] = useState(data.blocked_extra.map(textValue).filter(Boolean).join(', '));
   const [address, setAddress] = useState(textValue(data.physical_address));
+  const [flipping, setFlipping] = useState(false);
   const [seen, setSeen] = useState(data);
   if (seen !== data) {
     setSeen(data);
     setExtra(data.blocked_extra.map(textValue).filter(Boolean).join(', '));
     setAddress(textValue(data.physical_address));
   }
+  const company = (data.company_domains?.length ? data.company_domains : [...LOCKED_SENDING_DOMAINS]).map(textValue).filter(Boolean);
+  const allowed = data.allow_company_domains === true;
+  const extras = data.blocked_extra.map(textValue).filter(Boolean);
+  const minScore = data.warmup.gate?.min_score ?? 90;
+  const flip = async (next: boolean) => {
+    setFlipping(true);
+    try { await run('save_company_domains', { allow: next }, 'rules'); } finally { setFlipping(false); }
+  };
   return (
     <Section
       id="cold-rules"
@@ -562,19 +574,38 @@ function Rules({ data, run, note }: { data: ColdOverview; run: Run; note: Notes 
       why="Limits that keep outreach inboxes out of spam folders: plain text, no tracking, small daily caps, and an unsubscribe link with your mailing address."
       how={
         <>
-          <p style={{ margin: '0 0 8px' }}>Each address starts at 5 a day and reaches its cap over about 3 weeks, never above 20 a day by default. Cold mail plus warmup stays around 40 a day. Sends are 4 to 11 minutes apart, and the daily total is jittered. Mail is plain text first, with no tracking pixel. Step 1 has no links and never starts with Re: or Fwd:. Only a later step that replies to our own first email gets Re:. A company domain gets at most 3 cold emails a day. Gmail and other free inboxes are not under that cap. Instantly warmup mail does not count. Nothing sends from {LOCKED_SENDING_DOMAINS.join(', ')}.</p>
+          <p style={{ margin: '0 0 8px' }}>Each address starts at 5 a day and reaches its cap over about 3 weeks, never above 20 a day by default. Cold mail plus warmup stays around 40 a day. Sends are 4 to 11 minutes apart, and the daily total is jittered. Mail is plain text first, with no tracking pixel. Step 1 has no links and never starts with Re: or Fwd:. Only a later step that replies to our own first email gets Re:. A company domain gets at most 3 cold emails a day. Gmail and other free inboxes are not under that cap. Instantly warmup mail does not count. {allowed ? `${company.join(', ')} may send because an admin allowed it; each of those inboxes passes every check above and its domain must score ${minScore} or better on a DNS check under a week old.` : `Nothing sends from ${company.join(', ')}.`}</p>
           <p style={{ margin: 0 }}>Defaults are on. Plain text with a matching HTML part and no images. Open tracking is off. Click tracking is off unless a sending domain has its own tracking host. Step 1 is blocked when it contains a link. Later steps allow one link. Spintax and merge fields are checked before send, and a spam-word score blocks bad copy. Weekends are skipped, and each mailbox rests one weekday. The same body is not sent to many people in a short window. Gmail, Google Workspace, and Outlook volume is spread. info@, admin@, and catch-all addresses are suppressed. A mailbox or domain pauses when bounces pass 2%, the spam complaint rate reaches 0.1% (one complaint in a week of 20-a-day sending is already over that), reply health is low, Primary placement falls off, or any placement test lands in Spam. Placement can be a weekly manual test or a seed list. The footer needs a physical address, the mailbox signature, and a one-click unsubscribe.</p>
         </>
       }
     >
-      <p style={{ ...fieldLabel, marginBottom: '6px' }}>Never sends cold email from</p>
+      <p style={{ ...fieldLabel, marginBottom: '6px' }}>{allowed ? 'Company domains allowed, health-checked' : 'Never sends cold email from'}</p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-        {LOCKED_SENDING_DOMAINS.map((d) => <Badge key={d} tone="muted">{d}</Badge>)}
-        {data.blocked_extra.flatMap((d) => {
-          const label = textValue(d);
-          return label ? [<Badge key={label} tone="muted">{label}</Badge>] : [];
-        })}
+        {company.map((d) => <Badge key={d} tone={allowed ? 'warn' : 'muted'}>{d}</Badge>)}
+        {allowed ? null : extras.map((d) => <Badge key={d} tone="muted">{d}</Badge>)}
       </div>
+      {allowed && extras.length ? (
+        <>
+          <p style={{ ...fieldLabel, margin: '10px 0 6px' }}>Never sends cold email from</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>{extras.map((d) => <Badge key={d} tone="muted">{d}</Badge>)}</div>
+        </>
+      ) : null}
+      {data.admin ? (
+        <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--hair, #f0f0f1)' }}>
+          <Switch
+            id="dlv-company-domains"
+            on={allowed}
+            busy={flipping}
+            onChange={(next) => { void flip(next); }}
+            label="Allow cold email from company domains"
+            hint={<>A spam strike on {company[0] ?? 'the company domain'} hits every email the company sends, blasts and replies included. {allowed ? `On: each company inbox still passes every check above, and its domain needs a DNS score of ${minScore} or better from a check under a week old.` : 'Off: the pool refuses those addresses on every import and the worker never picks them.'}</>}
+          />
+        </div>
+      ) : (
+        <p style={{ margin: '10px 0 0', fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
+          {allowed ? `An owner or admin allowed cold email from ${company.join(', ')}. Each of those inboxes is health-checked before every send.` : `Only an owner or admin can allow cold email from ${company.join(', ')}.`}
+        </p>
+      )}
       {data.admin ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', marginTop: '12px' }}>
           <form onSubmit={(e) => { e.preventDefault(); void run('save_blocked', { extra }, 'rules'); }}>

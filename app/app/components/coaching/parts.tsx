@@ -13,8 +13,8 @@ export const INK = 'var(--ink, #18181b)';
 export const MUTED = 'var(--meta, #71717a)';
 export const LINE = 'var(--divider, #e4e4e7)';
 export const GREEN = '#0A8560';
-export const AMBER = '#b45309';
-export const RED = '#b91c1c';
+export const AMBER = 'var(--tx-amber, #b45309)';
+export const RED = 'var(--tx-red, #b91c1c)';
 
 export const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: 12, padding: '14px 16px' };
 export const eyebrow: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: MUTED };
@@ -97,7 +97,7 @@ export function Insights({ items, onSeek }: { items: CoachingInsight[]; onSeek?:
 export function Stat({ label, value, hint, color }: { label: string; value: React.ReactNode; hint?: string; color?: string }) {
   return (
     <div title={hint} style={{ ...card, padding: '10px 12px', minWidth: 0 }}>
-      <div style={{ ...eyebrow, fontSize: 10 }}>{label}</div>
+      <div style={{ ...eyebrow, fontSize: 11 }}>{label}</div>
       <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', color: color ?? INK, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{value}</div>
     </div>
   );

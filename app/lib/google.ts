@@ -18,7 +18,7 @@ export type GoogleStatus = {
   /** The redirect URI to register in Google Cloud — shown when it is not. */
   redirect_uri: string;
   account: GoogleAccount | null;
-  team: Pick<GoogleAccount, 'id' | 'user_id' | 'email' | 'scopes' | 'calendar_sync' | 'gmail_send' | 'gmail_read' | 'status' | 'last_calendar_sync_at' | 'last_gmail_sync_at' | 'last_error' | 'connected_at'>[];
+  team: Pick<GoogleAccount, 'id' | 'user_id' | 'email' | 'scopes' | 'calendar_sync' | 'gmail_send' | 'gmail_read' | 'status' | 'last_calendar_sync_at' | 'last_gmail_sync_at' | 'last_error' | 'connected_at' | 'shared'>[];
 };
 
 export type SyncSummary = {
@@ -72,8 +72,9 @@ async function call<T>(fn: 'google-oauth' | 'google-sync' | 'drive-photos', body
 export const googleStatus = (workspaceId: number) =>
   call<GoogleStatus>('google-oauth', { workspace_id: workspaceId, action: 'status' });
 
-export const disconnectGoogle = (workspaceId: number) =>
-  call<{ ok: boolean }>('google-oauth', { workspace_id: workspaceId, action: 'disconnect' });
+/** Without accountId, the member's own connection; with it, a mailbox they linked (an owner or admin may remove any linked mailbox). */
+export const disconnectGoogle = (workspaceId: number, accountId?: number) =>
+  call<{ ok: boolean }>('google-oauth', { workspace_id: workspaceId, action: 'disconnect', ...(accountId != null ? { account_id: accountId } : {}) });
 
 /** `ifStale`: a background pass; the function skips the calendar when it was read in the last five minutes. */
 export function syncGoogle(workspaceId: number, opts: { calendarOnly?: boolean; ifStale?: boolean } = {}): Promise<Result<SyncSummary>> {
@@ -235,7 +236,15 @@ export async function setGoogleSync(
  */
 export async function connectGoogle(
   workspaceId: number,
-  opts: { gmailRead?: boolean; postmaster?: boolean; drive?: boolean } = {},
+  opts: {
+    gmailRead?: boolean; postmaster?: boolean; drive?: boolean; compose?: boolean;
+    /** false: Gmail only, the calendar scope is never asked for. */
+    calendar?: boolean;
+    /** Link another mailbox for the workspace (deals@) instead of the member's own. */
+    shared?: boolean;
+    /** Add the calendar to this connection of the member's, keeping its Gmail grant. */
+    addCalendar?: number;
+  } = {},
 ): Promise<{ ok: true; detail: string } | { ok: false; message: string }> {
   if (typeof window === 'undefined') return { ok: false, message: 'Only from the browser.' };
   // Added to the Home Screen, a popup opens in an in-app browser with no way
@@ -248,7 +257,8 @@ export async function connectGoogle(
   const popup = standalone ? null : window.open('', 'clozr-google', 'width=520,height=700,menubar=no,toolbar=no');
 
   const started = await call<{ url: string }>('google-oauth', {
-    workspace_id: workspaceId, action: 'start', gmail_read: opts.gmailRead !== false, postmaster: opts.postmaster === true, drive: opts.drive === true,
+    workspace_id: workspaceId, action: 'start', gmail_read: opts.gmailRead !== false, postmaster: opts.postmaster === true, drive: opts.drive === true, compose: opts.compose === true,
+    calendar: opts.calendar !== false, shared: opts.shared === true, ...(opts.addCalendar != null ? { add_calendar: opts.addCalendar } : {}),
   });
   if (!started.ok) { popup?.close(); return { ok: false, message: started.message }; }
 
@@ -282,12 +292,21 @@ export async function connectGoogle(
       if (!popup.closed || checking) return;
       checking = true;
       void googleStatus(workspaceId).then((r) => {
-        const at = r.ok && r.data.account?.connected_at ? Date.parse(r.data.account.connected_at) : 0;
-        finish(at >= startedAt - 5_000 ? { ok: true, detail: `${r.ok ? r.data.account?.email ?? 'Google' : 'Google'} is connected.` } : { ok: false, message: 'Closed before Google finished.' });
+        // A linked mailbox or an added calendar lands on a team row, not the member's own.
+        const rows = r.ok ? [r.data.account, ...r.data.team].filter(Boolean) as Pick<GoogleAccount, 'email' | 'connected_at'>[] : [];
+        const fresh = rows.find((a) => a.connected_at && Date.parse(a.connected_at) >= startedAt - 5_000);
+        finish(fresh ? { ok: true, detail: `${fresh.email} is connected.` } : { ok: false, message: 'Closed before Google finished.' });
       });
     }, 700);
     const giveUp = window.setTimeout(() => { try { popup.close(); } catch { /* already gone */ } finish({ ok: false, message: 'Google took too long. Try again.' }); }, 5 * 60_000);
   });
+}
+
+/** What one connection syncs, for the Settings list: "Gmail" or "Gmail + Calendar". */
+export function syncsLabel(a: Pick<GoogleAccount, 'scopes' | 'calendar_sync' | 'gmail_read'>): string {
+  const mail = granted(a, GOOGLE_SCOPE.gmailRead) && a.gmail_read;
+  const cal = granted(a, GOOGLE_SCOPE.calendar) && a.calendar_sync;
+  return mail && cal ? 'Gmail + Calendar' : mail ? 'Gmail' : cal ? 'Calendar' : granted(a, GOOGLE_SCOPE.gmailSend) ? 'Sending only' : 'Nothing switched on';
 }
 
 /** Everything the calendar half needs granted, and everything the mail half does. */
@@ -296,6 +315,7 @@ export const GOOGLE_SCOPE = {
   gmailSend: 'https://www.googleapis.com/auth/gmail.send',
   gmailRead: 'https://www.googleapis.com/auth/gmail.readonly',
   driveRead: 'https://www.googleapis.com/auth/drive.readonly',
+  gmailCompose: 'https://www.googleapis.com/auth/gmail.compose',
 } as const;
 
 // ---- the Drive deals folder (drive-photos `tree_*`, migration 139) ----------

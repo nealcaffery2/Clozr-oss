@@ -32,6 +32,7 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { bearerOf, HARDENING, isServiceCaller } from '../_shared/security.ts';
+import { buyerKeyMaps } from '../_shared/dispogenius-map.ts';
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...HARDENING, 'Content-Type': 'application/json' } });
@@ -243,15 +244,6 @@ Deno.serve(async (req) => {
       note: 'No open deal matched one of theirs by address.' });
   }
 
-  const { data: ourBuyers } = await admin.from('buyers')
-    .select('id, email, phone_key').eq('workspace_id', workspace);
-  const byPhone = new Map<string, number>();
-  const byEmail = new Map<string, number>();
-  for (const bu of ourBuyers ?? []) {
-    if (bu.phone_key) byPhone.set(String(bu.phone_key), bu.id);
-    if (bu.email) byEmail.set(String(bu.email).toLowerCase(), bu.id);
-  }
-
   let polled = 0;
   let written = 0;
   let matched = 0;
@@ -267,6 +259,11 @@ Deno.serve(async (req) => {
       const j: Any = await res.json();
       const list: Any[] = Array.isArray(j) ? j : (j?.results ?? j?.buyers ?? j?.data ?? []);
       polled++;
+      // Our buyers these rows could be, by phone key and email: a read of the
+      // whole table stopped at PostgREST's 1,000 rows and the rest never matched.
+      const { byPhone, byEmail } = await buyerKeyMaps(admin, workspace, list.map((x: Any) => ({
+        phone: pick(x, 'phone', 'phone_number', 'buyer.phone', 'contact.phone'), email: pick(x, 'email', 'buyer.email', 'contact.email'),
+      })));
 
       const rows = list.map((x: Any) => {
         const emailRaw = pick(x, 'email', 'buyer.email', 'contact.email');
@@ -275,7 +272,7 @@ Deno.serve(async (req) => {
         const digits = phoneRaw ? String(phoneRaw).replace(/\D/g, '') : '';
         const pkey = digits.length === 10 ? `+1${digits}`
           : (digits.length === 11 && digits.charAt(0) === '1' ? `+${digits}` : null);
-        const ourId = (pkey ? byPhone.get(pkey) : undefined)
+        const ourId = (pkey ? byPhone.get(pkey.slice(-10)) : undefined)
           ?? (email ? byEmail.get(email) : undefined) ?? null;
         if (ourId) matched++;
         return {

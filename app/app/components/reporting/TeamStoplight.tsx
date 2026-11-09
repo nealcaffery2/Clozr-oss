@@ -18,24 +18,24 @@ import {
 } from '@/lib/stoplight';
 import { sampleStoplight } from '@/lib/stoplight-sample';
 
-const INK = '#18181b';
-const INK2 = '#3f3f46';
-const MUTED = '#71717a';
-const LINE = '#e4e4e7';
-const HAIR = '#f0f0f1';
+const INK = 'var(--ink, #18181b)';
+const INK2 = 'var(--ink-3, #3f3f46)';
+const MUTED = 'var(--meta, #71717a)';
+const LINE = 'var(--divider, #e4e4e7)';
+const HAIR = 'var(--divider-2, #f0f0f1)';
 const ACCENT = '#0A8560';
 
 /** Dot fill, text ink and the word each light reads as. Colour never carries it alone. */
 const LIGHT: Record<Light, { dot: string; ink: string; bg: string; word: string }> = {
-  green: { dot: '#0A8560', ink: '#0a6b4e', bg: '#E7F5EF', word: 'Green' },
+  green: { dot: '#0A8560', ink: '#0a6b4e', bg: 'var(--c-action-soft, #e7f5ef)', word: 'Green' },
   yellow: { dot: '#d97706', ink: '#b45309', bg: '#fef6e7', word: 'Yellow' },
-  red: { dot: '#dc2626', ink: '#b91c1c', bg: '#fef2f2', word: 'Red' },
-  none: { dot: 'transparent', ink: MUTED, bg: '#f4f4f5', word: 'No target set' },
+  red: { dot: '#dc2626', ink: '#b91c1c', bg: 'var(--tint-red, #fef2f2)', word: 'Red' },
+  none: { dot: 'transparent', ink: MUTED, bg: 'var(--surface-2, #f4f4f5)', word: 'No target set' },
 };
 const SEVERITY: Record<Light, number> = { red: 0, yellow: 1, green: 2, none: 3 };
 const LANES: Lane[] = ['acquisitions', 'dispositions', 'tc', 'other'];
 
-const card: React.CSSProperties = { background: '#fff', border: `1px solid ${LINE}`, borderRadius: 12 };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: 12 };
 
 /** `targets` grades the numbers, `admin` the gaps; `light` is the worse of the two, for sorting and the count. */
 type Row = { p: StoplightPerson; lane: Lane; cells: Cell[]; gaps: Cell[]; targets: Light; admin: Light; light: Light };
@@ -118,7 +118,7 @@ export function TeamStoplight({ workspaceId, isMobile }: { workspaceId: number |
 
       <Legend />
 
-      {error ? <div role="alert" style={{ ...card, padding: '12px 14px', color: '#991b1b', background: '#fef2f2', borderColor: '#fecaca', fontSize: 12.5 }}>{error}</div> : null}
+      {error ? <div role="alert" style={{ ...card, padding: '12px 14px', color: 'var(--tx-red-deep, #991b1b)', background: 'var(--tint-red, #fef2f2)', borderColor: 'var(--tint-red-2, #fecaca)', fontSize: 12.5 }}>{error}</div> : null}
       {!data && !error ? (
         <div style={{ ...card, padding: 14 }} aria-busy="true">
           <div style={{ fontSize: 12.5, color: MUTED, marginBottom: 10 }} role="status">Loading the team stoplight…</div>
@@ -178,7 +178,7 @@ function Dot({ light, size = 10 }: { light: Light; size?: number }) {
   return (
     <span aria-hidden style={{
       width: size, height: size, borderRadius: 999, flex: 'none', display: 'inline-block', background: l.dot,
-      boxShadow: light === 'none' ? `inset 0 0 0 1.5px #a1a1aa` : 'none',
+      boxShadow: light === 'none' ? `inset 0 0 0 1.5px var(--subtle, #a1a1aa)` : 'none',
     }} />
   );
 }
@@ -268,7 +268,7 @@ function LaneCard({ lane, rows, isMobile, open, setOpen, files, today, staleDays
                 const isOpen = open === r.p.user_id;
                 return (
                   <React.Fragment key={r.p.user_id}>
-                    <tr className="sl-tr" data-open={isOpen ? '' : undefined} style={{ background: '#fff' }} onClick={() => setOpen(isOpen ? null : r.p.user_id)}>
+                    <tr className="sl-tr" data-open={isOpen ? '' : undefined} style={{ background: 'var(--surface, #fff)' }} onClick={() => setOpen(isOpen ? null : r.p.user_id)}>
                       <th scope="row" className="sl-td sl-sticky" style={{ textAlign: 'left' }}>
                         <button type="button" className="sl-name" aria-expanded={isOpen} onClick={(e) => { e.stopPropagation(); setOpen(isOpen ? null : r.p.user_id); }}>
                           <ChevronDown size={14} aria-hidden style={{ color: MUTED, flex: 'none', transform: isOpen ? 'rotate(180deg)' : 'rotate(-90deg)' }} />
@@ -286,8 +286,8 @@ function LaneCard({ lane, rows, isMobile, open, setOpen, files, today, staleDays
                       ))}
                     </tr>
                     {isOpen ? (
-                      <tr style={{ background: '#fafafa' }}>
-                        <td colSpan={cols.length + 1} style={{ padding: 0, borderBottom: `1px solid ${LINE}`, background: '#fafafa' }}>
+                      <tr style={{ background: 'var(--canvas, #fafafa)' }}>
+                        <td colSpan={cols.length + 1} style={{ padding: 0, borderBottom: `1px solid ${LINE}`, background: 'var(--canvas, #fafafa)' }}>
                           <div style={{ position: 'sticky', left: 0, width: width ?? undefined, maxWidth: '100%' }}>
                             <Detail r={r} files={files} today={today} staleDays={staleDays} sample={sample} isMobile={false} />
                           </div>
@@ -358,7 +358,7 @@ function Detail({ r, files, today, staleDays, sample, isMobile }: { r: Row; file
           key: 't' + t.id,
           text: t.title,
           meta: [t.who, `due ${shortDate(t.due_at)}`, t.deal_id ? null : 'no deal linked'].filter(Boolean).join(' · '),
-          href: t.seller_id ? recordHref({ screen: 'person', sellerId: t.seller_id, dealId: t.deal_id }, sample) : t.buyer_id ? recordHref({ screen: 'buyer', buyerId: t.buyer_id }, sample) : '#screen=tasks',
+          href: t.seller_id ? recordHref({ screen: 'person', sellerId: t.seller_id, dealId: t.deal_id }, sample) : t.buyer_id ? recordHref({ screen: 'buyer', buyerId: t.buyer_id }, sample) : recordHref({ screen: 'tasks' }, sample),
           link: t.seller_id ? 'Open lead' : t.buyer_id ? 'Open buyer' : 'Open tasks',
         }))} />
       <GapList title="Leads never worked" total={p.gaps.untouched_leads} shown={p.items.untouched_leads.length} empty="Every lead assigned to them has been called, texted or emailed." order="newest first"
@@ -386,7 +386,7 @@ function GapList({ title, total, shown, items, empty, order }: {
         {total > shown && shown ? <span style={{ fontWeight: 500, color: MUTED }}> · showing {shown}, {order}</span> : null}
       </h4>
       {items.length ? (
-        <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: `1px solid ${LINE}`, borderRadius: 10, background: '#fff' }}>
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: `1px solid ${LINE}`, borderRadius: 10, background: 'var(--surface, #fff)' }}>
           {items.map((it, i) => (
             <li key={it.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderTop: i ? `1px solid ${HAIR}` : 'none', minWidth: 0 }}>
               <span style={{ flex: 1, minWidth: 0 }}>
@@ -405,7 +405,7 @@ function GapList({ title, total, shown, items, empty, order }: {
 function FileList({ files, today, staleDays, sample }: { files: TcFileRow[]; today: string; staleDays: number; sample: boolean }) {
   const rows = files.map((f) => ({ f, gaps: tcFileGaps(f, today, staleDays) })).sort((a, b) => b.gaps.length - a.gaps.length);
   return (
-    <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: `1px solid ${LINE}`, borderRadius: 10, background: '#fff' }}>
+    <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: `1px solid ${LINE}`, borderRadius: 10, background: 'var(--surface, #fff)' }}>
       {rows.map(({ f, gaps }, i) => (
         <li key={f.transaction_id} style={{ padding: '8px 10px', borderTop: i ? `1px solid ${HAIR}` : 'none' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
@@ -447,25 +447,25 @@ function Noise({ n }: { n: StoplightPayload['noise'] }) {
 }
 
 const CSS = `
-[data-stoplight] .sl-chip{height:28px;padding:0 10px;border-radius:8px;border:0;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;background:#fff;color:${INK2};box-shadow:0 0 0 1px rgba(0,0,0,.08),0 1px 2px -1px rgba(0,0,0,.08),0 2px 4px 0 rgba(0,0,0,.04);transition:transform 140ms cubic-bezier(.23,1,.32,1)}
-[data-stoplight] .sl-chip[data-on]{background:${INK};color:#fff}
+[data-stoplight] .sl-chip{height:28px;padding:0 10px;border-radius:8px;border:0;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;background:var(--surface, #fff);color:${INK2};box-shadow:0 0 0 1px rgba(0,0,0,.08),0 1px 2px -1px rgba(0,0,0,.08),0 2px 4px 0 rgba(0,0,0,.04);transition:transform 140ms cubic-bezier(.23,1,.32,1)}
+[data-stoplight] .sl-chip[data-on]{background:${INK};color:var(--surface, #fff)}
 [data-stoplight] .sl-chip:active{transform:scale(.97)}
 [data-stoplight] button:focus-visible,[data-stoplight] a:focus-visible{outline:2px solid ${ACCENT};outline-offset:2px}
-[data-stoplight] .sl-th{position:sticky;top:0;text-align:left;font-size:11.5px;font-weight:500;color:${MUTED};padding:8px 12px;border-bottom:1px solid ${LINE};background:#fff;white-space:nowrap}
-[data-stoplight] .sl-td{padding:9px 12px;border-bottom:1px solid ${HAIR};vertical-align:top;background:#fff}
+[data-stoplight] .sl-th{position:sticky;top:0;text-align:left;font-size:11.5px;font-weight:500;color:${MUTED};padding:8px 12px;border-bottom:1px solid ${LINE};background:var(--surface, #fff);white-space:nowrap}
+[data-stoplight] .sl-td{padding:9px 12px;border-bottom:1px solid ${HAIR};vertical-align:top;background:var(--surface, #fff)}
 [data-stoplight] .sl-sticky{position:sticky;left:0;z-index:1;box-shadow:1px 0 0 ${HAIR}}
 [data-stoplight] .sl-tr{cursor:pointer}
-[data-stoplight] .sl-tr[data-open] > *{background:#fafafa}
+[data-stoplight] .sl-tr[data-open] > *{background:var(--canvas, #fafafa)}
 [data-stoplight] .sl-name{display:flex;align-items:flex-start;gap:6px;border:0;background:none;padding:2px 0;font:inherit;cursor:pointer;text-align:left;min-height:24px}
 [data-stoplight] .sl-row-btn{border:0;background:none;font:inherit;cursor:pointer;min-height:44px}
 [data-stoplight] .sl-h4{margin:0 0 6px;font-size:12.5px;font-weight:650;color:${INK}}
 [data-stoplight] .sl-empty{margin:0;font-size:12px;color:${MUTED}}
 [data-stoplight] .sl-link{display:inline-flex;align-items:center;gap:4px;flex:none;font-size:12px;font-weight:600;color:${ACCENT};text-decoration:none;padding:4px 2px;min-height:24px;border-radius:4px}
 [data-stoplight] .sl-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-[data-stoplight] .sl-skel{border-radius:8px;background:#f4f4f5}
+[data-stoplight] .sl-skel{border-radius:8px;background:var(--surface-2, #f4f4f5)}
 @media (hover:hover) and (pointer:fine){
-  [data-stoplight] .sl-tr:hover > *{background:#e9f6f0}
-  [data-stoplight] .sl-link:hover{color:#08694C;text-decoration:underline;text-underline-offset:2px}
-  [data-stoplight] .sl-chip:not([data-on]):hover{background:#f4f4f5}
+  [data-stoplight] .sl-tr:hover > *{background:var(--mint-hover, #e9f6f0)}
+  [data-stoplight] .sl-link:hover{color:var(--tx-mint-deep, #08694c);text-decoration:underline;text-underline-offset:2px}
+  [data-stoplight] .sl-chip:not([data-on]):hover{background:var(--surface-2, #f4f4f5)}
 }
 `;

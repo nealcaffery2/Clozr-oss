@@ -4,7 +4,7 @@
 'use client';
 
 import React, { useId, useRef } from 'react';
-import { btn, INK, MUTED, RED } from '@/components/genius/parts';
+import { btn, INK, MUTED, RED } from '@/components/kit/parts';
 
 export type PofDraft = { url: string; file: File | null; verified: boolean };
 export const emptyPof = (): PofDraft => ({ url: '', file: null, verified: false });

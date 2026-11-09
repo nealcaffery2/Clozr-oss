@@ -61,6 +61,7 @@ import {
 import { ProspectTime } from './ProspectTime';
 import { useSoftphone } from './softphoneAdapter';
 import { useSession } from '@/lib/session';
+import { mirrorContactToClozr } from '@/lib/talkr-contact-mirror';
 import { useTemplates } from '@/app/components/templates/useTemplates';
 import { openReach } from '@/app/components/record/reach';
 import { renderMerge } from '@/lib/sms';
@@ -587,6 +588,9 @@ function QuickAdd({ phone, onCreated }: { phone: string | null; onCreated: (cont
   const [type, setType] = useState<ContactType>('seller');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const session = useSession();
+  const workspaceId = session.workspace?.id ?? null;
+  const userId = session.user?.id ?? null;
 
   const submit = async () => {
     const display_name = name.trim();
@@ -594,7 +598,13 @@ function QuickAdd({ phone, onCreated }: { phone: string | null; onCreated: (cont
     setBusy(true);
     setErr(null);
     try {
-      const r = await api.createContact({ display_name, type, phone });
+      const input = { display_name, type, phone };
+      const r = await api.createContact(input);
+      // CLOZR gets the contact too; the dialer side is saved even when that copy fails.
+      if (workspaceId !== null) {
+        const m = await mirrorContactToClozr(workspaceId, userId, input).catch((e) => ({ ok: false, message: errorMessage(e) }));
+        if (!m.ok) setErr(`Saved to the dialer, not to CLOZR: ${m.message ?? 'unknown error'}`);
+      }
       onCreated(r.contact.id);
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
@@ -682,7 +692,7 @@ function RecordCard({ record }: { record: ClozrRecord }) {
               <span className="mr-auto min-w-0 truncate" style={{ font: '600 12px/1 var(--sans)' }}>
                 {t.title}
               </span>
-              <span className="shrink-0" style={{ font: '500 10px/1 var(--sans)', color: 'var(--muted-2)' }}>
+              <span className="shrink-0" style={{ font: '500 11px/1 var(--sans)', color: 'var(--muted-2)' }}>
                 {t.due}
               </span>
             </div>
@@ -731,7 +741,7 @@ function LeadTab({
         <Card className="flex flex-col gap-2.5">
           <div className="flex items-center justify-between">
             <Eyebrow>Last call</Eyebrow>
-            <span style={{ font: '500 10px/1 var(--sans)', color: 'var(--muted-2)' }}>{now === null ? '' : timeAgo(summary.at, now)}</span>
+            <span style={{ font: '500 11px/1 var(--sans)', color: 'var(--muted-2)' }}>{now === null ? '' : timeAgo(summary.at, now)}</span>
           </div>
           <p style={{ font: '400 12.5px/1.55 var(--sans)' }}>{summary.summary}</p>
           {summary.next_steps.length > 0 && (
@@ -772,7 +782,7 @@ function LeadTab({
                 <span className="mr-auto min-w-0 truncate" style={{ font: '600 12px/1 var(--sans)' }}>
                   {t.title}
                 </span>
-                <span className="shrink-0" style={{ font: '500 10px/1 var(--sans)', color: 'var(--muted-2)' }}>
+                <span className="shrink-0" style={{ font: '500 11px/1 var(--sans)', color: 'var(--muted-2)' }}>
                   {[
                     t.due_at ? `due ${new Date(t.due_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}` : null,
                     t.assigned_user_name,
@@ -786,7 +796,7 @@ function LeadTab({
         )}
         <div className="flex items-center justify-between pb-1">
           <Eyebrow>Recent activity</Eyebrow>
-          <span style={{ font: '500 10px/1 var(--sans)', color: 'var(--muted-2)' }}>
+          <span style={{ font: '500 11px/1 var(--sans)', color: 'var(--muted-2)' }}>
             {ctx.activity.length === 0 ? '' : `last ${rows.length}`}
           </span>
         </div>
@@ -826,7 +836,7 @@ function NotesCard({
         <span
           aria-live="polite"
           style={{
-            font: '600 10px/1 var(--sans)',
+            font: '600 11px/1 var(--sans)',
             color: saveState === 'error' ? 'var(--red)' : saveState === 'saved' ? 'var(--green)' : 'var(--muted-2)',
             minHeight: 10,
           }}
@@ -944,7 +954,7 @@ function ActivityRow({ a, now }: { a: CallContextActivityDto; now: number | null
           <span className="mr-auto truncate" style={{ font: '600 12px/1 var(--sans)' }}>
             {title}
           </span>
-          <span className="shrink-0" style={{ font: '500 10px/1 var(--sans)', color: 'var(--muted-2)' }}>
+          <span className="shrink-0" style={{ font: '500 11px/1 var(--sans)', color: 'var(--muted-2)' }}>
             {now === null ? '' : timeAgo(a.at, now)}
           </span>
         </span>

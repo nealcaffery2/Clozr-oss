@@ -11,6 +11,7 @@
 // can still send them a deal in their market.
 
 export const PROSPECT_LISTS = [
+  { id: 'compr-customer-prospect', label: 'Compr Customer Prospects', tag: 'compr-customer-prospect', holding: true },
   { id: 'buyer-prospect', label: 'Buyer Prospects', tag: 'buyer-prospect', holding: true },
   { id: 'capital-raise-prospect', label: 'Capital Raise Prospects', tag: 'capital-raise-prospect', holding: true },
   { id: 'realtors', label: 'Realtors', tag: 'realtors', holding: false },
@@ -36,7 +37,14 @@ const DISCOVERY_SOURCES = new Set(['buyr', 'genius', 'investorbase']);
  */
 export const BULK_BUYER_SOURCE = 'dispogenius-free-agents';
 
-const tagSet = (tags: string[] | null | undefined) => new Set((tags ?? []).map((t) => t.toLowerCase().trim()));
+/**
+ * Tags as strings only. A null inside a Postgres text[] (`array[null]`) comes
+ * back as a null element, and one of those crashed the whole workspace load.
+ */
+export const cleanTags = (tags: readonly (string | null | undefined)[] | null | undefined): string[] =>
+  (tags ?? []).filter((t): t is string => typeof t === 'string');
+
+const tagSet = (tags: readonly (string | null | undefined)[] | null | undefined) => new Set(cleanTags(tags).map((t) => t.toLowerCase().trim()));
 
 export function prospectListId(
   tags: string[] | null | undefined,
@@ -74,5 +82,5 @@ export function isBuyerProspect(
 /** Deal Machine finds on the People screen, separate from worked leads. */
 export function isDmProspect(source: string | null | undefined, tags: string[] | null | undefined): boolean {
   if ((source ?? '').toLowerCase() === 'deal_machine') return true;
-  return (tags ?? []).some((t) => /^(dm-prospect|deal-machine|deal_machine)$/i.test(t.trim()));
+  return cleanTags(tags).some((t) => /^(dm-prospect|deal-machine|deal_machine)$/i.test(t.trim()));
 }

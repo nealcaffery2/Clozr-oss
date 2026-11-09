@@ -35,6 +35,29 @@ const eslintConfig = defineConfig([
       'react-hooks/refs': 'off',
     },
   },
+  {
+    // The React Compiler rules analyse each hook as one unit, and useClozr is a
+    // single ~14,000-line hook: on that file alone they ran past a 6 GB heap and
+    // crashed CI lint. The app does not build with the compiler, so these rules
+    // are advisory; rules-of-hooks and exhaustive-deps still run here.
+    files: ['app/clozr/useClozr.ts'],
+    rules: {
+      'react-hooks/static-components': 'off',
+      'react-hooks/use-memo': 'off',
+      'react-hooks/preserve-manual-memoization': 'off',
+      'react-hooks/incompatible-library': 'off',
+      'react-hooks/immutability': 'off',
+      'react-hooks/globals': 'off',
+      'react-hooks/refs': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/error-boundaries': 'off',
+      'react-hooks/purity': 'off',
+      'react-hooks/set-state-in-render': 'off',
+      'react-hooks/unsupported-syntax': 'off',
+      'react-hooks/config': 'off',
+      'react-hooks/gating': 'off',
+    },
+  },
 ]);
 
 export default eslintConfig;

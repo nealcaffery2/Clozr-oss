@@ -51,7 +51,7 @@ export function ArchiveConfirm({ ask, onAnswer }: { ask: ArchiveAsk; onAnswer: (
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="archive-ask-title" data-testid="archive-confirm"
       onClick={() => onAnswer(false, alsoDeals)}
-      style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(24,24,27,.45)', display: 'grid', placeItems: 'center', padding: '16px' }}>
+      style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-confirm)', background: 'rgba(24,24,27,.45)', display: 'grid', placeItems: 'center', padding: '16px' }}>
       <div onClick={(e) => e.stopPropagation()}
         style={{ width: '100%', maxWidth: '400px', background: 'var(--surface, #fff)', borderRadius: '14px', padding: '18px', boxShadow: '0 28px 60px -24px rgba(18,22,45,.4)' }}>
         <div id="archive-ask-title" style={{ fontSize: '15px', fontWeight: 650, color: 'var(--ink, #18181b)' }}>Archive {who}?</div>

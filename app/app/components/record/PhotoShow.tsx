@@ -63,7 +63,7 @@ export function PhotoShow({ V }: { V: ClozrView }) {
         downOnBackdrop.current = false;
         if (close) V.closePhotoShow();
       }}
-      style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(12,14,18,.78)', display: 'grid', placeItems: 'center', padding: V.isMobile ? '12px 8px' : '28px 20px' }}
+      style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-viewer)', background: 'rgba(12,14,18,.78)', display: 'grid', placeItems: 'center', padding: V.isMobile ? '12px 8px' : '28px 20px' }}
     >
       <div
         role="dialog"
@@ -85,11 +85,11 @@ export function PhotoShow({ V }: { V: ClozrView }) {
           boxShadow: MODAL_SHADOW,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', color: '#fff', flex: 'none' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', color: 'var(--on-dark, #fff)', flex: 'none' }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div title={show.title} style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.015em', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{show.title}</div>
             {many ? (
-              <div role="status" style={{ fontSize: 11.5, fontWeight: 500, color: '#d4d4d8', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{show.index + 1} of {show.photos.length}</div>
+              <div role="status" style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--line, #d4d4d8)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{show.index + 1} of {show.photos.length}</div>
             ) : null}
           </div>
           <IconButton label="Close photos" onClick={V.closePhotoShow}><IconX /></IconButton>
@@ -130,16 +130,16 @@ export function PhotoShow({ V }: { V: ClozrView }) {
                   onClick={() => V.stepPhotoShow(i - show.index)}
                   className={focusRing}
                   style={{
-                    flex: 'none', width: 72, height: 52, padding: 0, border: 0, borderRadius: 6, overflow: 'hidden', cursor: 'pointer', background: '#18181b',
+                    flex: 'none', width: 72, height: 52, padding: 0, border: 0, borderRadius: 6, overflow: 'hidden', cursor: 'pointer', background: 'var(--ink, #18181b)',
                     opacity: active ? 1 : 0.55,
-                    boxShadow: active ? 'inset 0 0 0 2px #fff' : 'none',
+                    boxShadow: active ? 'inset 0 0 0 2px var(--surface, #fff)' : 'none',
                     transition: 'opacity 160ms ease',
                   }}
                 >
                   {isGalleryImage(u) ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={u} alt="" loading="lazy" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }} />
-                  ) : <span style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', color: '#d4d4d8', fontSize: 10, fontWeight: 650 }}>Link</span>}
+                  ) : <span style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', color: 'var(--line, #d4d4d8)', fontSize: 11, fontWeight: 650 }}>Link</span>}
                 </button>
               );
             })}
@@ -157,15 +157,15 @@ function FullPhoto({ src, alt }: { src: string; alt: string }) {
     try { host = new URL(src).hostname.replace(/^www\./, ''); } catch { /* keep the raw link */ }
     return (
       <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', padding: 24 }}>
-        <a href={src} target="_blank" rel="noopener noreferrer" style={{ display: 'grid', gap: 8, justifyItems: 'center', textDecoration: 'none', color: '#fff' }}>
+        <a href={src} target="_blank" rel="noopener noreferrer" style={{ display: 'grid', gap: 8, justifyItems: 'center', textDecoration: 'none', color: 'var(--on-dark, #fff)' }}>
           <span style={{ fontSize: 15, fontWeight: 700 }}>Open photo link</span>
-          <span style={{ fontSize: 12.5, color: '#d4d4d8' }}>{host}</span>
+          <span style={{ fontSize: 12.5, color: 'var(--line, #d4d4d8)' }}>{host}</span>
         </a>
       </div>
     );
   }
   if (failed) {
-    return <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#d4d4d8', fontSize: 12.5, fontWeight: 500 }}>This photo didn’t load</div>;
+    return <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: 'var(--line, #d4d4d8)', fontSize: 12.5, fontWeight: 500 }}>This photo didn’t load</div>;
   }
   return (
     // Property photos are arbitrary remote URLs, same as the rest of the record.

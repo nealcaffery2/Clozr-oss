@@ -35,10 +35,10 @@ eq('already says overdue', dueLabel('Overdue · Sep 3', 'overdue'), 'Overdue · 
 eq('on time is left alone', dueLabel('Today 1:30 PM', 'today'), 'Today 1:30 PM');
 
 // A row draws itself from its own tick, the way the view-model drew it.
-eq('an open late task says so in red', taskLook(false, 'Yesterday', 'overdue'), { due: 'Overdue · Yesterday', dueColor: '#dc2626', deco: 'none', textColor: '#18181b' });
-eq('ticked, it keeps its plain date, struck through', taskLook(true, 'Yesterday', 'overdue'), { due: 'Yesterday', dueColor: '#71717a', deco: 'line-through', textColor: '#a1a1aa' });
-eq('due today reads dark', taskLook(false, 'Today', 'today').dueColor, '#18181b');
-eq('a later one reads muted', taskLook(false, 'Oct 30', 'upcoming').dueColor, '#71717a');
+eq('an open late task says so in red', taskLook(false, 'Yesterday', 'overdue'), { due: 'Overdue · Yesterday', dueColor: '#dc2626', deco: 'none', textColor: 'var(--ink, #18181b)' });
+eq('ticked, it keeps its plain date, struck through', taskLook(true, 'Yesterday', 'overdue'), { due: 'Yesterday', dueColor: 'var(--meta, #71717a)', deco: 'line-through', textColor: 'var(--subtle, #a1a1aa)' });
+eq('due today reads dark', taskLook(false, 'Today', 'today').dueColor, 'var(--ink, #18181b)');
+eq('a later one reads muted', taskLook(false, 'Oct 30', 'upcoming').dueColor, 'var(--meta, #71717a)');
 
 // The seller is read again only when the closed task could be the one their row names.
 const call = 'Call seller back';

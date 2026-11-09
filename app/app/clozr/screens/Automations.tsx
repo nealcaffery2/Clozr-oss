@@ -10,6 +10,7 @@ import { usePlans } from '@/app/components/plans/usePlans';
 import { Btn, FAINT, INK, LINE, MINT, MUTED, PlayPause, Toast } from '@/app/components/plans/ui';
 import { STEP_TYPES, delayLabel, settingsSummary, stepMeta, stepMinutes, stepSummary, triggerLabel, minutesToDelay } from '@/lib/plans';
 import { Mark } from '@/components/ds/mark';
+import { ScreenHeader } from '@/components/ds/Screen';
 
 export function Automations({ V }: { V: ClozrView }) {
   const api = usePlans();
@@ -26,24 +27,20 @@ export function Automations({ V }: { V: ClozrView }) {
 
   return (
     <section data-screen-label="Automations" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', background: 'var(--surface, #fff)', borderBottom: `1px solid ${LINE}`, flexWrap: 'wrap' }}>
-        <button type="button" className="dc12" onClick={V.goTasks} style={{ fontSize: '12.5px', color: MUTED, background: 'none', border: 0, cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>Tasks</button>
-        <span style={{ color: 'var(--line, #d4d4d8)' }}>/</span>
+      {/* The screen is Automations; the plan it shows is a picker beside the title, not the title. */}
+      <ScreenHeader back={V.backFor('tasks')} title="Automations" after={<>
         {api.plans.length ? (
-          <select value={d?.id ?? ''} onChange={(e) => { if (e.target.value) api.select(Number(e.target.value)); }} aria-label="Action plan" style={{ height: '32px', padding: '0 8px', border: `1px solid ${LINE}`, borderRadius: '8px', fontSize: '14px', fontWeight: 700, letterSpacing: '-0.02em', color: INK, background: 'var(--surface, #fff)', cursor: 'pointer', fontFamily: 'inherit', maxWidth: '360px' }}>
+          <select value={d?.id ?? ''} onChange={(e) => { if (e.target.value) api.select(Number(e.target.value)); }} aria-label="Action plan" style={{ height: '32px', padding: '0 8px', border: `1px solid ${LINE}`, borderRadius: '8px', fontSize: '13px', fontWeight: 600, color: INK, background: 'var(--surface, #fff)', cursor: 'pointer', fontFamily: 'inherit', maxWidth: '360px', minWidth: 0 }}>
             {!d ? <option value="">Choose a plan…</option> : null}
             {api.plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
-        ) : <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em' }}>Automations</h1>}
+        ) : null}
         {d?.id ? (
           <PlayPause playing={d.active} disabled={!api.canWrite && !api.preview} onClick={() => void api.toggleActive(d.id!, !d.active)} label={d.active ? `Pause · ${active} playing` : `Play · ${paused} held`} />
         ) : null}
-        <div style={{ flex: 1 }} />
-        <Btn disabled title="Test runs need a scheduler — not wired yet">Test run</Btn>
-        <Btn kind="dark" onClick={V.goPlans}>Edit in Action plans</Btn>
-      </div>
+      </>} actions={<Btn kind="dark" onClick={V.goPlans}>Edit in Action plans</Btn>} />
       <div style={{ flex: 1, minHeight: 0, display: V.isMobile ? 'block' : 'grid', overflow: V.isMobile ? 'auto' : 'visible', gridTemplateColumns: V.isMobile ? '1fr' : 'minmax(0,1fr) 260px' }}>
-        <div style={{ overflow: 'auto', padding: '24px 20px 40px', backgroundImage: `radial-gradient(${LINE} 1px, transparent 1px)`, backgroundSize: '20px 20px' }}>
+        <div style={{ overflow: 'auto', padding: '24px 20px 40px', background: 'var(--page)' }}>
           <div style={{ maxWidth: '620px', margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
             <ReadOnlyNote />
             {!d ? (
@@ -54,7 +51,6 @@ export function Automations({ V }: { V: ClozrView }) {
             ) : (
               <>
                 <div style={{ background: 'var(--ink-hero, #141419)', color: 'var(--on-dark, #fff)', borderRadius: '12px', padding: '14px 16px', position: 'relative', overflow: 'hidden' }}>
-                  <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'radial-gradient(120% 90% at 90% -10%, rgba(10, 133, 96,0.34), transparent 58%)' }} />
                   <div style={{ position: 'relative' }}>
                     <div style={{ fontSize: '11.5px', color: 'rgba(255,255,255,.6)', fontWeight: 600 }}>Trigger</div>
                     <div style={{ fontSize: '15px', fontWeight: 700, marginTop: '4px' }}>{triggerLabel(d.trigger_type, d.trigger_value)}</div>

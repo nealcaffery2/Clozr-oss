@@ -34,7 +34,7 @@ export function blankSmsFlow(phone: string, talkrNumberId: string | null = null)
 
 /** Words that opt a texter out or back in. Never auto-reply to them; the carrier and Talkr answer those. */
 const KEYWORDS = new Set(['stop', 'stopall', 'stop all', 'unsubscribe', 'cancel', 'end', 'quit', 'revoke', 'optout', 'opt out', 'start', 'unstop', 'subscribe', 'help', 'info']);
-export const isKeyword = (body: string | null | undefined) => KEYWORDS.has(String(body ?? '').trim().toLowerCase());
+export const isKeyword = (body: string | null | undefined) => KEYWORDS.has(String(body ?? '').trim().replace(/[\s.!?]+$/, '').toLowerCase());
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 

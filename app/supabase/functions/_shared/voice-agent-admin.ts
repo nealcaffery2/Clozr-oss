@@ -92,7 +92,7 @@ export const DYNAMIC_VARIABLE_PLACEHOLDERS: Record<string, string | boolean> = {
   first_name: 'Sam', property_address: '123 Main St', lead_brief: 'A new lead, nothing on file yet.', last_contact_summary: '',
   next_step: '', rep_name: 'Alex', company: 'Acme Homes', agent_name: 'Riley', caller_known: false, do_not_engage: false, record_kind: 'seller',
   rep_phone: '+15125550100', lead_source: 'form', property_facts: '3 bed, 2 bath, about 1,450 sqft', mortgage_payoff_estimate: '$120,000',
-  offer_low: '$150,000', offer_high: '$170,000', seller_asking_price: '$180,000', call_goal: '', rep_available: 'yes',
+  offer_low: '$150,000', offer_high: '$170,000', seller_asking_price: '$180,000', call_goal: '', rep_available: 'yes', opening_line: '', covering_for: '',
   record_id: '', record_token: '',
 };
 
@@ -219,6 +219,89 @@ export function asrKeywords(s: AgentSettings, teamNames: string[] = []): string[
   return out.slice(0, 50);
 }
 
+/** The tts tuning agentBody sends: the saved values, or the reference defaults. */
+function ttsTuning(s: AgentSettings) {
+  return {
+    stability: s.voice.stability ?? (s.personality.expressiveness === 'expressive' ? EXPRESSIVE_STABILITY : VOICE_DEFAULTS.stability),
+    similarity_boost: s.voice.similarity ?? VOICE_DEFAULTS.similarity,
+    speed: s.voice.speed ?? VOICE_DEFAULTS.speed,
+  };
+}
+
+/**
+ * What a session may override on the agent. The initiation webhook only ever
+ * sends first_message; the rest is for a console test of the draft (test_session
+ * with draft: true), which runs unpublished edits without a publish. Auth stays
+ * on, so only a signed URL from test_session can use them.
+ * https://elevenlabs.io/docs/eleven-agents/customization/personalization/overrides
+ */
+export const SESSION_OVERRIDES = {
+  agent: { first_message: true, prompt: { prompt: true, llm: true } },
+  tts: { voice_id: true, stability: true, speed: true, similarity_boost: true },
+};
+
+/** Each draft-test value and where its permission flag sits under conversation_config_override. */
+const OVERRIDE_FLAGS = {
+  prompt: ['agent', 'prompt', 'prompt'], llm: ['agent', 'prompt', 'llm'],
+  voice_id: ['tts', 'voice_id'], stability: ['tts', 'stability'], similarity_boost: ['tts', 'similarity_boost'], speed: ['tts', 'speed'],
+} as const;
+export type OverrideKey = keyof typeof OVERRIDE_FLAGS;
+export const OVERRIDE_KEYS = Object.keys(OVERRIDE_FLAGS) as OverrideKey[];
+export type DraftOverrides = { prompt?: string; llm?: string; voice_id?: string; stability?: number; similarity_boost?: number; speed?: number };
+
+/**
+ * A draft test's session overrides, the same values agentBody would publish, limited to
+ * the ones the agent allows: ElevenLabs refuses the whole session ("not allowed by config")
+ * when it is sent one it does not. Tools, transfer, call handling, the TTS model and thinking
+ * effort are not overridable, so a draft test still uses the live agent's.
+ */
+export function draftOverrides(s: AgentSettings, templates: TemplateRegistry, allowed: readonly OverrideKey[] = OVERRIDE_KEYS): DraftOverrides {
+  const all: Required<DraftOverrides> = { prompt: assemblePrompt(s, templates), llm: s.voice.llm, voice_id: s.voice.voice_id, ...ttsTuning(s) };
+  return Object.fromEntries(allowed.map((k) => [k, all[k]])) as DraftOverrides;
+}
+
+/** The same overrides in ElevenLabs' conversation_config_override shape (the phone test sends this). */
+export function overrideConfig(o: DraftOverrides) {
+  const prompt = { ...(o.prompt !== undefined ? { prompt: o.prompt } : {}), ...(o.llm !== undefined ? { llm: o.llm } : {}) };
+  const tts = Object.fromEntries((['voice_id', 'stability', 'similarity_boost', 'speed'] as const).filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
+  return { ...(Object.keys(prompt).length ? { prompt } : {}), ...(Object.keys(tts).length ? { tts } : {}) };
+}
+
+/** Which draft-test values the agent's platform_settings allow a session to override. */
+export function allowedOverrideKeys(agent: unknown): OverrideKey[] {
+  // deno-lint-ignore no-explicit-any
+  const o = ((agent && typeof agent === 'object' ? agent : {}) as Record<string, any>).platform_settings?.overrides?.conversation_config_override ?? {};
+  // deno-lint-ignore no-explicit-any
+  return OVERRIDE_KEYS.filter((k) => OVERRIDE_FLAGS[k].reduce<any>((at, part) => at?.[part], o) === true);
+}
+
+/** True when the agent's platform_settings allow every draft-test value. */
+export function allowsSessionOverrides(agent: unknown): boolean {
+  return allowedOverrideKeys(agent).length === OVERRIDE_KEYS.length;
+}
+
+/**
+ * Let an agent published before SESSION_OVERRIDES existed take a draft test, and say what
+ * it allows. Reads the agent; only when a flag is missing, writes back its whole platform_settings
+ * with the overrides added (nothing else on it changes whether ElevenLabs merges or replaces)
+ * and reads it again, since ElevenLabs may keep some flags and not others.
+ */
+export async function ensureSessionOverrides(cfg: ElConfig, agentId: string): Promise<OverrideKey[]> {
+  const path = `/v1/convai/agents/${encodeURIComponent(agentId)}`;
+  // deno-lint-ignore no-explicit-any
+  const a = await elJson<Record<string, any>>(cfg, 'GET', path);
+  if (allowsSessionOverrides(a)) return OVERRIDE_KEYS;
+  const ps = a.platform_settings ?? {};
+  const prev = ps.overrides?.conversation_config_override ?? {};
+  const want = {
+    ...prev, ...SESSION_OVERRIDES,
+    agent: { ...(prev.agent ?? {}), ...SESSION_OVERRIDES.agent, prompt: { ...(prev.agent?.prompt ?? {}), ...SESSION_OVERRIDES.agent.prompt } },
+    tts: { ...(prev.tts ?? {}), ...SESSION_OVERRIDES.tts },
+  };
+  await elJson(cfg, 'PATCH', path, { platform_settings: { ...ps, overrides: { ...(ps.overrides ?? {}), conversation_config_override: want } } });
+  return allowedOverrideKeys(await elJson(cfg, 'GET', path));
+}
+
 /**
  * The full create/update body for one agent: the assembled prompt, voice and
  * model, turn and call limits, voicemail and transfer tools, dynamic variables,
@@ -256,12 +339,7 @@ export function agentBody(s: AgentSettings, templates: TemplateRegistry, w: Wiri
         },
       },
       // Always sent, with the reference defaults when unset, so clearing a tuning value takes effect on a PATCH.
-      tts: {
-        voice_id: s.voice.voice_id, model_id: s.voice.tts_model,
-        stability: s.voice.stability ?? (s.personality.expressiveness === 'expressive' ? EXPRESSIVE_STABILITY : VOICE_DEFAULTS.stability),
-        similarity_boost: s.voice.similarity ?? VOICE_DEFAULTS.similarity,
-        speed: s.voice.speed ?? VOICE_DEFAULTS.speed,
-      },
+      tts: { voice_id: s.voice.voice_id, model_id: s.voice.tts_model, ...ttsTuning(s) },
       // High-quality transcription, primed with names and words these calls use.
       asr: { quality: 'high', keywords: asrKeywords(s, w.teamNames) },
       conversation: { max_duration_seconds: s.call_handling.max_call_seconds },
@@ -269,6 +347,9 @@ export function agentBody(s: AgentSettings, templates: TemplateRegistry, w: Wiri
         turn_eagerness: s.call_handling.turn_eagerness,
         silence_end_call_timeout: s.call_handling.silence_timeout_s > 0 ? s.call_handling.silence_timeout_s : -1,
         turn_model: 'turn_v3',
+        // Outbound calls start with an empty first message and wait for the callee's hello; a silent pickup
+        // gets the opener after 3 s instead of the 7 s turn timeout.
+        initial_wait_time: 3,
         // Start the reply during the caller's pause instead of after it: quicker answers, a little more LLM spend.
         speculative_turn: true,
         // Speech the voice detector missed (a quiet or choppy line) is transcribed again before the agent re-engages.
@@ -287,7 +368,7 @@ export function agentBody(s: AgentSettings, templates: TemplateRegistry, w: Wiri
     platform_settings: {
       overrides: {
         enable_conversation_initiation_client_data_from_webhook: true,
-        conversation_config_override: { agent: { first_message: true } },
+        conversation_config_override: SESSION_OVERRIDES,
       },
       workspace_overrides: {
         conversation_initiation_client_data_webhook: { url: w.personalizeUrl, request_headers: { [SECRET_HEADER]: w.personalizeSecret } },

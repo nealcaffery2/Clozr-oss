@@ -11,13 +11,13 @@
 
 import React, { useMemo, useState } from 'react';
 import type { ClozrView } from '@/app/clozr/view';
-import type { MapPin } from '@/components/genius/GeniusMap';
+import type { MapPin } from '@/components/maps/PinMap';
 import { ListMap, MapStatus, PopupButton, useCentroids, type LegendItem } from '@/components/ListMap';
-import { Ring, tier } from '@/components/genius/parts';
+import { Ring, tier } from '@/components/kit/parts';
 import { responseTone } from '@/lib/heat';
 import { fanOut, locate } from '@/lib/geo-centroids';
 import { STATE_NAMES } from '@/lib/market-geo';
-import { KIND_COLOR } from '@/lib/genius';
+import { KIND_COLOR } from '@/lib/skip-trace';
 import { loadRealtorsInMarkets, type RealtorPick } from '@/lib/crm';
 import type { BuyerAiScore } from '@/lib/buyer-ai-score';
 import { picksOf } from '@/lib/multi-filter';
@@ -82,7 +82,7 @@ function BuyersOnMap({ rows, height, sel, setSel, aiOf }: Props) {
     }
     const order = ['Flippers', 'Landlords', 'Builders', 'Other'];
     const legend: LegendItem[] = [...kinds.entries()].sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])).map(([label, color]) => ({ label, color }));
-    if (rows.some(isVip)) legend.push({ label: 'VIP or Genius', color: 'var(--subtle, #a1a1aa)', ring: true });
+    if (rows.some(isVip)) legend.push({ label: 'VIP or Buyr', color: 'var(--meta, #71717a)', ring: true });
     return { pins: fanOut(out), unplaced, onMap, legend };
   }, [rows, idx]);
 
@@ -111,7 +111,7 @@ function BuyersOnMap({ rows, height, sel, setSel, aiOf }: Props) {
         </div>
         <div style={{ display: 'flex', gap: '6px' }}>
           <PopupButton primary={!on} onClick={() => setSel((x) => ({ ...x, [b.id]: !on }))}>{on ? 'Unselect' : 'Select'}</PopupButton>
-          <PopupButton onClick={b.open}>Open</PopupButton>
+          <PopupButton onClick={b.open}>Open record</PopupButton>
         </div>
       </div>
     );

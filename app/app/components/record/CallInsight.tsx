@@ -16,10 +16,11 @@ import { requestCallCoaching } from '@/lib/call-coach';
 import { firstName, type CallCoachingReview } from '@/lib/call-coaching';
 import { CoachingReviewView } from '@/app/components/talkr/CoachingReviewCard';
 import { CallRecording } from './CallRecording';
+import { boundedSet } from '@/lib/bounded-cache';
 
-const INK = '#18181b';
-const MUTED = '#71717a';
-const LINE = '#e4e4e7';
+const INK = 'var(--ink, #18181b)';
+const MUTED = 'var(--meta, #71717a)';
+const LINE = 'var(--divider, #e4e4e7)';
 const btn: React.CSSProperties = { height: '26px', padding: '0 10px', borderRadius: '7px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' };
 const eyebrow: React.CSSProperties = { fontSize: '11.5px', color: MUTED, fontWeight: 600, marginBottom: '6px' };
 
@@ -37,7 +38,7 @@ export function SuggestionList({ workspaceId, sellerId, me, canWrite = true, sta
 }) {
   const [gone, setGone] = useState<Record<number, 'applied' | 'dismissed' | 'busy'>>({});
   if (state.loading) return <div style={{ fontSize: '12px', color: MUTED }}>Reading for updates…</div>;
-  if (state.error) return <div style={{ fontSize: '12px', color: '#b91c1c' }}>{state.error}</div>;
+  if (state.error) return <div style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)' }}>{state.error}</div>;
   const items = (state.items ?? []).map((s, i) => ({ s, i })).filter(({ i }) => gone[i] !== 'applied' && gone[i] !== 'dismissed');
   if (!state.items) return null;
   if (!items.length) return <div style={{ fontSize: '12px', color: MUTED }}>No updates to suggest.</div>;
@@ -53,7 +54,7 @@ export function SuggestionList({ workspaceId, sellerId, me, canWrite = true, sta
   return (
     <div style={{ display: 'grid', gap: '6px' }}>
       {items.map(({ s, i }) => (
-        <div key={i} style={{ border: `1px solid ${LINE}`, borderRadius: '8px', padding: '8px 10px', background: '#fff' }}>
+        <div key={i} style={{ border: `1px solid ${LINE}`, borderRadius: '8px', padding: '8px 10px', background: 'var(--surface, #fff)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ flex: 1, minWidth: 0, fontSize: '13px', fontWeight: 600, color: INK }}>{describeSuggestion(s)}</span>
             {canWrite ? (
@@ -61,7 +62,7 @@ export function SuggestionList({ workspaceId, sellerId, me, canWrite = true, sta
                 style={{ ...btn, border: 0, background: '#0A8560', color: '#fff' }}>{gone[i] === 'busy' ? 'Applying…' : 'Apply'}</button>
             ) : null}
             <button type="button" className="dc2" onClick={() => { setGone((g) => ({ ...g, [i]: 'dismissed' })); onSettled?.(s); }}
-              style={{ ...btn, border: `1px solid ${LINE}`, background: '#fff', color: INK }}>Dismiss</button>
+              style={{ ...btn, border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', color: INK }}>Dismiss</button>
           </div>
           <div style={{ fontSize: '12px', color: MUTED, marginTop: '4px', lineHeight: 1.45 }}>
             {s.reason}{s.quote ? <> · <i>“{s.quote}”</i></> : null}
@@ -83,20 +84,20 @@ function Coaching({ score }: { score: CallScoreDto }) {
     .filter((c) => c.s !== null);
   const ratio = typeof score.rep_talk_ratio === 'number' ? Math.round(score.rep_talk_ratio * 100) : null;
   return (
-    <div style={{ border: `1px solid ${LINE}`, borderRadius: '8px', background: '#fff', padding: '8px 10px' }}>
+    <div style={{ border: `1px solid ${LINE}`, borderRadius: '8px', background: 'var(--surface, #fff)', padding: '8px 10px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         {overall !== null ? (
           <span style={{ fontSize: '20px', fontWeight: 700, color: scoreColor(overall), lineHeight: 1 }}>{overall}<span style={{ fontSize: '11px', color: MUTED, fontWeight: 500 }}>/100</span></span>
         ) : null}
-        <span style={{ flex: 1, minWidth: 0, fontSize: '12.5px', color: '#27272a', lineHeight: 1.45 }}>
+        <span style={{ flex: 1, minWidth: 0, fontSize: '12.5px', color: 'var(--ink-2, #27272a)', lineHeight: 1.45 }}>
           <b style={{ color: INK }}>Coaching</b>
           {ratio !== null ? <> · rep talked {ratio}%</> : null}
           {score.next_action ? <> · next: {score.next_action}</> : null}
         </span>
-        <button type="button" className="dc2" onClick={() => setOpen((o) => !o)} style={{ ...btn, border: `1px solid ${LINE}`, background: '#fff', color: INK }}>{open ? 'Less' : 'Details'}</button>
+        <button type="button" className="dc2" onClick={() => setOpen((o) => !o)} style={{ ...btn, border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', color: INK }}>{open ? 'Less' : 'Details'}</button>
       </div>
       {open ? (
-        <div style={{ marginTop: '8px', display: 'grid', gap: '8px', fontSize: '12.5px', lineHeight: 1.5, color: '#27272a' }}>
+        <div style={{ marginTop: '8px', display: 'grid', gap: '8px', fontSize: '12.5px', lineHeight: 1.5, color: 'var(--ink-2, #27272a)' }}>
           {cats.length ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '4px 12px' }}>
               {cats.map((c) => (
@@ -129,12 +130,14 @@ const CACHE_MS = 10 * 60_000;
 type SugResult = Awaited<ReturnType<typeof suggestForCall>>;
 const mediaCache = new Map<number, { at: number; media: CallMedia }>();
 const sugCache = new Map<string, { at: number; result: SugResult & { ok: true } }>();
+/** Calls kept: a transcript with its segments runs to hundreds of KB, and expiry alone never freed one. */
+const CALLS_MAX = 100;
 const unexpired = <T extends { at: number }>(e: T | undefined): T | undefined => (e && Date.now() - e.at < CACHE_MS ? e : undefined);
 function loadCallMediaCached(id: number): Promise<CallMedia> {
   const hit = unexpired(mediaCache.get(id));
   if (hit) return Promise.resolve(hit.media);
   return loadCallMedia(id).then((m) => {
-    if (m.transcript && !m.audioUrl?.startsWith('blob:')) mediaCache.set(id, { at: Date.now(), media: m });
+    if (m.transcript && !m.audioUrl?.startsWith('blob:')) boundedSet(mediaCache, id, { at: Date.now(), media: m }, CALLS_MAX);
     return m;
   });
 }
@@ -143,7 +146,7 @@ function suggestForCallCached(workspaceId: number, sellerId: number, transcript:
   const hit = unexpired(sugCache.get(key));
   if (hit) return Promise.resolve(hit.result);
   return suggestForCall(workspaceId, sellerId, transcript, id).then((r) => {
-    if (r.ok) sugCache.set(key, { at: Date.now(), result: r });
+    if (r.ok) boundedSet(sugCache, key, { at: Date.now(), result: r }, CALLS_MAX);
     return r;
   });
 }
@@ -159,7 +162,7 @@ function settleCached(workspaceId: number, sellerId: number, id: number, s: Sugg
  * draws thirty entries at a time; a call further down waits until the rep
  * scrolls toward it before it reads its recording or asks for suggestions.
  */
-function useNearView(ref: React.RefObject<HTMLElement | null>): boolean {
+export function useNearView(ref: React.RefObject<HTMLElement | null>): boolean {
   const [near, setNear] = useState(() => typeof IntersectionObserver === 'undefined');
   useEffect(() => {
     const el = ref.current;
@@ -173,7 +176,7 @@ function useNearView(ref: React.RefObject<HTMLElement | null>): boolean {
   return near;
 }
 
-export function CallInsight({ communicationId, workspaceId, sellerId, me, canWrite = true, prospectName, repName, onToast, onChanged }: {
+export function CallInsight({ communicationId, workspaceId, sellerId, me, canWrite = true, prospectName, repName, contactColor, onToast, onChanged }: {
   communicationId: number;
   workspaceId: number;
   /** The seller the call is filed on; null on a buyer, where there are no record suggestions. */
@@ -182,6 +185,8 @@ export function CallInsight({ communicationId, workspaceId, sellerId, me, canWri
   canWrite?: boolean;
   /** First names for the card, when the stored review does not already have them. */
   prospectName?: string | null;
+  /** Their label's colour (heat on a seller, type on a buyer), for their bars in the player's waveform. */
+  contactColor?: string | null;
   repName?: string | null;
   onToast?: (msg: string) => void;
   onChanged?: () => void;
@@ -253,25 +258,25 @@ export function CallInsight({ communicationId, workspaceId, sellerId, me, canWri
   ].filter((x): x is [string, string] => !!x) : [];
 
   return (
-    <div ref={holder} style={{ marginTop: '10px', padding: '10px', border: `1px solid ${LINE}`, borderRadius: '10px', background: '#fafafa', display: 'grid', gap: '8px' }}>
+    <div ref={holder} style={{ marginTop: '10px', padding: '10px', border: `1px solid ${LINE}`, borderRadius: '10px', background: 'var(--canvas, #fafafa)', display: 'grid', gap: '8px' }}>
       {media.audioUrl || media.segments.length ? (
         <CallRecording
           audioUrl={media.audioUrl} segments={media.segments} estimated={media.estimated} durationS={media.durationS}
           communicationId={communicationId} sections={media.sections} sectionsSource={media.sectionsSource}
-          contactName={prospectName} repName={repName} note={media.transcriptNote}
+          contactName={prospectName} repName={repName} contactColor={contactColor} note={media.transcriptNote}
         />
       ) : (
         <span style={{ fontSize: '12px', color: MUTED }}>{media.transcriptNote ?? 'No recording.'}</span>
       )}
       {media.audioUrl && !media.segments.length && media.transcriptNote ? <div style={{ fontSize: '12px', color: MUTED }}>{media.transcriptNote}</div> : null}
-      {media.summary ? <div style={{ fontSize: '13px', color: '#27272a', lineHeight: 1.5 }}>{media.summary}</div> : null}
+      {media.summary ? <div style={{ fontSize: '13px', color: 'var(--ink-2, #27272a)', lineHeight: 1.5 }}>{media.summary}</div> : null}
       {n?.key_points?.length ? (
-        <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12.5px', color: '#27272a', lineHeight: 1.5 }}>
+        <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12.5px', color: 'var(--ink-2, #27272a)', lineHeight: 1.5 }}>
           {n.key_points.map((k, i) => <li key={i}>{k}</li>)}
         </ul>
       ) : null}
       {facts.length || n?.next_step || n?.objections?.length ? (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', fontSize: '12px', color: '#27272a' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', fontSize: '12px', color: 'var(--ink-2, #27272a)' }}>
           {facts.map(([k, v]) => <span key={k}><span style={{ color: MUTED }}>{k}: </span>{v}</span>)}
           {n?.objections?.length ? <span><span style={{ color: MUTED }}>Objections: </span>{n.objections.join('; ')}</span> : null}
           {n?.next_step ? <span><span style={{ color: MUTED }}>Next step: </span><b>{n.next_step}</b></span> : null}
@@ -281,8 +286,8 @@ export function CallInsight({ communicationId, workspaceId, sellerId, me, canWri
       {media.transcript && canWrite ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button type="button" className="dc2" disabled={coaching === 'working'} onClick={() => void coach()}
-            style={{ ...btn, border: `1px solid ${LINE}`, background: '#fff', color: INK }}>{coaching === 'working' ? 'Coaching...' : review ? 'Coach again' : 'Coach this call'}</button>
-          {coaching === 'error' && coachErr ? <span style={{ fontSize: '12px', color: '#b91c1c' }}>{coachErr}</span> : null}
+            style={{ ...btn, border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', color: INK }}>{coaching === 'working' ? 'Coaching...' : review ? 'Coach again' : 'Coach this call'}</button>
+          {coaching === 'error' && coachErr ? <span style={{ fontSize: '12px', color: 'var(--tx-red, #b91c1c)' }}>{coachErr}</span> : null}
         </div>
       ) : null}
       {media.transcript && sellerId !== null ? (

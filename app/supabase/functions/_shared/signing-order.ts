@@ -17,6 +17,9 @@
 // person they delegated to holds their place.
 
 export type RecipientType = 'signer' | 'approver' | 'cc' | 'viewer' | 'filler';
+export const RECIPIENT_TYPES: readonly RecipientType[] = ['signer', 'approver', 'cc', 'viewer', 'filler'];
+/** A recipient_type as the client sent it; anything not in the list is a signer. */
+export const recipientType = (x: unknown): RecipientType => (RECIPIENT_TYPES as readonly string[]).includes(String(x ?? '')) ? x as RecipientType : 'signer';
 export type OrderMode = 'parallel' | 'sequential';
 export type Recip = { id: number; sort?: number | null; status?: string | null; recipient_type?: string | null; email?: string | null };
 

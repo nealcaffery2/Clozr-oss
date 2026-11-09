@@ -18,7 +18,9 @@ assert.equal(smsSegments('a'.repeat(161)), 2, 'then 153 a segment');
 assert.equal(smsSegments('a'.repeat(306)), 2);
 assert.equal(smsSegments('a'.repeat(307)), 3);
 assert.equal(smsSegments('It’s here'), 1, 'a curly apostrophe is UCS-2, still one segment when short');
-assert.equal(smsSegments('’' + 'a'.repeat(70)), 2, 'UCS-2 fits 70');
+assert.equal(smsSegments('ą' + 'a'.repeat(70)), 2, 'UCS-2 fits 70');
+assert.equal(smsSegments('’' + 'a'.repeat(70)), 1, 'a curly apostrophe goes plain before sending (lib/carrier-safe), so this is GSM-7');
+assert.equal(smsSegments('✔️ ' + 'a'.repeat(150)), 1, 'so does a check-mark bullet');
 assert.equal(smsSegments('{'.repeat(80)), 1, 'extension characters count twice: 160');
 assert.equal(smsSegments('{'.repeat(81)), 2);
 

@@ -12,7 +12,7 @@ import type { ClozrView } from '@/app/clozr/view';
 import { ActiveCall } from './ActiveCall';
 import { CallContext } from './CallContext';
 import { CallerIdPicker, DefaultStar, callerIdLabel, showsDefault } from './CallerIdPicker';
-import { DialSessionBar, DialSessionStart } from './DialSessionBar';
+import { PowerDialerStrip } from './PowerDialer';
 import { IncomingCall } from './IncomingCall';
 import { Icon } from './Icon';
 import { Button, Eyebrow } from './ui';
@@ -31,39 +31,45 @@ import {
 import { useSoftphone } from './softphoneAdapter';
 import { LiveCalls, MonitorCard } from './Supervision';
 import { RvmPanel } from './RvmPanel';
-import '@/app/clozr/talkr-dialer.css';
+// Styles: talkr-dialer.css, loaded once by ClozrShell (see the note there).
 import { openReach } from '@/app/components/record/reach';
 
 // Message from a call: the docked quick text to that number, the same box every Text button opens.
 const textFromCall = (phone: string) => openReach('text', { name: '', phone });
 
-/** The floating button: the Talkr mark (unrecoloured, per brand/README.md), with a CLOZR-green pulsing ring and badge while a call is live. */
-export function DialerLauncher({ V }: { V: ClozrView }) {
+/**
+ * The dialer button: the Talkr mark (unrecoloured, per brand/README.md), with
+ * a CLOZR-green ring and dot while a call is live. It no longer floats over
+ * the screens: size 34 sits in the phone's top bar, 28 in the side menu's foot.
+ */
+export function DialerLauncher({ V, size = 34, className = 'dc6' }: { V: ClozrView; size?: 28 | 34; className?: string }) {
   const live = V.callState === 'live';
+  const r = size === 28 ? 7 : 9;
   return (
     <button
-      className="dc6"
+      type="button"
+      className={className}
       onClick={V.toggleDialer}
       title={live ? 'Talkr dialer · call in progress' : 'Talkr dialer'}
       aria-label={live ? 'Talkr dialer, call in progress' : 'Talkr dialer'}
       style={{
-        position: 'relative', width: 44, height: 44, borderRadius: 12, border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)',
+        position: 'relative', flex: 'none', width: size, height: size, padding: 0,
+        borderRadius: r, border: size === 28 ? 0 : '1px solid var(--c-btn-line)', background: size === 28 ? 'transparent' : 'var(--c-btn-bg)',
         cursor: 'pointer', display: 'grid', placeItems: 'center',
-        boxShadow: '0 1px 2px rgba(18,20,28,0.05),0 10px 28px -10px rgba(18,22,40,0.13)',
       }}
     >
       {live && (
         <span
           className="talkr-launcher-ring"
           aria-hidden
-          style={{ position: 'absolute', inset: -1, borderRadius: 12, border: '2px solid #0A8560', animation: 'ringpulse 1.6s ease-out infinite' }}
+          style={{ position: 'absolute', inset: -1, borderRadius: r, border: '2px solid var(--c-accent, #0A8560)', animation: 'ringpulse 1.6s ease-out infinite' }}
         />
       )}
-      <TalkrMark size={22} />
+      <TalkrMark size={size === 28 ? 16 : 18} />
       {live && (
         <span
           aria-hidden
-          style={{ position: 'absolute', top: -4, right: -4, width: 12, height: 12, borderRadius: 999, background: '#0A8560', border: '2px solid #fff' }}
+          style={{ position: 'absolute', top: -3, right: -3, width: 10, height: 10, borderRadius: 999, background: 'var(--c-accent, #0A8560)', border: '2px solid var(--surface, #fff)' }}
         />
       )}
     </button>
@@ -100,10 +106,10 @@ export function DialerPanel({ V }: { V: ClozrView }) {
       data-screen-label="Talkr dialer"
       className="talkr-dialer"
       style={{
-        position: 'fixed', top: sheet ? 0 : 56, right: 0, bottom: sheet ? 0 : V.isMobile ? 'calc(58px + env(safe-area-inset-bottom, 0px) + var(--clozr-callbar, 0px))' : 'var(--clozr-callbar, 0px)',
-        width: V.isMobile ? '100%' : V.dialerWidth, background: 'var(--bg)', borderLeft: '1px solid var(--line)',
+        position: 'fixed', top: sheet || !V.isMobile ? 0 : 56, right: 0, bottom: sheet ? 0 : V.isMobile ? 'calc(58px + env(safe-area-inset-bottom, 0px) + var(--clozr-callbar, 0px))' : 'var(--clozr-callbar, 0px)',
+        width: V.isMobile ? '100%' : V.dialerWidth, maxWidth: V.isMobile ? undefined : 'calc(100vw - 236px)', background: 'var(--bg)', borderLeft: '1px solid var(--line)',
         paddingTop: sheet ? 'env(safe-area-inset-top, 0px)' : undefined, paddingBottom: sheet ? 'env(safe-area-inset-bottom, 0px)' : undefined,
-        boxShadow: '0 2px 6px rgba(18,20,28,0.06),0 28px 60px -24px rgba(18,22,45,0.26)', zIndex: sheet ? 60 : 45,
+        boxShadow: 'var(--shadow-md)', zIndex: sheet ? 'var(--z-popover)' : 'calc(var(--z-drawer) - 1)',
         display: 'flex', flexDirection: 'column', animation: 'clozrIn .2s cubic-bezier(0.22,1,0.36,1)',
       }}
     >
@@ -124,13 +130,13 @@ export function DialerPanel({ V }: { V: ClozrView }) {
           onClick={V.closeDialer}
           aria-label="Close dialer"
           className="inline-flex items-center justify-center"
-          style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--muted)', cursor: 'pointer' }}
+          style={{ width: V.isMobile ? 44 : 28, height: V.isMobile ? 44 : 28, borderRadius: 8, border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--muted)', cursor: 'pointer' }}
         >
           <Icon name="x" size={13} />
         </button>
       </div>
 
-      <DialSessionBar V={V} />
+      <PowerDialerStrip V={V} />
 
       {V.talkrPhone.extension.holdingSoftphone && (
         // Two softphones under one identity is how an inbound call rings in a
@@ -169,7 +175,6 @@ export function DialerPanel({ V }: { V: ClozrView }) {
             )}
             {V.isQueue && (
               <>
-                <DialSessionStart V={V} />
                 <QueueList V={V} />
               </>
             )}

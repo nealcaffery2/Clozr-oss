@@ -14,7 +14,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { InlineField, type InlineOption, type InlineValue } from '@/components/ds/InlineField';
-import { Badge, btn, GREEN, HAIR, INK, LINE, MUTED, RED } from '@/components/genius/parts';
+import { Badge, btn, GREEN, HAIR, INK, LINE, MUTED, RED } from '@/components/kit/parts';
 import { patchRecord } from '@/lib/crm-write';
 import { saveDeal } from '@/lib/deal-sheet';
 import { DEAL_TYPES } from '@/lib/deal-types';
@@ -150,7 +150,7 @@ export function HandoffCard({ dealId, address, seller, canWrite, readOnlyReason,
   const timing = marketTiming(str('marketing_started_on'), { sold });
   const checks: SopCheck[] = deal ? [
     accessCheck({ occupancy_status: str('occupancy_status'), access_verified_at: str('access_verified_at'), marketing_started_on: str('marketing_started_on') }),
-    compsCheck(str('comps_dated_on')),
+    compsCheck(str('comps_dated_on'), new Date(), str('compr_comps_at')),
     contractCheck({ contract_date: str('contract_date'), contract_status: str('contract_status') }),
   ] : [];
 

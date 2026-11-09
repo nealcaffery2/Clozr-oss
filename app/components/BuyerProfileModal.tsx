@@ -342,9 +342,9 @@ function Num({ l, v, on, prefix, suffix, report = () => {} }: { l: string; v?: n
   return (
     <div><label htmlFor={id} style={label}>{l}</label>
       <div style={{ position: 'relative' }}>
-        {prefix ? <span style={{ position: 'absolute', left: '10px', top: '9px', fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>{prefix}</span> : null}
+        {prefix ? <span style={{ position: 'absolute', left: '10px', top: '9px', fontSize: '12px', color: 'var(--meta, #71717a)' }}>{prefix}</span> : null}
         <input id={id} inputMode="decimal" value={d.text} aria-invalid={d.error ? true : undefined} onChange={(e) => d.change(e.target.value)} style={{ ...field, paddingLeft: prefix ? '22px' : '10px', paddingRight: suffix ? '26px' : '10px', ...(d.error ? { borderColor: '#dc2626' } : {}) }} />
-        {suffix ? <span style={{ position: 'absolute', right: '10px', top: '9px', fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>{suffix}</span> : null}
+        {suffix ? <span style={{ position: 'absolute', right: '10px', top: '9px', fontSize: '12px', color: 'var(--meta, #71717a)' }}>{suffix}</span> : null}
       </div>
       {d.error ? <div role="alert" style={{ fontSize: '11.5px', color: 'var(--tx-red, #b91c1c)', marginTop: '4px' }}>{d.error}</div> : null}
     </div>
@@ -366,7 +366,7 @@ function Range({ l, r, on, prefix, phMin, report = () => {} }: { l: string; r: {
     <div><label style={label}>{l}</label>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <input inputMode="decimal" aria-label={`${l}, low`} value={lo.text} placeholder={phMin ?? (prefix ? '$0' : '0')} onChange={(e) => lo.change(e.target.value)} style={{ ...field, ...(lo.error ? { borderColor: '#dc2626' } : {}) }} />
-        <span style={{ color: 'var(--subtle, #a1a1aa)' }}>–</span>
+        <span style={{ color: 'var(--meta, #71717a)' }}>–</span>
         <input inputMode="decimal" aria-label={`${l}, high`} value={hi.text} placeholder="No max" onChange={(e) => hi.change(e.target.value)} style={{ ...field, ...(hi.error ? { borderColor: '#dc2626' } : {}) }} />
       </div>
       {error ? <div role="alert" style={{ fontSize: '11.5px', color: 'var(--tx-red, #b91c1c)', marginTop: '4px' }}>{error}</div> : null}
@@ -453,7 +453,7 @@ function Locations({ prefs, on }: { prefs: LocationPref[]; on: (p: LocationPref[
               <div id={listId} role="listbox" style={{ position: 'absolute', top: '38px', left: 0, right: 0, zIndex: 5, background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', boxShadow: '0 12px 30px -10px rgba(18,22,45,.25)', maxHeight: '260px', overflowY: 'auto', padding: '4px' }}>
                 {hits.length ? hits.map((p, i) => (
                   <div key={p.name} id={`${listId}-${i}`} role="option" aria-selected={i === hiC} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(p)} onMouseEnter={() => setHi(i)} style={{ padding: '7px 8px', borderRadius: '7px', fontSize: '13px', cursor: 'pointer', background: i === hiC ? 'var(--surface-2, #f4f4f5)' : 'transparent' }}>
-                    {p.name} <span style={{ color: 'var(--subtle, #a1a1aa)', fontSize: '12px' }}>· {formatPop(p.pop)}</span>
+                    {p.name} <span style={{ color: 'var(--meta, #71717a)', fontSize: '12px' }}>· {formatPop(p.pop)}</span>
                   </div>
                 )) : <div style={{ padding: '7px 8px', fontSize: '12px', color: 'var(--meta, #71717a)' }}>{kind === 'city' ? `No city of 5,000+ in ${STATE_NAMES[st]} matches. Smaller towns: add their county.` : `No county in ${STATE_NAMES[st]} matches.`}</div>}
               </div>

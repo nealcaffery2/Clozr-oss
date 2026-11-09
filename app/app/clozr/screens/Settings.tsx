@@ -10,6 +10,7 @@
 import { DataHistory } from '@/components/DataHistory';
 import { useConfirm } from '@/components/ds/Confirm';
 import React, { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { COMPR, DEAL_MACHINE, TALKR } from '@/app/clozr/brand';
 import { INGEST_SOURCES, type IngestKey, type MintedKey, ingestUrl, issueKey, listKeys, setKeyActive, setSigningSecret, talkrWebhookUrl } from '@/lib/ingest';
 import { displayName, useSession } from '@/lib/session';
@@ -25,14 +26,14 @@ import { InvestorBaseCard } from '@/components/InvestorBaseCard';
 import { RoundRobinSettings } from '@/components/RoundRobinSettings';
 import { ensureOnTalkr, syncTeamToTalkr } from '@/app/components/phone/TeammatePhone';
 import { ReadOnlyNote, ViewAsButton } from '@/components/ViewAs';
-import { seg, segWrap, trayBtn } from '@/components/ds/chrome';
 import { READ_ONLY_TITLE, useCanWrite } from '@/lib/read-only-context';
 import { TalkrSettings } from './TalkrSettings';
+import type { RecordingSwitches } from '@/app/components/talkr/DialerParts';
 import { OutboundOsSettings } from './OutboundOsSettings';
-import { lastSettingsTab, onSettingsTab, rememberSettingsTab, takeSettingsTab, type OutboundSettingsTab, type SettingsMain, type SettingsTarget, type TalkrSettingsTab } from './settingsTab';
+import { DEFAULT_SETTINGS_SECTION, SETTINGS_GROUPS, legacySettingsSection, rememberSettingsSection, settingsSectionOf, type DialerSettingsTab, type EmailSettingsTab } from '@/lib/settings-sections';
+import { Account, type SecretListRow } from './Account';
 import { UserAvatar } from '@/components/UserAvatar';
 import { TalkrMark } from '@/app/components/brand/TalkrMark';
-import { PlanBuilder } from '@/app/components/plans/PlanBuilder';
 import { TemplatesManager } from '@/app/components/templates/TemplatesManager';
 import { useTemplates } from '@/app/components/templates/useTemplates';
 import { Mark } from '@/components/ds/mark';
@@ -43,6 +44,7 @@ import { CompanyFacts } from '@/app/components/phone/CompanyFacts';
 import { VoiceAgentSettings } from '@/app/components/voice-agent/VoiceAgentSettings';
 import { AutopilotPanel } from '@/app/components/ai-agent/AutopilotPanel';
 import { ArchiveSettings } from '@/components/ArchiveSettings';
+import { ScreenHeader } from '@/components/ds/Screen';
 
 const DISPLAY: [keyof Prefs, string, string][] = [
   ['compactRows', 'Compact table rows', 'Shorter rows and smaller type on People, Deals and Tasks — more records per screen'],
@@ -67,50 +69,9 @@ const card: React.CSSProperties = {
 };
 
 
-/**
- * The sections, grouped the way the rep thinks about them. The side nav on a
- * desktop and the chip rows on a phone are both drawn from this; the hint is
- * the one line under each pane's title, replacing the intro cards that used
- * to push the controls down the page.
- */
-type NavItem = { tab: string; label: string; hint: string };
-const NAV: { main: SettingsMain; label: string; items: NavItem[] }[] = [
-  { main: 'workspace', label: 'Workspace', items: [
-    { tab: 'general', label: 'General', hint: 'The workspace name, how tables display in this browser, and what this deployment is wired to.' },
-    { tab: 'company', label: 'Company & 10DLC', hint: 'Legal name, EIN, address and the texting campaign — typed once, filed by CLOZR: the 10DLC brand and campaign, the Telnyx enterprise, and Free Caller Registry.' },
-    { tab: 'team', label: 'Team', hint: 'Who is in the workspace and what each role can see. The database enforces the role, not just the menu.' },
-    { tab: 'roundrobin', label: 'Round robin', hint: 'Who new leads and new deals are dealt to: an acquisitions rotation per lead source (yourcompany.com, Jotform), a dispositions rotation for novations. Take anyone out of a rotation and put them back.' },
-    { tab: 'integrations', label: 'Integrations', hint: 'Contracts through PandaDoc, the Podio import, Zapier webhooks, and the ingest keys other systems post with.' },
-    { tab: 'agent', label: 'AI Agent', hint: 'The phone agent that answers sellers and buyers with what the record already knows: connect it to ElevenLabs, choose its voice, and test it before it takes a call.' },
-    { tab: 'keys', label: 'Server keys', hint: 'Project secrets the edge functions read, named here so nothing has to be guessed — the values are never entered or shown.' },
-    { tab: 'archive', label: 'Archive', hint: 'Every archived seller and buyer. Search them and put anyone back on every list.' },
-    { tab: 'history', label: 'Skip trace & import history', hint: 'Every skip trace and import: who ran it, how many records, what came back, and the skip-trace credits it used.' },
-    { tab: 'floor', label: 'Floor show', hint: 'Turn off leaderboard or badge notifications for yourself. Admins also preview the sounds and set the spin-the-wheel prize.' },
-  ] },
-  { main: 'outbound', label: 'Outbound OS', items: [
-    { tab: 'email', label: 'Email deliverability', hint: 'Resend on a sending subdomain for dispo blasts: domain authentication, the daily ramp, suppressions, and the checklist that refuses a blast that would burn reputation.' },
-    { tab: 'google', label: 'Google', hint: 'Gmail for one-to-one email and campaign replies, Calendar sync, and the Google Drive deals folder. CLOZR never adds open-tracking pixels to one-to-one email.' },
-    { tab: 'keys', label: 'Email keys', hint: 'The Resend and Google secrets on the project, and the Resend webhook that lands bounces and complaints on the suppression list.' },
-  ] },
-  { main: 'talkr', label: 'Talkr', items: [
-    { tab: 'account', label: 'Account', hint: 'Your connection to the phone, caller ID, working zone, and the Talkr API origin for a self-hosted Talkr.' },
-    { tab: 'numbers', label: 'Numbers', hint: 'Each person’s numbers and caller ID, call and SMS flows, company lines.' },
-    { tab: 'audio', label: 'Audio & sounds', hint: 'Microphone, speaker, processing, ringtone, your voicemail greeting and notification sounds.' },
-    { tab: 'scripts', label: 'Scripts', hint: 'Call scripts and rebuttals. Managers edit; reps read them during a call.' },
-    { tab: 'templates', label: 'SMS templates', hint: 'What a rep can insert into a text thread, with merge fields filled in when the text is sent.' },
-    { tab: 'calling', label: 'Calling', hint: 'Hold music, AI calling, and the dialing windows in each lead’s local time.' },
-  ] },
-  { main: 'sequences', label: 'Sequences', items: [
-    { tab: 'plans', label: 'Action plans', hint: 'Follow-up sequences sellers and buyers can be enrolled in — texts, calls, emails and waits with a builder and AI draft.' },
-    { tab: 'templates', label: 'Templates', hint: 'SMS and email templates for People, Inbox and bulk sends. Build once, insert anywhere, share with the team.' },
-  ] },
-];
-
-/** A remembered section, if Settings still has it (a stale or hand-edited one opens General instead). */
-const onNav = (t: SettingsTarget | null): SettingsTarget | null => {
-  const g = t ? NAV.find((x) => x.main === t.main) : undefined;
-  return t && g && (!('tab' in t) || !t.tab || g.items.some((i) => i.tab === t.tab)) ? t : null;
-};
+// The groups and sections, with their addresses and hints, live in
+// lib/settings-sections.ts; the side list on a desk and the picker on a phone
+// are drawn from it.
 
 /**
  * The role Settings acts on: during an admin's View as, the teammate's, so the
@@ -123,13 +84,22 @@ function useShownRole(): Role | null {
   return viewAs && isAdmin(realRole) && viewAs.userId !== s.user?.id ? viewAs.role : realRole;
 }
 
-export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs, onToast, talkrAuthed, newDesign = false, onNewDesign }: {
+export function Settings({ isMobile, section: sectionPath, onSection, blacklist, openPerson, openBuyer, openVendor, onImported, onViewAs, onToast, talkrAuthed, newDesign = false, onNewDesign, recording }: {
   isMobile: boolean;
+  /** The section on view, `<group>/<section>`: the address's (lib/settings-sections.ts). */
+  section: string;
+  /** Go to another section: a navigation, so it gets its own address and history entry. */
+  onSection: (section: string) => void;
+  /** You › Account's blacklist. */
+  blacklist?: { rows: SecretListRow[]; restore: (id: string) => void };
+  /** Record call and AI transcription, from the view model: Phone, Calling. */
+  recording?: RecordingSwitches;
   /** Try new design, from the view model (prefs.ts), so a flip applies everywhere at once. */
   newDesign?: boolean;
   onNewDesign?: (on: boolean) => void;
   openPerson?: (id: string) => void;
   openBuyer?: (id: string) => void;
+  openVendor?: (id: string) => void;
   onImported?: () => void;
   onViewAs?: () => void;
   onToast?: (msg: string) => void;
@@ -171,40 +141,26 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
   const owner = role === 'owner';
   const admin = isAdmin(role);
 
-  // Where we are: a group and a section in it. Seeded from a hand-off ("Manage
-  // scripts" in a call), else the section last open in this tab, and followed
-  // while open.
-  const [target, setTarget] = useState<SettingsTarget>(() => takeSettingsTab() ?? onNav(lastSettingsTab()) ?? { main: 'workspace' });
-  useEffect(() => onSettingsTab(setTarget), []);
-  useEffect(() => rememberSettingsTab(target), [target]);
-  const group = NAV.find((g) => g.main === target.main) ?? NAV[0];
-  const tab = ('tab' in target && target.tab) || group.items[0].tab;
-  const section = group.items.find((i) => i.tab === tab) ?? group.items[0];
-  const open = (main: SettingsMain, t?: string) => {
-    const g = NAV.find((x) => x.main === main) ?? NAV[0];
-    setTarget({ main: g.main, tab: t && g.items.some((i) => i.tab === t) ? t : g.items[0].tab } as SettingsTarget);
-  };
-  const openTalkr = (t: TalkrSettingsTab) => open('talkr', t);
+  // Where we are: a group and a section in it, as the address names them
+  // (/app/settings/dialer/numbers). Remembered for a bare /app/settings in this tab.
+  const at = settingsSectionOf(sectionPath) ?? settingsSectionOf(DEFAULT_SETTINGS_SECTION)!;
+  const { group, section } = at;
+  const tab = section.tab;
+  useEffect(() => rememberSettingsSection(at.path), [at.path]);
+  const open = (path: string) => onSection(path);
+  /** The dialer's own links between its panes ("Numbers" from Connection). */
+  const openTalkr = (t: DialerSettingsTab | 'templates') => open(legacySettingsSection({ main: 'talkr', tab: t }) ?? 'dialer/connection');
   const link: React.CSSProperties = { padding: 0, border: 0, background: 'none', color: 'var(--tx-mint, #0a8560)', fontWeight: 600, fontSize: 'inherit', cursor: 'pointer' };
 
   let pane: React.ReactNode;
-  if (target.main === 'talkr') {
-    pane = <TalkrSettings tab={tab as TalkrSettingsTab} onTab={openTalkr} isMobile={isMobile} nav={false} />;
-  } else if (target.main === 'outbound') {
-    pane = <OutboundOsSettings section={tab as OutboundSettingsTab} isMobile={isMobile} />;
-  } else if (target.main === 'sequences') {
-    pane = tab === 'templates'
-      ? <SettingsTemplates isMobile={isMobile} onToast={onToast} talkrAuthed={!!talkrAuthed} />
-      : (
-        <div style={{ margin: isMobile ? '-4px -14px 0' : '-8px -20px 0', minHeight: '70vh' }}>
-          <PlanBuilder
-            isMobile={isMobile}
-            notify={onToast}
-            onChanged={onImported}
-            onOpenPerson={openPerson ? (id) => openPerson('s' + id) : undefined}
-          />
-        </div>
-      );
+  if (section.pane === 'dialer') {
+    pane = <TalkrSettings tab={tab as DialerSettingsTab} onTab={openTalkr} isMobile={isMobile} nav={false} recording={recording} />;
+  } else if (section.pane === 'email') {
+    pane = <OutboundOsSettings section={tab as EmailSettingsTab} isMobile={isMobile} />;
+  } else if (section.pane === 'templates') {
+    pane = <SettingsTemplates isMobile={isMobile} onToast={onToast} talkrAuthed={!!talkrAuthed} />;
+  } else if (section.pane === 'account') {
+    pane = <Account isMobile={isMobile} blacklist={blacklist} embedded />;
   } else if (tab === 'team') {
     pane = (
       <Team onChanged={onImported}
@@ -254,7 +210,7 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
         workspaceId={s.workspace?.id ?? null}
         canWrite={!s.demo && canWrite}
         onRestored={onImported}
-        onOpen={(kind, id) => (kind === 'buyer' ? openBuyer?.('b' + id) : openPerson?.('s' + id))}
+        onOpen={(kind, id) => (kind === 'buyer' ? openBuyer?.('b' + id) : kind === 'vendor' ? openVendor?.('v' + id) : openPerson?.('s' + id))}
       />
     );
   } else if (tab === 'history') {
@@ -271,7 +227,7 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
         {/* Two small cards share a row on a desktop rather than each taking a full-width strip. */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: '0 12px', alignItems: 'stretch' }}>
           <form onSubmit={saveWorkspace} style={{ ...card, display: 'flex', flexDirection: 'column' }}>
-            <h2 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 600 }}>Workspace</h2>
+            <h2 className="t-title" style={{ margin: '0 0 4px' }}>Workspace</h2>
             <p style={{ margin: '0 0 14px', fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>
               {owner ? 'You own this workspace.' : 'Only an owner can rename the workspace.'}
             </p>
@@ -280,14 +236,14 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
               <input value={ws} onChange={(e) => setWs(e.target.value)} disabled={!owner || s.demo} placeholder="Acme Homes" style={{ width: '100%', height: '36px', padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', fontSize: '13px', outline: 0, background: 'var(--canvas, #fafafa)', color: owner && !s.demo ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)' }} />
             </label>
             <div style={{ marginTop: 'auto', paddingTop: '14px' }}>
-              <button type="submit" disabled={busy || !owner || s.demo || !canWrite} title={canWrite ? undefined : READ_ONLY_TITLE} className="dc3" style={{ height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid #0A8560', background: busy || !owner || s.demo || !canWrite ? '#7fcbb2' : '#0A8560', color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: busy || !owner || s.demo || !canWrite ? 'not-allowed' : 'pointer' }}>
+              <button type="submit" disabled={busy || !owner || s.demo || !canWrite} title={canWrite ? undefined : READ_ONLY_TITLE} className="dc3" style={{ height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid #0A8560', background: '#0A8560', opacity: busy || !owner || s.demo || !canWrite ? 0.5 : 1, color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: busy || !owner || s.demo || !canWrite ? 'not-allowed' : 'pointer' }}>
                 Save workspace
               </button>
             </div>
           </form>
 
           <div style={card}>
-            <h2 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 600 }}>Display</h2>
+            <h2 className="t-title" style={{ margin: '0 0 4px' }}>Display</h2>
             <p style={{ margin: '0 0 6px', fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>
               Remembered in this browser.
             </p>
@@ -300,8 +256,8 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
                 </span>
               </label>
             ))}
-            <div role="group" aria-labelledby="settings-theme" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 0 2px', marginTop: '9px', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
-              <span style={{ minWidth: 0, flex: 1 }}>
+            <div role="group" aria-labelledby="settings-theme" style={{ display: 'flex', alignItems: 'center', gap: '8px 12px', flexWrap: 'wrap', padding: '11px 0 2px', marginTop: '9px', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
+              <span style={{ minWidth: 0, flex: '1 1 220px' }}>
                 <span id="settings-theme" style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--ink, #18181b)' }}>Theme</span>
                 <span style={{ display: 'block', fontSize: '12px', color: 'var(--meta, #71717a)', marginTop: '1px' }}>Dark keeps every colour that means something. System follows this device.</span>
               </span>
@@ -320,7 +276,7 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
         </div>
 
         <div style={card}>
-          <h2 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 600 }}>Connections</h2>
+          <h2 className="t-title" style={{ margin: '0 0 4px' }}>Connections</h2>
           <p style={{ margin: '0 0 6px', fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>
             What this deployment is wired to right now.
           </p>
@@ -330,10 +286,10 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
             detail={s.demo ? 'Not configured — the CRM is running on sample data' : 'Connected · auth and the live database'}
           />
           <Connection dot={COMPR} name="COMPR" detail="Underwriting · ARV, rehab and MAO on the property record" />
-          <Connection dot="#0A8560" name="Outbound OS" detail={<>Campaign email, sending domain, Gmail 1:1 and suppressions — <button type="button" onClick={() => open('outbound', 'email')} style={link}>Outbound OS</button></>} />
-          <Connection dot={TALKR} mark={<TalkrMark size={14} />} name="Talkr" detail={<>The phone: calls, texts, recordings and the live coach — <button type="button" onClick={() => openTalkr('account')} style={link}>Talkr settings</button></>} />
-          <Connection dot="#16a34a" name="Contracts" detail={<>Acme Homes PandaDoc templates · webhook (no API) · TC proofs and sends — <button type="button" onClick={() => open('workspace', 'integrations')} style={link}>Integrations</button></>} />
-          <Connection dot="#0A8560" name="Genius Mode" detail="Nearby cash buyers from RealEstateAPI sales records, skip tracing split by owner: individuals on RealEstateAPI, LLCs on BatchData (billed per hit) · find it on Dispo → a property → Genius Mode, or Buyers → Find cash buyers" />
+          <Connection dot="#0A8560" name="Outbound OS" detail={<>Campaign email, sending domain, Gmail 1:1 and suppressions — <button type="button" onClick={() => open('email/deliverability')} style={link}>Email settings</button></>} />
+          <Connection dot={TALKR} mark={<TalkrMark size={14} />} name="Talkr" detail={<>The phone: calls, texts, recordings and the live coach — <button type="button" onClick={() => open('dialer/connection')} style={link}>Dialer settings</button></>} />
+          <Connection dot="#16a34a" name="Contracts" detail={<>Acme Homes PandaDoc templates · webhook (no API) · TC proofs and sends — <button type="button" onClick={() => open('workspace/integrations')} style={link}>Integrations</button></>} />
+          <Connection dot="#0A8560" name="Skip trace" detail="Phones and emails for sellers and buyers from RealEstateAPI (billed per hit, only on click) · People, Buyers or a record → Skip trace" />
           <Connection dot={DEAL_MACHINE} name="Deal Machine" detail="The scraper extension: InvestorLift, Facebook groups and RealEstateBees, posted in through its ingest key · find it on the Deal Machine button in the top bar, or ⌘K" />
           <Connection dot="#db2777" name="Lane" detail="TC assistant · live on Claude with the TC playbook · open it with the Lane button on Deals, a deal, the TC file, the top bar, ⌘K or the L key" last />
         </div>
@@ -343,43 +299,37 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
 
   return (
     <section data-screen-label="Settings" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-      <div data-head style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)', flex: 'none', flexWrap: 'wrap' }}>
-        <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em' }}>Settings</h1>
-        <span style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>{group.label} · {section.label}</span>
-      </div>
-
       {isMobile ? (
-        <div style={{ background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)', padding: '8px 12px 10px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 'none' }}>
-          <div role="tablist" aria-label="Settings" style={{ ...segWrap, width: '100%', display: 'flex' }}>
-            {NAV.map((g) => (
-              <button key={g.main} type="button" role="tab" aria-selected={group.main === g.main} onClick={() => open(g.main)} style={{ ...seg(group.main === g.main), flex: 1, justifyContent: 'center', height: 30 }}>
-                {g.main === 'talkr' ? <TalkrMark size={13} /> : null}{g.label}
-              </button>
-            ))}
+        // A phone gets one picker for every section: the OS list shows all of them with their
+        // groups, where two rows of scrolling chips hid most sections and took a fifth of the screen.
+        <ScreenHeader title="Settings" after={
+          <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+            <select aria-label="Settings section" value={at.path} className="cz-settings-pick"
+              onChange={(e) => open(e.target.value)}
+              style={{ width: '100%', height: '44px', padding: '0 36px 0 12px', appearance: 'none', WebkitAppearance: 'none', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px', background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)', fontSize: '16px', fontWeight: 600, fontFamily: 'inherit', textOverflow: 'ellipsis', cursor: 'pointer' }}>
+              {SETTINGS_GROUPS.map((g) => (
+                <optgroup key={g.slug} label={g.label}>
+                  {g.sections.map((it) => <option key={it.slug} value={`${g.slug}/${it.slug}`}>{it.label}</option>)}
+                </optgroup>
+              ))}
+            </select>
+            <ChevronDown size={18} aria-hidden="true" style={{ position: 'absolute', right: '12px', top: '13px', color: 'var(--meta, #71717a)', pointerEvents: 'none' }} />
           </div>
-          <div role="tablist" aria-label={group.label + ' sections'} style={{ display: 'flex', gap: '6px', overflowX: 'auto', scrollbarWidth: 'none' }}>
-            {group.items.map((it) => {
-              const on = it.tab === tab;
-              return (
-                <button key={it.tab} type="button" role="tab" aria-selected={on} onClick={() => open(group.main, it.tab)} style={{ ...trayBtn(on) }}>
-                  {it.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
+        } />
+      ) : (
+        <ScreenHeader title="Settings" meta={`${group.label} · ${section.label}`} />
+      )}
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         {!isMobile ? (
           <nav aria-label="Settings" style={{ width: '220px', flex: 'none', borderRight: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', overflow: 'auto', padding: '12px 10px' }}>
-            {NAV.map((g) => (
-              <div key={g.main} style={{ marginBottom: '14px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', fontWeight: 500, color: 'var(--meta, #71717a)', padding: '4px 8px 6px' }}>{g.main === 'talkr' ? <TalkrMark size={12} /> : null}{g.label}</div>
-                {g.items.map((it) => {
-                  const on = g.main === group.main && it.tab === tab;
+            {SETTINGS_GROUPS.map((g) => (
+              <div key={g.slug} role="group" aria-label={g.label} style={{ marginBottom: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', fontWeight: 500, color: 'var(--meta, #71717a)', padding: '4px 8px 6px' }}>{g.label}</div>
+                {g.sections.map((it) => {
+                  const on = g.slug === group.slug && it.slug === section.slug;
                   return (
-                    <button key={it.tab} type="button" aria-current={on ? 'page' : undefined} onClick={() => open(g.main, it.tab)} className={on ? undefined : 'dc2'} style={{ display: 'flex', alignItems: 'center', width: '100%', height: '32px', padding: '0 10px', borderRadius: '8px', border: 0, background: on ? 'var(--mint-dim, #e7f8f1)' : 'transparent', color: on ? 'var(--tx-mint, #0a8560)' : 'var(--ink-2, #27272a)', fontSize: '13px', fontWeight: on ? 600 : 500, cursor: 'pointer', textAlign: 'left' }}>
+                    <button key={it.slug} type="button" aria-current={on ? 'page' : undefined} onClick={() => open(`${g.slug}/${it.slug}`)} className={on ? undefined : 'dc2'} style={{ display: 'flex', alignItems: 'center', width: '100%', height: '32px', padding: '0 10px', borderRadius: '8px', border: 0, background: on ? 'var(--mint-dim, #e7f8f1)' : 'transparent', color: on ? 'var(--tx-mint, #0a8560)' : 'var(--ink-2, #27272a)', fontSize: '13px', fontWeight: on ? 600 : 500, cursor: 'pointer', textAlign: 'left' }}>
                       {it.label}
                     </button>
                   );
@@ -389,12 +339,13 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
           </nav>
         ) : null}
 
-        <div style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: isMobile ? '12px 14px 28px' : '18px 24px 40px', background: 'var(--canvas, #fafafa)' }}>
-          <div style={{ width: '100%' }}>
-            {onNewDesign ? <NewDesignSwitch on={newDesign} onChange={onNewDesign} /> : null}
+        <div data-settings-pane style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: 'var(--gutter) var(--gutter) 40px', background: 'var(--canvas, #fafafa)' }}>
+          {/* Forms stop at the one form width (DESIGN.md §4) instead of running 1,164px wide. */}
+          <div style={{ width: '100%', maxWidth: 'var(--form-width)' }}>
+            {onNewDesign ? <NewDesignSwitch on={newDesign} onChange={onNewDesign} compact={isMobile} /> : null}
             <div style={{ marginBottom: '12px' }}>
               <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 700, letterSpacing: '-0.01em' }}>{section.label}</h2>
-              <p className="cz-info" style={{ margin: '8px 0 0', maxWidth: '720px' }}>{section.hint}</p>
+              <p className="cz-info ds-prose" style={{ margin: '8px 0 0' }}>{section.hint}</p>
             </div>
             <ReadOnlyNote />
             {pane}
@@ -410,13 +361,14 @@ export function Settings({ isMobile, openPerson, openBuyer, onImported, onViewAs
  * hunting. Off by default; on swaps the People record and the desk Dialer for
  * their new layouts, at once and for this user only (prefs.ts).
  */
-function NewDesignSwitch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+function NewDesignSwitch({ on, onChange, compact }: { on: boolean; onChange: (on: boolean) => void; compact?: boolean }) {
+  // On a phone it is one line, so it does not push every section's controls down a screen.
   return (
-    <div data-testid="new-design" style={{ ...card, display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 16px', marginBottom: '16px' }}>
+    <div data-testid="new-design" style={{ ...card, display: 'flex', alignItems: 'center', gap: '16px', padding: compact ? '8px 12px 8px 14px' : '12px 16px', marginBottom: compact ? '12px' : '16px' }}>
       <div style={{ minWidth: 0, flex: 1 }}>
         <label htmlFor="new-design-switch" id="new-design-label" style={{ display: 'block', fontSize: '13.5px', fontWeight: 650, color: 'var(--ink, #18181b)', cursor: 'pointer' }}>Try new design</label>
-        <p id="new-design-help" style={{ margin: '2px 0 0', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.4 }}>
-          New layouts for People records and the Dialer. Turn off to go back.
+        <p id="new-design-help" style={compact ? { position: 'absolute', width: 1, height: 1, margin: -1, padding: 0, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0 } : { margin: '2px 0 0', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.4 }}>
+          The new seller record layout (deal page). Turn off to go back.
         </p>
       </div>
       <button
@@ -530,7 +482,7 @@ function Team({ workspaceId, myId, myRole, demo, demoName, demoEmail, isMobile, 
     setNote({
       ok: true,
       text: r.emailed
-        ? `Invite re-sent to ${r.email} with a new temporary password.`
+        ? (r.tempPassword ? `Invite re-sent to ${r.email} with a new temporary password.` : `Invite re-sent to ${r.email}. They sign in with the password they already have.`)
         : (r.warning ?? `Password reset for ${r.email}, but the email did not send — share the password below.`),
     });
   }
@@ -563,7 +515,7 @@ function Team({ workspaceId, myId, myRole, demo, demoName, demoEmail, isMobile, 
 
   return (
     <div style={card}>
-      <h2 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 600 }}>Team</h2>
+      <h2 className="t-title" style={{ margin: '0 0 4px' }}>Team</h2>
       <p style={{ margin: '0 0 12px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
         Acquisitions works leads through contract and never sees buyers or dispo — only a buyer&rsquo;s offer when one comes in.
         Dispositions starts at Under Contract. TC has the closing file. The database enforces this, not just the menu.
@@ -623,7 +575,7 @@ function Team({ workspaceId, myId, myRole, demo, demoName, demoEmail, isMobile, 
             <select value={role} onChange={(e) => setRoleField(e.target.value as Role)} style={field}>
               {ASSIGNABLE_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
             </select>
-            <button type="submit" disabled={busy || !email.trim() || !canWrite || (role === 'notary' && !nExp)} title={roTitle} className="dc3" style={{ height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid #0A8560', background: busy || !canWrite ? '#7fcbb2' : '#0A8560', color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: busy || !canWrite ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+            <button type="submit" disabled={busy || !email.trim() || !canWrite || (role === 'notary' && !nExp)} title={roTitle} className="dc3" style={{ height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid #0A8560', background: '#0A8560', opacity: busy || !canWrite ? 0.5 : 1, color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: busy || !canWrite ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
               {busy ? 'Adding…' : 'Add'}
             </button>
           </div>
@@ -670,7 +622,7 @@ function ServerSecrets({ isMobile }: { isMobile: boolean }) {
   const code: React.CSSProperties = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '12px', color: 'var(--ink, #18181b)', wordBreak: 'break-all' };
   return (
     <div style={card}>
-      <h2 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 600 }}>Server keys (optional)</h2>
+      <h2 className="t-title" style={{ margin: '0 0 4px' }}>Server keys (optional)</h2>
       <p style={{ margin: '0 0 10px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
         Project secrets on the Supabase project (Edge Functions → Secrets), read only by the server. Offers and contracts use Acme Homes PandaDoc templates through the webhook — the API key is optional and unused if you only have webhooks.
         The webhook URL below is what PandaDoc posts to so status and signing links land on the record. Resend, Gmail and the blast domain live under Settings → Outbound OS.
@@ -678,9 +630,9 @@ function ServerSecrets({ isMobile }: { isMobile: boolean }) {
       <div style={row}><span style={code}>PANDADOC_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>Optional. Only if PandaDoc later gives you a REST key. Not needed for Casey to send from the PandaDoc UI.</span></div>
       <div style={row}><span style={code}>PANDADOC_WEBHOOK_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>The shared key on the PandaDoc webhook. Required. Verifies each delivery before a signed document moves a stage.</span></div>
       <div style={row}><span style={code}>COMPANY_NAME</span><span style={{ color: 'var(--muted, #52525b)' }}>Optional. Fills the [Company.Name] token on templates (defaults to Acme Homes).</span></div>
-      <div style={row}><span style={code}>REAL_ESTATE_API_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>RealEstateAPI · nearby sales and owners for Genius Mode, and skip tracing individual owners ($0.05 a hit, only on click).</span></div>
-      <div style={row}><span style={code}>BATCHDATA_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>BatchData · skip tracing LLCs and other entity owners in Genius Mode, People and Buyers, and individuals too whenever RealEstateAPI is out of credits (billed per match, only on click).</span></div>
-      <div style={row}><span style={code}>ATTOM_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>ATTOM Property API · optional. Genius Mode&apos;s &ldquo;Compare with ATTOM&rdquo; searches ATTOM&apos;s sales and owners beside RealEstateAPI&apos;s and merges them without duplicates (billed by ATTOM per property returned, only when Compare is on).</span></div>
+      <div style={row}><span style={code}>REAL_ESTATE_API_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>RealEstateAPI · skip tracing owners ($0.05 a hit, only on click).</span></div>
+      <div style={row}><span style={code}>BATCHDATA_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>BatchData · skip tracing LLCs and other entity owners in People and Buyers, and individuals too whenever RealEstateAPI is out of credits (billed per match, only on click).</span></div>
+      <div style={row}><span style={code}>ATTOM_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>ATTOM Property API · optional. Owner lookups for the records agent.</span></div>
       <div style={row}><span style={code}>TELNYX_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>Telnyx API v2 key. Required for Register under Company &amp; 10DLC: CLOZR files the 10DLC brand and campaign, attaches your lines, and runs Number Reputation and branded calling with it. Optional as a secret: the functions fall back to Vault telnyx_api_key, a copy of the key Talkr runs on.</span></div>
       <div style={row}><span style={code}>TELNYX_PUBLIC_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>The public key from Telnyx → Account → Keys &amp; credentials. Verifies the 10DLC webhooks, so brand and campaign decisions land within minutes instead of on the next morning check.</span></div>
       <div style={row}><span style={code}>AGENTMAIL_API_KEY</span><span style={{ color: 'var(--muted, #52525b)' }}>Reads the Free Caller Registry verification email from the AgentMail inbox set under Company &amp; 10DLC.</span></div>
@@ -785,7 +737,7 @@ function IngestKeys({
 
   return (
     <div style={card}>
-      <h2 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 600 }}>Ingest keys</h2>
+      <h2 className="t-title" style={{ margin: '0 0 4px' }}>Ingest keys</h2>
       <p style={{ margin: '0 0 14px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.55 }}>
         One key per system. Each one posts to{' '}
         {url ? <code style={{ fontSize: '11.5px', background: 'var(--surface-2, #f4f4f5)', padding: '1px 5px', borderRadius: '4px' }}>{url}</code> : 'the ingest endpoint'}{' '}
@@ -814,11 +766,11 @@ function IngestKeys({
               className="dc3"
               onClick={() => void mint()}
               disabled={busy || !workspaceId}
-              style={{ height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid #0A8560', background: busy || !workspaceId ? '#7fcbb2' : '#0A8560', color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: busy || !workspaceId ? 'not-allowed' : 'pointer' }}
+              style={{ height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid #0A8560', background: '#0A8560', opacity: busy || !workspaceId ? 0.5 : 1, color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: busy || !workspaceId ? 'not-allowed' : 'pointer' }}
             >
               Issue key
             </button>
-            <span style={{ fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>
+            <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>
               {INGEST_SOURCES.find((x) => x.name === source)?.hint}
             </span>
           </div>
@@ -865,14 +817,14 @@ function IngestKeys({
               {keys.map((k, i) => (
                 <div key={k.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 0', borderTop: i === 0 ? '1px solid var(--divider-2, #f0f0f1)' : '1px solid var(--divider-2, #f0f0f1)' }}>
                   <span style={{ minWidth: 0, flex: 1 }}>
-                    <span style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: k.active ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)' }}>
+                    <span style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: k.active ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)' }}>
                       {k.label || k.name}
                     </span>
-                    <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--subtle, #a1a1aa)', fontFamily: 'ui-monospace, monospace' }}>
+                    <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)', fontFamily: 'ui-monospace, monospace' }}>
                       {k.key_prefix}… · {k.last_used_at ? `used ${new Date(k.last_used_at).toLocaleDateString()}` : 'never used'}
                     </span>
                   </span>
-                  <span style={{ fontSize: '11px', fontWeight: 600, color: k.active ? 'var(--tx-mint, #0a8560)' : 'var(--subtle, #a1a1aa)', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: k.active ? 'var(--tx-mint, #0a8560)' : 'var(--meta, #71717a)', whiteSpace: 'nowrap' }}>
                     {k.active ? 'Active' : 'Disabled'}
                   </span>
                   <button
@@ -899,7 +851,7 @@ function IngestKeys({
               )}
             </div>
           ) : (
-            <p style={{ marginTop: '14px', fontSize: '12.5px', color: 'var(--subtle, #a1a1aa)' }}>
+            <p style={{ marginTop: '14px', fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>
               No keys yet. Issue one to connect a system.
             </p>
           )}
@@ -958,11 +910,11 @@ function TalkrSecret({ row, onSaved }: { row: IngestKey; onSaved: () => void }) 
           onClick={() => void save()}
           disabled={busy || secret.trim().length < 8 || !canWrite}
           title={canWrite ? undefined : READ_ONLY_TITLE}
-          style={{ height: '32px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12.5px', fontWeight: 600, cursor: busy || secret.trim().length < 8 || !canWrite ? 'not-allowed' : 'pointer', color: secret.trim().length < 8 ? 'var(--subtle, #a1a1aa)' : 'var(--ink, #18181b)', flex: 'none' }}
+          style={{ height: '32px', padding: '0 12px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12.5px', fontWeight: 600, cursor: busy || secret.trim().length < 8 || !canWrite ? 'not-allowed' : 'pointer', color: secret.trim().length < 8 ? 'var(--meta, #71717a)' : 'var(--ink, #18181b)', flex: 'none' }}
         >
           Save secret
         </button>
-        <span style={{ fontSize: '11px', fontWeight: 600, color: row.has_signing_secret ? 'var(--tx-mint, #0a8560)' : 'var(--subtle, #a1a1aa)', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: '11px', fontWeight: 600, color: row.has_signing_secret ? 'var(--tx-mint, #0a8560)' : 'var(--meta, #71717a)', whiteSpace: 'nowrap' }}>
           {row.has_signing_secret ? 'Verified' : 'Not set'}
         </span>
       </div>

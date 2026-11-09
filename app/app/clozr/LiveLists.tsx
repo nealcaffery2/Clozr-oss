@@ -16,6 +16,7 @@ import { archiveBuyers, archiveVendors, createBuyer, quickBuyerProfile, updateBu
 import { normalizeBuyBox } from '@/lib/buyer-profile';
 import { BULK_BUYER_SOURCE } from '@/lib/prospect-lists';
 import { formatDollars, parseDollars } from '@/lib/money';
+import { ScreenHeader } from '@/components/ds/Screen';
 
 /** Rows a page. 142,878 buyer rows used to come back as the first 1,000. */
 const PAGE = 100;
@@ -284,7 +285,7 @@ export function LiveLists({
   async function deleteRecord(id: number) {
     if (!supabase) return;
     const kind = current === 'Buyers' ? 'buyer' : 'vendor';
-    const ok = await confirm({ title: `Archive this ${kind}?`, body: `It leaves every list. Nothing is deleted; Account restores an archived ${kind}.`, confirmLabel: `Archive ${kind}`, tone: 'danger' });
+    const ok = await confirm({ title: `Archive this ${kind}?`, body: `It leaves every list. Nothing is deleted; Settings, Archive puts it back.`, confirmLabel: `Archive ${kind}`, tone: 'danger' });
     if (!ok) return;
     const r = current === 'Buyers' ? await archiveBuyers([String(id)]) : await archiveVendors([String(id)]);
     if (!r.ok) setError(r.message || 'That did not archive.');
@@ -342,22 +343,20 @@ export function LiveLists({
             {current === item && total != null && <span style={{ fontSize: 11.5, color: 'var(--meta, #71717a)', fontVariantNumeric: 'tabular-nums' }}>{total.toLocaleString('en-US')}</span>}
           </button>
         ))}
-        <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid var(--divider-2, #f0f0f1)', fontSize: 11.5, color: 'var(--subtle, #a1a1aa)', lineHeight: 1.5 }}>
+        <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid var(--divider-2, #f0f0f1)', fontSize: 11.5, color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
           {supabase ? 'Secured by Supabase · scoped to your workspace' : 'Supabase is not configured — set NEXT_PUBLIC_SUPABASE_URL to enable.'}
         </div>
       </aside>
 
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        <div data-head style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderBottom: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)' }}>
-          <h1 style={{ margin: '0 8px 0 0', fontSize: 16, fontWeight: 700, letterSpacing: '-0.02em' }}>{current}</h1>
-          <span role="status" style={{ fontSize: 12, color: 'var(--meta, #71717a)', fontVariantNumeric: 'tabular-nums' }}>{(total ?? visible.length).toLocaleString('en-US')} records</span>
-          {session && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: '#16a34a' }}>
+        <ScreenHeader title={current} meta={<span role="status">{(total ?? visible.length).toLocaleString('en-US')} records</span>}
+          after={session ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: 'var(--tx-green, #15803d)' }}>
               <Mark label="Live" />
               Live
             </span>
-          )}
-          <div style={{ flex: 1 }} />
+          ) : null}
+          actions={<>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 32, padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: 8, background: 'var(--canvas, #fafafa)', width: 220 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--meta, #71717a)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8" />
@@ -371,8 +370,11 @@ export function LiveLists({
               style={{ border: 0, background: 'none', outline: 0, fontSize: 13, width: '100%', minWidth: 0, color: 'var(--ink, #18181b)' }}
             />
           </div>
-          <button onClick={openNew} style={btnDark}>+ Add {current.slice(0, -1).toLowerCase()}</button>
-        </div>
+          <button onClick={openNew} style={{ ...btnDark, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+            Add {current.slice(0, -1).toLowerCase()}
+          </button>
+          </>} />
 
         {error && (
           <div style={{ padding: '8px 16px', background: 'var(--negative-soft, #fee2e2)', color: 'var(--tx-red-deep, #991b1b)', fontSize: 12.5, borderBottom: '1px solid var(--tint-red-2, #fecaca)' }}>{error}</div>
@@ -522,7 +524,7 @@ function Modal({ children, onClose, label, wide }: { children: React.ReactNode; 
         aria-label={label}
         onMouseDown={(e) => e.stopPropagation()}
         style={{
-          width: wide ? 640 : 400, maxWidth: 'calc(100vw - 40px)', maxHeight: 'calc(100vh - 80px)', overflow: 'auto',
+          width: wide ? 640 : 400, maxWidth: 'calc(100vw - 40px)', maxHeight: 'calc(100dvh - 80px)', overflow: 'auto',
           background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: 14, padding: 22,
           boxShadow: '0 2px 6px rgba(18,20,28,0.06), 0 28px 60px -24px rgba(18,22,45,0.26)',
         }}
@@ -536,8 +538,8 @@ function Modal({ children, onClose, label, wide }: { children: React.ReactNode; 
 function Row({ section, record, onEdit, onDelete }: { section: ListSection; record: ListRecord; onEdit: () => void; onDelete: () => void }) {
   const actions = (
     <td style={{ ...td, textAlign: 'right' }}>
-      <button onClick={onEdit} style={{ ...btn, height: 26, padding: '0 9px', fontSize: 12 }}>Edit</button>
-      <button onClick={onDelete} style={{ ...btn, height: 26, padding: '0 9px', marginLeft: 4, fontSize: 12, color: 'var(--tx-red, #b91c1c)' }}>Archive</button>
+      <button onClick={onEdit} aria-label={`Edit ${'name' in record ? record.name : record.business_name}`} style={{ ...btn, height: 26, padding: '0 9px', fontSize: 12 }}>Edit</button>
+      <button onClick={onDelete} aria-label={`Archive ${'name' in record ? record.name : record.business_name}`} style={{ ...btn, height: 26, padding: '0 9px', marginLeft: 4, fontSize: 12, color: 'var(--tx-red, #b91c1c)' }}>Archive</button>
     </td>
   );
 
@@ -545,8 +547,8 @@ function Row({ section, record, onEdit, onDelete }: { section: ListSection; reco
     const b = record as Buyer;
     return (
       <tr>
-        <td style={td}><strong style={{ fontWeight: 600 }}>{b.name}</strong><div style={{ fontSize: 11, color: 'var(--subtle, #a1a1aa)' }}>{b.company || 'Independent buyer'}</div></td>
-        <td style={td}><div>{b.email || 'No email'}</div><div style={{ fontSize: 11, color: 'var(--subtle, #a1a1aa)' }}>{b.phone || 'No phone'}</div></td>
+        <td style={td}><strong style={{ fontWeight: 600 }}>{b.name}</strong><div style={{ fontSize: 11, color: 'var(--meta, #71717a)' }}>{b.company || 'Independent buyer'}</div></td>
+        <td style={td}><div>{b.email || 'No email'}</div><div style={{ fontSize: 11, color: 'var(--meta, #71717a)' }}>{b.phone || 'No phone'}</div></td>
         <td style={td}>{b.markets.join(', ') || '—'}</td>
         <td style={{ ...td, whiteSpace: 'normal', maxWidth: 240 }}>{b.buy_box || '—'}</td>
         <td style={td}>{money(b.max_purchase_price)}</td>
@@ -558,8 +560,8 @@ function Row({ section, record, onEdit, onDelete }: { section: ListSection; reco
   const v = record as Vendor;
   return (
     <tr>
-      <td style={td}><strong style={{ fontWeight: 600 }}>{v.business_name}</strong><div style={{ fontSize: 11, color: 'var(--subtle, #a1a1aa)' }}>{v.contact_name || 'No contact named'}</div></td>
-      <td style={td}><div>{v.email || 'No email'}</div><div style={{ fontSize: 11, color: 'var(--subtle, #a1a1aa)' }}>{v.phone || 'No phone'}</div></td>
+      <td style={td}><strong style={{ fontWeight: 600 }}>{v.business_name}</strong><div style={{ fontSize: 11, color: 'var(--meta, #71717a)' }}>{v.contact_name || 'No contact named'}</div></td>
+      <td style={td}><div>{v.email || 'No email'}</div><div style={{ fontSize: 11, color: 'var(--meta, #71717a)' }}>{v.phone || 'No phone'}</div></td>
       <td style={td}>{v.service_type || '—'}</td>
       <td style={td}>{v.markets.join(', ') || '—'}</td>
       <td style={td}><StatusMarker value={v.status} /></td>

@@ -15,6 +15,7 @@
  */
 
 import type { ReactNode } from 'react';
+import type { SmsReceipt } from '@/lib/sms-receipt';
 
 export function Bubble({
   mine,
@@ -36,7 +37,7 @@ export function Bubble({
   faded?: boolean;
   maxWidth?: string;
 }) {
-  const fill = mine ? 'var(--sms-out, #0B6FE6)' : 'var(--sms-in, #e9e9eb)';
+  const fill = mine ? 'var(--sms-out, #0b6fe6)' : 'var(--sms-in, #e9e9eb)';
   const color = mine ? 'var(--sms-out-text, #fff)' : 'var(--sms-in-text, #18181b)';
   const side = mine ? 'right' : 'left';
 
@@ -78,11 +79,44 @@ export function Bubble({
         )}
       </div>
       {receipt && (
-        <span style={{ padding: mine ? '3px 4px 0 0' : '3px 0 0 4px', font: '500 11px/1 var(--sans)', color: 'var(--muted-2)' }}>
+        <span className="flex flex-col gap-[3px]" style={{ alignItems: mine ? 'flex-end' : 'flex-start', padding: mine ? '3px 4px 0 0' : '3px 0 0 4px', font: '500 11px/1.15 var(--sans)', color: 'var(--muted-2)', textAlign: mine ? 'right' : 'left' }}>
           {receipt}
         </span>
       )}
     </div>
+  );
+}
+
+/**
+ * The iPhone receipt under the last text you sent: "Delivered", "Read 2:14 PM"
+ * (the word semibold, the time regular), "Sending…", or "Not Delivered" in red
+ * with Try again. Put it in Bubble's `receipt`.
+ */
+export function SmsReceiptLine({ receipt, onRetry, retrying = false }: { receipt: SmsReceipt; onRetry?: () => void; retrying?: boolean }) {
+  if (receipt.failed) {
+    return (
+      <span role="status" className="inline-flex items-center gap-1.5" style={{ color: 'var(--red)' }}>
+        <span style={{ fontWeight: 600 }}>Not Delivered</span>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={retrying}
+            // The line is 11px; the padding gives the button a 24px target without moving it.
+            style={{ font: 'inherit', fontWeight: 500, color: 'inherit', cursor: retrying ? 'default' : 'pointer', padding: '6px 4px', margin: '-6px -4px', textDecoration: 'underline', textUnderlineOffset: 2 }}
+          >
+            {retrying ? 'Sending…' : 'Try again'}
+          </button>
+        )}
+      </span>
+    );
+  }
+  if (!receipt.word) return null;
+  return (
+    <span role="status">
+      <span style={{ fontWeight: 600 }}>{receipt.word}</span>
+      {receipt.time && <span style={{ fontWeight: 400 }}> {receipt.time}</span>}
+    </span>
   );
 }
 

@@ -43,7 +43,7 @@ const CO_A = ['Trinity', 'Oak Cliff', 'Bishop Arts', 'Lakewood', 'Cedar Crest', 
   'Casa View', 'Wynnewood', 'Kiest', 'Hampton', 'Singing Hills', 'Westmoreland', 'Glen Oaks'];
 const CO_B = ['Holdings', 'Home Buyers', 'Properties', 'Rentals', 'Renovations', 'Capital', 'Investments', 'Realty Group', 'Homes'];
 const STREETS = ['W Illinois Ave', 'S Hampton Rd', 'Wright St', 'Pierce St', 'N Edgefield Ave', 'W Jefferson Blvd', 'Kessler Pkwy', 'S Polk St', 'Garrett Ave',
-  'W Davis St', 'Clarendon Dr', 'S Morgan St', 'Granger St', 'Plymouth Rd', 'W 10th St', 'Nomas St', 'Bickers St', 'Canada Dr'];
+  'W Davis St', 'Clarendon Dr', 'S Morgan St', 'Brandon St', 'Plymouth Rd', 'W 10th St', 'Nomas St', 'Bickers St', 'Canada Dr'];
 const DEAL = { lat: 32.7349, lng: -96.8981 };
 
 type Gen = { b: CampaignBuyer; match: MatchLite | null; history: MatchLite[]; closed: ClosedDealRow[]; offers: CampaignData['offers'] };
@@ -229,6 +229,15 @@ const REALTORS: CampaignBuyer[] = [
   source: 'dispogenius-free-agents', lastActivityAt: null,
 }));
 
+// The area-code buy-box list: a Texas number, so a Texas buy box. They score
+// under the match cutoff and join a push through the Buyer prospects switch.
+const PROSPECTS: CampaignBuyer[] = ['Marcus Bell', 'Tanya Ruiz', 'Owen Platt', 'Lena Fox', 'Sam Okafor', 'Jill Moss'].map((name, i) => ({
+  id: 91001 + i, name, company: null, phone: `+1214555${String(3100 + i * 17).padStart(4, '0')}`, email: null,
+  status: 'Active', vip: false, vetted: false, blacklisted: false, preferredChannel: 'email_and_sms', wantsFollowUps: true, tags: ['prospecting', 'area-code-buybox'],
+  markets: ['TX'], strategies: [], priceMin: null, priceMax: null, cities: [], zips: [], buyerType: null, notes: null,
+  source: 'import', lastActivityAt: null,
+}));
+
 let cache: DemoMarketing | null = null;
 
 /** The whole demo, built once per page load. `listingBase` is lib/dispo's listingUrl(slug). */
@@ -257,9 +266,9 @@ export function demoMarketing(listingBase: (slug: string) => string, now = new D
   const data: CampaignData = {
     deal: {
       id: DEMO_DEAL_ID, sellerId: null, price: 236000, updatedAt: iso(now.getTime() - 3 * DAY),
-      address: '2207 Willow Street', city: 'Dallas', zip: '75211', lat: DEAL.lat, lng: DEAL.lng, sqft: 1850, beds: 3, baths: 2, propertyType: 'single_family',
+      address: '2207 Willow Street', city: 'Dallas', state: 'TX', zip: '75211', lat: DEAL.lat, lng: DEAL.lng, sqft: 1850, beds: 3, baths: 2, propertyType: 'single_family',
     },
-    buyers, matches, offers, closed, runs: [{ deal_id: DEMO_DEAL_ID, candidates }], inbound: [], photos: PHOTOS, templates: TEMPLATES,
+    buyers: [...buyers, ...PROSPECTS], matches, offers, closed, runs: [{ deal_id: DEMO_DEAL_ID, candidates }], inbound: [], photos: PHOTOS, templates: TEMPLATES,
     gmail: [{ id: 1, email: 'morgan@yourcompany.com', user_id: 'demo' }],
   };
 
@@ -314,7 +323,7 @@ export function demoMarketing(listingBase: (slug: string) => string, now = new D
     if (status === 'active' && b.email) msg('email', 'followup', t0 + 24 * 3600_000 + 125 * 60_000, 'queued', 'Following up: 2207 Willow Street');
   });
 
-  const links: LinkMap = Object.fromEntries(buyers.map((b) => [String(b.id), `${listingBase(SLUG)}${listingBase(SLUG).includes('?') ? '&' : '?'}b=${(b.id * 7919).toString(36)}`]));
+  const links: LinkMap = Object.fromEntries(data.buyers.map((b) => [String(b.id), `${listingBase(SLUG)}${listingBase(SLUG).includes('?') ? '&' : '?'}b=${(b.id * 7919).toString(36)}`]));
   const page: DealPublicLink = {
     id: 1, workspace_id: DEMO_WORKSPACE_ID, deal_id: DEMO_DEAL_ID, slug: SLUG, active: true, show_viewers: false, show_address: false, allow_offers: true, on_marketplace: true,
     headline: '2207 Willow Street · 3/2 value-add in Oak Cliff',
@@ -360,7 +369,7 @@ export function demoMarketing(listingBase: (slug: string) => string, now = new D
           from_email: `morgan${i + 1}@deals.yourcompany.com`,
           from_name: 'Morgan Lane',
           reply_to: 'morgan@yourcompany.com',
-          user_id: '55555555-5555-4555-8555-555555555555',
+          user_id: '3d5c534c-beff-43e2-bc6d-c452022b4314',
           domain: 'deals.yourcompany.com',
           active: true,
           settings: {

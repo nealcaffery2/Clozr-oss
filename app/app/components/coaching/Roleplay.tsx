@@ -9,7 +9,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Mic, MessageSquare, Phone, PhoneOff, Send } from 'lucide-react';
-import { DIFFICULTIES, OBJECTIONS, PERSONAS, type RoleplayFeedback, type RoleplayLine } from '@/lib/roleplay';
+import { COMPR_OBJECTIONS, DIFFICULTIES, OBJECTIONS, PERSONAS, type RoleplayFeedback, type RoleplayLine } from '@/lib/roleplay';
+import { useBuyerListProfile } from '@/lib/buyer-list-profile';
 import { salesManagerApi } from '@/lib/sales-manager-client';
 import { startLiveCall, type CallHandle } from '@/lib/voice-agent-session';
 import { fmtClock } from '@/lib/call-media';
@@ -18,7 +19,12 @@ import { FeedbackView, GREEN, INK, LINE, MUTED, RED, btn, card, eyebrow, primary
 type Phase = 'pick' | 'starting' | 'live' | 'grading' | 'done' | 'armed';
 
 export function Roleplay({ workspaceId, isMobile, onScored, onArmed }: { workspaceId: number | null; isMobile: boolean; onScored?: () => void; onArmed?: () => void }) {
-  const [persona, setPersona] = useState(PERSONAS[0]!.id);
+  // The Compr workspace practises selling Compr; every other workspace practises seller calls.
+  const compr = useBuyerListProfile(workspaceId) === 'compr';
+  const personas = PERSONAS.filter((x) => (x.audience === 'compr') === compr);
+  const objections: readonly { id: string; label: string }[] = compr ? COMPR_OBJECTIONS : OBJECTIONS;
+  const [picked, setPersona] = useState<string | null>(null);
+  const persona = picked && personas.some((x) => x.id === picked) ? picked : personas[0]!.id;
   const [difficulty, setDifficulty] = useState<string>('medium');
   const [objection, setObjection] = useState<string>('');
   const [mode, setMode] = useState<'phone' | 'voice' | 'text'>('phone');
@@ -122,15 +128,15 @@ export function Roleplay({ workspaceId, isMobile, onScored, onArmed }: { workspa
     return <div style={{ ...card, color: MUTED, fontSize: 13 }}>Roleplay runs against a live workspace. Sign in to practise.</div>;
   }
 
-  const p = PERSONAS.find((x) => x.id === persona)!;
+  const p = personas.find((x) => x.id === persona)!;
 
   if (phase === 'pick' || phase === 'starting') {
     return (
       <div style={{ display: 'grid', gap: 14 }}>
         <div>
-          <div style={{ ...eyebrow, marginBottom: 6 }}>Seller persona</div>
+          <div style={{ ...eyebrow, marginBottom: 6 }}>{compr ? 'Prospect' : 'Seller persona'}</div>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
-            {PERSONAS.map((x) => (
+            {personas.map((x) => (
               <button key={x.id} type="button" onClick={() => setPersona(x.id)} aria-pressed={persona === x.id}
                 style={{ textAlign: 'left', ...card, padding: '10px 12px', cursor: 'pointer', border: `1px solid ${persona === x.id ? INK : LINE}`, boxShadow: persona === x.id ? `0 0 0 1px ${INK}` : 'none' }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: INK }}>{x.label}</div>
@@ -153,7 +159,7 @@ export function Roleplay({ workspaceId, isMobile, onScored, onArmed }: { workspa
             <div style={{ ...eyebrow, marginBottom: 6 }}>Objection drill</div>
             <select value={objection} onChange={(e) => setObjection(e.target.value)} style={{ height: 30, borderRadius: 8, border: `1px solid ${LINE}`, padding: '0 8px', fontSize: 12.5 }}>
               <option value="">None, a natural call</option>
-              {OBJECTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+              {objections.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
             </select>
           </div>
           <div>
@@ -202,7 +208,7 @@ export function Roleplay({ workspaceId, isMobile, onScored, onArmed }: { workspa
             {phase === 'live' && session?.mode === 'voice' ? (speaking ? ' · seller talking' : ' · listening') : ''}
           </div>
         </div>
-        {phase === 'live' ? <button type="button" onClick={finish} style={{ ...primary, display: 'inline-flex', alignItems: 'center', gap: 6, background: RED }}><PhoneOff size={13} />Finish and score</button> : null}
+        {phase === 'live' ? <button type="button" onClick={finish} style={{ ...primary, display: 'inline-flex', alignItems: 'center', gap: 6, background: '#b91c1c' }}><PhoneOff size={13} />Finish and score</button> : null}
         {phase === 'done' ? <button type="button" onClick={() => { setPhase('pick'); setSession(null); }} style={primary}>New roleplay</button> : null}
       </div>
       {note ? <div style={{ fontSize: 12.5, color: MUTED }}>{note}</div> : null}

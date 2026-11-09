@@ -9,8 +9,9 @@ import {
   indexPathToId, interpretReply, isDirty, levelPercent, micProblem, modelDiffers, normalizeAgents, normalizeCalls, normalizeConnectErrors, normalizeDetail, normalizeDiff,
   normalizePhone, normalizePreview, normalizePublish, normalizeScenarios, normalizeScore, normalizeSettings, normalizeStats, normalizeTemplates, normalizeVersions, normalizeVoices,
   enabledNote, normalizeEnabled, orderVariables, pushLine, roleLabel, sampleLine, scenarioFits, savePayload, serverErrorsToFields, timeAgo, ttsLabel, tuningIsDefault, validateSettings, voiceTraits,
-  type AgentSettings,
+  asComprProspect, isComprRole, normalizeOverrides, type AgentSettings,
 } from '../lib/voice-agent';
+import { sessionOverrides } from '../lib/voice-agent-session';
 import {
   MAX_AGENTS, addLanguage, agentKeyFor, callHoursOutsideQuiet, canAddAgent, changeSummary, daysSummary, describeChange, diffLines, diffSettings, dirtyTabs, errorsByTab, fieldId,
   formatAvg, formatTime12, formatValue, getIn, gradesSorted, groupChanges, groupWarnings, hoursSummary, insertAtCursor, moveItem, pathCandidates, pathLabel, pathTab, removeAt,
@@ -807,6 +808,16 @@ test('a read-only preview can read, hear and test the agents but not change, pub
   const w = (action: string) => isSupabaseWrite(url, 'POST', JSON.stringify({ action }));
   for (const a of ['list_agents', 'templates', 'get', 'preview_prompt', 'versions', 'diff', 'scenarios', 'calls', 'stats', 'voices', 'preview', 'test_session']) assert.equal(w(a), false, a);
   for (const a of ['save_draft', 'save_settings', 'connect', 'publish', 'rollback', 'create_agent', 'duplicate_agent', 'delete_agent', 'score_call']) assert.equal(w(a), true, a);
+});
+
+test('a draft test sends only the overrides the agent allows', () => {
+  const o = normalizeOverrides({ prompt: 'P', voice_id: 'v1' });
+  assert.deepEqual(o, { prompt: 'P', voice_id: 'v1' });
+  assert.equal(normalizeOverrides({ voice_id: 'v1' }), null);
+  const base = { signed_url: 's', agent_id: 'a', agent_key: 'k', live_version: 1, dynamic_variables: {}, first_message: 'Hi', resolution: null };
+  assert.deepEqual(sessionOverrides({ ...base, overrides: o }), { agent: { firstMessage: 'Hi', prompt: { prompt: 'P' } }, tts: { voiceId: 'v1' } });
+  assert.deepEqual(sessionOverrides({ ...base, overrides: { prompt: 'P' } }), { agent: { firstMessage: 'Hi', prompt: { prompt: 'P' } } });
+  assert.deepEqual(sessionOverrides(base), { agent: { firstMessage: 'Hi' } });
 });
 
 await Promise.all(queue);

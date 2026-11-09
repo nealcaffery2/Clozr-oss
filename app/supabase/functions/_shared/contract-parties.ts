@@ -10,8 +10,9 @@
  * notes it rather than pretending the contract named nobody.
  */
 import { CLAUDE_MODEL } from './models.ts';
+import { recordUsage, type AnthropicUsage } from './ai-usage.ts';
 import { UNTRUSTED_RULE } from './security.ts';
-import type { ContractParties } from './genius-methods.ts';
+import type { ContractParties } from './entity-records.ts';
 
 const SYSTEM = `You read real-estate assignment contracts for a wholesaling CRM. Report the parties and terms exactly as the document prints them.
 
@@ -77,7 +78,8 @@ export async function partiesFromPdf(pdf: Uint8Array, title: string): Promise<Pa
     try { msg = (JSON.parse(text) as { error?: { message?: string } }).error?.message ?? msg; } catch { /* raw */ }
     throw new Error(res.status === 401 ? 'the ANTHROPIC_API_KEY secret is invalid' : `Claude ${res.status}: ${msg}`);
   }
-  const out = JSON.parse(text) as { stop_reason?: string; content?: { type: string; text?: string }[] };
+  const out = JSON.parse(text) as { stop_reason?: string; model?: string; usage?: AnthropicUsage; content?: { type: string; text?: string }[] };
+  await recordUsage(null, { feature: 'contract_parties', model: out.model ?? '', usage: out.usage });
   if (out.stop_reason === 'refusal') throw new Error('Claude declined to read this document');
   const raw = (out.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
   const j = JSON.parse(raw) as ParsedContract;

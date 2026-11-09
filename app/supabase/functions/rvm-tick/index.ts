@@ -10,6 +10,7 @@
  * the RVM tab shows as they are.
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
+import { everyRow } from '../_shared/every-row.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { decideRvm, localMidnightIso, nextWindowOpen, zoneForRvm, DEFAULT_RVM_WINDOW, type RvmDecision, type RvmFacts } from '../../../lib/rvm.ts';
 import { audioKind, dropCowboyPayload, receiptOutcome, slybroadcastFields, type CarrierAudio } from '../../../lib/rvm-carriers.ts';
@@ -17,6 +18,7 @@ import { lineUsable, marketState, rampCap, rampDay, worseRisk, type PoolLine, ty
 import { outreachItem, type OutreachItem } from '../../../lib/talkr-outreach.ts';
 import { telnyxSetting } from '../_shared/telnyx-settings.ts';
 import { postOutreach } from '../_shared/talkr-outreach.ts';
+import { isServiceCaller } from '../_shared/security.ts';
 import {
   claimQueued, historyFacts, must, notesByText, once, readGates, ReadFailed, signedUrlUsable, SIGNED_URL_SECONDS, takeLine,
   type CallerPool, type Gate, type GateDb, type GateRow, type TakenLine,
@@ -78,8 +80,8 @@ Deno.serve(async (req) => {
 
   const bearer = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
   // The cron's key (vault clozr_service_role_key) and this runtime's env key can be
-  // different issues of the service key; accept exactly either one (migration 193).
-  if (!bearer || (bearer !== serviceKey && (await admin.rpc('is_cron_key', { p_key: bearer })).data !== true)) return json({ error: 'service role only' }, 403);
+  // different issues of the service key; accept exactly either one (migration 193), in constant time.
+  if (!(await isServiceCaller(admin, bearer))) return json({ error: 'service role only' }, 403);
   return tick(admin);
 });
 
@@ -129,7 +131,7 @@ async function tickRun(admin: SupabaseClient): Promise<Response> {
     .eq('status', 'sending').is('sent_at', null).lt('scheduled_at', stale).select('id, workspace_id');
   await logFailedMany(admin, [...(timedOut ?? []), ...(neverSent ?? [])] as { id: number; workspace_id: number }[], NO_RECEIPT);
   const pools = new Map<number, Promise<CallerPool>>();
-  // Recordings, signed links and carrier settings, this tick only.
+  // The consent flag, recordings, signed links and carrier settings, this tick only.
   const cache = new Map<string, Promise<unknown>>();
   const sendingTo = new Set<string>();
   const outreach: { workspaceId: number; dropId: number; item: OutreachItem | null }[] = [];
@@ -148,7 +150,7 @@ async function tickRun(admin: SupabaseClient): Promise<Response> {
     for (const d of rows) seenIds.add(d.id);
     // The people, their earlier drops and last calls, one read per table. A
     // failed or cut-short read is not the end: each drop then reads its own.
-    const gates = await readGates(admin as unknown as GateDb, rows, noConsentGate)
+    const gates = await readGates(admin as unknown as GateDb, rows, (ws) => once(cache, `consent:${ws}`, () => comprConsentNeeded(admin, ws)))
       .catch((err) => {
         if (!(err instanceof ReadFailed)) throw err;
         console.error('rvm-tick batch read', err.message);
@@ -227,8 +229,8 @@ async function loadPool(admin: SupabaseClient, workspaceId: number): Promise<Cal
   // The plain rotation is the main lines; a pool line, retired or not, is never one of them.
   const ids = all.filter((l) => l.pool !== 'rvm').map((l) => l.phone_e164);
   const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  const used = must(await admin.from('rvm_drops').select('from_e164')
-    .eq('workspace_id', workspaceId).gte('created_at', since).not('from_e164', 'is', null).limit(5000), "this week's caller ID use");
+  const used = await everyRow<{ from_e164?: string | null }>(() => admin.from('rvm_drops').select('from_e164')
+    .eq('workspace_id', workspaceId).gte('created_at', since).not('from_e164', 'is', null).order('id'));
   const counts: Record<string, number> = {};
   for (const id of ids) counts[id] = 0;
   for (const row of (used ?? []) as { from_e164?: string | null }[]) {
@@ -244,8 +246,8 @@ async function loadPool(admin: SupabaseClient, workspaceId: number): Promise<Cal
     const now = new Date();
     // "Today" is the workspace's Central day (Acme Homes' zone), like the leaderboard's.
     const midnight = localMidnightIso(now, 'America/Chicago');
-    const today = must(await admin.from('rvm_drops').select('from_e164')
-      .eq('workspace_id', workspaceId).gte('sent_at', midnight).in('from_e164', poolRows.map((l) => l.phone_e164)).limit(20_000), "today's pool line use");
+    const today = await everyRow<{ from_e164?: string | null }>(() => admin.from('rvm_drops').select('from_e164')
+      .eq('workspace_id', workspaceId).gte('sent_at', midnight).in('from_e164', poolRows.map((l) => l.phone_e164)).order('id'));
     for (const row of (today ?? []) as { from_e164?: string | null }[]) {
       if (row.from_e164) usedToday[row.from_e164] = (usedToday[row.from_e164] ?? 0) + 1;
     }
@@ -373,8 +375,29 @@ function carrierError(data: Record<string, unknown>, fallback: string): string {
   return String(raw).slice(0, 240);
 }
 
-/** No workspace in this build gates drops on consent (batch.ts readGates asks per workspace). */
-const noConsentGate = async (_ws: number): Promise<boolean> => false;
+/**
+ * Does this workspace run the Compr agent (a compr_agent_settings row); false
+ * before migration 228. The batch read takes it once per tick; a drop about to
+ * go out reads it again, so a new row applies to every send at once.
+ */
+async function comprConsentNeeded(admin: SupabaseClient, ws: number): Promise<boolean> {
+  // The owner can take on reaching cold numbers (outreach_without_consent_at): then no consent is needed.
+  const { data, error } = await admin.from('compr_agent_settings').select('workspace_id, outreach_without_consent_at').eq('workspace_id', ws).maybeSingle();
+  if (error && !/does not exist|schema cache/.test(error.message)) {
+    throw new ReadFailed('check_failed', `could not check whether this workspace needs consent: ${error.message}`);
+  }
+  return !error && !!data && !(data as { outreach_without_consent_at?: string | null }).outreach_without_consent_at;
+}
+
+/** Opted in, or replied to us on any channel. The reply count is read for this drop alone, never cached. */
+async function hasConsent(admin: SupabaseClient, drop: Drop, row: PersonRow | null): Promise<boolean> {
+  // The drop's buyer row (one person per drop), read with opted_in_at.
+  if (drop.buyer_id && row?.opted_in_at) return true;
+  const { count, error } = await admin.from('communications').select('id', { count: 'exact', head: true }).eq('workspace_id', drop.workspace_id)
+    .match(drop.seller_id ? { seller_id: drop.seller_id } : { buyer_id: drop.buyer_id }).eq('direction', 'inbound');
+  if (error) throw new ReadFailed('check_failed', `could not check consent: ${error.message}`);
+  return (count ?? 0) > 0;
+}
 
 type Clip = { id: number; name?: string; script: string | null; audio_path: string | null };
 
@@ -421,6 +444,12 @@ type Judged =
 async function judge(admin: SupabaseClient, drop: Drop, gate: Gate, cache: Map<string, Promise<unknown>>): Promise<Judged> {
   const person = gate.person;
   const row = person.row as PersonRow | null;
+  // Compr (migration 228): no ringless voicemail to a cold number. In a workspace with Compr agent
+  // settings, a drop only goes to someone who opted in (buyers.opted_in_at) or has replied to us.
+  if (gate.consentNeeded && !(await hasConsent(admin, drop, row))) {
+    await admin.from('rvm_drops').update({ status: 'skipped', skip_reason: 'no_consent' }).eq('id', drop.id).eq('status', 'queued');
+    return { done: 'skipped' };
+  }
   const phone = drop.phone_e164 || row?.phone || null;
   const place = drop.seller_id ? propertyOf(row) : { state: null, zip: null };
   const { heard, heardAt, lastDrop, lastAnswered } = historyFacts(gate.prior);
@@ -503,7 +532,7 @@ async function considerSend(
   const batch = gates?.get(drop.id);
   const first = batch ? await judge(admin, drop, batch, cache) : null;
   if (first && 'done' in first) return first.done;
-  const fresh = (await readGates(admin as unknown as GateDb, [drop], noConsentGate)).get(drop.id)!;
+  const fresh = (await readGates(admin as unknown as GateDb, [drop], (ws) => comprConsentNeeded(admin, ws))).get(drop.id)!;
   const judged = await judge(admin, drop, fresh, cache);
   if ('done' in judged) return judged.done;
   const { decision, phone, place, row, clips, now } = judged;

@@ -7,8 +7,8 @@
 // buyer's go to buyer_phones, a seller's to seller_phones), with the whole
 // trace in a note on the record.
 
-import { parseMailingLine, skipTarget, tracePurchaseStub } from '../supabase/functions/_shared/genius-core';
-import { applyTraceToBuyer, skipTraceTargets, traceWrites, type Candidate, type SkipHit, type TraceTarget } from './genius';
+import { parseMailingLine, skipTarget, tracePurchaseStub } from '../supabase/functions/_shared/property-data';
+import { applyTraceToBuyer, skipTraceTargets, traceWrites, type Candidate, type SkipHit, type TraceTarget } from './skip-trace';
 import { logActivity, tagBuyers, tagSellers } from './crm-write';
 import { SKIPTRACE_TAG, logRun, notifyUser } from './data-runs';
 import { addSellerPhones } from './seller-phones';
@@ -46,10 +46,19 @@ function parseAddress(line: string): TraceRecord['address'] {
   return p ? { address: p.address, city: p.city, state: p.state, zip: p.zip } : null;
 }
 
+/** "123 Main St, City, ST 12345" or "123 Main St, City, ST": a street with a city and state is enough to trace. */
+function parsePlace(line: string): TraceRecord['address'] {
+  const full = parseAddress(line);
+  if (full) return full;
+  const m = line.match(/^(.+?),\s*([^,]+),\s*([A-Za-z]{2})/);
+  return m ? { address: m[1].trim(), city: m[2].trim(), state: m[3].toUpperCase(), zip: '' } : null;
+}
+
 /**
- * Buyers carry no address column. Genius-found buyers keep their mailing
- * address in notes ("Mailing: …"); anyone who bought a deal from us owns that
- * property. Mailing first, since an LLC is traced where its person gets mail.
+ * Where to trace a buyer: their mailing address and the property they own
+ * (buyers.mailing_address / property_address, migration 395), else a
+ * "Mailing: …" line in notes, else a deal they bought from us. Mailing first,
+ * since an LLC is traced where its person gets mail.
  */
 export async function findBuyerAddresses(workspaceId: number, recs: TraceRecord[]): Promise<TraceRecord[]> {
   if (!supabase || !recs.length) return recs;
@@ -59,10 +68,15 @@ export async function findBuyerAddresses(workspaceId: number, recs: TraceRecord[
   for (let i = 0; i < ids.length; i += 200) {
     const chunk = ids.slice(i, i + 200);
     const [b, d] = await Promise.all([
-      supabase.from('buyers').select('id, notes').eq('workspace_id', workspaceId).in('id', chunk),
+      supabase.from('buyers').select('id, notes, mailing_address, property_address').eq('workspace_id', workspaceId).in('id', chunk),
       supabase.from('deals').select('buyer_id, property_id').eq('workspace_id', workspaceId).in('buyer_id', chunk).not('property_id', 'is', null),
     ]);
-    for (const r of b.data ?? []) if (r.notes) notes.set(r.id, r.notes);
+    for (const r of b.data ?? []) {
+      const mail = r.mailing_address ?? r.notes?.match(/Mailing:\s*([^\n]+?)\.?\s*(?:$|\n)/)?.[1] ?? null;
+      if (mail) notes.set(r.id, mail);
+      const own = r.property_address ? parsePlace(r.property_address) : null;
+      if (own) bought.set(r.id, own);
+    }
     const props = [...new Set((d.data ?? []).map((x) => x.property_id).filter((x): x is number => x != null))];
     if (props.length) {
       const { data: p } = await supabase.from('properties').select('id, line1, city, state, zip').in('id', props);
@@ -76,7 +90,7 @@ export async function findBuyerAddresses(workspaceId: number, recs: TraceRecord[
     }
   }
   return recs.map((r) => {
-    const mail = notes.get(r.dbId)?.match(/Mailing:\s*([^\n]+?)\.?\s*(?:$|\n)/)?.[1] ?? null;
+    const mail = notes.get(r.dbId) ?? null;
     return { ...r, mailing: mail && parseAddress(mail) ? mail : null, address: r.address ?? bought.get(r.dbId) ?? null };
   });
 }

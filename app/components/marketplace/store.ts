@@ -4,6 +4,7 @@ import { useMemo, useSyncExternalStore } from 'react';
 import { SUPABASE_URL } from '@/lib/supabase';
 import { streetViewImage } from '@/lib/property-links';
 import type { Listing } from '@/lib/marketplace-public';
+import { readSigninHash } from '@/supabase/functions/_shared/market-signin';
 
 const BASE = SUPABASE_URL.replace(/\/+$/, '') + '/functions/v1/listing';
 
@@ -52,6 +53,19 @@ export function useAccess(): Access | null {
 }
 
 export const saveAccess = (a: Access | null) => writeKey(ACCESS_KEY, a ? JSON.stringify(a) : null);
+
+/**
+ * The sign-in link /access emails or texts carries the token in the URL
+ * fragment (#access=…&name=…). Store it, drop it from the address bar, and
+ * return the first name it carried; undefined when there was no link.
+ */
+export function takeLinkAccess(): { name: string | null } | undefined {
+  const link = readSigninHash(window.location.hash);
+  if (!link) return undefined;
+  saveAccess({ token: link.token, name: link.name, buyerId: null });
+  window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
+  return { name: link.name };
+}
 
 export function useSaved(): string[] {
   const raw = useSyncExternalStore(subscribe, readKey(SAVED_KEY), () => '');

@@ -167,12 +167,19 @@ ok('subject to written agreement', /subject to a written agreement, title/.test(
 
 // ---- live transfer ----
 ok('transfer off: cannot transfer', /You cannot transfer calls/.test(P(mk({ live_transfer: { enabled: false, destinations: [] } }))));
-ok('by default a positive call is handed to the rep, or booked today when they are tied up', /A positive conversation goes to a person while it is warm/.test(P(D)) && /If \{\{rep_available\}\} is "no" or \{\{rep_phone\}\} is empty/.test(P(D)) && /book the soonest time today on their calendar/.test(P(D)));
+ok('by default a positive call is handed to the rep, or booked today when there is nobody to ring', /A positive conversation goes to a person while it is warm/.test(P(D)) && /If \{\{rep_phone\}\} is empty, there is nobody to ring/.test(P(D)) && /book the soonest time today on their calendar/.test(P(D)));
+ok('a caller who asks for the rep is still transferred when their calendar shows busy', /If \{\{rep_available\}\} is "no".*when the caller asks for them or for a person, still try the transfer first/.test(P(D)));
 const xfer = mk({ live_transfer: { enabled: true, mode: 'warm', destinations: [{ label: 'Office', number: '2105550100' }], triggers: { asks_for_person: true, hot_lead: true, angry_or_escalating: true, legal_or_complex: true, above_range: true, custom: [{ text: 'They mention a lawyer' }] }, fallback: 'apologize_end' }, offer_authority: { mode: 'range_only' } });
 const xp = P(xfer);
 ok('transfer on: the tool and every trigger', /transfer_to_number tool, when: the caller asks to speak to a person; the conversation is positive/.test(xp) && /angry/.test(xp) && /legal or too complex/.test(xp) && /above your approved range/.test(xp) && /They mention a lawyer/.test(xp));
 ok('warm vs cold wording', /warm hand-off, never a surprise/.test(xp) && /only transfer on a yes/.test(xp) && /Tell the caller in one short sentence that you are transferring them/.test(P(mk({ live_transfer: { mode: 'cold' } }, xfer))));
 ok('fallbacks', /apologize, say the team will be in touch/.test(xp) && /offer to take a message/.test(P(mk({ live_transfer: { fallback: 'voicemail' } }, xfer))) && /book the soonest time today on their calendar with book_appointment/.test(P(mk({ live_transfer: { fallback: 'book_callback' } }, xfer))) && /agree the soonest callback time today and note it/.test(P(mk({ live_transfer: { fallback: 'book_callback' }, tools: { book_appointment: { enabled: false } } }, xfer))));
+{
+  const bc = P(mk({ live_transfer: { fallback: 'book_callback' } }, xfer));
+  const bcNoBook = P(mk({ live_transfer: { fallback: 'book_callback' }, tools: { book_appointment: { enabled: false } } }, xfer));
+  ok('transfer fallback is honest: nobody picked up, no invented excuse', [bc, bcNoBook].every((p) => /nobody picked up on our side/.test(p) && /Never invent a reason/.test(p) && !/say they just stepped away/.test(p)));
+  ok('transfer fallback checks the time against times the caller ruled out', [bc, bcNoBook].every((p) => /check the time against any time the caller said does not work/.test(p)));
+}
 eq('the above_range trigger is dropped while offers are off', transferTriggers(mk({ live_transfer: { enabled: true, destinations: [{ number: '2105550100' }], triggers: { above_range: true, asks_for_person: false, hot_lead: false } } })), []);
 eq('transferTriggers lists the enabled ones in order', transferTriggers(xfer).length, 6);
 ok('enabled with no destination behaves as off', /You cannot transfer calls/.test(P(mk({ live_transfer: { enabled: true, destinations: [] } }))));
@@ -209,6 +216,14 @@ ok('lead manager never offers a price', /You do not make offers/.test(P(withTemp
   eq('Riley has no warning-level findings', promptWarnings(riley, TEMPLATES).filter((w) => w.level === 'warning'), []);
   ok('one number is still the default quote', /State one number inside the range|Start at or near \{\{offer_low\}\}/.test(P(withTemplate('acquisitions'))) && !/Give it as a range/.test(P(withTemplate('acquisitions'))));
   eq('<<if offers>> follows offer authority', [resolveConditionals('<<if offers>>a<<else>>b<<end>>', mk({ offer_authority: { mode: 'range_only' } })), resolveConditionals('<<if offers>>a<<else>>b<<end>>', D)], ['a', 'b']);
+}
+ok('the opening block waits for hello, then says opening_line', /when they say hello, start with \{\{opening_line\}\}/.test(P(D)) && /If \{\{opening_line\}\} is empty, your first line has already been said/.test(P(D)));
+{
+  // Cody: Compr's demo setter calls investors about a demo, not about buying or selling a house.
+  const cp = P(mk({ live_transfer: { enabled: true, mode: 'warm', destinations: [{ id: 'alex', label: 'Alex', number: '(210) 555-0100' }] } }, withTemplate('compr_demo_setter')));
+  ok('Compr opener asks what they are working on, never whether they are still buying', /first real question from your script, for a Compr lead: what are they working on right now/.test(cp) && !/are they still buying/.test(cp), cp);
+  ok('Compr transfer goes to Alex with an investor brief, no acquisitions or seller copy', /Want me to grab Alex real quick\?/.test(cp) && /the address they want run/.test(cp) && !/acquisitions team|why they are selling/.test(cp), cp);
+  ok('buyer assistant keeps the buyer opener', /are they still buying/.test(P(withTemplate('buyer_assistant'))));
 }
 ok('lead manager forbids guarantee wording', /Never say these words or phrases: "no fees", "guaranteed cash", "guaranteed closing", "guaranteed price"/.test(P(withTemplate('lead_manager'))));
 ok('acquisitions has an approved range and approval', /approved range is \{\{offer_low\}\} to \{\{offer_high\}\}/.test(P(withTemplate('acquisitions'))) && /A person on the team approves any agreement/.test(P(withTemplate('acquisitions'))));

@@ -43,25 +43,25 @@ export function OfferHistory({ h, refreshKey }: { h: HistoryKey; refreshKey: str
   return (
     <div data-testid="offer-history" style={{ marginTop: '12px' }}>
       <div style={label}>Offers and counters</div>
-      {rows === null ? <div style={{ fontSize: '12px', color: '#71717a', marginTop: '4px' }}>Loading…</div>
-        : !rows.length ? <div style={{ fontSize: '12px', color: '#71717a', marginTop: '4px' }}>None yet.</div>
+      {rows === null ? <div style={{ fontSize: '12px', color: 'var(--meta, #71717a)', marginTop: '4px' }}>Loading…</div>
+        : !rows.length ? <div style={{ fontSize: '12px', color: 'var(--meta, #71717a)', marginTop: '4px' }}>None yet.</div>
           : rows.map((o) => (
             <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '12px', padding: '3px 0' }}>
-              <span style={{ color: o.direction === 'inbound' ? '#b45309' : '#18181b', fontWeight: 600 }}>
+              <span style={{ color: o.direction === 'inbound' ? '#b45309' : 'var(--ink, #18181b)', fontWeight: 600 }}>
                 {o.direction === 'inbound' ? 'Counter' : 'Offer'} <span className="rec-money">{offerMoney(o.amount)}</span>
               </span>
-              <span style={{ color: '#71717a', whiteSpace: 'nowrap' }}>{o.direction === 'outbound' && o.status ? o.status + ' · ' : ''}{day(o.created_at)}</span>
+              <span style={{ color: 'var(--meta, #71717a)', whiteSpace: 'nowrap' }}>{o.direction === 'outbound' && o.status ? o.status + ' · ' : ''}{day(o.created_at)}</span>
             </div>
           ))}
       {h.canWrite ? (
         <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
           <input aria-label="Their counter" inputMode="decimal" placeholder="Their counter $" value={counter} onChange={(e) => setCounter(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void save(); } }}
-            style={{ flex: 1, minWidth: 0, height: '28px', padding: '0 8px', borderRadius: '8px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '12px' }} />
+            style={{ flex: 1, minWidth: 0, height: '28px', padding: '0 8px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px' }} />
           <button type="button" className="dc2 rec-press" disabled={busy} onClick={() => void save()} style={{ ...ghostBtn, fontSize: '12px', padding: '0 10px', height: '28px' }}>{busy ? 'Saving…' : 'Log counter'}</button>
         </div>
       ) : null}
-      {err ? <div style={{ fontSize: '11px', color: '#b91c1c', marginTop: '4px' }}>{err}</div> : null}
+      {err ? <div style={{ fontSize: '11px', color: 'var(--tx-red, #b91c1c)', marginTop: '4px' }}>{err}</div> : null}
     </div>
   );
 }
@@ -93,10 +93,10 @@ export function UnderwriterStages({ V }: { V: ClozrView }) {
               onClick={() => move(stage)}
               style={{
                 height: '28px', padding: '0 10px', borderRadius: '8px', border: 0,
-                background: on ? '#18181b' : '#fff',
+                background: on ? 'var(--ink, #18181b)' : 'var(--surface, #fff)',
                 boxShadow: on ? 'none' : 'var(--shadow-ring)',
                 fontSize: '12px', cursor: 'pointer',
-                color: on ? '#fff' : '#3f3f46', fontWeight: on ? 600 : 500,
+                color: on ? 'var(--surface, #fff)' : 'var(--ink-3, #3f3f46)', fontWeight: on ? 600 : 500,
                 maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}
             >
@@ -132,11 +132,11 @@ export function OfferVsAsking({ V }: { V: ClozrView }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
         <div data-testid="offer-made">
           <div style={label}>Offer made</div>
-          <div className="rec-money" style={{ ...big, color: offer ? '#18181b' : '#71717a' }}>{offer || 'None yet'}</div>
+          <div className="rec-money" style={{ ...big, color: offer ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)' }}>{offer || 'None yet'}</div>
         </div>
-        <div data-testid="offer-asking" style={{ paddingLeft: '12px', borderLeft: '1px solid #f0f0f1' }}>
+        <div data-testid="offer-asking" style={{ paddingLeft: '12px', borderLeft: '1px solid var(--divider-2, #f0f0f1)' }}>
           <div style={label}>Asking</div>
-          <div className="rec-money" style={{ ...big, color: a == null ? '#71717a' : '#18181b' }}>
+          <div className="rec-money" style={{ ...big, color: a == null ? 'var(--meta, #71717a)' : 'var(--ink, #18181b)' }}>
             <InlineField recordId={V.P.id} field="offer-card:asking_price" label="Asking price" type="money" value={a}
               readOnly={canEdit ? false : 'Read-only: you can’t edit this record'} placeholder="Add asking"
               onSave={(v) => V.saveSellerField('asking_price', v)} />
@@ -144,7 +144,7 @@ export function OfferVsAsking({ V }: { V: ClozrView }) {
         </div>
       </div>
       {gap != null ? (
-        <div data-testid="offer-gap" className="rec-money" style={{ marginTop: '6px', color: gap < 0 ? '#b45309' : '#0A8560', fontSize: '12px', fontWeight: 600 }}>
+        <div data-testid="offer-gap" className="rec-money" style={{ marginTop: '6px', color: gap < 0 ? 'var(--tx-amber, #b45309)' : '#0A8560', fontSize: '12px', fontWeight: 600 }}>
           {gap === 0 ? 'Offer matches asking' : `${short(Math.abs(gap))} ${gap < 0 ? 'under' : 'over'} asking · ${Math.round((o! / a!) * 100)}% of ask`}
         </div>
       ) : null}

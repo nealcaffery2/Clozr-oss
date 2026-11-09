@@ -13,6 +13,7 @@
 // mirror Talkr's apps/web/lib/api.ts so a field name here is a field name
 // there.
 
+import { quietOptOuts } from './inbox-folders';
 import type { VoiceTokenDto } from './softphone-engine';
 import { supabase } from './supabase';
 import { isReadOnly, isTalkrWrite, readOnlyResponse } from './read-only';
@@ -406,7 +407,7 @@ export const talkr = {
       method: 'POST',
       body: JSON.stringify({ send_auth_invite: false, ...input }),
     }),
-  updateTeamMember: (id: string, patch: { default_phone_number_id?: string | null; personal_phone_e164?: string | null; voicemail_greeting?: FlowGreeting | null; status?: 'active' | 'disabled' }) =>
+  updateTeamMember: (id: string, patch: { default_phone_number_id?: string | null; personal_phone_e164?: string | null; voicemail_greeting?: FlowGreeting | null; status?: 'active' | 'disabled'; role?: 'admin' | 'rep' }) =>
     request<{ member: TalkrMemberDto }>(`/v1/team/members/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   /** Upload a file (greetings: MP3/WAV); the returned url is public and immutable. */
   uploadMedia: (input: { content_type: string; data_base64: string; filename?: string }) =>
@@ -423,7 +424,9 @@ export const talkr = {
   createCall: (input: { to_number?: string; contact_id?: string; lead_id?: string; from_phone_number_id?: string }) =>
     request<{ call: CallDto }>('/v1/calls', { method: 'POST', body: JSON.stringify(input) }),
   calls: () => request<{ calls: CallDto[] }>('/v1/calls'),
-  call: (id: string) => request<{ call: CallDto }>(`/v1/calls/${id}`),
+  call: (id: string) => request<{ call: CallDto; events?: { type: string; occurred_at: string }[] }>(`/v1/calls/${id}`),
+  /** The inbound call ringing this browser from `from`; a Telnyx invite carries no call id. */
+  ringingCall: (from: string) => request<{ call: CallDto }>(`/v1/calls/ringing?from=${encodeURIComponent(from)}`),
   dispositions: () => request<{ dispositions: DispositionDto[] }>('/v1/dispositions'),
   setDisposition: (id: string, input: { disposition: string; note?: string; follow_up_at?: string }) =>
     request<{ call: CallDto }>(`/v1/calls/${id}/disposition`, { method: 'POST', body: JSON.stringify(input) }),
@@ -454,11 +457,15 @@ export const talkr = {
   transcript: (callId: string) => request<TranscriptResponseDto>(`/v1/calls/${callId}/transcript`),
 
   // messaging
-  /** Without the threads another workspace on this org owns (lib/talkr-elsewhere). */
+  /**
+   * Without the threads another workspace on this org owns (lib/talkr-elsewhere),
+   * and a STOP or a left campaign unread on nothing (quietOptOuts), the same as
+   * the Inbox's list: the nav badge counted those (2026-10-26).
+   */
   conversations: (q: { unread?: boolean; limit?: number } = {}) =>
     request<{ conversations: ConversationDto[]; total: number; counts: { unread: number } }>(
       `/v1/conversations${qs({ unread: q.unread ? 'true' : undefined, limit: q.limit ?? 50 })}`,
-    ).then(withoutElsewhereConversations),
+    ).then(withoutElsewhereConversations).then(quietOptOuts),
   messages: (conversationId: string) =>
     request<{ conversation_id: string; messages: MessageDto[] }>(`/v1/conversations/${conversationId}/messages`),
   markRead: (conversationId: string) =>

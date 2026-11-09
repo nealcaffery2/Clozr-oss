@@ -80,7 +80,7 @@ export function Btn({ kind = 'plain', small = false, style, ...rest }: React.But
   const look: Record<string, React.CSSProperties> = {
     plain: { border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', color: INK, fontWeight: 500 },
     primary: { border: `1px solid ${MINT}`, background: MINT, color: 'var(--on-dark, #fff)' },
-    dark: { border: `1px solid ${INK}`, background: INK, color: 'var(--on-dark, #fff)' },
+    dark: { border: `1px solid ${INK}`, background: INK, color: 'var(--surface, #fff)' },
     danger: { border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', color: 'var(--tx-red, #b91c1c)', fontWeight: 500 },
     ghost: { border: `1px dashed var(--line, #d4d4d8)`, background: 'var(--surface, #fff)', color: INK, fontWeight: 500 },
   };

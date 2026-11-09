@@ -11,10 +11,10 @@
 // most MAX_PER_LOAD rows go out, so a render loop cannot flood the table.
 
 import { isChunkLoadError } from './chunk-reload';
-import { decodeNavHash, encodeNavHash } from './nav-hash';
+import { legacyTarget, parseLegacy, shellBase, underBase } from './routes';
 import { supabase } from './supabase';
 
-export type ClientErrorKind = 'screen' | 'app' | 'window' | 'promise';
+export type ClientErrorKind = 'screen' | 'app' | 'window' | 'promise' | 'softphone';
 
 export type ClientErrorRow = {
   kind: ClientErrorKind;
@@ -84,10 +84,18 @@ const sent = new Set<string>();
 /** The build this tab runs, when Vercel exposed it at build time. */
 const RELEASE = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA?.slice(0, 12) || null;
 
-/** The hash re-encoded from its screen parts, so nothing else in a fragment is kept. */
-function screenHash(hash: string): string {
-  const nav = decodeNavHash(hash);
-  return nav ? encodeNavHash(nav, false) : '';
+/**
+ * The address a row records: the path (in the app, the screen and record:
+ * /app/people/s42, lib/routes.ts). An old #screen= link, on its first load
+ * before the shell rewrites it, is recorded as the path it names, so a screen
+ * groups under one address. Never the query or any other fragment: query
+ * strings carry signing and invite tokens, and the auth callback's fragment
+ * carries access tokens.
+ */
+export function errorPath(pathname: string, hash: string): string {
+  const base = shellBase(pathname);
+  const legacy = underBase(pathname, base) ? parseLegacy(hash, '') : null;
+  return legacy ? legacyTarget(legacy, '', base) : pathname;
 }
 
 export function reportClientError(
@@ -98,9 +106,7 @@ export function reportClientError(
     if (typeof window === 'undefined') return;
     const row = toClientErrorRow(error, {
       ...ctx,
-      // Path and the app's own screen hash only: query strings carry signing and
-      // invite tokens, and the auth callback's fragment carries access tokens.
-      path: window.location.pathname + screenHash(window.location.hash),
+      path: errorPath(window.location.pathname, window.location.hash),
       release: RELEASE,
       userAgent: navigator.userAgent,
     });

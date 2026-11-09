@@ -18,7 +18,8 @@ import { buildPlanProgress, fetchPlanProgress, type PlanProgress, type ResultsKi
 
 export type AiReview = { kind: 'goal' | 'edit'; changes: string[]; before: PlanDraft | null };
 
-const PROGRESS_POLL_MS = 15_000;
+// One read is every plan's results (about 10 MB on Compr), so not every 15 s.
+const PROGRESS_POLL_MS = 60_000;
 
 /** Sample people on the first catalog plan, so play and pause can be tried with no workspace. */
 const PREVIEW_PLAN_ID = 1;
@@ -94,6 +95,8 @@ export function usePlans(opts: { onSaved?: () => void; notify?: (msg: string) =>
 
   // ---- loading --------------------------------------------------------------------
 
+  // Opening a plan, the poll and Refresh share one read while it is in flight.
+  const progressRead = useRef<Promise<Awaited<ReturnType<typeof fetchPlanProgress>>> | null>(null);
   const refreshProgress = useCallback(async () => {
     if (workspaceId === null) {
       setProgressPlans(previewProgress());
@@ -101,7 +104,8 @@ export function usePlans(opts: { onSaved?: () => void; notify?: (msg: string) =>
       setProgressError(null);
       return;
     }
-    const r = await fetchPlanProgress(workspaceId);
+    const read = progressRead.current ?? (progressRead.current = fetchPlanProgress(workspaceId).finally(() => { progressRead.current = null; }));
+    const r = await read;
     if (!r.ok) {
       setProgressState('error');
       setProgressError(r.message);

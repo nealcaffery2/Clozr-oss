@@ -20,12 +20,11 @@ export function AiaStyles() {
       .aia-rise { animation: aia-rise .22s ease-out; }
       .aia-live { animation: aia-pulse 1.8s ease-out infinite; }
       .aia-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--subtle, #a1a1aa); display: inline-block; animation: aia-bounce 1s infinite ease-in-out; }
-      .aia-magic { background: linear-gradient(90deg, #08694C, #0A8560, #0f9b70, #08694C); background-size: 200% 100%; animation: aia-shimmer 4s linear infinite; box-shadow: 0 10px 24px -12px rgba(10,133,96,.7); }
-      .aia-magic:hover:not(:disabled) { filter: brightness(1.06); }
+      .aia-magic { background: #0A8560; box-shadow: 0 0 0 1px #08694C, 0 1px 2px rgb(8 105 76 / .3); }
+      .aia-magic:hover:not(:disabled) { background: #08694C; }
       .aia-chip { transition: border-color .15s, box-shadow .15s, transform .15s; }
       .aia-chip:hover:not(:disabled) { border-color: rgba(10,133,96,.4) !important; box-shadow: 0 4px 14px -8px rgba(10,133,96,.5); transform: translateY(-1px); }
       .aia-composer:focus-within { border-color: rgba(10,133,96,.55) !important; box-shadow: 0 0 0 4px rgba(10,133,96,.12), 0 8px 24px -16px rgba(15,23,42,.25) !important; }
-      .aia-glow { position: absolute; inset: 0; background: radial-gradient(600px 120px at 10% -20%, rgba(255,255,255,.22), transparent 60%), radial-gradient(400px 140px at 100% 120%, rgba(255,255,255,.12), transparent 60%); pointer-events: none; }
       .aia-orbit { position: absolute; inset: -6px; border-radius: 50%; border: 2px dashed rgba(10,133,96,.35); animation: aia-spin 14s linear infinite; }
       .aia-icon-btn:hover:not(:disabled) { background: rgba(255,255,255,.2) !important; }
       .aia-seg { transition: background .15s, color .15s, box-shadow .15s; }

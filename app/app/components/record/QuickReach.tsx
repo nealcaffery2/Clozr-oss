@@ -92,7 +92,7 @@ function SellerBox({ V, ch, personId }: { V: ClozrView; ch: 'text' | 'email'; pe
       V={V} isEmail={isEmail} name={who.name} stuck={V.screen === 'person' && V.P.id !== personId}
       thread={(V.reachFeed || []).filter((m) => m.channel === (isEmail ? 'email' : 'text'))}
       emptyThread="Nothing on this record yet. A send lands here, on the timeline and in Inbox."
-      to={<><b style={{ color: '#18181b' }}>{who.name}</b> · <b style={{ color: '#18181b' }}>{isEmail ? (email || 'no email yet') : (phone || 'no number yet')}</b></>}
+      to={<><b style={{ color: 'var(--ink, #18181b)' }}>{who.name}</b> · <b style={{ color: 'var(--ink, #18181b)' }}>{isEmail ? (email || 'no email yet') : (phone || 'no number yet')}</b></>}
       subject={subject} setSubject={setSubject}
       body={body} setBody={setBody} sending={sending}
       audience="seller"
@@ -175,8 +175,8 @@ function TargetBox({ V, reach }: { V: ClozrView; reach: NonNullable<ReachState> 
   const toLine = t.editableTo ? (
     <input value={to} onChange={(e) => setTo(e.target.value)} autoFocus aria-label={isEmail ? 'To address' : 'To number'}
       placeholder={isEmail ? 'name@example.com' : '(512) 555-0134'} inputMode={isEmail ? 'email' : 'tel'}
-      style={{ border: 0, outline: 0, font: 'inherit', fontSize: V.isMobile ? '16px' : 'inherit', fontWeight: 600, color: '#18181b', flex: 1, minWidth: 0, background: 'transparent' }} />
-  ) : <b style={{ color: '#18181b' }}>{to || (isEmail ? 'no email on file' : 'no number on file')}</b>;
+      style={{ border: 0, outline: 0, font: 'inherit', fontSize: V.isMobile ? '16px' : 'inherit', fontWeight: 600, color: 'var(--ink, #18181b)', flex: 1, minWidth: 0, background: 'transparent' }} />
+  ) : <b style={{ color: 'var(--ink, #18181b)' }}>{to || (isEmail ? 'no email on file' : 'no number on file')}</b>;
 
   return (
     <ReachFrame
@@ -224,13 +224,13 @@ function ReachFrame({ V, isEmail, name, stuck, thread, emptyThread, to, toFlex, 
     : 'calc(16px + var(--clozr-callbar, 0px))';
   // Center with auto margins. The pop animation owns `transform`, so a
   // translateX here gets wiped for the whole entrance and the box lands to the right.
-  const center: React.CSSProperties = { position: 'fixed', left: 0, right: 0, marginLeft: 'auto', marginRight: 'auto', bottom: dock, zIndex: 55 };
-  const iconBtn: React.CSSProperties = { border: 0, background: '#f4f4f5', cursor: 'pointer', color: '#52525b', width: '32px', height: '32px', borderRadius: '8px', display: 'grid', placeItems: 'center', flex: 'none' };
+  const center: React.CSSProperties = { position: 'fixed', left: 0, right: 0, marginLeft: 'auto', marginRight: 'auto', bottom: dock, zIndex: 'var(--z-sheet)' };
+  const iconBtn: React.CSSProperties = { border: 0, background: 'var(--surface-2, #f4f4f5)', cursor: 'pointer', color: 'var(--muted, #52525b)', width: '32px', height: '32px', borderRadius: '8px', display: 'grid', placeItems: 'center', flex: 'none' };
 
   if (min) {
     return (
       <button type="button" onClick={() => setMin(false)} data-testid="quick-reach-min" title={`Open the ${label.toLowerCase()} draft`}
-        style={{ ...center, width: 'fit-content', height: '40px', padding: '0 14px', borderRadius: '10px 10px 0 0', border: '1px solid #e4e4e7', borderBottom: 0, background: '#fff', boxShadow: MD, cursor: 'pointer', fontWeight: 650, fontSize: '13px', color: '#18181b' }}>
+        style={{ ...center, width: 'fit-content', height: '40px', padding: '0 14px', borderRadius: '10px 10px 0 0', border: '1px solid var(--divider, #e4e4e7)', borderBottom: 0, background: 'var(--surface, #fff)', boxShadow: MD, cursor: 'pointer', fontWeight: 650, fontSize: '13px', color: 'var(--ink, #18181b)' }}>
         {label}{first ? ' · ' + first : ''}{stuck ? ' · stuck' : ''}
       </button>
     );
@@ -240,12 +240,12 @@ function ReachFrame({ V, isEmail, name, stuck, thread, emptyThread, to, toFlex, 
     <form role="dialog" aria-label={isEmail ? 'Quick email' : 'Quick text'} data-testid="quick-reach"
       onSubmit={(e) => { e.preventDefault(); if (!blocked) onSend(); }}
       onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); if (!blocked) onSend(); } }}
-      style={{ ...center, width: 'min(640px, calc(100vw - 24px))', maxHeight: 'min(560px, calc(100vh - 120px - var(--clozr-callbar, 0px)))', background: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', boxShadow: MD, display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'recPop 200ms cubic-bezier(0.23,1,0.32,1)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px 8px 12px', background: '#fafafa', borderBottom: '1px solid #e4e4e7', flex: 'none' }}>
-        {isEmail ? <span style={{ color: '#71717a', display: 'inline-flex' }}><Icon name="mail" size={16} /></span> : <TalkrMark size={16} />}
+      style={{ ...center, width: 'min(640px, calc(100vw - 24px))', maxHeight: 'min(560px, calc(100dvh - 120px - var(--clozr-callbar, 0px)))', background: 'var(--surface, #fff)', borderRadius: 'var(--r-sheet)', border: '1px solid var(--divider, #e4e4e7)', boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'recPop 200ms cubic-bezier(0.23,1,0.32,1)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px 8px 12px', background: 'var(--canvas, #fafafa)', borderBottom: '1px solid var(--divider, #e4e4e7)', flex: 'none' }}>
+        {isEmail ? <span style={{ color: 'var(--meta, #71717a)', display: 'inline-flex' }}><Icon name="mail" size={16} /></span> : <TalkrMark size={16} />}
         <span style={{ fontWeight: 650, fontSize: '13.5px', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={name}>
           {isEmail ? 'New email' : 'New text'}{first ? ' · ' + first : ''}
-          {stuck ? <span style={{ fontWeight: 500, color: '#71717a', marginLeft: '6px' }}>not the record on screen</span> : null}
+          {stuck ? <span style={{ fontWeight: 500, color: 'var(--meta, #71717a)', marginLeft: '6px' }}>not the record on screen</span> : null}
         </span>
         <button type="button" aria-label="Minimize" title="Minimize" data-testid="quick-reach-minimize" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMin(true); }} style={iconBtn}>
           <Icon name="chevron-down" size={16} />
@@ -254,28 +254,36 @@ function ReachFrame({ V, isEmail, name, stuck, thread, emptyThread, to, toFlex, 
           <Icon name="x" size={16} />
         </button>
       </div>
-      <div style={{ maxHeight: '220px', overflow: 'auto', background: '#fafafa', borderBottom: '1px solid #f0f0f1', flex: 'none' }}>
+      {/* A text thread is iMessage (DESIGN.md §2, the --sms-* tokens): ours blue on the right, theirs grey on the left. Email stays rows. */}
+      <div style={{ maxHeight: '220px', overflow: 'auto', background: isEmail ? 'var(--canvas, #fafafa)' : 'var(--sms-thread, #fff)', borderBottom: '1px solid var(--divider-2, #f0f0f1)', flex: 'none', padding: isEmail || thread.length === 0 ? 0 : '8px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
         {thread.length === 0 ? (
-          <div style={{ padding: '8px 12px', fontSize: '11.5px', color: '#71717a' }}>{emptyThread}</div>
-        ) : thread.map((m) => (
-          <div key={m.id} style={{ padding: '8px 12px', borderTop: '1px solid #f4f4f5', fontSize: '12.5px' }}>
-            <div style={{ color: '#71717a' }}>{m.out ? 'You' : first} · {m.time}</div>
-            <div style={{ color: '#18181b', marginTop: '2px', whiteSpace: 'pre-wrap' }}>{m.body || m.title}</div>
+          <div style={{ padding: '8px 12px', fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>{emptyThread}</div>
+        ) : isEmail ? thread.map((m) => (
+          <div key={m.id} style={{ padding: '8px 12px', borderTop: '1px solid var(--surface-2, #f4f4f5)', fontSize: '12.5px' }}>
+            <div style={{ color: 'var(--meta, #71717a)' }}>{m.out ? 'You' : first} · {m.time}</div>
+            <div style={{ color: 'var(--ink, #18181b)', marginTop: '2px', whiteSpace: 'pre-wrap' }}>{m.body || m.title}</div>
+          </div>
+        )) : thread.map((m) => (
+          <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: m.out ? 'flex-end' : 'flex-start' }}>
+            <div style={{ maxWidth: '78%', padding: '7px 11px', borderRadius: m.out ? '16px 16px 4px 16px' : '16px 16px 16px 4px', background: m.out ? 'var(--sms-out, #0B6FE6)' : 'var(--sms-in, #E9E9EB)', color: m.out ? 'var(--sms-out-text, #fff)' : 'var(--sms-in-text, #18181b)', fontSize: '13px', lineHeight: 1.4, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+              {m.body || m.title}
+            </div>
+            <div style={{ marginTop: '2px', padding: '0 4px', fontSize: '11px', color: 'var(--meta, #71717a)', fontVariantNumeric: 'tabular-nums' }}>{m.out ? 'You' : first} · {m.time}</div>
           </div>
         ))}
       </div>
-      <div style={{ padding: '8px 12px', fontSize: '12.5px', color: '#52525b', borderBottom: '1px solid #f0f0f1', flex: 'none', display: toFlex ? 'flex' : 'block', gap: '6px', alignItems: 'center' }}>
+      <div style={{ padding: '8px 12px', fontSize: '12.5px', color: 'var(--muted, #52525b)', borderBottom: '1px solid var(--divider-2, #f0f0f1)', flex: 'none', display: toFlex ? 'flex' : 'block', gap: '6px', alignItems: 'center' }}>
         <span>To </span>{to}
       </div>
       {isEmail ? (
         <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" aria-label="Subject"
-          style={{ border: 0, borderBottom: '1px solid #f0f0f1', padding: '10px 12px', fontSize: V.isMobile ? '16px' : '13.5px', outline: 0, flex: 'none' }} />
+          style={{ border: 0, borderBottom: '1px solid var(--divider-2, #f0f0f1)', padding: '10px 12px', fontSize: V.isMobile ? '16px' : '13.5px', outline: 0, flex: 'none' }} />
       ) : null}
       <textarea ref={textRef} value={body} onChange={(e) => setBody(e.target.value)} autoFocus={bodyAutoFocus} rows={8} aria-label={isEmail ? 'Email body' : 'Text message'}
         placeholder={isEmail ? 'Write the email…' : 'Write the text…'}
         style={{ border: 0, resize: 'none', padding: '12px', fontSize: V.isMobile ? '16px' : '14px', outline: 0, fontFamily: 'inherit', minHeight: '160px', flex: 1 }} />
       {tplOpen ? (
-        <div style={{ flex: 'none', maxHeight: '240px', overflow: 'auto', borderTop: '1px solid #e4e4e7' }}>
+        <div style={{ flex: 'none', maxHeight: '240px', overflow: 'auto', borderTop: '1px solid var(--divider, #e4e4e7)' }}>
           <TemplatePicker
             channel={isEmail ? 'email' : 'sms'}
             audience={audience}
@@ -301,12 +309,12 @@ function ReachFrame({ V, isEmail, name, stuck, thread, emptyThread, to, toFlex, 
         </button>
         <button type="button" onClick={() => setTplOpen((v) => !v)} disabled={!workspaceId} aria-expanded={tplOpen}
           title={workspaceId ? 'Insert a template' : 'Templates run on a signed-in workspace'}
-          style={{ height: '32px', padding: '0 12px', borderRadius: '8px', border: 0, boxShadow: RING, background: tplOpen ? '#f4f4f5' : '#fff', fontSize: '12.5px', fontWeight: 500, cursor: workspaceId ? 'pointer' : 'not-allowed', color: '#18181b', opacity: workspaceId ? 1 : 0.5, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+          style={{ height: '32px', padding: '0 12px', borderRadius: '8px', border: 0, boxShadow: RING, background: tplOpen ? 'var(--surface-2, #f4f4f5)' : 'var(--surface, #fff)', fontSize: '12.5px', fontWeight: 500, cursor: workspaceId ? 'pointer' : 'not-allowed', color: 'var(--ink, #18181b)', opacity: workspaceId ? 1 : 0.5, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
           <Icon name="template" size={14} /> Template
         </button>
         <EmojiButton onPick={(emoji) => setBody(insertAtCaret(textRef.current, body, emoji))} />
         {!isEmail ? <SmsFromPicker compact /> : null}
-        <span role="status" style={{ fontSize: '11.5px', color: '#71717a', flex: 1, minWidth: '120px' }}>
+        <span role="status" style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', flex: 1, minWidth: '120px' }}>
           {blocked ?? '⌘ Enter sends · stays docked while you browse'}
         </span>
       </div>

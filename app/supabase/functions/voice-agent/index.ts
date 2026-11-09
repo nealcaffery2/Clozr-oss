@@ -29,6 +29,7 @@
  * POST /voice-agent/tool/save-qualification
  * POST /voice-agent/tool/mark-do-not-contact
  * POST /voice-agent/tool/get-compr-offer       the COMPR range for the seller's house; COMPR starts underwriting when the call connects
+ * POST /voice-agent/tool/deal-lookup           our deals for sale (the dispo list), for a buyer-facing agent only
  *   The write tools (migration 123), same secret and the same caller check
  *   as lead-context. book-appointment without starts_at answers open times
  *   inside the agent's call hours, clear of the record's rep's appointments;
@@ -65,7 +66,7 @@
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { HARDENING, rateLimit, serverError } from '../_shared/security.ts';
+import { HARDENING, isServiceCaller, rateLimit, serverError } from '../_shared/security.ts';
 import { refreshLeadMemory } from '../_shared/lead-memory.ts';
 import { emailRep } from '../_shared/rep-alert.ts';
 import {
@@ -73,13 +74,16 @@ import {
   type CallLeg, type Candidate, type Resolution,
 } from '../_shared/voice-agent.ts';
 import { initiationFor, loadAgentFor, loadCandidates, loadMemory, loadRep, loadSecretRows, loadTransferTarget, missingRelation, recordPhoneKey, type AgentRow } from '../_shared/voice-agent-db.ts';
-import { agentSwitchedOff, offerRange, outboundAllowedNow } from '../_shared/voice-agent-calls.ts';
+import { agentSwitchedOff, callNotice, offerRange, outboundAllowedNow } from '../_shared/voice-agent-calls.ts';
 import { toolOn, type AgentSettings } from '../_shared/voice-agent-settings.ts';
 import {
-  DNC_TAG, MAX_BOOK_DAYS, REHAB_LEVELS, SLOT_MINUTES, appointmentRow, bookingProblem, openSlots, parseBooking, parseQualification, qualificationWrite, slotLabel, withDncTag,
-  type Busy, type RehabLevel,
+  DEAL_LOOKUP_STAGES, DNC_TAG, MAX_BOOK_DAYS, REHAB_LEVELS, SLOT_MINUTES, appointmentRow, bookingProblem, dealsForBuyer, openSlots, optOutRow, parseBooking, parseQualification, qualificationWrite, slotLabel, withDncTag,
+  type Busy, type DealRow, type RehabLevel,
 } from '../_shared/voice-agent-tools.ts';
+import { loadOverflow } from '../_shared/voice-agent-overflow.ts';
 import { hasDnc } from '../../../lib/rvm.ts';
+import { DEMO_MINUTES, isComprRole, isComprWorkspace } from '../_shared/compr-agent.ts';
+import { comprApiKey, quoteLeadId, readQuote, resolveAddress, runQuote } from '../_shared/compr-voice-quote.ts';
 import { roleplayInitiation, roleplayPostCall, roleplayWorkspaceFor } from '../_shared/roleplay-run.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
@@ -150,13 +154,15 @@ async function personalize(req: Request, admin: SupabaseClient): Promise<Respons
     const persona = { ...base, introduceAs: live?.identity.introduce_as, recordingNotice: rn?.enabled ? rn.text : null };
     // An agent the owner switched off answers like a do-not-engage number: neutral greeting, no lead data, end the call.
     const off = agentSwitchedOff(agent);
-    let res: Resolution = off ? { status: 'blocked', matches: [] } : resolveCaller(await loadCandidates(admin, ctx.ws, ctx.leg.theirs));
+    let res: Resolution = off ? { status: 'blocked', matches: [] } : resolveCaller(await loadCandidates(admin, ctx.ws, ctx.leg.theirs, ctx.leg.ours));
     // Outside its quiet or call hours the agent does not place a call: treated like a number it must not engage.
     if (live && ctx.leg.direction === 'outbound' && !outboundAllowedNow(live, Date.now())) res = { status: 'blocked', matches: [] };
     console.log('voice-agent personalize', { conversation: body.conversation_id, ws: ctx.ws, agent: agent?.agent_key ?? null, direction: ctx.leg.direction, status: res.status, off, via: auth.source });
     // An agent that quotes from COMPR starts the underwriting now, so the range is ready by the time the seller is.
     if (res.status === 'one' && res.match.kind === 'seller' && wantsComprOffer(live)) EdgeRuntime.waitUntil(ensureCompr(admin, ctx.ws, res.match.id).then(() => undefined));
-    return json(await initiationFor(admin, ctx.ws, res, ctx.leg, persona, live));
+    // Talkr sent this caller on from a rep's line that did not answer: the agent is covering for that rep.
+    const overflow = !off && ctx.leg.direction === 'inbound' && live?.call_handling.overflow.enabled ? await loadOverflow(admin, ctx.ws, ctx.leg.ours, ctx.leg.theirs) : null;
+    return json(await initiationFor(admin, ctx.ws, res, ctx.leg, persona, live, '', overflow?.rep_id ?? null));
   } catch (e) {
     // A 500 here can keep the call from connecting; the generic greeting cannot hurt.
     console.error('voice-agent personalize', String(e));
@@ -168,11 +174,14 @@ type ToolBody = {
   caller_id?: string; called_number?: string; contact_name?: string; record_kind?: string; record_id?: number | string; record_token?: string; agent_id?: string; conversation_id?: string;
 } & Record<string, unknown>;
 
-/** `test`: a console test rung on a phone (isTestCall); `match` is then a stand-in with no record behind it (id 0). */
-type ToolCaller = { ctx: Ctx; agent: AgentRow | null; match: Candidate; body: ToolBody; test?: boolean };
+/**
+ * `test`: a console test rung on a phone (isTestCall); `match` is then a stand-in with no record behind it (id 0).
+ * `none`: nobody is on file for the number (allowNone); `match` is the same stand-in and only the number itself can be acted on.
+ */
+type ToolCaller = { ctx: Ctx; agent: AgentRow | null; match: Candidate; body: ToolBody; test?: boolean; none?: boolean };
 
 const TEST_PHONE_NOTE = 'This is a test call from our team, rung on their own phone. Nothing is looked up or saved on a test, so work from the brief you were given and play the call through as if it worked.';
-/** Stands in for the caller on a phone test: no record, so nothing can be read or written through it. */
+/** Stands in for the caller on a phone test, or for a caller nobody has on file: no record, so nothing can be read or written through it. */
 const TEST_STAND_IN: Candidate = { kind: 'seller', id: 0, name: '', tags: [] };
 
 /** What each tool says on a phone test instead of reading or writing the tester's own record. */
@@ -186,7 +195,7 @@ type TestReply = Record<string, unknown>;
  * number, so a caller cannot talk the agent into reading or changing someone
  * else's file. Anything short of that is an answer for the agent, not an error.
  */
-async function toolCaller(req: Request, admin: SupabaseClient, opts: { createNew?: boolean; browserTest?: boolean; testReply?: TestReply; allowTest?: boolean } = {}): Promise<ToolCaller | Response> {
+async function toolCaller(req: Request, admin: SupabaseClient, opts: { createNew?: boolean; browserTest?: boolean; testReply?: TestReply; allowTest?: boolean; allowNone?: boolean } = {}): Promise<ToolCaller | Response> {
   const rows = await loadSecretRows(admin);
   const secret = Deno.env.get('ELEVENLABS_TOOL_SECRET');
   if (!secretConfigured(rows, 'tool_secret', secret)) return notConfigured('ELEVENLABS_TOOL_SECRET');
@@ -210,7 +219,7 @@ async function toolCaller(req: Request, admin: SupabaseClient, opts: { createNew
     if (opts.allowTest) return { ctx, agent, match: TEST_STAND_IN, body, test: true };
     return json({ test: true, ...(opts.testReply ?? {}), note: String(opts.testReply?.note ?? TEST_PHONE_NOTE) });
   }
-  const all = await loadCandidates(admin, ctx.ws, ctx.leg.theirs);
+  const all = await loadCandidates(admin, ctx.ws, ctx.leg.theirs, ctx.leg.ours);
   let res = resolveCaller(all);
   if (res.status === 'blocked') return json({ found: false, do_not_engage: true, note: 'This number is on a do-not-contact list. End the call politely.' });
   if (res.status === 'many') {
@@ -227,6 +236,8 @@ async function toolCaller(req: Request, admin: SupabaseClient, opts: { createNew
     if (made instanceof Response) return made;
     res = { status: 'one', match: made };
   }
+  // A number with nobody on file, for a tool that acts on the number itself (mark_do_not_contact).
+  if (res.status === 'none' && opts.allowNone) return { ctx, agent, match: TEST_STAND_IN, body, none: true };
   if (res.status !== 'one') return json({ found: false, note: NEW_CALLER_NOTE });
   return { ctx, agent, match: res.match, body };
 }
@@ -367,11 +378,21 @@ async function bookAppointment(req: Request, admin: SupabaseClient): Promise<Res
     const parsed = parseBooking(body);
     if (!parsed.ok) return json({ ok: false, booked: false, note: parsed.note });
     const input = parsed.input;
-    const hours = bookingHours(agent);
+    let hours = bookingHours(agent);
     // Whose calendar: the record's rep (a buyer's is the dispo rep working them, loadCandidates).
     // A record with no rep books into the unassigned pool.
-    const repId = c.assigned_to ?? null;
-    const minutes = SLOT_MINUTES;
+    let repId = c.assigned_to ?? null;
+    // The Compr demo setter (migration 228) books a short demo on the booking person's calendar (Alex), in their hours.
+    let minutes = SLOT_MINUTES;
+    const compr = isComprRole(agent?.live_settings?.identity.role);
+    if (compr) {
+      const { data: cs } = await admin.from('compr_agent_settings').select('booking_user_id, booking_hours, demo_minutes').eq('workspace_id', ctx.ws).maybeSingle();
+      const row = (cs ?? {}) as Any;
+      if (row.booking_user_id) repId = row.booking_user_id;
+      minutes = Number(row.demo_minutes) || DEMO_MINUTES;
+      const h = row.booking_hours;
+      if (h && Array.isArray(h.days) && typeof h.start === 'string' && typeof h.end === 'string' && typeof h.tz === 'string') hours = h;
+    }
     const now = Date.now();
     let busyQ = admin.from('appointments').select('starts_at, ends_at').eq('workspace_id', ctx.ws).is('deleted_at', null)
       .gte('starts_at', new Date(now - 86_400_000).toISOString()).lte('starts_at', new Date(now + (MAX_BOOK_DAYS + 1) * 86_400_000).toISOString()).limit(2000);
@@ -404,6 +425,14 @@ async function bookAppointment(req: Request, admin: SupabaseClient): Promise<Res
       // Migration 144: reporting counts what the agents booked.
       booked_by: 'ai_agent', ai_agent_key: agent?.agent_key ?? null,
     };
+    // A Compr demo invites the prospect, so Google sends them the invite from the booking calendar (as a text or email booking does):
+    // the email they gave on the call (in the notes), else the one on their buyer record.
+    if (compr && c.kind === 'buyer') {
+      const said = /[^\s@<>,;:"()]+@[^\s@<>,;:"()]+\.[a-z]{2,}/i.exec(input.notes)?.[0] ?? null;
+      const { data: b } = await admin.from('buyers').select('name, email').eq('id', c.id).eq('workspace_id', ctx.ws).maybeSingle();
+      const email = String(said ?? (b as Any)?.email ?? '').trim().toLowerCase().replace(/[.,;]+$/, '');
+      if (/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/.test(email)) apptRow.attendees = [{ email, name: c.name || (b as Any)?.name || null }];
+    }
     let { data: made, error } = await admin.from('appointments').insert(apptRow).select('id').maybeSingle();
     if (error && /booked_by|ai_agent_key/.test(error.message)) {
       const { booked_by: _b, ai_agent_key: _k, ...older } = apptRow;
@@ -443,7 +472,8 @@ async function afterBooking(admin: SupabaseClient, ws: number, agent: AgentRow |
         body: `${appt.title}. ${appt.notes}`.slice(0, 500), seller_id: c.kind === 'seller' ? c.id : null, buyer_id: c.kind === 'buyer' ? c.id : null,
       });
     }
-    await admin.from('tasks').insert({
+    // In Compr the booking is the appointment; the AI adds no call task (isComprWorkspace).
+    if (!(await isComprWorkspace(admin, ws))) await admin.from('tasks').insert({
       workspace_id: ws, seller_id: c.kind === 'seller' ? c.id : null, buyer_id: c.kind === 'buyer' ? c.id : null,
       title: `${appt.kind === 'Walkthrough' ? 'Walkthrough' : 'Call'} ${c.name || 'the ' + c.kind} (booked by AI)`.slice(0, 200), task_type: 'Call',
       priority: 'Urgent', due_at: appt.starts_at, assigned_to: who, created_by: who, notes: `${name} booked this on a call for ${label}.\n${appt.notes}`.slice(0, 2000),
@@ -470,7 +500,7 @@ async function saveQualification(req: Request, admin: SupabaseClient): Promise<R
     const name = agentLabel(agent);
     const w = qualificationWrite(c.kind, q, (cur ?? {}) as Record<string, unknown>, name);
     if (Object.keys(w.patch).length) {
-      const { error } = await admin.from('sellers').update(w.patch).eq('id', c.id).eq('workspace_id', ctx.ws);
+      const { error } = await admin.from(c.kind === 'seller' ? 'sellers' : 'buyers').update(w.patch).eq('id', c.id).eq('workspace_id', ctx.ws);
       if (error) throw error;
     }
     const conversation = convId(body);
@@ -526,7 +556,7 @@ async function applyDnc(admin: SupabaseClient, ctx: Ctx, agent: AgentRow | null,
     await admin.from('buyer_phones').update({ is_dnc: true }).eq('workspace_id', ctx.ws).eq('buyer_id', c.id).in('phone_key', phoneKeyVariants(ctx.leg.theirs));
   }
   // Forever and on every record with this number (migration 228): contact_opt_outs tags them all DNC.
-  const { error: optErr } = await admin.from('contact_opt_outs').insert({ workspace_id: ctx.ws, phone_key: ctx.leg.theirs, channel: 'call', said: reason, record_kind: c.kind, record_id: c.id });
+  const { error: optErr } = await admin.from('contact_opt_outs').insert(optOutRow(ctx.ws, ctx.leg.theirs, reason, c));
   if (optErr && !/duplicate key|23505/.test(optErr.message) && !missingRelation(optErr.message)) console.error('voice-agent opt-out', optErr.message);
   // An AI plan on this person stops now: nothing else goes out to them.
   const { error: stopErr } = await admin.from('ai_agent_enrollments').update({ status: 'stopped', stop_reason: 'asked not to be contacted', stopped_at: new Date().toISOString(), next_action_at: null })
@@ -539,7 +569,7 @@ async function applyDnc(admin: SupabaseClient, ctx: Ctx, agent: AgentRow | null,
 
 async function markDoNotContact(req: Request, admin: SupabaseClient): Promise<Response> {
   try {
-    const t = await toolCaller(req, admin, { testReply: { ok: true, marked: false, note: 'Test call: nothing is saved. Tell them you will make sure they are not contacted again, then end the call.' } });
+    const t = await toolCaller(req, admin, { allowNone: true, testReply: { ok: true, marked: false, note: 'Test call: nothing is saved. Tell them you will make sure they are not contacted again, then end the call.' } });
     if (t instanceof Response) {
       // A number already on a do-not-contact list is exactly what was asked for.
       const peek = await t.clone().json().catch(() => ({}));
@@ -548,6 +578,13 @@ async function markDoNotContact(req: Request, admin: SupabaseClient): Promise<Re
     }
     const { ctx, agent, match: c, body } = t;
     const reason = String(body.reason ?? '').replace(/\s+/g, ' ').trim().slice(0, 200) || 'asked on the call';
+    if (t.none) {
+      // Nobody on file, and the request stands all the same: the opt-out is keyed by the number
+      // (migration 228), so any record made for it later is DNC from the start and nothing goes out to it.
+      const { error } = await admin.from('contact_opt_outs').insert(optOutRow(ctx.ws, ctx.leg.theirs, reason, null));
+      if (error && !/duplicate key|23505/.test(error.message)) throw error;
+      return json({ ok: true, marked: true, say: "Absolutely, I'll make sure you're not contacted again.", note: 'Now end the call politely.' });
+    }
     await applyDnc(admin, ctx, agent, c, reason, convId(body));
     return json({ ok: true, marked: true, say: "Absolutely, I'll make sure you're not contacted again.", note: 'Now end the call politely.' });
   } catch (e) {
@@ -605,14 +642,54 @@ async function ensureCompr(admin: SupabaseClient, ws: number, sellerId: number):
 
 const COMPR_WAIT_NOTE = 'COMPR is still underwriting the house (about a minute from when the call connected). Do not mention any price yet. Keep the conversation going: condition, repairs, occupancy, timeline, and the number they want. Call get_compr_offer again in about a minute.';
 
+const QUOTE_WAIT_NOTE = 'COMPR is underwriting that house now, which takes about a minute. Do not mention any price yet. Keep the conversation going (repairs, occupancy, timeline, the number they want), then call get_compr_offer again in about a minute with the same property_address and rehab_level.';
+
 /**
- * A quote for a house the caller named, at the rehab level they described. The
- * hosted product prices it with a private valuation engine that is not part of
- * the open-source release (see compr-underwrite), so this build has no quote.
+ * COMPR's offer (MAO) for `address` at `level`, or the answer the agent should
+ * hear while it runs. The first ask resolves the address (so a wrong one is
+ * caught on the call) and starts the run in the background; a later ask with
+ * the same address and level reads the finished report. A failed run may be
+ * started again two minutes on.
  */
-async function quoteOffer(_admin: SupabaseClient, _ws: number, address: string, _level: RehabLevel | null): Promise<number | Response> {
+async function quoteOffer(admin: SupabaseClient, ws: number, address: string, level: RehabLevel | null): Promise<number | Response> {
   if (!address) return json({ ready: false, note: 'Ask for the full property address (street, city and state) and call get_compr_offer again with property_address and rehab_level.' });
-  return json({ ready: false, note: 'The offer range is not available right now. Do not quote a price; say the team will firm up the number, and set the next step.' });
+  const key = comprApiKey((n) => Deno.env.get(n));
+  if (!key) return json({ ready: false, note: 'The offer range is not available right now. Do not quote a price; say the team will firm up the number, and set the next step.' });
+  const leadId = await quoteLeadId(ws, address, level);
+  const done = await readQuote(key, leadId);
+  if (done?.mao) return done.mao;
+  const gate = await rateLimit(admin, `voice-compr-quote:${leadId}`, 1, 120);
+  if (!gate.allowed) return json({ ready: false, underwriting: true, note: QUOTE_WAIT_NOTE });
+  const where = await resolveAddress(key, address);
+  if (!where) return json({ ready: false, note: `COMPR could not find "${address}". Read the address back to them, get the street, city and state right, and call again.` });
+  EdgeRuntime.waitUntil(runQuote(key, where, leadId, level).catch((e) => console.error('voice-agent compr quote', { ws, leadId, err: String(e) })));
+  return json({ ready: false, underwriting: true, address_found: `${where.street}, ${where.city}, ${where.state} ${where.zip}`.trim(), note: QUOTE_WAIT_NOTE });
+}
+
+const DEAL_COLS = 'id, stage, contract_status, arv, offer_amount, assignment_fee, target_assignment, marketed_price, bin_price, marketing_headline, buyer_id, properties(line1, city, state, zip, beds, baths, sqft, year_built)';
+
+/**
+ * deal_lookup: the workspace's deals on the dispo list, for a buyer's ears.
+ * Only a buyer-facing agent has the tool (toolOn gates it on the role), and
+ * the lane is checked again here, so a seller-side agent that somehow calls
+ * it gets nothing to quote. Reads the workspace, not the caller's record:
+ * a buyer with no record yet can still hear what we have.
+ */
+async function dealLookup(req: Request, admin: SupabaseClient): Promise<Response> {
+  try {
+    const t = await toolCaller(req, admin, { allowTest: true, allowNone: true });
+    if (t instanceof Response) return t;
+    const { ctx, agent, body } = t;
+    if (!agent?.live_settings || !toolOn(agent.live_settings, 'deal_lookup')) return json({ found: false, deals: [], note: 'Our deals for sale are not yours to discuss on this line. Take their name and number and say the dispositions team will call them.' });
+    const { data, error } = await admin.from('deals').select(DEAL_COLS).eq('workspace_id', ctx.ws).is('archived_at', null).in('stage', [...DEAL_LOOKUP_STAGES]).order('updated_at', { ascending: false }).limit(60);
+    if (error) throw error;
+    const deals = dealsForBuyer((data ?? []) as unknown as DealRow[], String(body.query ?? ''));
+    if (!deals.length) return json({ found: false, deals: [], note: body.query ? 'Nothing we have for sale matches that. Offer the rest of the list, or take what they are looking for and say the team will call when something fits.' : 'Nothing is on the list right now. Take what they are looking for and say the team will call when something fits.' });
+    return json({ found: true, deals, note: 'Quote only these. An offer goes to the team: repeat it back and note it with save_qualification (offer_property, offer_amount).' });
+  } catch (e) {
+    console.error('voice-agent deal-lookup', String(e));
+    return json({ found: false, deals: [], note: 'The list could not be read just now. Take what they are looking for and say the team will call back with it.' });
+  }
 }
 
 async function getComprOffer(req: Request, admin: SupabaseClient): Promise<Response> {
@@ -674,7 +751,7 @@ async function postCall(req: Request, admin: SupabaseClient): Promise<Response> 
     if (!ctx) return json({ ok: true, stored: false, reason: 'no workspace owns this phone line' });
     // A console test rung on the tester's phone is kept for review but filed on no record: its
     // made-up seller or buyer would otherwise be written into that number's real memory.
-    const res = pc.test ? null : resolveCaller(await loadCandidates(admin, ctx.ws, ctx.leg.theirs));
+    const res = pc.test ? null : resolveCaller(await loadCandidates(admin, ctx.ws, ctx.leg.theirs, ctx.leg.ours));
     const filed = !res ? null : res.status === 'one' ? res.match : res.status === 'blocked' && res.matches.length === 1 ? res.matches[0] : null;
     const theirs = pc.theirNumber ?? toE164(ctx.leg.theirs);
     const ours = pc.ourNumber ?? toE164(ctx.leg.ours);
@@ -712,11 +789,81 @@ async function postCall(req: Request, admin: SupabaseClient): Promise<Response> 
     if (filed) {
       EdgeRuntime.waitUntil(refreshLeadMemory(admin, ctx.ws, filed.kind, filed.id)
         .catch((e) => console.error('voice-agent memory refresh', String(e))));
+      if (isComprRole(agent?.live_settings?.identity.role)) {
+        EdgeRuntime.waitUntil(notifyCall(admin, ctx.ws, agent, filed, pc)
+          .catch((e) => console.error('voice-agent call notice', String(e))));
+      }
     }
+    EdgeRuntime.waitUntil(copyAgentAudio(admin, ctx.ws, pc.conversationId)
+      .catch((e) => console.error('voice-agent audio copy', String(e))));
     return json({ ok: true, stored: true, filed: filed ? `${filed.kind}:${filed.id}` : null });
   } catch (e) {
     return serverError({}, 'voice-agent post-call', e);
   }
+}
+
+/**
+ * A Compr demo-setter call that booked nothing and transferred nobody (a
+ * voicemail, a hang-up) still reaches the bell of the rep on the record, else
+ * the owner (callNotice). One per conversation: a retried webhook adds none.
+ */
+async function notifyCall(admin: SupabaseClient, ws: number, agent: AgentRow | null, c: Candidate, pc: NonNullable<ReturnType<typeof parsePostCall>>) {
+  const notice = callNotice({ agentName: agentLabel(agent), recordName: c.name ?? '', summary: pc.summary, flags: pc.flags });
+  if (!notice) return;
+  let who = c.assigned_to ?? null;
+  if (!who) {
+    const { data: w } = await admin.from('workspaces').select('owner_id').eq('id', ws).maybeSingle();
+    who = ((w as Any)?.owner_id ?? null) as string | null;
+  }
+  if (!who) return;
+  const { data: seen } = await admin.from('notifications').select('id').eq('workspace_id', ws).eq('payload->>conversation_id', pc.conversationId).limit(1);
+  if (seen?.length) return;
+  const { error } = await admin.from('notifications').insert({
+    workspace_id: ws, user_id: who, category: 'AI agent', ...notice,
+    seller_id: c.kind === 'seller' ? c.id : null, buyer_id: c.kind === 'buyer' ? c.id : null,
+    payload: { conversation_id: pc.conversationId },
+  });
+  if (error) console.error('voice-agent call notice', error.message);
+}
+
+// The agent call's audio, copied once from ElevenLabs into our bucket the way
+// call-sync copies a Talkr recording, so the call row plays it
+// (recording_url `storage:<bucket>/<path>`, signed in lib/record-suggest).
+const RECORDING_BUCKET = 'call-recordings';
+
+async function copyAgentAudio(admin: SupabaseClient, ws: number, conversationId: string): Promise<'copied' | 'no_key' | `audio ${number}`> {
+  const apiKey = Deno.env.get('ELEVENLABS_API_KEY');
+  if (!apiKey) return 'no_key';
+  const base = Deno.env.get('ELEVENLABS_API_BASE') || 'https://api.elevenlabs.io';
+  const res = await fetch(`${base}/v1/convai/conversations/${encodeURIComponent(conversationId)}/audio`, { headers: { 'xi-api-key': apiKey } });
+  if (!res.ok) { await res.body?.cancel(); return `audio ${res.status}`; }
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  const type = res.headers.get('content-type')?.split(';')[0] || 'audio/mpeg';
+  const path = `${ws}/el-${conversationId}.${type.includes('wav') ? 'wav' : 'mp3'}`;
+  const up = await admin.storage.from(RECORDING_BUCKET).upload(path, bytes, { contentType: type, upsert: true });
+  if (up.error) throw new Error(up.error.message);
+  const { error } = await admin.from('communications').update({ recording_url: `storage:${RECORDING_BUCKET}/${path}` })
+    .eq('workspace_id', ws).eq('source', 'elevenlabs').eq('source_id', 'el:' + conversationId);
+  if (error) throw new Error(error.message);
+  return 'copied';
+}
+
+/** Service role only: copies the audio of agent calls stored before the copy existed, a batch per call. */
+async function backfillAudio(req: Request, admin: SupabaseClient): Promise<Response> {
+  const bearer = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
+  if (!(await isServiceCaller(admin, bearer))) return json({ error: 'service role only' }, 403);
+  // Past the ones ElevenLabs no longer has: those stay without audio and come back first.
+  const offset = Math.max(0, Number(new URL(req.url).searchParams.get('offset')) || 0);
+  const { data, error } = await admin.from('communications').select('workspace_id, source_id')
+    .eq('source', 'elevenlabs').eq('channel', 'call').is('recording_url', null).gt('duration_s', 0)
+    .order('occurred_at', { ascending: false }).range(offset, offset + 19);
+  if (error) return serverError({}, 'voice-agent backfill-audio', error);
+  const results: Record<string, string> = {};
+  for (const r of data ?? []) {
+    const conv = String(r.source_id).replace(/^el:/, '');
+    results[conv] = await copyAgentAudio(admin, r.workspace_id, conv).catch((e) => `error ${String(e)}`);
+  }
+  return json({ ok: true, results });
 }
 
 Deno.serve(async (req) => {
@@ -729,6 +876,8 @@ Deno.serve(async (req) => {
   if (path.endsWith('/tool/save-qualification')) return saveQualification(req, admin);
   if (path.endsWith('/tool/mark-do-not-contact')) return markDoNotContact(req, admin);
   if (path.endsWith('/tool/get-compr-offer')) return getComprOffer(req, admin);
+  if (path.endsWith('/tool/deal-lookup')) return dealLookup(req, admin);
   if (path.endsWith('/post-call')) return postCall(req, admin);
-  return json({ error: 'unknown route: use /personalize, /tool/lead-context, /tool/book-appointment, /tool/save-qualification, /tool/mark-do-not-contact, /tool/get-compr-offer or /post-call' }, 404);
+  if (path.endsWith('/backfill-audio')) return backfillAudio(req, admin);
+  return json({ error: 'unknown route: use /personalize, /tool/lead-context, /tool/book-appointment, /tool/save-qualification, /tool/mark-do-not-contact, /tool/get-compr-offer, /tool/deal-lookup or /post-call' }, 404);
 });

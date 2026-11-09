@@ -25,7 +25,7 @@ export function slugify(s: string): string {
 }
 
 export const TOOL_KEYS = [
-  'lead_context', 'book_appointment', 'save_qualification', 'mark_do_not_contact', 'get_compr_offer', 'request_agreement', 'transfer', 'end_call',
+  'lead_context', 'book_appointment', 'save_qualification', 'mark_do_not_contact', 'get_compr_offer', 'request_agreement', 'deal_lookup', 'transfer', 'end_call',
 ] as const;
 export type ToolKey = (typeof TOOL_KEYS)[number];
 
@@ -37,13 +37,13 @@ export type ToolKey = (typeof TOOL_KEYS)[number];
  */
 export const TOOL_AVAILABLE: Record<ToolKey, boolean> = {
   lead_context: true, end_call: true, transfer: true, book_appointment: true, save_qualification: true, mark_do_not_contact: true,
-  get_compr_offer: true, request_agreement: false,
+  get_compr_offer: true, request_agreement: false, deal_lookup: true,
 };
 
 export const TOOL_LABELS: Record<ToolKey, string> = {
   lead_context: 'Look up the caller', book_appointment: 'Book an appointment', save_qualification: 'Save what was learned',
   mark_do_not_contact: 'Mark do not contact', get_compr_offer: 'Get the Compr offer range', request_agreement: 'Send the agreement',
-  transfer: 'Transfer to a person', end_call: 'End the call',
+  deal_lookup: 'Look up our deals for sale', transfer: 'Transfer to a person', end_call: 'End the call',
 };
 
 /** Variables the personalize webhook returns on every call; the only {{names}} a prompt may use besides system__*. */
@@ -135,6 +135,8 @@ export type AgentSettings = {
     turn_eagerness: 'patient' | 'normal' | 'eager';
     voicemail: { detect: boolean; action: 'leave_message' | 'hang_up'; message_template: string };
     call_hours: Hours; retry: { max_attempts: number; gap_hours: number };
+    /** Pick up for reps on no answer: Talkr sends a covered rep's unanswered calls to this agent after `ring_seconds`. */
+    overflow: { enabled: boolean; ring_seconds: number };
   };
   live_transfer: {
     enabled: boolean; mode: 'warm' | 'cold'; destinations: Destination[];
@@ -168,6 +170,7 @@ export function defaultSettings(): AgentSettings {
       voicemail: { detect: true, action: 'leave_message', message_template: 'Hi, this is {{agent_name}} with {{company}}. Please call us back when you can. Thank you.' },
       call_hours: { days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat'], start: '08:00', end: '21:00', tz: 'America/Chicago' },
       retry: { max_attempts: 0, gap_hours: 24 },
+      overflow: { enabled: false, ring_seconds: 20 },
     },
     live_transfer: {
       // A positive call is warm-transferred to the rep working the lead; booking is the fallback.
@@ -178,7 +181,7 @@ export function defaultSettings(): AgentSettings {
     tools: {
       lead_context: tool(true, 'lead_context'), book_appointment: tool(true, 'book_appointment'), save_qualification: tool(true, 'save_qualification'),
       mark_do_not_contact: tool(true, 'mark_do_not_contact'), get_compr_offer: tool(false, 'get_compr_offer'), request_agreement: tool(false, 'request_agreement'),
-      transfer: tool(true, 'transfer'), end_call: tool(true, 'end_call'),
+      deal_lookup: tool(false, 'deal_lookup'), transfer: tool(true, 'transfer'), end_call: tool(true, 'end_call'),
     },
     knowledge: { faqs: [], company_facts: [] },
     channels: { phone_number_id: null, inbound: true, outbound: false },
@@ -190,6 +193,8 @@ export function toolOn(s: AgentSettings, k: ToolKey): boolean {
   const t = s.tools[k];
   if (!t || !t.enabled || !TOOL_AVAILABLE[k]) return false;
   if (k === 'transfer') return s.live_transfer.enabled && s.live_transfer.destinations.length > 0;
+  // Our deals for sale are the dispo side's to talk about: no other role reads them, whatever the switch says.
+  if (k === 'deal_lookup') return s.identity.role === 'buyer_assistant' || s.identity.role === 'jr_dispo';
   return true;
 }
 
@@ -481,6 +486,9 @@ export function normalizeSettings(input: unknown, base: AgentSettings = defaultS
   const rt = ch ? sub(c, ch, 'retry', 'call_handling.') : undefined;
   chs.retry.max_attempts = rNum(c, rt, 'max_attempts', chs.retry.max_attempts, 'call_handling.retry.', 0, 10);
   chs.retry.gap_hours = rNum(c, rt, 'gap_hours', chs.retry.gap_hours, 'call_handling.retry.', 1, 168);
+  const ov = ch ? sub(c, ch, 'overflow', 'call_handling.') : undefined;
+  chs.overflow.enabled = rBool(c, ov, 'enabled', chs.overflow.enabled, 'call_handling.overflow.');
+  chs.overflow.ring_seconds = rNum(c, ov, 'ring_seconds', chs.overflow.ring_seconds, 'call_handling.overflow.', 5, 60);
 
   // live transfer
   const lt = sub(c, raw, 'live_transfer', '');

@@ -13,7 +13,7 @@
  * The parsing is pure (genius-methods.ts parsePublicSearch) so it is tested
  * without a portal.
  */
-import { type DeedTransaction, parsePublicSearch } from './genius-methods.ts';
+import { type DeedTransaction, parsePublicSearch } from './entity-records.ts';
 
 export type Portal = { county: string; state: string; platform: 'publicsearch'; base: string };
 

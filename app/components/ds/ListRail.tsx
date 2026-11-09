@@ -11,6 +11,7 @@ const KEY = (screen: string) => `clozr.${screen}.rail`;
 /** Whether the screen's list rail is open; defaults open. */
 export function useRailOpen(screen: string): [boolean, () => void] {
   const [open, setOpen] = useState(() => {
+    // Open until this user folds it away (Sam, 2026-10-19); a saved choice still wins.
     try { return typeof window === 'undefined' || window.localStorage.getItem(KEY(screen)) !== '0'; } catch { return true; }
   });
   const toggle = () => setOpen((was) => {

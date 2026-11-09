@@ -15,9 +15,10 @@ import type { ClozrView } from '@/app/clozr/view';
 import { api } from '@/lib/talkr-web/api';
 import { duration, formatPhone, toE164 } from '@/lib/talkr-web/time';
 import { Icon } from './Icon';
-import { ResumeCard } from './SessionSummary';
 import { DialerSetupFlag } from './DialerReadiness';
 import { DIAL_PREFS_CHANGED, readPrefs } from '@/lib/dial-session';
+import { dialModeLabel } from '@/lib/power-dialer';
+import type { OutcomeKey } from '@/lib/call-outcomes';
 import { QUEUE_DEPTHS } from '@/lib/seller-phones';
 import { Mark } from '@/components/ds/mark';
 import { Button, Card, EmptyState, Eyebrow, Toggle } from './ui';
@@ -32,6 +33,10 @@ import { searchDialable } from '@/lib/dial-search';
 import { dialKindLabel, dialTarget, isNameQuery, mergeDialMatches, whoseNumber } from '@/lib/dial-lookup';
 import { SellerWrapUp } from './OutcomePicker';
 import { shortDeviceLabel, useSoftphone } from './softphoneAdapter';
+import { useSession } from '@/lib/session';
+import { dbId } from '@/lib/crm';
+import { type Suggestion, suggestForCall } from '@/lib/record-suggest';
+import { SuggestionList } from '@/app/components/record/CallInsight';
 
 /** The Talkr mark in Talkr Red. Lives in components/brand (inline SVG); re-exported for the dialer's imports. */
 export { TalkrMark } from '@/app/components/brand/TalkrMark';
@@ -58,9 +63,11 @@ const shown = (d: string) => (d.startsWith('+') ? d : formatPhone(d));
 
 /**
  * The number being dialed — the Phone app's big centred display, with an ⓧ
- * that clears it all. Typed, pasted or tapped in. Letters turn it into a name
- * search: `query` holds what was typed, and `matches` drop down under it
- * (arrow keys and Enter pick, Esc closes).
+ * that clears it all. Typed, pasted or tapped in. Letters turn it into a
+ * search, the command bar's (lib/record-search): `query` holds what was
+ * typed, and `lookup` matches drop down under it (arrow keys and Enter pick,
+ * Esc closes). Focused with nothing typed, it lists `recent` contacts, as the
+ * command bar does; ↓ walks them and Enter on one picks it.
  */
 export function NumberField({
   digits,
@@ -70,6 +77,7 @@ export function NumberField({
   query = '',
   setQuery,
   lookup,
+  recent,
   onPick,
 }: {
   digits: string;
@@ -79,18 +87,32 @@ export function NumberField({
   query?: string;
   setQuery?: (q: string) => void;
   lookup?: DialLookupState;
+  /** Who to offer before anything is typed. */
+  recent?: () => Contact[];
   onPick?: (c: Contact) => void;
 }) {
   const { callState } = useSoftphone();
   const listId = useId();
-  const [open, setOpen] = useState(true);
-  const [active, setActive] = useState(0);
+  const [open, setOpen] = useState(false);
+  // -1: nothing picked yet, so Enter on an empty box never calls someone by accident.
+  const [active, setActive] = useState(-1);
   const naming = !!query;
-  const rows = naming && open && lookup?.q === query ? lookup.matches : [];
-  const showList = naming && open && query.trim().length >= 2;
+  const empty = !query && !digits;
+  // Read once each time the box opens empty, not on every render of the dialer.
+  const [recents, setRecents] = useState<Contact[]>([]);
+  const recentRef = useRef(recent);
+  recentRef.current = recent;
+  useEffect(() => {
+    if (!open || !empty || !recentRef.current) return;
+    const list = recentRef.current();
+    queueMicrotask(() => setRecents(list));
+  }, [open, empty]);
+  const rows = !open ? [] : naming ? (lookup?.q === query ? lookup.matches : []) : empty ? recents : [];
+  const showList = open && !!setQuery && (naming || (empty && recents.length > 0));
+  const at = rows.length ? Math.min(Math.max(active, naming ? 0 : -1), rows.length - 1) : -1;
   const pick = (c: Contact) => {
     onPick?.(c);
-    setActive(0);
+    setActive(-1);
   };
   const size = naming ? (big ? 24 : 22) : (big ? 34 : 30) - (digits.length > 10 ? 6 : 0);
   return (
@@ -100,7 +122,7 @@ export function NumberField({
         onChange={(e) => {
           const raw = e.target.value;
           setOpen(true);
-          setActive(0);
+          setActive(-1);
           if (setQuery && isNameQuery(raw)) {
             setQuery(raw);
             setDigits('');
@@ -112,10 +134,10 @@ export function NumberField({
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
         onKeyDown={(e) => {
-          if (rows.length) {
-            if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => Math.min(rows.length - 1, a + 1)); return; }
-            if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(0, a - 1)); return; }
-            if (e.key === 'Enter') { e.preventDefault(); pick(rows[Math.min(active, rows.length - 1)]); return; }
+          if (rows.length && showList) {
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActive(Math.min(rows.length - 1, at + 1)); return; }
+            if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(naming ? 0 : -1, at - 1)); return; }
+            if (e.key === 'Enter' && at >= 0) { e.preventDefault(); pick(rows[at]); return; }
           }
           if (e.key === 'Escape' && showList) { e.preventDefault(); setOpen(false); return; }
           if (e.key === 'Enter' && digits && callState === 'idle') onDial();
@@ -132,12 +154,12 @@ export function NumberField({
         data-1p-ignore="true"
         data-bwignore="true"
         enterKeyHint="go"
-        aria-label={setQuery ? 'Number to dial, or a name to look up' : 'Number to dial'}
+        aria-label={setQuery ? 'Number to dial, or a name, address or email to look up' : 'Number to dial'}
         role={setQuery ? 'combobox' : undefined}
         aria-expanded={setQuery ? showList : undefined}
         aria-controls={setQuery ? listId : undefined}
         aria-autocomplete={setQuery ? 'list' : undefined}
-        aria-activedescendant={rows.length ? `${listId}-${Math.min(active, rows.length - 1)}` : undefined}
+        aria-activedescendant={showList && at >= 0 ? `${listId}-${at}` : undefined}
         className="w-full min-w-0 bg-transparent text-center outline-none"
         // A full (217) 555-0100 at 30px overran the narrow desk column; long numbers step down, and a name sits smaller.
         style={{ font: `500 ${size}px/1.15 var(--sans)`, letterSpacing: '-0.01em', padding: '0 30px' }}
@@ -158,37 +180,79 @@ export function NumberField({
         </button>
       )}
       {showList && (
-        <div className="dial-lookup" id={listId} role="listbox" aria-label="Contacts">
-          {rows.map((c, i) => (
-            <div
-              key={`${c.kind}:${c.id}`}
-              id={`${listId}-${i}`}
-              role="option"
-              aria-selected={i === active}
-              className="dial-lookup-row"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                pick(c);
-              }}
-              onMouseEnter={() => setActive(i)}
-            >
-              <DialKindBadge c={c} />
-              <span className="min-w-0 flex-1">
-                <span className="dial-lookup-name">{c.name}</span>
-                <span className="dial-lookup-sub" title={[c.sub, c.phone].filter(Boolean).join(' · ')}>
-                  {c.phone ? formatPhone(c.phone) : ''}
-                  {c.sub ? ` · ${c.sub}` : ''}
-                </span>
-              </span>
-            </div>
-          ))}
-          {!rows.length && (
-            <div className="dial-lookup-note" role="status">
-              {lookup?.q === query && !lookup.busy
-                ? `Nobody matching “${query.trim()}” has a number on file.`
-                : 'Searching…'}
-            </div>
-          )}
+        <div className="dial-lookup">
+          <DialMatchList
+            id={listId}
+            rows={rows}
+            active={at}
+            setActive={setActive}
+            onPick={pick}
+            label={naming ? undefined : 'Recent'}
+            note={naming && !rows.length ? (lookup?.q === query && !lookup.busy ? `Nobody matching “${query.trim()}” has a number on file.` : 'Searching…') : null}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The rows the dial search offers: badge, name, number, then the property or
+ * company. The desk's popover and the phone's search sheet both draw this.
+ */
+export function DialMatchList({
+  id,
+  rows,
+  active,
+  setActive,
+  onPick,
+  label,
+  note,
+}: {
+  id: string;
+  rows: Contact[];
+  active: number;
+  setActive: (i: number) => void;
+  onPick: (c: Contact) => void;
+  /** A group label over the rows ("Recent"). */
+  label?: string;
+  /** Said in place of rows: still searching, or nobody matched. */
+  note?: string | null;
+}) {
+  return (
+    <div id={id} role="listbox" aria-label={label ? `${label} contacts` : 'Contacts'}>
+      {label && rows.length > 0 && (
+        <div className="dial-lookup-group" role="presentation">
+          {label}
+        </div>
+      )}
+      {rows.map((c, i) => (
+        <div
+          key={`${c.kind}:${c.id}`}
+          id={`${id}-${i}`}
+          role="option"
+          aria-selected={i === active}
+          className="dial-lookup-row"
+          // On press, not click: the box keeps focus, and its blur does not close the list first.
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onPick(c);
+          }}
+          onMouseEnter={() => setActive(i)}
+        >
+          <DialKindBadge c={c} />
+          <span className="min-w-0 flex-1">
+            <span className="dial-lookup-name">{c.name}</span>
+            <span className="dial-lookup-sub" title={[c.sub, c.phone].filter(Boolean).join(' · ')}>
+              {c.phone ? formatPhone(c.phone) : ''}
+              {c.sub ? ` · ${c.sub}` : ''}
+            </span>
+          </span>
+        </div>
+      ))}
+      {note && !rows.length && (
+        <div className="dial-lookup-note" role="status">
+          {note}
         </div>
       )}
     </div>
@@ -203,11 +267,14 @@ export function DialKindBadge({ c }: { c: Contact }) {
 export type DialLookupState = { q: string; matches: Contact[]; busy: boolean };
 
 /**
- * The dial box's lookups: matches for a typed name, and whose a typed number
- * is. People and buyers already loaded answer at once; the database adds
- * vendors (lenders, title, contractors) and anyone not loaded.
+ * The dial box's lookups: matches for what was typed (a name, an address, an
+ * email), and whose a typed number is. People and buyers already loaded
+ * answer at once, with the command bar's search (V.dialerContacts); from two
+ * characters the database adds vendors and anyone not loaded, a beat after
+ * typing stops. `recent` is who to offer before anything is typed. The desk's
+ * dial box and the phone's search sheet both use it.
  */
-function useDialLookup(V: ClozrView, query: string, digits: string) {
+export function useDialLookup(V: ClozrView, query: string, digits: string) {
   const workspaceId = V.templatesWorkspaceId ?? null;
   // Talkr's own contacts join the search once Talkr knows this rep.
   const talkrOn = V.talkrStatus === 'ok';
@@ -218,7 +285,7 @@ function useDialLookup(V: ClozrView, query: string, digits: string) {
   sees.current = V.dialerSees;
   const search = useCallback(
     async (q: string) => {
-      const mine = local.current(q);
+      const mine = local.current(q, 12);
       const theirs = workspaceId !== null ? await searchDialable(workspaceId, q, { talkr: talkrOn }).catch(() => null) : null;
       return mergeDialMatches(mine, (theirs?.matches ?? []).filter((c) => sees.current(c)), 12, theirs?.bad);
     },
@@ -227,14 +294,17 @@ function useDialLookup(V: ClozrView, query: string, digits: string) {
   const [names, setNames] = useState<DialLookupState | null>(null);
   useEffect(() => {
     const q = query.trim();
-    if (q.length < 2) return;
+    if (!q) return;
     let live = true;
-    setNames((n) => ({ q: query, matches: n?.q === query ? n.matches : mergeDialMatches(local.current(q), [], 12), busy: true }));
+    // The loaded people answer on this keystroke; the database only from two characters.
+    const remote = q.length >= 2;
+    setNames((n) => ({ q: query, matches: n?.q === query ? n.matches : mergeDialMatches(local.current(q, 12), [], 12), busy: remote }));
+    if (!remote) return;
     const t = window.setTimeout(() => {
       void search(q).then((matches) => {
         if (live) setNames({ q: query, matches, busy: false });
       });
-    }, 180);
+    }, 200);
     return () => {
       live = false;
       window.clearTimeout(t);
@@ -255,7 +325,27 @@ function useDialLookup(V: ClozrView, query: string, digits: string) {
       window.clearTimeout(t);
     };
   }, [digits, search]);
-  return { names, owner: owner?.digits === digits ? owner.who : null };
+  // Part of a number (four to nine digits): the loaded contact whose phone has those digits, offered under the box.
+  const [hint, setHint] = useState<{ digits: string; who: Contact | null } | null>(null);
+  useEffect(() => {
+    const d = digits.replace(/\D/g, '');
+    if (d.length < 4 || d.length >= 10) return;
+    const who = local.current(d, 6).find((c) => (c.phone ?? '').replace(/\D/g, '').includes(d)) ?? null;
+    queueMicrotask(() => setHint({ digits, who }));
+  }, [digits]);
+  const recent = useCallback(() => mergeDialMatches(local.current('', 8), [], 8), []);
+  return { names, owner: owner?.digits === digits ? owner.who : null, hint: hint?.digits === digits ? hint.who : null, recent };
+}
+
+/** Part of a number typed: whose number it could be, one tap to fill the rest in. */
+export function DialHint({ c, onPick }: { c: Contact; onPick: () => void }) {
+  return (
+    <button type="button" className="dial-who dial-hint" onMouseDown={(e) => e.preventDefault()} onClick={onPick} title={`Dial ${c.name}`}>
+      <DialKindBadge c={c} />
+      <span className="dial-who-name">{c.name}</span>
+      {c.phone && <span className="dial-who-sub">{formatPhone(c.phone)}</span>}
+    </button>
+  );
 }
 
 /** Who the number in the dial box belongs to, under it: the badge, the name, the property or company. */
@@ -295,7 +385,7 @@ export function Keys({
         // Pressing a key leaves focus where it was (the number field), so Enter calls instead of pressing the key again.
         <button key={d} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => onKey(d)} className="ios-key" aria-label={letters ? `${d} ${letters}` : d}>
           <span style={{ font: '400 32px/1 var(--sans)' }}>{d}</span>
-          <span style={{ font: '600 9px/1 var(--sans)', letterSpacing: '0.16em', color: 'var(--muted)', minHeight: 9 }}>{letters}</span>
+          <span style={{ font: '600 10.5px/1 var(--sans)', letterSpacing: '0.08em', color: 'var(--muted)', minHeight: 10 }}>{letters}</span>
         </button>
       ))}
     </div>
@@ -481,7 +571,7 @@ export function DialBlock({ V, digits, setDigits, error, big = false, keyboard =
   const [query, setQuery] = useState('');
   // Who was picked from the name search, kept while the number is still theirs.
   const [picked, setPicked] = useState<Contact | null>(null);
-  const { names, owner } = useDialLookup(V, query, digits);
+  const { names, owner, hint, recent } = useDialLookup(V, query, digits);
   const who = picked && whoseNumber(digits, [picked]) ? picked : owner;
   // A seller or buyer row calls as that record (and the other number it is), not as a bare number.
   const dial = () => V.dialE164(toE164(digits), who?.name, who ? dialTarget(who) : null);
@@ -550,6 +640,7 @@ export function DialBlock({ V, digits, setDigits, error, big = false, keyboard =
         query={query}
         setQuery={setQuery}
         lookup={names ?? undefined}
+        recent={recent}
         onPick={(c) => {
           setPicked(c);
           setQuery('');
@@ -557,6 +648,7 @@ export function DialBlock({ V, digits, setDigits, error, big = false, keyboard =
         }}
       />
       {who && !query && <DialWho c={who} />}
+      {!who && !query && hint && <DialHint c={hint} onPick={() => { setPicked(hint); setDigits(dialDigits(hint.phone ?? '')); }} />}
       <Keys
         onKey={(d) => {
           setQuery('');
@@ -576,7 +668,7 @@ export function DialBlock({ V, digits, setDigits, error, big = false, keyboard =
         >
           <Icon name="msg" size={24} />
         </button>
-        <button type="button" className="ios-round" style={{ background: 'var(--green)' }} disabled={dialDisabled} onClick={dial} aria-label="Call" title="Call">
+        <button type="button" className="ios-round" style={{ background: 'var(--accent)' }} disabled={dialDisabled} onClick={dial} aria-label="Call" title="Call">
           <Icon name="phone" size={30} />
         </button>
         <button
@@ -647,8 +739,11 @@ export function SoftphoneRow({ V, error }: { V: ClozrView; error?: string | null
   );
 }
 
+/** The switches RecordingToggles reads: the view model, or Settings' slice of it. */
+export type RecordingSwitches = Pick<ClozrView, 'rec' | 'ai' | 'recLocked' | 'toggleRec' | 'toggleAiRec'>;
+
 /** CLOZR's two call switches, and the consent line that goes with them. */
-export function RecordingToggles({ V }: { V: ClozrView }) {
+export function RecordingToggles({ V }: { V: RecordingSwitches }) {
   const row = (label: string, on: boolean, flip: () => void, locked?: string) => (
     <div className="flex items-center justify-between gap-2 px-3 py-2" style={{ border: '1px solid var(--line)', borderRadius: 'var(--r-btn)', background: 'var(--panel)', boxShadow: 'var(--shadow-rest)' }}>
       <span style={{ font: '500 11.5px/1 var(--sans)' }}>{label}</span>
@@ -676,7 +771,8 @@ export function RecentList({ V, big, onPick }: { V: ClozrView; big: boolean; onP
         const other = c.direction === 'outbound' ? c.to_number : c.from_number;
         return {
           id: c.id,
-          name: c.contact_name ?? formatPhone(other),
+          // Talkr names a call only when it linked a contact; a CLOZR seller or buyer on the number is who it was.
+          name: c.contact_name ?? V.dialerRecordFor(other)?.name ?? formatPhone(other),
           sub: `${c.direction} · ${c.status.replace(/_/g, ' ')}`,
           right: c.duration_seconds != null ? duration(c.duration_seconds) : '',
           missed: c.status === 'no_answer' || c.status === 'busy',
@@ -740,10 +836,9 @@ export function QueueList({ V, wide = false }: { V: ClozrView; wide?: boolean })
   // opens (DialSessionSetup.tsx); the header says what the last one was.
   const prefs = useDialPrefs(V);
   const depthLabel = QUEUE_DEPTHS.find((d) => d.id === prefs.depth)?.label ?? '1';
-  const running = !!V.queueSession || !!V.talkrPhone.session.session;
+  const running = !!V.talkrPhone.session.session;
   return (
     <>
-      <ResumeCard V={V} />
       <div className="mb-1 flex flex-col gap-2 px-3 py-2.5" style={{ border: '1px solid var(--line)', borderRadius: 'var(--r-btn)', background: 'var(--band)' }}>
         <div className="flex items-center justify-between gap-2">
           <span className="flex flex-col gap-1">
@@ -771,7 +866,7 @@ export function QueueList({ V, wide = false }: { V: ClozrView; wide?: boolean })
         </div>
         <span className="flex items-center justify-between gap-2">
           <span data-testid="queue-last-setup" style={{ font: '500 10.5px/1.3 var(--sans)', color: 'var(--muted)' }}>
-            Last time: {prefs.mode === 'predictive' ? 'Predictive' : 'Power'} · {depthLabel} number{prefs.depth === 1 ? '' : 's'} per lead. Start session asks first.
+            Last time: {dialModeLabel(prefs.mode, prefs.lines)} · {depthLabel} number{prefs.depth === 1 ? '' : 's'} per lead. The power dialer page picks the rest.
           </span>
         </span>
       </div>
@@ -790,6 +885,9 @@ export function QueueList({ V, wide = false }: { V: ClozrView; wide?: boolean })
               {toE164(q.phone) ? <PhoneText e164={toE164(q.phone)} size={16} /> : q.phone}
               <span className="truncate">· {q.reason}</span>
             </span>
+            {q.detail && (
+              <span className="truncate" title={q.detail} style={{ font: `400 ${wide ? 11.5 : 10}px/1.2 var(--sans)`, color: 'var(--muted)' }}>{q.detail}</span>
+            )}
           </span>
           <Button tone="ghost" onClick={q.go} style={{ padding: '6px 10px', font: '600 11px/1 var(--sans)' }}>
             <Icon name="phone" size={12} />
@@ -844,7 +942,7 @@ export function VoicemailList({ V, wide = false }: { V: ClozrView; wide?: boolea
         <div key={`${v.name}-${i}`} className="flex flex-col gap-1.5 px-2 py-2.5" style={{ borderBottom: '1px solid var(--line-soft)' }}>
           <div className="flex items-center justify-between gap-2">
             <span className="truncate" style={{ font: '600 12px/1 var(--sans)' }}>{v.name}</span>
-            <span style={{ font: '500 10px/1 var(--sans)', color: 'var(--muted-2)' }}>{v.time}</span>
+            <span style={{ font: '500 11px/1 var(--sans)', color: 'var(--muted-2)' }}>{v.time}</span>
           </div>
           <span style={{ font: '400 11.5px/1.45 var(--sans)', color: 'var(--muted)' }}>{v.text}</span>
           <div className="flex flex-wrap gap-1.5">
@@ -921,10 +1019,45 @@ export function NotesCard({ V }: { V: ClozrView }) {
           </div>
         </div>
       )}
+      <CallSuggestions V={V} />
       <p style={{ font: '400 10.5px/1.4 var(--sans)', color: 'var(--muted-2)' }}>
         Saved to the record as a call note when the call ends.
       </p>
     </Card>
+  );
+}
+
+/**
+ * What the call said the record should change: tasks, notes, a stage, an
+ * appointment, read from the transcript once the call ends (the same engine the
+ * text thread's Suggested updates use). Sellers only: record-suggest reads and
+ * writes the seller record.
+ */
+function CallSuggestions({ V }: { V: ClozrView }) {
+  const me = useSession().user?.id ?? null;
+  const target = V.outcomeTarget;
+  const workspaceId = V.liveIds?.workspaceId ?? null;
+  const sellerId = target ? dbId(target.pid) : null;
+  const ended = V.callState === 'wrap';
+  const transcript = V.transcript.map((l) => `${l.who}: ${l.text}`).join('\n');
+  const key = `${sellerId}:${V.transcript.length}`;
+  const [res, setRes] = useState<{ key: string; error: string | null; items: Suggestion[] | null }>({ key: '', error: null, items: null });
+  useEffect(() => {
+    if (!ended || !workspaceId || !sellerId || !transcript.trim()) return;
+    let alive = true;
+    suggestForCall(workspaceId, sellerId, transcript).then((r) => {
+      if (alive) setRes(r.ok ? { key, error: null, items: r.suggestions } : { key, error: r.message, items: null });
+    });
+    return () => { alive = false; };
+  }, [ended, workspaceId, sellerId, transcript, key]);
+  if (!ended || !workspaceId || !sellerId || !transcript.trim()) return null;
+  const state = res.key === key ? { loading: false, ...res } : { loading: true, error: null, items: null };
+  if (state.items && !state.items.length) return null;
+  return (
+    <div className="flex flex-col gap-1.5 pt-1" style={{ borderTop: '1px solid var(--line-soft)' }}>
+      <Eyebrow className="pt-1.5">Suggested updates</Eyebrow>
+      <SuggestionList workspaceId={workspaceId} sellerId={sellerId} me={me} canWrite={V.liveIds?.canWrite ?? false} state={state} onToast={V.showToast} onChanged={V.reloadCrm} />
+    </div>
   );
 }
 
@@ -972,12 +1105,7 @@ export function LiveCallCard({ V, part = 'both' }: { V: ClozrView; part?: 'both'
             </div>
           ))}
         </div>
-        <div className="relative overflow-hidden p-3.5" style={{ borderRadius: 'var(--r-md)', background: 'var(--ink)', color: 'var(--on-dark, #fff)' }}>
-          <div
-            className="pointer-events-none absolute"
-            style={{ top: -80, right: -60, width: 220, height: 220, borderRadius: '50%', background: 'radial-gradient(circle, rgba(10, 133, 96,.40), rgba(10, 133, 96,0) 70%)' }}
-            aria-hidden
-          />
+        <div className="relative overflow-hidden p-3.5" style={{ borderRadius: 'var(--r-md)', background: 'var(--ink-fill, var(--ink))', color: 'var(--on-dark, #fff)' }}>
           <div className="relative flex flex-col gap-1.5">
             <Eyebrow>Suggested response</Eyebrow>
             <span style={{ font: '500 13px/1.5 var(--sans)' }}>{V.suggestedResponse}</span>
@@ -1009,6 +1137,8 @@ type WrapUpProps = {
   onNext?: () => void;
   /** Open record, when the host has to do something first (the phone minimises). */
   onOpenRecord?: () => void;
+  /** The outcome picked while the call was live (the Dialer screen's right column): the wrap-up starts from it. */
+  held?: OutcomeKey | null;
 };
 
 /**
@@ -1017,10 +1147,13 @@ type WrapUpProps = {
  * buyer or an unknown number keeps Talkr's disposition grid. The two never
  * mount together, so only one key handler is ever listening.
  */
+/** How long a no-answer wrap-up stays up in a running session before the next number dials. */
+const NO_ANSWER_NEXT_MS = 2500;
+
 export function WrapUpCard(props: WrapUpProps) {
   const target = props.V.outcomeTarget;
   return target
-    ? <SellerWrapUp V={props.V} target={target} mobile={props.mobile} onOpenRecord={props.onOpenRecord} />
+    ? <SellerWrapUp V={props.V} target={target} mobile={props.mobile} onOpenRecord={props.onOpenRecord} initial={props.held} />
     : <DispositionWrapUp {...props} />;
 }
 
@@ -1064,7 +1197,7 @@ function DispositionWrapUp({
     if (handedOff.current || saving || (!selected && !V.canAccept && !noAnswer)) return;
     setError(null);
     if (selected && !authed) {
-      V.queueSession?.logCall(selected, { noAnswer, talked: false });
+      V.talkrPhone.session.logDisposition(selected, { noAnswer, talked: false });
       V.dispositions.find((d) => d.label === selected)?.go();
       return;
     }
@@ -1090,7 +1223,7 @@ function DispositionWrapUp({
     handedOff.current = true;
     setHanded(true);
     // A running session counts the call by what the disposition means (lib/dial-session.ts).
-    V.queueSession?.logCall(dispositions.find((d) => d.slug === selected)?.name ?? selected, { noAnswer, talked: !noAnswer && V.canAccept });
+    V.talkrPhone.session.logDisposition(dispositions.find((d) => d.slug === selected)?.name ?? selected, { noAnswer, talked: !noAnswer && V.canAccept });
     if (!noAnswer && V.canAccept) V.acceptWrap(Object.fromEntries(V.wrapFields.map((f) => [f.key, edits[f.key] ?? f.v])));
     else V.dismissWrap();
   }, [saving, selected, authed, callId, notes, setNotes, followUp, noAnswer, edits, V, dispositions]);
@@ -1118,11 +1251,26 @@ function DispositionWrapUp({
   }, [dispositions, save]);
 
   const chosen = dispositions.find((d) => d.slug === selected);
-  /** Skip, or Done on a call nobody answered: a running session still counts the no-answer. */
+  /**
+   * Skip, or Done on a call nobody answered: a running session counts the
+   * no-answer. A predictive session dials the next number; power waits for Next.
+   */
+  const running = V.sessionAutoDials;
   const skipWrap = () => {
-    if (noAnswer) V.queueSession?.logCall(null, { noAnswer: true, talked: false });
+    if (noAnswer) V.talkrPhone.session.logDisposition(null, { noAnswer: true, talked: false });
     V.dismissWrap();
+    if (running) V.advanceWhenIdle();
   };
+  // Nobody answered in a predictive session: the next number dials after a
+  // moment, unless the rep has started a note or picked a disposition.
+  const skipRef = useRef(skipWrap);
+  skipRef.current = skipWrap;
+  const untouched = !notes.trim() && !selected;
+  useEffect(() => {
+    if (!noAnswer || !running || !untouched) return;
+    const t = window.setTimeout(() => skipRef.current(), NO_ANSWER_NEXT_MS);
+    return () => window.clearTimeout(t);
+  }, [noAnswer, running, untouched]);
   const transcriptText = V.transcript.map((l) => `${l.who}: ${l.text}`).join('\n');
 
   return (
@@ -1259,7 +1407,7 @@ function DispositionWrapUp({
             onClick={skipWrap}
             style={{ flex: 1, height: 50, borderRadius: 14, border: '1px solid var(--line)', background: 'var(--surface, #fff)', color: 'var(--text)', font: '600 17px/1 var(--sans)' }}
           >
-            {noAnswer ? 'Done' : 'Skip'}
+            {noAnswer ? (running && untouched ? 'Next call' : 'Done') : 'Skip'}
           </button>
           <button
             type="button"
@@ -1282,7 +1430,7 @@ function DispositionWrapUp({
       ) : (
         <div className="flex justify-end gap-2">
           <Button tone="quiet" onClick={skipWrap}>
-            {noAnswer ? 'Done' : 'Skip'}
+            {noAnswer ? (running && untouched ? 'Next call' : 'Done') : 'Skip'}
           </Button>
           <Button tone="accent" onClick={() => void save()} disabled={handed || saving || (!selected && !V.canAccept && !noAnswer)}>
             {saving ? 'Saving…' : noAnswer || !V.canAccept ? 'Save' : 'Save & accept changes'}

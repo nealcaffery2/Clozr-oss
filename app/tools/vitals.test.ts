@@ -35,6 +35,11 @@ function el(tag: string, attrs: Record<string, string> = {}, parent: Fake | null
 eq('screen from hash', screenOf('#screen=person&id=s42&from=people'), 'person');
 eq('bare hash is home', screenOf(''), 'home');
 eq('junk screen', screenOf('#screen=' + encodeURIComponent('<b>x')), 'other');
+eq('screen from a path', screenOf('/app/people/s42'), 'person');
+eq('deal-keyed path', screenOf('/app/deals/d7/tc'), 'tc');
+eq('bare path is home', screenOf('/app'), 'home');
+eq('unknown path', screenOf('/app/nope'), 'other');
+eq('an old hash on the first load', screenOf('/app#screen=deals'), 'deals');
 
 // ---- interaction rows ----
 // A tap: pointerdown, pointerup and click, one interaction; the click handler did the work.

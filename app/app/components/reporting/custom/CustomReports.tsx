@@ -42,7 +42,7 @@ function defFromDashboard(tab: string): ReportDef {
   return def;
 }
 
-const badge = (freq: string | null | undefined): React.CSSProperties => ({ display: 'inline-block', fontSize: '11px', fontWeight: 700, padding: '2px 7px', borderRadius: '999px', background: freq ? '#E7F8F1' : SOFT, color: freq ? ACCENT : MUTED, whiteSpace: 'nowrap' });
+const badge = (freq: string | null | undefined): React.CSSProperties => ({ display: 'inline-block', fontSize: '11px', fontWeight: 700, padding: '2px 7px', borderRadius: '999px', background: freq ? 'var(--mint-dim, #e7f8f1)' : SOFT, color: freq ? ACCENT : MUTED, whiteSpace: 'nowrap' });
 
 export function CustomReports({ raw, workspaceId, workspaceName, admin, isMobile, toast }: {
   raw: EngineRaw | null; workspaceId: number | null; workspaceName: string; admin: boolean; isMobile: boolean; toast: (m: string) => void;
@@ -157,7 +157,7 @@ export function CustomReports({ raw, workspaceId, workspaceName, admin, isMobile
               <div style={{ overflow: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '12.5px', minWidth: '640px' }}>
                   <thead>
-                    <tr>{['Report name', 'Schedule', 'Created at', 'Created by', ''].map((h) => <th key={h} style={{ textAlign: 'left', padding: '0 14px', height: '36px', background: '#fafafa', borderBottom: `1px solid ${LINE}`, fontSize: '11px', color: MUTED, fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>)}</tr>
+                    <tr>{['Report name', 'Schedule', 'Created at', 'Created by', ''].map((h) => <th key={h} style={{ textAlign: 'left', padding: '0 14px', height: '36px', background: 'var(--canvas, #fafafa)', borderBottom: `1px solid ${LINE}`, fontSize: '11px', color: MUTED, fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>)}</tr>
                   </thead>
                   <tbody>
                     {pageRows.map((r) => (
@@ -168,12 +168,12 @@ export function CustomReports({ raw, workspaceId, workspaceName, admin, isMobile
                           <span style={{ display: 'block', fontSize: '11.5px', color: MUTED }}>{r.definition.pages.length} page{r.definition.pages.length === 1 ? '' : 's'} · {r.definition.pages.reduce((n, p) => n + p.blocks.length, 0)} widgets · {r.definition.datePreset}</span>
                         </td>
                         <td onClick={() => setView({ kind: 'schedule', id: r.id })} style={{ padding: '0 14px', borderBottom: `1px solid ${SOFT}` }}><span style={badge(r.schedule?.frequency)}>{r.schedule ? r.schedule.frequency : 'Not scheduled'}</span></td>
-                        <td onClick={() => setView({ kind: 'edit', id: r.id })} style={{ padding: '0 14px', borderBottom: `1px solid ${SOFT}`, color: '#52525b', whiteSpace: 'nowrap' }}>{new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
-                        <td onClick={() => setView({ kind: 'edit', id: r.id })} style={{ padding: '0 14px', borderBottom: `1px solid ${SOFT}`, color: '#52525b', whiteSpace: 'nowrap' }}>{r.created_from === 'template' ? (r.owner_name ?? names.get(r.owner_id ?? '') ?? 'Template Library') : r.owner_name ?? names.get(r.owner_id ?? '') ?? '—'}</td>
+                        <td onClick={() => setView({ kind: 'edit', id: r.id })} style={{ padding: '0 14px', borderBottom: `1px solid ${SOFT}`, color: 'var(--muted, #52525b)', whiteSpace: 'nowrap' }}>{new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                        <td onClick={() => setView({ kind: 'edit', id: r.id })} style={{ padding: '0 14px', borderBottom: `1px solid ${SOFT}`, color: 'var(--muted, #52525b)', whiteSpace: 'nowrap' }}>{r.created_from === 'template' ? (r.owner_name ?? names.get(r.owner_id ?? '') ?? 'Template Library') : r.owner_name ?? names.get(r.owner_id ?? '') ?? '—'}</td>
                         <td style={{ padding: '0 10px', borderBottom: `1px solid ${SOFT}`, textAlign: 'right', position: 'relative', width: '48px' }}>
                           <button type="button" onClick={(e) => { e.stopPropagation(); setMenu(menu === r.id ? null : r.id); }} aria-label="Actions" aria-haspopup="menu" style={{ ...btn.icon, border: 0, fontSize: '16px' }}>⋯</button>
                           {menu === r.id ? (
-                            <div role="menu" onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', right: '10px', top: '40px', zIndex: 30, background: '#fff', border: `1px solid ${LINE}`, borderRadius: '10px', boxShadow: '0 12px 32px rgba(0,0,0,.12)', padding: '6px', width: '190px', textAlign: 'left' }}>
+                            <div role="menu" onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', right: '10px', top: '40px', zIndex: 30, background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '10px', boxShadow: '0 12px 32px rgba(0,0,0,.12)', padding: '6px', width: '190px', textAlign: 'left' }}>
                               {[
                                 ['Manage permissions', () => { setPermFor(r); setMenu(null); }, canEdit(r)],
                                 ['Send or schedule', () => { setMenu(null); setView({ kind: 'schedule', id: r.id }); }, true],
@@ -181,7 +181,7 @@ export function CustomReports({ raw, workspaceId, workspaceName, admin, isMobile
                                 ['Save as template', () => { setMenu(null); void saveAsTemplate(r); }, true],
                                 ['Delete', () => { setMenu(null); void remove(r); }, canEdit(r)],
                               ].map(([label, go, ok]) => (
-                                <button key={label as string} type="button" role="menuitem" disabled={!ok} onClick={go as () => void} className="dc2" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 9px', border: 0, background: 'none', borderRadius: '7px', fontSize: '12.5px', cursor: ok ? 'pointer' : 'not-allowed', color: label === 'Delete' ? '#b91c1c' : ok ? INK : '#a1a1aa' }}>{label as string}</button>
+                                <button key={label as string} type="button" role="menuitem" disabled={!ok} onClick={go as () => void} className="dc2" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 9px', border: 0, background: 'none', borderRadius: '7px', fontSize: '12.5px', cursor: ok ? 'pointer' : 'not-allowed', color: label === 'Delete' ? '#b91c1c' : ok ? INK : 'var(--subtle, #a1a1aa)' }}>{label as string}</button>
                               ))}
                             </div>
                           ) : null}
@@ -211,7 +211,7 @@ export function CustomReports({ raw, workspaceId, workspaceName, admin, isMobile
               ['Create a blank report', 'Start fresh with a clean slate', () => void create(defaultName(), blankDef(), 'blank')],
               ['From template library', 'Use a ready-made template from the library or one of yours', () => { setNewOpen(false); setLibrary(true); }],
             ].map(([t, sub, go]) => (
-              <button key={t as string} type="button" onClick={go as () => void} className="dc2" style={{ textAlign: 'left', padding: '12px 14px', border: `1px solid ${LINE}`, borderRadius: '10px', background: '#fff', cursor: 'pointer' }}>
+              <button key={t as string} type="button" onClick={go as () => void} className="dc2" style={{ textAlign: 'left', padding: '12px 14px', border: `1px solid ${LINE}`, borderRadius: '10px', background: 'var(--surface, #fff)', cursor: 'pointer' }}>
                 <span style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: INK }}>{t as string}</span>
                 <span style={{ display: 'block', fontSize: '12px', color: MUTED }}>{sub as string}</span>
               </button>

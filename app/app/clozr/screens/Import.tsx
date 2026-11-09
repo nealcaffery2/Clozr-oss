@@ -13,6 +13,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Sparkles } from 'lucide-react';
 import { ReadOnlyNote } from '@/components/ViewAs';
 import type { ClozrView } from '@/app/clozr/view';
 import { Empty } from '@/components/ds/Empty';
@@ -35,10 +36,12 @@ import { isAdmin, canSee, type Role } from '@/lib/team';
 import { resetLeaderboardReps } from '@/lib/floor-store';
 import { pauseLive, resumeLive } from '@/lib/use-crm';
 import { raiseToast } from '@/app/clozr/toastStore';
+import { ScreenFrame, ScreenHeader } from '@/components/ds/Screen';
 
 const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
 const h2: React.CSSProperties = { margin: '0 0 2px', fontSize: '14px', fontWeight: 700, letterSpacing: '-0.01em' };
-const sub: React.CSSProperties = { margin: '0 0 12px', fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.5 };
+// Help text stops at the 72ch measure (DESIGN.md §4); it ran 187 characters a line.
+const sub: React.CSSProperties = { margin: '0 0 12px', fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.5, maxWidth: 'var(--measure, 72ch)', textWrap: 'pretty' };
 const btn: React.CSSProperties = { height: '32px', padding: '0 12px', borderRadius: '9px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', color: 'var(--ink, #18181b)', whiteSpace: 'nowrap' };
 const primary: React.CSSProperties = { ...btn, border: '1px solid #0A8560', background: '#0A8560', color: '#fff' };
 const select: React.CSSProperties = { height: '30px', padding: '0 8px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', fontSize: '12.5px', background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)', maxWidth: '100%' };
@@ -107,7 +110,7 @@ Ron Moore,713.555.0192,ron@example.com,,,,,,,Cold call`,
 Maria Lopez,Lopez Holdings LLC,(210) 555-0100,maria@lopez.com,Fix n' Flip,Single Family Residential,"San Antonio, 78254",$80K,$350K,3,yes
 Sam Reed,Reed Capital,512-555-0111,sam@reedcap.com,Buy n' Hold,Single Family Residential,Austin,,"$250,000",2,`,
   vendors: `Business Name,Contact Name,Phone,Email,Service Type,Service Area
-Alamo Title,Jen Park,210-555-0199,jen@alamotitle.com,Title Company,San Antonio
+Example Title,Jen Park,210-555-0199,jen@exampletitle.com,Title Company,San Antonio
 Hill Country Lending,Ben Ruiz,512-555-0177,ben@hcl.com,Lender,Austin`,
 };
 
@@ -498,12 +501,7 @@ export function Import({ V }: { V: ClozrView }) {
   const last = lastRun[sourceLabel.trim()];
 
   return (
-    <section data-screen-label="Import" style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: V.isMobile ? '14px' : '18px 22px', background: 'var(--canvas, #fafafa)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: 'var(--meta, #71717a)', marginBottom: '12px', flexWrap: 'wrap' }}>
-        <button onClick={listView} style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'var(--meta, #71717a)', fontSize: '12.5px' }}>{listName}</button>
-        <span>/</span>
-        <span style={{ color: 'var(--ink, #18181b)', fontWeight: 600 }}>Import</span>
-        <span style={{ flex: 1 }} />
+    <ScreenFrame data-screen-label="Import" width="form" header={<ScreenHeader back={{ label: listName, go: listView }} title="Import" actions={
         <div role="radiogroup" aria-label="What are you importing?" style={{ display: 'inline-flex', padding: '3px', background: 'var(--surface-2, #f4f4f5)', borderRadius: '10px', gap: '2px' }}>
           {kinds.map((k) => (
             <button key={k.key} role="radio" aria-checked={kind === k.key} onClick={() => setKind(k.key)} style={{ height: '28px', padding: '0 14px', border: 0, borderRadius: '8px', cursor: 'pointer', fontSize: '12.5px', fontWeight: 600, background: kind === k.key ? 'var(--surface, #fff)' : 'transparent', color: kind === k.key ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)', boxShadow: kind === k.key ? '0 1px 2px rgba(0,0,0,.08)' : 'none' }}>
@@ -511,7 +509,7 @@ export function Import({ V }: { V: ClozrView }) {
             </button>
           ))}
         </div>
-      </div>
+      } />}>
 
       <ReadOnlyNote />
       {!live ? (
@@ -574,7 +572,7 @@ export function Import({ V }: { V: ClozrView }) {
                 {mapped.length} mapped to fields · {keptExtra} kept as extra info{leftOut ? ` · ${leftOut} left out` : ''}
               </p>
             </div>
-            <button onClick={() => void askAi()} disabled={aiBusy || !live} title={live ? 'Claude remaps the uncertain columns and explains each guess' : 'Needs a signed-in workspace'} style={{ ...primary, opacity: aiBusy || !live ? 0.6 : 1 }}>{aiBusy ? 'Asking Claude…' : '✦ Ask AI to map'}</button>
+            <button onClick={() => void askAi()} disabled={aiBusy || !live} title={live ? 'Claude remaps the uncertain columns and explains each guess' : 'Needs a signed-in workspace'} style={{ ...primary, opacity: aiBusy || !live ? 0.6 : 1 }}>{aiBusy ? 'Asking Claude…' : <><Sparkles size={13} aria-hidden style={{ verticalAlign: '-2px', marginRight: 6 }} />Ask AI to map</>}</button>
             <button onClick={() => remap(table, kind)} style={btn}>Re-guess</button>
           </div>
           <div style={{ overflowX: 'auto', marginTop: '12px' }}>
@@ -589,10 +587,10 @@ export function Import({ V }: { V: ClozrView }) {
                   const c = CONF[t === 'skip' || t === 'extra' ? t : conf[i] ?? 'medium'];
                   return (
                     <tr key={i} style={{ opacity: t === 'skip' ? 0.65 : 1 }}>
-                      <td style={{ ...td, fontWeight: 600 }}>{h || <em style={{ color: 'var(--subtle, #a1a1aa)' }}>column {i + 1}</em>}</td>
+                      <td style={{ ...td, fontWeight: 600 }}>{h || <em style={{ color: 'var(--meta, #71717a)' }}>column {i + 1}</em>}</td>
                       <td style={{ ...td, maxWidth: '320px', whiteSpace: 'normal' }}>
-                        <div style={mono}>{samples.join(' · ') || <span style={{ color: 'var(--subtle, #a1a1aa)' }}>empty</span>}</div>
-                        {reasons[i] ? <div style={{ fontSize: '11px', color: 'var(--tx-mint, #0a8560)', marginTop: '2px' }}>✦ {reasons[i]}</div> : null}
+                        <div style={mono}>{samples.join(' · ') || <span style={{ color: 'var(--meta, #71717a)' }}>empty</span>}</div>
+                        {reasons[i] ? <div style={{ fontSize: '11px', color: 'var(--tx-mint, #0a8560)', marginTop: '2px' }}><Sparkles size={11} aria-hidden style={{ verticalAlign: '-1px', marginRight: 4 }} />{reasons[i]}</div> : null}
                       </td>
                       <td style={{ ...td, maxWidth: 'none' }}>
                         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -629,7 +627,7 @@ export function Import({ V }: { V: ClozrView }) {
                 {records.slice(previewWin.start, previewWin.end).map((r, k) => {
                   const i = previewWin.start + k;
                   return (
-                  <tr key={i} style={{ color: r.problem ? 'var(--subtle, #a1a1aa)' : 'var(--ink, #18181b)', height: '33px' }}>
+                  <tr key={i} style={{ color: r.problem ? 'var(--meta, #71717a)' : 'var(--ink, #18181b)', height: '33px' }}>
                     {previewCells(mapKind, r).map((v, j) => <td key={j} style={td} title={v || undefined}>{v || '—'}</td>)}
                     <td style={{ ...td, color: 'var(--tx-red, #b91c1c)', fontSize: '11px' }}>{r.problem ?? ''}</td>
                   </tr>
@@ -791,7 +789,7 @@ export function Import({ V }: { V: ClozrView }) {
                   {team.length ? team.map((t) => {
                     const on = assignees.includes(t.id);
                     return <button key={t.id} onClick={() => setAssignees((a) => (on ? a.filter((x) => x !== t.id) : [...a, t.id]))} style={{ ...btn, height: '28px', fontSize: '12px', background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', borderColor: on ? '#A8ECD2' : 'var(--divider, #e4e4e7)', color: on ? 'var(--tx-mint, #0a8560)' : 'var(--ink, #18181b)' }}>{on ? '✓ ' : ''}{t.name}</button>;
-                  }) : <span style={{ color: 'var(--subtle, #a1a1aa)' }}>No teammates</span>}
+                  }) : <span style={{ color: 'var(--meta, #71717a)' }}>No teammates</span>}
                 </div>
                 <span style={{ fontWeight: 400 }}>{assignees.length === 0 ? 'Unassigned' : assignees.length === 1 ? 'All to one teammate' : `Rotates across ${assignees.length} teammates`}</span>
               </div>
@@ -910,6 +908,6 @@ export function Import({ V }: { V: ClozrView }) {
           ) : null}
         </div>
       ) : null}
-    </section>
+    </ScreenFrame>
   );
 }

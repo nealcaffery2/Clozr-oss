@@ -9,13 +9,13 @@
 import React, { useEffect, useState } from 'react';
 import { type ImportInfo, loadImportInfo } from '@/lib/import-extras';
 
-const row: React.CSSProperties = { display: 'grid', gridTemplateColumns: '132px minmax(0,1fr)', gap: '10px', padding: '7px 0', borderBottom: '1px solid #f0f0f1', fontSize: '12.5px', alignItems: 'baseline', margin: 0 };
-const dt: React.CSSProperties = { color: '#71717a', lineHeight: 1.35 };
+const row: React.CSSProperties = { display: 'grid', gridTemplateColumns: '132px minmax(0,1fr)', gap: '10px', padding: '7px 0', borderBottom: '1px solid var(--divider-2, #f0f0f1)', fontSize: '12.5px', alignItems: 'baseline', margin: 0 };
+const dt: React.CSSProperties = { color: 'var(--meta, #71717a)', lineHeight: 1.35 };
 const dd: React.CSSProperties = { margin: 0, minWidth: 0, fontWeight: 500, overflowWrap: 'anywhere' };
-const badge: React.CSSProperties = { fontSize: '10px', fontWeight: 700, color: '#b91c1c', background: '#fef2f2', borderRadius: '5px', padding: '1px 5px', marginLeft: '6px', letterSpacing: '0.02em' };
+const badge: React.CSSProperties = { fontSize: '11px', fontWeight: 700, color: 'var(--tx-red, #b91c1c)', background: 'var(--tint-red, #fef2f2)', borderRadius: '5px', padding: '1px 5px', marginLeft: '6px', letterSpacing: '0.02em' };
 // A list of facts takes the rail's whole width under its label: nested in the
 // 132px label column it left values about 60px and broke them mid-word.
-const block: React.CSSProperties = { padding: '7px 0', borderBottom: '1px solid #f0f0f1', fontSize: '12.5px', margin: 0 };
+const block: React.CSSProperties = { padding: '7px 0', borderBottom: '1px solid var(--divider-2, #f0f0f1)', fontSize: '12.5px', margin: 0 };
 const pairs: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(96px,max-content) minmax(0,1fr)', gap: '4px 12px', fontSize: '12.5px', marginTop: '6px' };
 
 export function ImportInfoRows({ workspaceId, sellerId }: { workspaceId: number; sellerId: number }) {
@@ -63,7 +63,7 @@ export function ImportInfoRows({ workspaceId, sellerId }: { workspaceId: number;
             <div style={pairs}>
               {house.map((f) => (
                 <React.Fragment key={f.k}>
-                  <span style={{ color: '#71717a' }}>{f.k}</span>
+                  <span style={{ color: 'var(--meta, #71717a)' }}>{f.k}</span>
                   <span style={{ fontWeight: 500, minWidth: 0, overflowWrap: 'break-word' }}>{f.v}</span>
                 </React.Fragment>
               ))}
@@ -76,13 +76,13 @@ export function ImportInfoRows({ workspaceId, sellerId }: { workspaceId: number;
           <dt style={dt}>More from import</dt>
           <dd style={{ margin: '4px 0 0' }}>
             <details>
-              <summary style={{ cursor: 'pointer', color: '#0A8560', fontWeight: 600, fontSize: '12px' }}>
+              <summary style={{ cursor: 'pointer', color: 'var(--tx-mint, #0a8560)', fontWeight: 600, fontSize: '12px' }}>
                 {extra.length} {extra.length === 1 ? 'field' : 'fields'}
               </summary>
               <div style={{ ...pairs, marginTop: '6px' }}>
                 {extra.map(([k, v]) => (
                   <React.Fragment key={k}>
-                    <span style={{ color: '#71717a' }}>{k}</span>
+                    <span style={{ color: 'var(--meta, #71717a)' }}>{k}</span>
                     <span style={{ fontWeight: 500, minWidth: 0, overflowWrap: 'break-word' }}>{v}</span>
                   </React.Fragment>
                 ))}

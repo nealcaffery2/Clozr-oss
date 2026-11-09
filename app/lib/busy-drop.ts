@@ -27,6 +27,17 @@ export function readyDropUrl(): string | null {
   return readyDrop()?.url ?? null;
 }
 
+let session = false;
+
+/** A power or predictive session is running in this tab (useClozr). Only then does a second answer hear the drop. */
+export function setDropSession(on: boolean): void {
+  session = on;
+}
+
+export function dropSession(): boolean {
+  return session;
+}
+
 export function readyDropScript(): string {
   return armed?.script ?? '';
 }

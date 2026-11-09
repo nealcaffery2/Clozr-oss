@@ -11,4 +11,9 @@ assert.ok(t.includes('Open the document'));
 const reply = 'Thank you for sending.\n\nIs that correct?\n\nOn Mon, May 25, 2026 at 9:14 AM Jordan Blake <jordan@sampleoffers.com> wrote:\n> Here are the next steps\n> ...';
 assert.equal(emailGist(reply), 'Thank you for sending.\n\nIs that correct?');
 assert.equal(emailGist('<p>Hi&nbsp;Dan,</p><p>Sounds good.</p><div class="gmail_quote">On Tue, May 26, 2026 at 8:00 AM Dan wrote:<br>old</div>'), 'Hi Dan,\nSounds good.');
+// A numeric entity past U+10FFFF (a broken newsletter, spam) is dropped, not thrown: one such row took the whole list down.
+assert.equal(htmlToText('<p>hi &#1114112; there</p>'), 'hi there');
+assert.equal(emailGist('<div>hi &#xFFFFFFFF; x &#0; y</div>'), 'hi x y');
+assert.equal(htmlToText('<p>&#8217;tis &#x2014; fine</p>'), '\u2019tis \u2014 fine');
+
 console.log('email-text: ok');

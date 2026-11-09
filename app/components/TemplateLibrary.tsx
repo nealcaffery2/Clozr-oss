@@ -37,7 +37,7 @@ const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color
 const field: React.CSSProperties = { width: '100%', height: '32px', padding: '0 9px', border: `1px solid ${LINE}`, borderRadius: '8px', fontSize: '12.5px', outline: 0, background: 'var(--surface, #fff)', color: INK, fontFamily: 'inherit' };
 const btn = (primary = false, disabled = false): React.CSSProperties => ({
   height: '30px', padding: '0 11px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
-  border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? (disabled ? '#7fcbb2' : GREEN) : '#fff', color: primary ? '#fff' : INK, opacity: !primary && disabled ? 0.6 : 1,
+  border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? GREEN : 'var(--surface, #fff)', color: primary ? '#fff' : INK, opacity: !primary && disabled ? 0.5 : 1,
 });
 const link: React.CSSProperties = { fontSize: '12px', color: GREEN, background: 'none', border: 0, cursor: 'pointer', padding: 0, fontWeight: 600, fontFamily: 'inherit' };
 const panel: React.CSSProperties = { background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', minWidth: 0 };
@@ -306,7 +306,7 @@ export function TemplateLibrary({ workspaceId, onToast, onUse }: {
                 {typeof folderSel === 'number' ? <button type="button" onClick={() => void folder('delete')} style={{ ...link, color: 'var(--tx-red, #b91c1c)' }}>Delete</button> : null}
               </div>
             ) : null}
-            {!ro && tree.length ? <div style={{ fontSize: '11px', color: 'var(--subtle, #a1a1aa)', padding: '6px' }}>Drag a template onto a folder to file it.</div> : null}
+            {!ro && tree.length ? <div style={{ fontSize: '11px', color: 'var(--meta, #71717a)', padding: '6px' }}>Drag a template onto a folder to file it.</div> : null}
           </div>
 
           {/* Gallery */}
@@ -507,7 +507,7 @@ function FolderRow({ text, count, depth, on, onClick, onDrop }: { text: string; 
       onDragOver={onDrop ? (e) => { e.preventDefault(); setOver(true); } : undefined}
       onDragLeave={onDrop ? () => setOver(false) : undefined}
       onDrop={onDrop ? (e) => { e.preventDefault(); setOver(false); onDrop(); } : undefined}
-      style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%', textAlign: 'left', padding: `6px 8px 6px ${8 + depth * 12}px`, borderRadius: '7px', border: over ? `1px dashed ${GREEN}` : '1px solid transparent', background: on ? '#E7F8F1' : over ? '#F0FBF6' : 'transparent', color: on ? GREEN : INK, fontSize: '12.5px', fontWeight: on ? 650 : 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+      style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%', textAlign: 'left', padding: `6px 8px 6px ${8 + depth * 12}px`, borderRadius: '7px', border: over ? `1px dashed ${GREEN}` : '1px solid transparent', background: on ? '#E7F8F1' : over ? 'var(--c-genius-soft, #f0fbf6)' : 'transparent', color: on ? GREEN : INK, fontSize: '12.5px', fontWeight: on ? 650 : 500, cursor: 'pointer', fontFamily: 'inherit' }}>
       {depth > 0 ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg> : null}
       <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</span>
       {count ? <span style={{ fontSize: '11px', color: MUTED }}>{count}</span> : null}
@@ -583,9 +583,9 @@ function History({ current, versions, compareId, busy, onCompare, onRestore, onB
           <div style={{ border: `1px solid ${LINE}`, borderRadius: '8px', maxHeight: '48vh', overflow: 'auto', fontFamily: MONO, fontSize: '11.5px', lineHeight: 1.5 }}>
             {diff.map((d, i) => (
               <div key={i} style={{ display: 'flex', background: d.op === 'add' ? 'var(--positive-soft, #dcfce7)' : d.op === 'del' ? 'var(--negative-soft, #fee2e2)' : 'var(--surface, #fff)' }}>
-                <span style={{ width: '36px', flex: 'none', textAlign: 'right', paddingRight: '6px', color: 'var(--subtle, #a1a1aa)', userSelect: 'none' }}>{d.a ?? ''}</span>
-                <span style={{ width: '36px', flex: 'none', textAlign: 'right', paddingRight: '6px', color: 'var(--subtle, #a1a1aa)', userSelect: 'none' }}>{d.b ?? ''}</span>
-                <span style={{ width: '14px', flex: 'none', color: d.op === 'add' ? '#15803d' : d.op === 'del' ? '#b91c1c' : 'var(--subtle, #a1a1aa)', userSelect: 'none' }}>{d.op === 'add' ? '+' : d.op === 'del' ? '−' : ' '}</span>
+                <span style={{ width: '36px', flex: 'none', textAlign: 'right', paddingRight: '6px', color: 'var(--meta, #71717a)', userSelect: 'none' }}>{d.a ?? ''}</span>
+                <span style={{ width: '36px', flex: 'none', textAlign: 'right', paddingRight: '6px', color: 'var(--meta, #71717a)', userSelect: 'none' }}>{d.b ?? ''}</span>
+                <span style={{ width: '14px', flex: 'none', color: d.op === 'add' ? '#15803d' : d.op === 'del' ? '#b91c1c' : 'var(--meta, #71717a)', userSelect: 'none' }}>{d.op === 'add' ? '+' : d.op === 'del' ? '−' : ' '}</span>
                 <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: INK, textDecoration: d.op === 'del' ? 'line-through' : 'none' }}>{d.text || ' '}</span>
               </div>
             ))}
@@ -643,7 +643,7 @@ function SectionsTab({ workspaceId, lib, ro, onToast, onChanged }: { workspaceId
         <div style={{ maxHeight: '60vh', overflow: 'auto' }}>
           {shown.map((b) => (
             <button key={b.id} type="button" className="dc2" onClick={() => setDraft({ id: b.id, name: b.name, body: b.body, tags: (b.tags ?? []).join(', '), locked: b.locked })}
-              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 0, borderBottom: `1px solid ${HAIR}`, background: draft?.id === b.id ? '#F0FBF6' : '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 0, borderBottom: `1px solid ${HAIR}`, background: draft?.id === b.id ? 'var(--c-genius-soft, #f0fbf6)' : 'var(--surface, #fff)', cursor: 'pointer', fontFamily: 'inherit' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ fontSize: '13px', fontWeight: 600, flex: 1, minWidth: 0 }}>{b.name}</span>
                 {b.locked ? <span style={badge('#6d28d9', 'var(--tint-violet, #ede9fe)')}>Locked</span> : null}
@@ -660,7 +660,7 @@ function SectionsTab({ workspaceId, lib, ro, onToast, onChanged }: { workspaceId
         {!ro ? (
           <div style={{ padding: '8px', borderTop: `1px solid ${HAIR}` }}>
             <button type="button" disabled={busy} onClick={() => void starters()} style={btn(false, busy)}>Add starter clauses</button>
-            <div style={{ fontSize: '11px', color: 'var(--subtle, #a1a1aa)', marginTop: '4px' }}>EMD, inspection and option period, as-is, assignment, title company. Plain-language starting points for Texas; have your attorney review them.</div>
+            <div style={{ fontSize: '11px', color: 'var(--meta, #71717a)', marginTop: '4px' }}>EMD, inspection and option period, as-is, assignment, title company. Plain-language starting points for Texas; have your attorney review them.</div>
           </div>
         ) : null}
       </div>

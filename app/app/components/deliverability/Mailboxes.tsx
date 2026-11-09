@@ -11,7 +11,7 @@
 
 import React, { useState } from 'react';
 import { type MailboxRow, type MailboxSettings, dailyAllowance, deliverability, textValue } from '@/lib/deliverability';
-import { requestSettingsTab } from '@/app/clozr/screens/settingsTab';
+import { openSettings } from '@/lib/settings-sections';
 import { Badge, Note, NotSetUp, Section, fieldLabel, ghost, input, pct, primary, row } from './ui';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -39,7 +39,7 @@ export function Mailboxes({ workspaceId, mailboxes, admin, onChange }: { workspa
   const why = "Each rep's own Gmail, used for one-to-one email. CLOZR counts every send and stops at a safe daily limit so Google never flags the account.";
 
   if (mailboxes.length === 0) {
-    return <NotSetUp title="Gmail inboxes (one-to-one)" why={`${why} No one has connected Google yet.`} how={how} action={<button type="button" style={ghost} onClick={() => requestSettingsTab({ main: 'outbound', tab: 'google' })}>Connect Google</button>} />;
+    return <NotSetUp title="Gmail inboxes (one-to-one)" why={`${why} No one has connected Google yet.`} how={how} action={<button type="button" style={ghost} onClick={() => openSettings('email/google')}>Connect Google</button>} />;
   }
 
   return (
@@ -87,11 +87,11 @@ function Limits({ workspaceId, m, onSaved }: { workspaceId: number; m: MailboxRo
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const num = (k: keyof MailboxSettings, label: string, hint?: string) => (
     <label><span style={fieldLabel}>{label}</span>
-      <input type="number" style={{ ...input, width: '100%' }} value={String(s[k])} onChange={(e) => setS({ ...s, [k]: Number(e.target.value) })} />
+      <input type="number" style={{ ...input, width: '100%' }} value={String(s[k])} onChange={(e) => setS({ ...s, [k]: e.target.value === '' ? s[k] : Number(e.target.value) })} />
       {hint && <span style={{ fontSize: '11px', color: 'var(--meta, #71717a)' }}>{hint}</span>}
     </label>
   );
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Intl.DateTimeFormat('en-CA').format(new Date());
   const preview = [0, 3, 7, 14].map((d) => {
     const day = new Date(Date.parse(`${s.ramp_started_on}T00:00:00Z`) + d * 86_400_000).toISOString().slice(0, 10);
     return `day ${d + 1}: ${dailyAllowance(s, day)}`;

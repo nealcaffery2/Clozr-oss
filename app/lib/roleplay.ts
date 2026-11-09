@@ -24,6 +24,8 @@ export type Persona = {
   facts: string;
   /** How they open when the rep calls. */
   opener: string;
+  /** 'compr': a prospect for Compr the software (the Compr workspace's roleplay), not a homeowner. */
+  audience?: 'compr';
 };
 
 export const PERSONAS: Persona[] = [
@@ -83,6 +85,42 @@ export const PERSONAS: Persona[] = [
     facts: 'Relocating for work in four months. Mortgage 210,000. Other offers are 265,000 (a hedge fund, with inspection contingency) and 250,000 (local investor, cash, 14 day close). Foundation report from last year shows minor settling. You want certainty of close more than the last dollar, but you will not say so until asked how you decide.',
     opener: 'Hi, Priya speaking. Before we start, can you tell me how your company calculates its offers?',
   },
+  // Compr prospects, from Alex's launch kit (02 · Who You're Calling). The rep sells Compr, the underwriting tool.
+  {
+    id: 'compr_free_signup', label: 'Free signup who went quiet', name: 'Jason', audience: 'compr',
+    blurb: 'Signed up for Compr in August, ran 6 addresses, never picked a plan.',
+    brief: 'You are a part-time wholesaler in Houston who signed up for Compr in August, ran six addresses in the first week and then stopped. You liked the speed but you were not sure the ARVs held up in your area and life got busy. You still comp most leads by hand in a spreadsheet and it takes you about 25 minutes each.',
+    facts: 'You close about two assignments a month at around 9,000 each. You are working a three bedroom on Bellfort this week and have the address handy if asked. Price matters to you: 299 a month feels like a lot, 149 feels fine if it saves you real time. You would pay yearly if the rep explains the savings plainly. You have never had a setup call.',
+    opener: 'Yeah, this is Jason.',
+  },
+  {
+    id: 'compr_wholesaler', label: 'Busy wholesaler, comps by hand', name: 'Marcus', audience: 'compr',
+    blurb: 'Runs a three-rep acquisitions team in Dallas. "I already comp it myself."',
+    brief: 'You run a wholesaling team of three acquisition reps in Dallas. Your reps each comp leads their own way and give sellers different numbers on the same house, which costs you deals. You think AVMs are junk. You are on the phone all day and have little patience for a pitch.',
+    facts: 'Your team works about 40 seller leads a week. You use PropStream for leads. You lost a deal last month because two reps quoted the same seller 20,000 apart. If the rep runs a real address of yours live and the number is close to what you would have said, you get interested fast. You care about one standard across reps and want to know if it writes back to Podio.',
+    opener: 'Marcus. Make it quick.',
+  },
+  {
+    id: 'compr_flipper', label: 'Flipper burned by a wholesaler ARV', name: 'Tasha', audience: 'compr',
+    blurb: 'Does 4 flips a month in Atlanta. Just got stuck on an inflated ARV.',
+    brief: 'You flip about four houses a month in Atlanta. A wholesaler sold you a deal two months ago with an ARV 35,000 too high and the roof was worse than the photos showed. You trust your own numbers and your contractor, and you are skeptical of software that claims to know rehab from photos.',
+    facts: 'You have a deal sheet from a wholesaler open right now on a house in Decatur and can read the address. You would pay for something that checks a wholesaler ARV before you wire earnest money. You want to see every comp it used. Growth at 299 is fine if it really grades condition.',
+    opener: 'Hi, this is Tasha.',
+  },
+  {
+    id: 'compr_agent', label: 'Investor-friendly agent', name: 'Kevin', audience: 'compr',
+    blurb: 'Heavy free user, works with investor clients. Thinks it is too pricey.',
+    brief: 'You are a real estate agent in San Antonio who works with a handful of investor clients. You have used Compr free a lot. You think 299 a month is too much on agent income and you can pull a CMA in the MLS.',
+    facts: 'Two of your investor clients buy about twice a year each. You would pay 9.99 for a single report on a deal that matters. You will ask if there is an agent price. You would like a callback when an agent plan exists.',
+    opener: 'Kevin speaking.',
+  },
+  {
+    id: 'compr_lender', label: 'Hard money lender', name: 'Diane', audience: 'compr',
+    blurb: 'Funds fix-and-flip loans. Brokers send stretched ARVs.',
+    brief: 'You run underwriting at a hard money lender funding fix-and-flip and DSCR loans, mostly through brokers. Your underwriters burn hours on broker files you decline. You order appraisals anyway and are wary of anything that sounds like a valuation for credit decisions.',
+    facts: 'You see about 60 broker files a month and decline about half. You have one broker deal from this week you would happily test. You will not buy on a first call, but you would take a short call with the founder if the rep asks for one with a real file.',
+    opener: 'This is Diane.',
+  },
 ];
 
 export const DIFFICULTIES = [
@@ -100,16 +138,34 @@ export const OBJECTIONS = [
   { id: 'think_about_it', label: 'I need to think about it', line: 'At the decision point, say you need to think about it. Only move if the rep isolates what you are unsure about.' },
   { id: 'not_in_a_hurry', label: 'I\'m not in a hurry', line: 'Say you are not in any hurry and might wait a year.' },
 ] as const;
-export type ObjectionId = (typeof OBJECTIONS)[number]['id'];
+export type ObjectionId = (typeof OBJECTIONS)[number]['id'] | (typeof COMPR_OBJECTIONS)[number]['id'];
+
+/** Objections for a Compr prospect roleplay (03 · Call Scripts, "Handle the pushback"). */
+export const COMPR_OBJECTIONS = [
+  { id: 'comp_myself', label: 'I comp it myself', line: 'Say you already comp every deal yourself and do not need a tool. Only move if the rep offers to race you on a real address.' },
+  { id: 'avms_junk', label: 'AVMs are junk', line: 'Say automated valuations are garbage. Only move if the rep explains how the comps are picked and offers to show one.' },
+  { id: 'too_expensive', label: 'Too expensive', line: 'When a price comes up, say it is too expensive. Only move if the rep ties the price to one deal or offers the smaller option.' },
+  { id: 'send_email', label: 'Just send me an email', line: 'Try to get off the phone with "just send me an email". Only stay if the rep asks for an address to run so the email has something real in it.' },
+  { id: 'try_first', label: 'Can I try it first?', line: 'Ask for a free trial. Only accept if the rep offers the free comp or runs your address with you now.' },
+] as const;
 
 export const personaById = (id: string) => PERSONAS.find((p) => p.id === id) ?? null;
 export const difficultyById = (id: string) => DIFFICULTIES.find((d) => d.id === id) ?? null;
-export const objectionById = (id: string | null | undefined) => OBJECTIONS.find((o) => o.id === id) ?? null;
+export const objectionById = (id: string | null | undefined) => OBJECTIONS.find((o) => o.id === id) ?? COMPR_OBJECTIONS.find((o) => o.id === id) ?? null;
 
 /** The system prompt that makes the model the seller. One for voice (ElevenLabs) and text (Claude). */
 export function sellerPrompt(opts: { persona: Persona; difficulty: DifficultyId; objection?: ObjectionId | null; company?: string | null; voice?: boolean }): string {
   const d = difficultyById(opts.difficulty) ?? DIFFICULTIES[1];
   const o = objectionById(opts.objection);
+  if (opts.persona.audience === 'compr') return [
+    `You are ${opts.persona.name}. A sales rep from Compr is calling you. Compr is software that comps a property in about 60 seconds: ARV and the comps it used, a condition grade from the listing photos, six exit strategies and a max offer. Plans are Light at 99 a month, Growth at 199, Scale at 499, Institutional at 997, 12.5% off yearly, or a 9.99 single report. This is a sales practice roleplay: you play the PROSPECT, never the rep, and you never break character, coach, or mention that this is practice.`,
+    `Who you are: ${opts.persona.brief}`,
+    `What you know, revealed only when the rep asks the right question: ${opts.persona.facts}`,
+    `How hard to be: ${d.rule}`,
+    o ? `Objection drill: ${o.line}` : '',
+    'Rules: talk like a busy real-estate person on the phone. Short turns, one to three sentences, plain words. Do not volunteer your pain or your budget. Reward good questions about how you run numbers today with more honest answers. If the rep asks for an address, give one and react to what they say it shows. If the rep pitches features at you without asking anything, get shorter and colder. If the rep has earned it, you may agree to a plan or to a setup call. If the rep is rude or wastes your time, end it.',
+    opts.voice ? 'You are speaking out loud. No lists, no stage directions, no emojis.' : 'Reply with only what you say, no stage directions, no quotes, no names before the line.',
+  ].filter(Boolean).join('\n\n');
   return [
     `You are ${opts.persona.name}, a homeowner. An acquisitions rep${opts.company ? ` from ${opts.company}` : ''}, a company that buys houses directly for cash, is calling you. This is a sales practice roleplay: you play the SELLER, never the rep, and you never break character, coach, or mention that this is practice.`,
     `Who you are: ${opts.persona.brief}`,
@@ -324,4 +380,16 @@ export function lineNotice(kind: 'unknown_caller' | 'not_armed') {
 export function linesFromElevenLabs(raw: unknown): RoleplayLine[] {
   const t = raw && typeof raw === 'object' ? (raw as { transcript?: unknown }).transcript : null;
   return parseLines(Array.isArray(t) ? t.filter((x) => x && typeof (x as { message?: unknown }).message === 'string') : []);
+}
+
+/**
+ * Is a stored ElevenLabs conversation one of this workspace's roleplay
+ * agent's? The browser names the conversation id, so only a conversation
+ * the workspace's own agent held (sales_coach_settings.roleplay_agent_id)
+ * may stand in for the rep's transcript. No agent on file matches nothing.
+ */
+export function conversationIsOurs(raw: unknown, agentId: string | null | undefined): boolean {
+  if (!agentId) return false;
+  const got = raw && typeof raw === 'object' ? (raw as { agent_id?: unknown }).agent_id : null;
+  return typeof got === 'string' && got === agentId;
 }

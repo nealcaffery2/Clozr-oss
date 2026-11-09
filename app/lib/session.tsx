@@ -203,7 +203,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     void (async () => {
       const [p, m] = await Promise.all([
         supabase!.from('profiles').select('id, full_name, avatar_url, phone, title, license_number' as 'id, full_name, avatar_url, phone, title').eq('id', uid).maybeSingle(),
-        supabase!.from('workspace_members').select('role, workspaces(id, name, owner_id)').eq('user_id', uid).order('workspace_id', { ascending: true }),
+        supabase!.from('workspace_members').select('role, nav_role, workspaces(id, name, owner_id)').eq('user_id', uid).order('workspace_id', { ascending: true }),
       ]);
       if (!live) return;
       if (m.error) {

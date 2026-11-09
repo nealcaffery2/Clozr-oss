@@ -17,6 +17,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { everyRow } from './every-row';
 import { supabase } from './supabase';
 
 export type EmailState = {
@@ -32,6 +33,9 @@ export type EmailState = {
 };
 
 const EMPTY: ReadonlySet<number> = new Set<number>();
+
+const READ_EVENT = 'clozr:email-read';
+type ReadEvent = { scope: string; ids: number[]; isRead: boolean };
 
 /** Postgres "relation does not exist" — the migration has not been applied here. */
 const isMissingTable = (err: { code?: string; message?: string } | null): boolean =>
@@ -71,9 +75,11 @@ export function useEmailState(workspaceId: number | null, userId: string | null)
 
     void (async () => {
       const [state, prefs] = await Promise.all([
-        supabase!.from('communication_user_state')
+        // Every page: past 1,000 rows the read stopped and the rest showed unread, unstarred and back in the list.
+        everyRow<{ communication_id: number; read_at: string | null; starred_at: string | null; archived_at: string | null }>(() => supabase!.from('communication_user_state')
           .select('communication_id, read_at, starred_at, archived_at')
-          .eq('workspace_id', workspaceId!).eq('user_id', userId!),
+          .eq('workspace_id', workspaceId!).eq('user_id', userId!).order('communication_id'))
+          .then((data) => ({ data, error: null }), (e: Error) => ({ data: null, error: { message: e.message } })),
         supabase!.from('inbox_user_prefs')
           .select('email_seen_through')
           .eq('workspace_id', workspaceId!).eq('user_id', userId!).maybeSingle(),
@@ -129,25 +135,42 @@ export function useEmailState(workspaceId: number | null, userId: string | null)
     if (isMissingTable(error)) setPersists(false);
   }, [live, persists, workspaceId, userId]);
 
-  const markRead = useCallback((ids: number[], isRead = true) => {
-    if (!ids.length) return;
+  const applyRead = useCallback((ids: number[], isRead: boolean) => {
     setRead((prev) => {
       const next = new Set(prev);
       for (const id of ids) { if (isRead) next.add(id); else next.delete(id); }
       return next;
     });
+  }, []);
+
+  // Every mounted copy of this state (the Inbox, the side menu's unread count)
+  // hears a read or unread at once, so the count drops when a thread opens.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<ReadEvent>).detail;
+      if (d.scope === scope) applyRead(d.ids, d.isRead);
+    };
+    window.addEventListener(READ_EVENT, on);
+    return () => window.removeEventListener(READ_EVENT, on);
+  }, [scope, applyRead]);
+
+  const markRead = useCallback((ids: number[], isRead = true) => {
+    if (!ids.length) return;
+    window.dispatchEvent(new CustomEvent<ReadEvent>(READ_EVENT, { detail: { scope, ids, isRead } }));
     for (const id of ids) void write(id, { read_at: isRead ? new Date().toISOString() : null });
-  }, [write]);
+  }, [write, scope]);
 
   const toggleStar = useCallback((id: number) => {
-    let now = false;
+    // Decided from the current set, not inside the updater: React may run that
+    // later (a second click before a render), after write() had already sent null.
+    const now = !starred.has(id);
     setStarred((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else { next.add(id); now = true; }
+      if (now) next.add(id); else next.delete(id);
       return next;
     });
     void write(id, { starred_at: now ? new Date().toISOString() : null });
-  }, [write]);
+  }, [starred, write]);
 
   const setArchivedIds = useCallback((ids: number[], isArchived = true) => {
     if (!ids.length) return;

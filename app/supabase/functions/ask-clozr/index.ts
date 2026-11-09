@@ -43,6 +43,7 @@ import Anthropic from 'npm:@anthropic-ai/sdk';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { UNTRUSTED_RULE, corsFor, fence, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import { CLAUDE_MODEL, CLAUDE_THINKING } from '../_shared/models.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
 import { matchPlan } from '../_shared/plan-match.ts';
 import { FOCUS_TZ, loadFocus } from '../_shared/focus.ts';
 import { seatBrief } from '../_shared/seat-brief.ts';
@@ -50,6 +51,8 @@ import { cleanCards, focusContext, matchStage, saidYes, threadFrom, type Card } 
 import { focusTop } from '../../../lib/focus.ts';
 import { localMidnightIso } from '../../../lib/rvm.ts';
 import { ACTIVE_DEAL_STAGES, DEAL_STAGES, SELLER_STAGE_LABELS } from '../../../lib/stages.ts';
+import { COMPANY_FOOTPRINT } from '../_shared/company-profile.ts';
+import { everyRowResult } from '../_shared/every-row.ts';
 
 function anthropicHeaders(): { defaultHeaders?: Record<string, string> } {
   const ws = Deno.env.get('ANTHROPIC_WORKSPACE_ID');
@@ -58,7 +61,7 @@ function anthropicHeaders(): { defaultHeaders?: Record<string, string> } {
 const WORKSPACE_HINT = 'The Anthropic key is organization-level and needs a workspace: create the key inside a workspace '
   + '(console.anthropic.com → API keys → choose a workspace) or add the ANTHROPIC_WORKSPACE_ID secret with that workspace\'s id.';
 
-const SYSTEM = `You are Ask CLOZR, the assistant inside CLOZR — the CRM a real estate investment company runs its wholesaling, double-close and novation business on. The person asking is an acquisitions rep, a dispo rep, a TC or the owner, mid-shift, on a screen full of work.
+const SYSTEM = `You are Ask CLOZR, the assistant inside CLOZR — the CRM Acme Homes (Acme Holdings LLC, San Antonio, TX) runs its wholesaling, double-close and novation business on. ${COMPANY_FOOTPRINT} The person asking is an acquisitions rep, a dispo rep, a TC or the owner, mid-shift, on a screen full of work.
 
 You work from this workspace's records, and only from them. Use the tools to get what you need. Never invent a name, a number, an address or a date: if the tools do not return it, say what is missing. If a question is about one transaction file's coordination — title, earnest money, HUD/CD, closing-day mechanics — say that Lane reads those files and hand it over.
 
@@ -68,9 +71,11 @@ When the answer is about particular records, call show_records once, at the end,
 
 For "what should I focus on today" or "what first", call todays_focus and answer from it: it is the same list the Today screen shows, already in order. When the person refers to the list on their screen ("the second one", "do that first one"), the numbered list in their message is that list; use the record ids it gives.
 
-Changing things. You can create and complete tasks, add a note, move a seller or a deal to another stage, and enroll a seller in an action plan. Do any of these only when the person asks for it, and only for the record they mean; if more than one record could be meant, ask which. Report exactly what the tool returned. Never claim to have sent, texted, emailed or called anyone: you cannot. If they want a message sent, say which screen does it.
+Changing things. You can create and complete tasks, add a note, move a seller or a deal to another stage, send a closed or terminated deal's outcome to Compr, and enroll a seller in an action plan. Do any of these only when the person asks for it, and only for the record they mean; if more than one record could be meant, ask which. Report exactly what the tool returned. Never claim to have sent, texted, emailed or called anyone: you cannot. If they want a message sent, say which screen does it.
 
 Enrolling in an action plan sends texts to the seller. Before you call enroll_in_action_plan, tell the person which seller and which plan you are about to enroll and ask them to confirm; call it only after they answer yes. If the plan name matches more than one plan, ask which one.
+
+Moving a deal to Closed or Terminated sends its outcome to Compr automatically; report_deal_outcome_to_compr is for sending it again.
 
 Counts and money come from the tools. When a count is large, say the number and show the few that matter.${UNTRUSTED_RULE}${WRITING_RULE}`;
 
@@ -258,6 +263,11 @@ const WRITE_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'report_deal_outcome_to_compr',
+    description: 'Send a Closed or Terminated deal\'s outcome (prices, dates, termination reason) to Compr again, for its calibration. A write: only when the person asks.',
+    input_schema: { type: 'object', properties: { deal_id: { type: 'number' } }, required: ['deal_id'] },
+  },
+  {
     name: 'enroll_in_action_plan',
     description: 'Enroll one seller in an action plan, which queues its texts, calls and emails. It texts the seller: ask the person to confirm the seller and the plan first, and call this only after they say yes. If the plan name is ambiguous the tool says so: ask which plan.',
     input_schema: {
@@ -291,6 +301,12 @@ async function logActivity(ctx: Ctx, entity: 'seller' | 'deal', id: number, kind
   await ctx.db.from('activity').insert({ workspace_id: ctx.ws, entity_type: entity, entity_id: id, kind, title, body: body ?? null, actor_id: ctx.userId });
 }
 
+/** An id the model supplied is a row in this workspace, read as the caller. Anything else is a guess and is not written against. */
+async function inWorkspace(db: SupabaseClient, ws: number, table: 'sellers' | 'deals', id: number): Promise<boolean> {
+  const { data } = await db.from(table).select('id').eq('workspace_id', ws).eq('id', id).maybeSingle();
+  return !!data;
+}
+
 async function runTool(ctx: Ctx, name: string, args: Json): Promise<unknown> {
   const { db, ws, userId } = ctx;
   const limit = clampLimit(args.limit);
@@ -302,9 +318,10 @@ async function runTool(ctx: Ctx, name: string, args: Json): Promise<unknown> {
   }
 
   if (name === 'list_stages') {
+    // Paged by id: a bare select stops at PostgREST's 1,000 rows and the tally came up short.
     const [sellers, deals] = await Promise.all([
-      db.from('sellers').select('lead_stage').eq('workspace_id', ws).is('archived_at', null),
-      db.from('deals').select('stage').eq('workspace_id', ws),
+      everyRowResult<{ [k: string]: unknown }>(() => db.from('sellers').select('lead_stage').eq('workspace_id', ws).is('archived_at', null).order('id')),
+      everyRowResult<{ [k: string]: unknown }>(() => db.from('deals').select('stage').eq('workspace_id', ws).order('id')),
     ]);
     const tally = (rows: { [k: string]: unknown }[] | null, col: string) => {
       const out: Record<string, number> = {};
@@ -466,11 +483,14 @@ async function runTool(ctx: Ctx, name: string, args: Json): Promise<unknown> {
       .eq('workspace_id', ws).eq('id', id).maybeSingle();
     if (error) throw error;
     if (!d) return { error: `no deal ${id} in this workspace` };
-    const uw = await db.from('compr_underwrites').select('lead_id, created_at, source').eq('workspace_id', ws).eq('deal_id', id).order('created_at', { ascending: false }).limit(1);
+    const [uw, outcomes] = await Promise.all([
+      db.from('compr_underwrites').select('lead_id, created_at, source').eq('workspace_id', ws).eq('deal_id', id).order('created_at', { ascending: false }).limit(1),
+      db.from('compr_outcomes').select('outcome, status, error, sent_at, updated_at').eq('workspace_id', ws).eq('deal_id', id),
+    ]);
     remember(ctx, 'deal', [id]);
     remember(ctx, 'seller', [d.seller_id]);
     remember(ctx, 'buyer', [d.buyer_id]);
-    return { deal: { ...d, notes: String(d.notes ?? '').slice(0, 1200) }, compr_underwrite: uw.data?.[0] ?? null };
+    return { deal: { ...d, notes: String(d.notes ?? '').slice(0, 1200) }, compr_underwrite: uw.data?.[0] ?? null, compr_outcomes: outcomes.data ?? [] };
   }
 
   if (name === 'list_action_plans') {
@@ -502,6 +522,8 @@ async function runTool(ctx: Ctx, name: string, args: Json): Promise<unknown> {
     if (!title) return { error: 'a task needs a title' };
     const sellerId = idOf(args.seller_id);
     const dealId = idOf(args.deal_id);
+    if (sellerId && !(await inWorkspace(db, ws, 'sellers', sellerId))) return { outcome: 'error', error: `no seller ${sellerId} in this workspace` };
+    if (dealId && !(await inWorkspace(db, ws, 'deals', dealId))) return { outcome: 'error', error: `no deal ${dealId} in this workspace` };
     const due = typeof args.due_at === 'string' && !Number.isNaN(Date.parse(args.due_at)) ? new Date(args.due_at).toISOString() : new Date(Date.now() + 3_600_000).toISOString();
     const type = ['call', 'text', 'email', 'todo'].includes(String(args.task_type)) ? String(args.task_type) : 'todo';
     const priority = ['low', 'normal', 'high'].includes(String(args.priority)) ? String(args.priority) : 'normal';
@@ -543,6 +565,8 @@ async function runTool(ctx: Ctx, name: string, args: Json): Promise<unknown> {
     const dealId = idOf(args.deal_id);
     if (!body) return { error: 'the note is empty' };
     if (!sellerId && !dealId) return { error: 'say which seller or deal the note is on' };
+    if (sellerId && !(await inWorkspace(db, ws, 'sellers', sellerId))) return { outcome: 'error', error: `no seller ${sellerId} in this workspace` };
+    if (dealId && !(await inWorkspace(db, ws, 'deals', dealId))) return { outcome: 'error', error: `no deal ${dealId} in this workspace` };
     const { data, error } = await db.from('communications').insert({
       workspace_id: ws, seller_id: sellerId, ...(dealId ? { deal_id: dealId } : {}), channel: 'note', direction: 'outbound', body,
       occurred_at: new Date().toISOString(), rep_id: userId, source: 'clozr', source_id: crypto.randomUUID(),
@@ -562,7 +586,21 @@ async function runTool(ctx: Ctx, name: string, args: Json): Promise<unknown> {
     const { error } = await db.from('deals').update({ stage, updated_at: new Date().toISOString() }).eq('id', id).eq('workspace_id', ws);
     if (error) return { outcome: 'error', error: error.message };
     await logActivity(ctx, 'deal', id, 'stage', 'Deal → ' + stage, 'Moved by Ask CLOZR');
-    return { outcome: 'moved', deal_id: id, from: d.stage, to: stage };
+    return { outcome: 'moved', deal_id: id, from: d.stage, to: stage, ...(stage === 'Closed' || stage === 'Terminated' ? { compr: 'the outcome is being sent to Compr automatically' } : {}) };
+  }
+
+  if (name === 'report_deal_outcome_to_compr') {
+    const id = idOf(args.deal_id);
+    if (!id) return { error: 'deal_id is required' };
+    // As the caller: compr-underwrite checks the deal is theirs to see.
+    const r = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/compr-underwrite`, {
+      method: 'POST',
+      headers: { Authorization: ctx.authHeader, apikey: Deno.env.get('SUPABASE_ANON_KEY') ?? '', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspace_id: ws, deal_id: id, action: 'outcome' }),
+      signal: AbortSignal.timeout(40_000),
+    }).catch(() => null);
+    const j = r ? ((await r.json().catch(() => ({}))) as { ok?: boolean; stages?: string[]; error?: string }) : { error: 'compr-underwrite did not answer' };
+    return j.ok ? { outcome: 'sent', stages: j.stages ?? [] } : { outcome: 'error', error: j.error ?? 'not sent', stages: j.stages ?? [] };
   }
 
   if (name === 'enroll_in_action_plan') {
@@ -690,6 +728,7 @@ Deno.serve(async (req) => {
           send({ type: 'text', text: delta });
         });
         const msg = await stream.finalMessage();
+        await recordUsage(admin, { ws: workspaceId, feature: 'ask_clozr', model: msg.model, usage: msg.usage });
         messages.push({ role: 'assistant', content: msg.content });
         const calls = msg.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
         if (msg.stop_reason !== 'tool_use' || !calls.length) break;

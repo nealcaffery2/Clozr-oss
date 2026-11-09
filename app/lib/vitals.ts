@@ -23,7 +23,7 @@
 // the tab hides, as one POST with keepalive so a closing tab still sends.
 
 import { useEffect } from 'react';
-import { decodeNavHash } from './nav-hash';
+import { routeAt } from './routes';
 import { isReadOnly } from './read-only';
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './supabase';
 
@@ -60,9 +60,15 @@ const clip = (s: string | null) => (s ? s.slice(0, MAX_TARGET) : null);
 const WORD = /^[a-z][a-z-]*[a-z]$/;
 const SCREEN = /^[A-Za-z][A-Za-z0-9]{0,39}$/;
 
-/** The screen the hash names; a bare hash is Home. */
-export function screenOf(hash: string): string {
-  const s = decodeNavHash(hash)?.screen ?? 'home';
+/**
+ * The screen an address names (lib/routes.ts): its path, or an old #screen=
+ * hash on the first load before the shell rewrites it. The bare base is Home,
+ * as it was in the hash days; an address that names no screen is `other`.
+ * `where` is the pathname and hash; a bare hash reads as /app.
+ */
+export function screenOf(where: string): string {
+  const at = routeAt(where);
+  const s = at.route?.screen ?? (at.bare ? 'home' : 'other');
   return SCREEN.test(s) ? s : 'other';
 }
 
@@ -236,7 +242,8 @@ let agent: string | null = null;
 const pressed: { t: number; el: EventTarget | null }[] = [];
 
 const now = () => performance.now();
-const here = () => window.location.hash;
+/** The address a view is keyed by: a new path is a new view. */
+const here = () => window.location.pathname + window.location.hash;
 
 function observe(type: string, cb: (entries: PerformanceEntry[]) => void, extra?: object) {
   try {

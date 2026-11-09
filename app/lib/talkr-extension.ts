@@ -72,9 +72,9 @@ const callListeners = new Set<(call: ExtensionCall) => void>();
  * extension just opened asks), and the request is kept and replayed to the
  * next listener that subscribes, for a little while.
  */
-const openListeners = new Set<(e164: string) => boolean>();
+const openListeners = new Set<(e164: string, workspaceId: number | null) => boolean>();
 const OPEN_KEEP_MS = 30_000;
-let pendingOpen: { e164: string; at: number } | null = null;
+let pendingOpen: { e164: string; at: number; workspaceId: number | null } | null = null;
 
 function tryOpen(): void {
   if (!pendingOpen || Date.now() - pendingOpen.at > OPEN_KEEP_MS) {
@@ -82,7 +82,7 @@ function tryOpen(): void {
     return;
   }
   for (const fn of openListeners) {
-    if (fn(pendingOpen.e164)) {
+    if (fn(pendingOpen.e164, pendingOpen.workspaceId)) {
       pendingOpen = null;
       return;
     }
@@ -142,7 +142,16 @@ export function onExtensionCall(fn: (call: ExtensionCall) => void): () => void {
 }
 
 /** The extension's "Open in CLOZR": show the record for this number. */
-export function onExtensionOpenRecord(fn: (e164: string) => boolean): () => void {
+/**
+ * Open the record on this number once workspace `workspaceId` is on screen and
+ * loaded: the inbox's "in another workspace" tag switches workspace, then asks.
+ */
+export function openRecordInWorkspace(e164: string, workspaceId: number): void {
+  pendingOpen = { e164, at: Date.now(), workspaceId };
+  tryOpen();
+}
+
+export function onExtensionOpenRecord(fn: (e164: string, workspaceId: number | null) => boolean): () => void {
   openListeners.add(fn);
   tryOpen();
   return () => openListeners.delete(fn);
@@ -220,7 +229,7 @@ function onMessage(event: MessageEvent): void {
     case 'talkr.open-record': {
       const e164 = (data as { e164?: unknown }).e164;
       if (typeof e164 === 'string') {
-        pendingOpen = { e164, at: Date.now() };
+        pendingOpen = { e164, at: Date.now(), workspaceId: null };
         tryOpen();
       }
       return;

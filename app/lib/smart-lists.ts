@@ -128,6 +128,16 @@ export async function insertSmartList<F extends object>(workspaceId: number | nu
   return String(data.id);
 }
 
+/** Rename a saved list; its filters, columns and access stay. */
+export async function renameSmartList<F extends object>(workspaceId: number | null, me: string | null, id: string, name: string, all: SmartList<F>[], screen: SmartListScreen = 'people'): Promise<boolean> {
+  if (!supabase || workspaceId == null || !me) {
+    writeLocal(screen, all.map((x) => (x.id === id ? { ...x, name } : x)));
+    return true;
+  }
+  const { error } = await supabase.from('saved_views').update({ name: name.slice(0, 80) }).eq('id', Number(id));
+  return !error;
+}
+
 export async function deleteSmartList<F extends object>(workspaceId: number | null, me: string | null, id: string, all: SmartList<F>[], screen: SmartListScreen = 'people'): Promise<boolean> {
   if (!supabase || workspaceId == null || !me) {
     writeLocal(screen, all.filter((x) => x.id !== id));

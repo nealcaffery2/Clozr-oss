@@ -30,18 +30,21 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import { corsFor, fence, jsonWith, rateLimit, serverError, tooMany, UNTRUSTED_RULE } from '../_shared/security.ts';
 import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
 import { NO_EXTRAS, TEST_CALL_GOAL, buildInitiation, outboundOpener, pickPersona, resolveCaller, testRecordToken, type CallLeg, type Resolution } from '../_shared/voice-agent.ts';
 import { initiationFor, loadCandidates, missingRelation, recordPhoneKey } from '../_shared/voice-agent-db.ts';
 import {
   ElevenError, PREVIEW_MAX_CHARS, SAMPLE_BUYER, SAMPLE_BUYER_MEMORY, SAMPLE_CANDIDATE, SAMPLE_MEMORY, SAMPLE_REP, agentBody, builtWriteTools, callOut, checksFromAgent, deleteRemoteAgent, elJson,
-  generateSecret, getSignedUrl, listVoices, previewSpeech, runConnect, webhookUrls,
-  type Checks, type ConnectState, type ElConfig,
+  OVERRIDE_KEYS, draftOverrides, ensureSessionOverrides, generateSecret, overrideConfig, getSignedUrl, listVoices, previewSpeech, runConnect, webhookUrls,
+  type Checks, type ConnectState, type DraftOverrides, type ElConfig, type OverrideKey,
 } from '../_shared/voice-agent-admin.ts';
 import {
   AGENT_KEY_RE, DEFAULT_AGENT_KEY, TOOL_AVAILABLE, TOOL_KEYS, TOOL_LABELS, cleanText, defaultSettings, diffLines, diffSettings, normalizeSettings,
   settingsFromRow, slugify, toolOn, type AgentSettings,
 } from '../_shared/voice-agent-settings.ts';
 import { TEMPLATES } from '../_shared/voice-agent-templates.ts';
+import { syncOverflowLines } from '../_shared/voice-agent-overflow.ts';
+import { COMPR_PROSPECT_NAME, comprProspectMemory } from '../../../lib/compr-prospect-sample.ts';
 import { assemblePrompt, estimateTokens, promptWarnings } from '../_shared/voice-agent-prompt.ts';
 import { SCENARIOS, SCORING_SYSTEM, SCORING_TOOL, parseGrades, scenarioById, scoringUserMessage } from '../_shared/voice-agent-scenarios.ts';
 import { aggregateStats, enabledAfterPublish, parseSetEnabled } from '../_shared/voice-agent-calls.ts';
@@ -64,6 +67,8 @@ const MAX_AGENTS = 10;
 const CONFIRM_MSG = 'Deleting an agent removes it from ElevenLabs and deletes its versions. Send confirm: true to go ahead.';
 
 const READ = ['numbers', 'get', 'list_agents', 'templates', 'preview_prompt', 'versions', 'diff', 'calls', 'stats', 'scenarios'];
+/** Any member may test the agent and grade a test (owner call 2026-10-26: reps run their own test calls). Neither writes the agent. */
+const MEMBER = [...READ, 'test_session', 'score_call'];
 const WRITE = ['save_draft', 'save_settings', 'create_agent', 'duplicate_agent', 'delete_agent', 'set_enabled', 'publish', 'connect', 'rollback', 'voices', 'preview', 'test_session', 'score_call', 'set_number', 'add_number', 'wire_numbers'];
 
 type SettingsRow = {
@@ -120,7 +125,7 @@ Deno.serve(async (req) => {
   const { data: member } = await asCaller.from('workspace_members').select('role').eq('workspace_id', ws).eq('user_id', userId).maybeSingle();
   if (!member) return json({ error: 'not a member of that workspace' }, 403);
   const isAdmin = ['owner', 'admin'].includes(String(member.role));
-  if (!READ.includes(action) && !isAdmin) return json({ error: 'only an owner or admin can change the AI Agent' }, 403);
+  if (!MEMBER.includes(action) && !isAdmin) return json({ error: 'only an owner or admin can change the AI Agent' }, 403);
 
   // Reads (opening the console, the numbers table, stats) are what a screen does on every
   // load, so they get a far larger budget than changes; publish keeps its own tighter one.
@@ -424,9 +429,12 @@ Deno.serve(async (req) => {
       if (i >= 0) manual.splice(i, 1);
     }
     for (const e of wired.errors) errors.push({ step: `number:${e.market}`, message: e.message });
+    // Pick up for reps on no answer: tell Talkr which lines overflow to this agent (and clear the ones it no longer covers).
+    const overflow = await syncOverflowLines(admin, ws, row.agent_key, settings, row.live_settings ? settingsFromRow(row.live_settings) : null);
+    for (const m of overflow.errors) errors.push({ step: 'overflow', message: m });
     return json({
       ok: true, version, live_version: version, agent_key: row.agent_key, agent_id: r.state.agent_id, checks: r.checks, manual, errors, tts_model_used: r.tts_model_used,
-      numbers: wired.numbers,
+      numbers: wired.numbers, overflow: { set: overflow.set, cleared: overflow.cleared },
     });
   }
 
@@ -725,8 +733,25 @@ Deno.serve(async (req) => {
         const row = await needAgent();
         if (!row) return notFound();
         if (!row.agent_id) return json({ error: 'Publish the agent first.' }, 409);
-        // What ElevenLabs runs is the published version, so that is what the test hears.
-        const live = settingsFromRow(row.live_settings ?? row.settings);
+        // What ElevenLabs runs is the published version, so that is what a test hears by default.
+        // draft: true runs the saved draft, or the unsaved form in settings, through session
+        // overrides (prompt, model, voice), so a tweak can be heard without publishing.
+        const draft = body.draft === true;
+        let live = settingsFromRow(draft ? row.settings : (row.live_settings ?? row.settings));
+        if (draft && body.settings !== undefined) {
+          const r = normalizeSettings(body.settings, live);
+          if (r.errors.length) return json({ error: r.errors.join('; '), errors: r.errors }, 422);
+          live = r.settings;
+        }
+        let overrides: DraftOverrides | null = null;
+        if (draft) {
+          let allowed: OverrideKey[];
+          try { allowed = await ensureSessionOverrides(cfg, String(row.agent_id)); } catch (e) { return elFail(e) ?? json({ error: 'Could not reach ElevenLabs.' }, 502); }
+          // Only what the agent allows is sent: one field it does not allow and ElevenLabs drops the whole call.
+          if (!allowed.includes('prompt')) return json({ error: 'ElevenLabs will not let this agent take a draft prompt yet. Publish it once, then test again.' }, 409);
+          if (allowed.length < OVERRIDE_KEYS.length) console.log('voice-agent draft test: not overridable', { agent: row.agent_key, missing: OVERRIDE_KEYS.filter((k) => !allowed.includes(k)) });
+          overrides = draftOverrides(live, TEMPLATES, allowed);
+        }
         const wsName = (await admin.from('workspaces').select('name').eq('id', ws).maybeSingle()).data?.name;
         const base = pickPersona({ agent_name: live.identity.name, company: live.identity.company }, { name: Deno.env.get('VOICE_AGENT_NAME') || null, company: Deno.env.get('VOICE_AGENT_COMPANY') || null }, wsName);
         const rn = live.rules.compliance.recording_notice;
@@ -741,12 +766,23 @@ Deno.serve(async (req) => {
         if (body.sample === true && (body.record_kind === 'buyer' || (body.record_kind === 'me' && body.me_as === 'buyer'))) {
           // A buyer call carries no offer range or seller facts, the same as initiationFor gives a real buyer.
           const leg: CallLeg = { direction: 'inbound', ours: '', theirs: '' };
-          const cand = mine ? { ...SAMPLE_BUYER, name: mine } : SAMPLE_BUYER;
-          const mem = mine ? {
-            brief: SAMPLE_BUYER_MEMORY.brief.replaceAll('Marcus', mine),
-            facts: { ...SAMPLE_BUYER_MEMORY.facts, first_name: mine, last_contact_summary: SAMPLE_BUYER_MEMORY.facts.last_contact_summary?.replaceAll('Marcus', mine) ?? null },
-          } : SAMPLE_BUYER_MEMORY;
-          init = buildInitiation(resolveCaller([cand]), leg, mem, { ...persona, repName: SAMPLE_REP }, { ...NO_EXTRAS, rep_phone: '+15125550100' });
+          // A COMPR agent calls investors on a COMPR trial, not cash buyers: the sample buyer is a COMPR prospect, handed to Alex.
+          const compr = live.identity.role.startsWith('compr_');
+          let cand: typeof SAMPLE_BUYER;
+          let mem: NonNullable<typeof SAMPLE_BUYER_MEMORY>;
+          if (compr) {
+            const first = mine || COMPR_PROSPECT_NAME.split(' ')[0];
+            const p = comprProspectMemory(first);
+            cand = { ...SAMPLE_BUYER, name: mine || COMPR_PROSPECT_NAME };
+            mem = { brief: p.brief, facts: { first_name: first, preferred_name: null, property_address: '', last_contact_summary: p.last_contact_summary, next_step: p.next_step } };
+          } else {
+            cand = mine ? { ...SAMPLE_BUYER, name: mine } : SAMPLE_BUYER;
+            mem = mine ? {
+              brief: SAMPLE_BUYER_MEMORY.brief.replaceAll('Marcus', mine),
+              facts: { ...SAMPLE_BUYER_MEMORY.facts, first_name: mine, last_contact_summary: SAMPLE_BUYER_MEMORY.facts.last_contact_summary?.replaceAll('Marcus', mine) ?? null },
+            } : SAMPLE_BUYER_MEMORY;
+          }
+          init = buildInitiation(resolveCaller([cand]), leg, mem, { ...persona, repName: compr ? 'Alex' : SAMPLE_REP }, { ...NO_EXTRAS, rep_phone: '+15125550100' });
           resolution = 'one';
         } else if (body.sample === true) {
           const leg: CallLeg = { direction: 'inbound', ours: '', theirs: '' };
@@ -798,19 +834,24 @@ Deno.serve(async (req) => {
           const dv = init.dynamic_variables as Record<string, unknown>;
           // A phone test has a caller ID (the tester's), so lead_context looks up that number, never the record.
           dv.record_token = '';
-          // The same opener a real outbound call gets (outboundOpener), so the test hears what a seller hears.
+          // The same opener a real outbound call gets (outboundOpener), said after the tester's hello like a real call.
           const first_message = dv.first_name
             ? outboundOpener(String(dv.first_name), { ...persona, repName: null }, dv.record_kind === 'seller' ? String(dv.property_address ?? '') : '')
             : 'Hi, who am I speaking with?';
           try {
             const r = await elJson<{ success?: boolean; message?: string; conversation_id?: string | null }>(cfg, 'POST', '/v1/convai/sip-trunk/outbound-call', {
               agent_id: row.agent_id, agent_phone_number_id: fromId, to_number: to,
-              conversation_initiation_client_data: { dynamic_variables: dv, conversation_config_override: { agent: { first_message } } },
+              conversation_initiation_client_data: {
+                dynamic_variables: { ...dv, opening_line: first_message },
+                conversation_config_override: overrides
+                  ? (({ prompt, tts }) => ({ agent: { first_message: '', ...(prompt ? { prompt } : {}) }, ...(tts ? { tts } : {}) }))(overrideConfig(overrides))
+                  : { agent: { first_message: '' } },
+              },
             });
             if (r.success === false) return json({ error: `ElevenLabs: ${String(r.message ?? 'refused').slice(0, 200)}` }, 502);
             console.log('voice-agent phone test', { ws, agent: row.agent_key, by: userId });
             return json({
-              ok: true, phone_call: true, to, conversation_id: r.conversation_id ?? null, agent_key: row.agent_key, live_version: row.live_version,
+              ok: true, phone_call: true, draft, to, conversation_id: r.conversation_id ?? null, agent_key: row.agent_key, live_version: row.live_version,
               dynamic_variables: dv, first_message, resolution,
               note: `Calling ${to} now${local?.market ? ` from the ${local.market} number` : ''}. Pick up and play the caller.`,
             });
@@ -821,7 +862,7 @@ Deno.serve(async (req) => {
         const signed_url = await getSignedUrl(cfg, row.agent_id);
         return json({
           ok: true, signed_url, agent_key: row.agent_key, agent_id: row.agent_id, live_version: row.live_version, dynamic_variables: init.dynamic_variables,
-          first_message: init.conversation_config_override.agent.first_message, resolution,
+          first_message: init.conversation_config_override.agent.first_message, resolution, draft, overrides,
         });
       }
 
@@ -853,6 +894,7 @@ Deno.serve(async (req) => {
           tool_choice: { type: 'auto' },
           messages: [{ role: 'user', content: scoringUserMessage(scenario, fence('transcript', transcript, 24_000)) }],
         });
+        await recordUsage(admin, { ws, feature: 'voice_agent_score', model: res.model, usage: res.usage });
         const use = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
         if (!use) return json({ error: 'The grader did not return a result. Try again.' }, 502);
         return json({ ok: true, conversation_id: conv, model: CLAUDE_MODEL, ...parseGrades(use.input, scenario, transcript) });

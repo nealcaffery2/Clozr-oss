@@ -73,7 +73,10 @@ async function search(key: string, body: Record<string, unknown>): Promise<IbPur
   }
   if (!res.ok) await fail(res);
   const data = await res.json();
-  if (!Array.isArray(data)) throw new IbError('InvestorBase returned a result we could not read.');
+  if (!Array.isArray(data)) {
+    console.error('investorbase-import: unexpected body', { status: res.status, body: JSON.stringify(data).slice(0, 300) });
+    throw new IbError('InvestorBase returned a result we could not read.');
+  }
   return data as IbPurchase[];
 }
 
@@ -136,7 +139,7 @@ Deno.serve(async (req) => {
     for (const d of drafts) {
       let row: { id: number; notes: string | null; tags: string[] | null; status: string | null } | null = null;
       if (d.phoneKey) {
-        const hit = await admin.from('buyers').select('id, notes, tags, status').eq('workspace_id', ws).eq('phone_key', d.phoneKey).limit(1).maybeSingle();
+        const hit = await admin.from('buyers').select('id, notes, tags, status').eq('workspace_id', ws).eq('phone_key', `+1${d.phoneKey}`).limit(1).maybeSingle();
         row = (hit.data as typeof row) ?? null;
       }
       if (!row && d.email) {
@@ -149,7 +152,8 @@ Deno.serve(async (req) => {
         const tags = Array.from(new Set([...(row.tags ?? []), 'investorbase']));
         const header = d.notes.split('\n')[0];
         const notes = (row.notes ?? '').includes(header) ? row.notes : [row.notes, d.notes].filter(Boolean).join('\n\n');
-        await admin.from('buyers').update({ tags, notes, updated_at: new Date().toISOString() }).eq('id', row.id).eq('workspace_id', ws);
+        const { error: upErr } = await admin.from('buyers').update({ tags, notes, updated_at: new Date().toISOString() }).eq('id', row.id).eq('workspace_id', ws);
+        if (upErr) writeError = upErr.message;
         continue;
       }
       const { data: inserted, error } = await admin.from('buyers').insert({
@@ -174,10 +178,12 @@ Deno.serve(async (req) => {
       });
     }
 
+    console.log('investorbase-import', { ws, body, scanned: found.length, drafts: drafts.length, created, existing, writeError });
     if (created === 0 && existing === 0 && writeError) throw new IbError(writeError);
     return json({ created, existing, buyers: ids, address: body.address ?? null, scanned: found.length });
   } catch (e) {
     const err = e as IbError;
+    console.error('investorbase-import failed', { ws, status: err.status, message: err.message });
     return json({ error: err.message || 'InvestorBase import failed.' }, err.status || 500);
   }
 });

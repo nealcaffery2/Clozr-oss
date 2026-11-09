@@ -1,4 +1,4 @@
-import { errorKey, toClientErrorRow } from '../lib/client-errors';
+import { errorKey, errorPath, toClientErrorRow } from '../lib/client-errors';
 
 function eq(name: string, got: unknown, want: unknown) {
   if (JSON.stringify(got) !== JSON.stringify(want)) {
@@ -33,3 +33,11 @@ eq('where capped', long?.where_at?.length, 200);
 
 eq('same error same key', errorKey(row!), errorKey(toClientErrorRow(boom, ctx)!));
 eq('other screen other key', errorKey(row!) === errorKey(toClientErrorRow(boom, { ...ctx, where: 'deals' })!), false);
+
+// The address a row records: the path; an old #screen= link as the path it names.
+eq('path kept', errorPath('/app/people/s42', ''), '/app/people/s42');
+eq('old hash recorded as its path', errorPath('/app', '#screen=dealSheet&id=s1&deal=d7&from=deals'), '/app/deals/d7');
+eq('old hash in the demo', errorPath('/demo', '#screen=person&id=p1'), '/demo/people/p1');
+eq('old hash naming no screen is the base', errorPath('/app', '#screen=nope'), '/app');
+eq('any other fragment dropped', errorPath('/auth/callback', '#access_token=secret'), '/auth/callback');
+eq('a screen hash off the app is not read', errorPath('/login', '#screen=person&id=s1'), '/login');

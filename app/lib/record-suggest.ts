@@ -57,8 +57,8 @@ export function describeSuggestion(s: Suggestion): string {
   const when = (iso?: string) => (iso && !Number.isNaN(Date.parse(iso))
     ? new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
   switch (s.kind) {
-    case 'field': return (s.field === 'asking_price' ? 'Asking price' : 'Motivation') + ' → ' + (s.value ?? '');
-    case 'stage': return 'Stage → ' + (s.stage ?? '');
+    case 'field': return (s.field === 'asking_price' ? 'Set asking price to ' : 'Set motivation to ') + (s.value ?? '');
+    case 'stage': return 'Move to ' + (s.stage ?? '');
     case 'task': return 'Task: ' + (s.title ?? '') + (s.due_at ? ' · ' + when(s.due_at) : '');
     case 'appointment': return 'Appointment: ' + (s.title ?? 'Appointment') + ' · ' + when(s.starts_at);
     default: return 'Note: ' + (s.value ?? '');

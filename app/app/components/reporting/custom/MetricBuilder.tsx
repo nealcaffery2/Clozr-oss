@@ -68,7 +68,7 @@ export function MetricBuilder({ initial, data, raw, range, me, members, onSave, 
 
   return (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 16px', background: '#fff', borderBottom: `1px solid ${LINE}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 16px', background: 'var(--surface, #fff)', borderBottom: `1px solid ${LINE}` }}>
         <button type="button" onClick={onCancel} style={btn.ghost}>← Back</button>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: '14px', fontWeight: 700 }}>{initial ? 'Edit custom metric' : 'Set up your custom metric'}</div>
@@ -83,14 +83,14 @@ export function MetricBuilder({ initial, data, raw, range, me, members, onSave, 
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <div style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: '18px 20px 40px' }}>
           <div style={{ maxWidth: '760px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {err ? <div role="status" style={{ padding: '10px 12px', borderRadius: '9px', background: '#fee2e2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: '12.5px' }}>{err}</div> : null}
+            {err ? <div role="status" style={{ padding: '10px 12px', borderRadius: '9px', background: 'var(--negative-soft, #fee2e2)', border: '1px solid var(--tint-red-2, #fecaca)', color: 'var(--tx-red, #b91c1c)', fontSize: '12.5px' }}>{err}</div> : null}
             <div style={{ ...card, padding: '16px 18px' }}>
               <label><span style={eyebrow}>Metric name *</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., Revenue growth rate" style={field} /></label>
               <div style={{ marginTop: '14px' }}>
                 <span style={eyebrow}>Display format *</span>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '6px' }}>
                   {FORMATS.map((f) => (
-                    <label key={f.v} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '9px 10px', border: `1px solid ${format === f.v ? ACCENT : LINE}`, borderRadius: '9px', cursor: 'pointer', background: format === f.v ? '#E7F8F1' : '#fff' }}>
+                    <label key={f.v} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '9px 10px', border: `1px solid ${format === f.v ? ACCENT : LINE}`, borderRadius: '9px', cursor: 'pointer', background: format === f.v ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)' }}>
                       <input type="radio" name="metric-format" checked={format === f.v} onChange={() => setFormat(f.v)} style={{ marginTop: '2px', accentColor: ACCENT }} />
                       <span><span style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, color: INK }}>{f.label}</span><span style={{ display: 'block', fontSize: '11.5px', color: MUTED, lineHeight: 1.4 }}>{f.help}</span></span>
                     </label>
@@ -108,16 +108,16 @@ export function MetricBuilder({ initial, data, raw, range, me, members, onSave, 
                 <span style={eyebrow}>Formula (up to 4 metrics) *</span>
                 <span style={{ marginLeft: 'auto', fontSize: '12px', color: MUTED }}>{metricCount}/4 metrics</span>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', minHeight: '44px', padding: '8px', border: `1px solid ${LINE}`, borderRadius: '9px', background: '#fafafa', alignItems: 'center' }}>
-                {!tokens.length ? <span style={{ fontSize: '12.5px', color: '#a1a1aa' }}>Click Metrics, Operator or Number to build the formula.</span> : null}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', minHeight: '44px', padding: '8px', border: `1px solid ${LINE}`, borderRadius: '9px', background: 'var(--canvas, #fafafa)', alignItems: 'center' }}>
+                {!tokens.length ? <span style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>Click Metrics, Operator or Number to build the formula.</span> : null}
                 {tokens.map((t, i) => (
                   <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                     {t.kind === 'metric' ? (
-                      <button type="button" onClick={() => setSelected(selected === i ? null : i)} title="Click to filter this metric" style={{ height: '28px', padding: '0 10px', borderRadius: '7px', border: `1px solid ${selected === i ? ACCENT : LINE}`, background: selected === i ? '#E7F8F1' : '#fff', color: INK, fontSize: '12px', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <button type="button" onClick={() => setSelected(selected === i ? null : i)} title="Click to filter this metric" style={{ height: '28px', padding: '0 10px', borderRadius: '7px', border: `1px solid ${selected === i ? ACCENT : LINE}`, background: selected === i ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: INK, fontSize: '12px', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         {t.label}{t.spec.filters.length ? <span aria-label="filtered" style={{ color: ACCENT }}>⏷</span> : null}
                       </button>
-                    ) : <span style={{ height: '28px', padding: '0 9px', borderRadius: '7px', background: t.kind === 'op' ? SOFT : '#fff', border: t.kind === 'num' ? `1px solid ${LINE}` : 0, fontSize: '13px', fontWeight: 700, color: INK, display: 'inline-flex', alignItems: 'center' }}>{t.kind === 'op' ? { '*': '×', '/': '÷' }[t.v as string] ?? t.v : t.v}</span>}
-                    <button type="button" onClick={() => { setTokens(tokens.filter((_, j) => j !== i)); setSelected(null); }} aria-label="Remove" style={{ border: 0, background: 'none', color: '#a1a1aa', cursor: 'pointer', fontSize: '13px', padding: '0 2px' }}>×</button>
+                    ) : <span style={{ height: '28px', padding: '0 9px', borderRadius: '7px', background: t.kind === 'op' ? SOFT : 'var(--surface, #fff)', border: t.kind === 'num' ? `1px solid ${LINE}` : 0, fontSize: '13px', fontWeight: 700, color: INK, display: 'inline-flex', alignItems: 'center' }}>{t.kind === 'op' ? { '*': '×', '/': '÷' }[t.v as string] ?? t.v : t.v}</span>}
+                    <button type="button" onClick={() => { setTokens(tokens.filter((_, j) => j !== i)); setSelected(null); }} aria-label="Remove" style={{ border: 0, background: 'none', color: 'var(--meta, #71717a)', cursor: 'pointer', fontSize: '13px', padding: '0 2px' }}>×</button>
                   </span>
                 ))}
               </div>
@@ -154,15 +154,15 @@ export function MetricBuilder({ initial, data, raw, range, me, members, onSave, 
               </div>
               <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: `1px solid ${SOFT}` }}>
                 <span style={eyebrow}>Preview · the report&rsquo;s current range</span>
-                <div style={{ fontSize: '30px', fontWeight: 700, letterSpacing: '-0.03em', color: error ? '#a1a1aa' : INK }}>{error ? '—' : fmtValue(preview, format === 'usd' ? 'usd' : format === 'pct' ? 'pct' : format === 'float' ? 'float' : 'int')}</div>
-                <div style={{ fontSize: '12px', color: error ? '#b91c1c' : MUTED, marginTop: '4px' }}>{error ?? (preview === null ? 'No value yet — a divide by zero or no rows in range.' : 'Live from the rows the report is on.')}</div>
+                <div style={{ fontSize: '30px', fontWeight: 700, letterSpacing: '-0.03em', color: error ? 'var(--meta, #71717a)' : INK }}>{error ? '—' : fmtValue(preview, format === 'usd' ? 'usd' : format === 'pct' ? 'pct' : format === 'float' ? 'float' : 'int')}</div>
+                <div style={{ fontSize: '12px', color: error ? 'var(--tx-red, #b91c1c)' : MUTED, marginTop: '4px' }}>{error ?? (preview === null ? 'No value yet — a divide by zero or no rows in range.' : 'Live from the rows the report is on.')}</div>
               </div>
             </div>
           </div>
         </div>
 
         {selSpec ? (
-          <aside aria-label="Metric filters" style={{ width: '320px', flex: 'none', borderLeft: `1px solid ${LINE}`, background: '#fff', overflow: 'auto', padding: '14px' }}>
+          <aside aria-label="Metric filters" style={{ width: '320px', flex: 'none', borderLeft: `1px solid ${LINE}`, background: 'var(--surface, #fff)', overflow: 'auto', padding: '14px' }}>
             <div style={{ fontSize: '11.5px', color: MUTED, fontWeight: 600 }}>Configuration › Filters</div>
             <div style={{ fontSize: '13px', fontWeight: 600, marginTop: '4px' }}>Applying to: {sel && sel.kind === 'metric' ? sel.label : ''}</div>
             <p style={{ fontSize: '12px', color: MUTED, margin: '4px 0 12px', lineHeight: 1.5 }}>Filters apply to this metric only in the formula.</p>

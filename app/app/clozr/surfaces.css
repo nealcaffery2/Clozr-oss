@@ -34,12 +34,13 @@ body {
   [style*='background:var(--surface, #fff);'], [style*='background:#fff;'], [style*='background:#FFF;'], [style$='background:var(--surface, #fff)'], [style$='background:#fff'], [style$='background:#FFF'],
   [style*='background: var(--surface, #fff);'], [style*='background: #fff;'], [style*='background: #FFF;'], [style*='background: rgb(255, 255, 255);'], [style*='background: var(--surface, #ffffff)'], [style*='background: #ffffff'], [style*='background: #FFFFFF'], [style*='background: rgb(255, 255, 255)'], [style*='background: var(--surface, #fff)'], [style*='background: #fff'], [style*='background: #FFF'], [style*='background: rgb(255, 255, 255)'],
   [style*='background-color: var(--surface, #ffffff)'], [style*='background-color: #ffffff'], [style*='background-color: #FFFFFF'], [style*='background-color: rgb(255, 255, 255)'], [style*='background-color: var(--surface, #fff)'], [style*='background-color: #fff'], [style*='background-color: #FFF'], [style*='background:var(--surface, #ffffff)'], [style*='background:#ffffff'], [style*='background:#FFFFFF'], [style*='background:var(--surface, #fff)'], [style*='background:#fff'], [style*='background:#FFF'], [style*='background:#fff'], [style*='background:#FFF'],
-  [style*='background: var(--panel)'], [style*='background:#fdfcfa'], [style*='background:#FDFCFA'], [style*='background: rgb(253, 252, 250)']
+  [style*='background: var(--panel)'], [style*='background:var(--warm-card,'], [style*='background: var(--warm-card,'], [style*='background:#fdfcfa'], [style*='background:#FDFCFA'], [style*='background: rgb(253, 252, 250)']
 ):is(
   [style*='border:1px solid var(--divider, #e4e4e7)'], [style*='border:1px solid #e4e4e7'], [style*='border:1px solid #E4E4E7'], [style*='border: 1px solid var(--divider, #e4e4e7)'], [style*='border: 1px solid #e4e4e7'], [style*='border: 1px solid #E4E4E7'],
   [style*='border:1px solid #e9e9eb'], [style*='border:1px solid #E9E9EB'], [style*='border: 1px solid rgb(233, 233, 235)'],
   [style*='border:1px solid #e6e3da'], [style*='border:1px solid #E6E3DA'], [style*='border: 1px solid rgb(230, 227, 218)'],
   [style*='border:1px solid #ddd9ce'], [style*='border:1px solid #DDD9CE'], [style*='border: 1px solid rgb(221, 217, 206)'],
+  [style*='border:1px solid var(--warm-line'], [style*='border: 1px solid var(--warm-line'],
   [style*='border:1px solid var(--line)'], [style*='border: 1px solid var(--line)'],
   [style*='border:1px solid var(--c-menu-line)'], [style*='border: 1px solid var(--border-card)']
 ):is(
@@ -147,7 +148,7 @@ body {
 /* ---- App header lifts over the content ---------------------- */
 .clozr-shell > header {
   border-bottom-color: var(--edge) !important;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 2px 6px -2px rgba(20, 30, 55, 0.1);
+  box-shadow: 0 1px 0 var(--glass-hi, rgba(255, 255, 255, 0.8)) inset, 0 2px 6px -2px rgb(var(--shadow-rgb, 20 30 55) / 0.1);
 }
 
 /* ---- Screen toolbars: a band that separates chrome from content */
@@ -155,7 +156,7 @@ body {
 .clozr-shell :is(div)[style*='padding: 12px 20px'][style*='border-bottom: 1px solid var(--divider, #e4e4e7)'], [style*='border-bottom: 1px solid #e4e4e7'], [style*='border-bottom: 1px solid #E4E4E7'] {
   background: var(--band) !important;
   border-bottom-color: var(--edge) !important;
-  box-shadow: 0 1px 2px rgba(20, 30, 55, 0.05);
+  box-shadow: 0 1px 2px rgb(var(--shadow-rgb, 20 30 55) / 0.05);
 }
 
 /* ---- List panes: the scroll area behind a table or list is the page,
@@ -174,15 +175,15 @@ body {
 .clozr-shell th[style*='sticky'] {
   background: var(--c-thead) !important;
   border-bottom: 1px solid var(--c-thead-line) !important;
-  color: #4b4b55;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+  color: var(--thead-ink, #4b4b55);
+  box-shadow: 0 1px 0 var(--glass-hi, rgba(255, 255, 255, 0.7)) inset;
 }
 .clozr-shell table tbody tr:nth-child(even):not([style*='background']):not([aria-selected='true']) > td {
   background: var(--band);
 }
 @media (hover: hover) and (pointer: fine) {
   .clozr-shell table tbody tr:not([style*='background']):hover > td {
-    background: #e9f6f0;
+    background: var(--mint-hover, #e9f6f0);
   }
 }
 
@@ -201,7 +202,7 @@ body {
 }
 @media (hover: hover) and (pointer: fine) {
   .clozr-shell table tbody tr:hover td.cz-sticky-col {
-    background: #e9f6f0;
+    background: var(--mint-hover, #e9f6f0);
   }
 }
 
@@ -217,10 +218,10 @@ body {
 }
 /* The phone tab bar and its More sheet throw their shadow upward. */
 .clozr-shell nav[data-screen-label='Mobile tabs'] {
-  box-shadow: 0 -1px 0 var(--edge), 0 -8px 20px -10px rgba(20, 30, 55, 0.22);
+  box-shadow: 0 -1px 0 var(--edge), 0 -8px 20px -10px rgb(var(--shadow-rgb, 20 30 55) / 0.22);
 }
 .clozr-shell [data-screen-label='More'] {
-  box-shadow: 0 -4px 8px rgba(20, 30, 55, 0.06), 0 -18px 44px -10px rgba(20, 30, 55, 0.3) !important;
+  box-shadow: 0 -4px 8px rgb(var(--shadow-rgb, 20 30 55) / 0.06), 0 -18px 44px -10px rgb(var(--shadow-rgb, 20 30 55) / 0.3) !important;
 }
 /* Toasts sit above everything: tier 4. */
 :is([role='status'], [role='alert'])[style*='position:fixed'],
@@ -274,7 +275,7 @@ body {
   [style*=';color:var(--tx-mint, #0a8560)'], [style*=';color:#0a8560'], [style*=';color:#0A8560'], [style^='color:var(--tx-mint, #0a8560)'], [style^='color:#0a8560'], [style^='color:#0A8560'], [style*=' color: var(--tx-mint, #0a8560)'], [style*=' color: #0a8560'], [style*=' color: #0A8560'], [style*=' color: rgb(10, 133, 96)'], [style^='color: var(--tx-mint, #0a8560)'], [style^='color: #0a8560'], [style^='color: #0A8560'], [style^='color: rgb(10, 133, 96)'],
   [style*=';color:var(--c-accent)'], [style^='color:var(--c-accent)'], [style*=' color: var(--c-accent)'], [style^='color: var(--c-accent)']
 ) {
-  color: var(--c-accent-2) !important;
+  color: var(--tx-mint-deep, #08694c) !important;
 }
 
 /* ---- Choice keys: the outcome picker's buttons are raised, and the
@@ -283,7 +284,7 @@ body {
   box-shadow: var(--elev-1);
 }
 .clozr-outcome[aria-pressed='true'] {
-  box-shadow: inset 0 1px 3px rgba(20, 30, 55, 0.14);
+  box-shadow: inset 0 1px 3px rgb(var(--shadow-rgb, 20 30 55) / 0.14);
 }
 .clozr-outcome:not(:disabled):active {
   box-shadow: var(--elev-press);

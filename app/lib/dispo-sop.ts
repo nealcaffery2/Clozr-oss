@@ -62,14 +62,19 @@ export function accessCheck(d: { occupancy_status?: string | null; access_verifi
     : { key: 'access', label, state: 'late', detail: `Past the ${hours}-hour window` };
 }
 
-/** Comps dated within 30 days. */
-export function compsCheck(compsDatedOn: string | null | undefined, today = new Date()): SopCheck {
+/**
+ * Comps dated within 30 days. The date typed on the handoff wins; without
+ * one, the comps are as old as the last COMPR run on this deal.
+ */
+export function compsCheck(compsDatedOn: string | null | undefined, today = new Date(), comprRanOn?: string | null): SopCheck {
   const label = 'Comps under 30 days';
-  const age = daysSince(compsDatedOn, today);
-  if (age == null) return { key: 'comps', label, state: 'missing', detail: 'Add the date of the comps' };
+  const fromCompr = !compsDatedOn && !!comprRanOn;
+  const age = daysSince(compsDatedOn || (comprRanOn ? comprRanOn.slice(0, 10) : null), today);
+  if (age == null) return { key: 'comps', label, state: 'missing', detail: 'Run COMPR on this deal, or add the comps date' };
+  const how = fromCompr ? 'COMPR comps, ' : '';
   return age <= 30
-    ? { key: 'comps', label, state: 'ok', detail: `${age} day${age === 1 ? '' : 's'} old` }
-    : { key: 'comps', label, state: 'late', detail: `${age} days old. Pull new comps` };
+    ? { key: 'comps', label, state: 'ok', detail: `${how}${age} day${age === 1 ? '' : 's'} old` }
+    : { key: 'comps', label, state: 'late', detail: `${how}${age} days old. Run COMPR again for new comps` };
 }
 
 /** The seller contract is signed: a contract date, or a contract status that says so. */
@@ -194,8 +199,14 @@ export type DispoDeal = Record<string, unknown> & { id: number; workspace_id: nu
 
 export async function loadDispoDeal(dealId: number): Promise<DispoDeal | null> {
   if (!supabase) return null;
-  const { data } = await supabase.from('deals').select('*').eq('id', dealId).maybeSingle();
-  return (data as DispoDeal | null) ?? null;
+  const [{ data }, { data: run }] = await Promise.all([
+    supabase.from('deals').select('*').eq('id', dealId).maybeSingle(),
+    // When COMPR last ran comps on this deal: what the comps check reads when no date was typed.
+    supabase.from('compr_underwrites' as 'deals').select('created_at').eq('deal_id' as 'id', dealId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+  ]);
+  if (!data) return null;
+  const d = data as DispoDeal;
+  return { ...d, compr_comps_at: (run as { created_at?: string } | null)?.created_at ?? (d.compr_underwritten_at as string | null | undefined) ?? null };
 }
 
 export type DeskOffer = {

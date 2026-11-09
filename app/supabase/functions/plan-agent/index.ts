@@ -17,8 +17,9 @@
  *   create_task         a task for the lead's owner.
  *   update_lead_status  the seller's stage, from the real stage list.
  * The decision, its reason and what happened go on plan_agent_runs and the
- * seller's timeline; the step's task is closed so the plan moves on. No key,
- * a buyer enrolment or a do-not-engage seller closes the step with the reason.
+ * lead's timeline; the step's task is closed so the plan moves on. Buyers get
+ * the same step without a stage change (migration 389). No key, an archived,
+ * Compr-excluded or do-not-engage lead closes the step with the reason.
  *
  * Smart route. An enrolment that ended with on_complete.mode 'smart' waits in
  * route_state 'pending'; this shows the model the lead's history and the
@@ -33,15 +34,18 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { bearerOf, corsFor, fence, isServiceCaller, jsonWith, serverError, UNTRUSTED_RULE } from '../_shared/security.ts';
-import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
+import { CLAUDE_MODEL, CLAUDE_THINKING, cachedSystem, toolRule } from '../_shared/models.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
 import { gatherHistory } from '../_shared/lead-memory.ts';
 import { textRecipient } from '../_shared/docs-flow.ts';
+import { EXCLUDE_TAG } from '../_shared/plan-send.ts';
 import { phoneE164 } from '../_shared/docs-people.ts';
 import { withOptOut } from '../_shared/sms-compliance.ts';
 import { CAPABILITY_LABEL, cleanAllowed, decideTool, parseDecision, parseRoute, runSummary, type ActionResult, type Decision } from '../_shared/plan-agent-rules.ts';
 import { historyText } from '../../../lib/lead-memory.ts';
 import { BLACKLIST_UNREAD, isDoNotEngage } from '../../../lib/blacklist.ts';
 import { SELLER_STAGE_LABELS } from '../../../lib/stages.ts';
+import { COMPANY_FOOTPRINT } from '../_shared/company-profile.ts';
 import { callWindow, zoneForNumber } from '../../../lib/talkr-web/time.ts';
 
 // deno-lint-ignore no-explicit-any
@@ -54,7 +58,7 @@ function anthropic(): Anthropic | null {
   return new Anthropic({ apiKey: key, ...(ws ? { defaultHeaders: { 'anthropic-workspace-id': ws } } : {}) });
 }
 
-const DECIDE_SYSTEM = `You are the AI step inside an action plan in CLOZR, the CRM a real estate investment company runs its wholesaling business on. A seller lead has reached this step of a follow-up plan. You are given the step's goal, what you are allowed to do, and everything on file for the lead: their record, texts, calls, notes, timeline, prior action plans and open tasks.
+const DECIDE_SYSTEM = `You are the AI step inside an action plan in CLOZR, the CRM Acme Homes (San Antonio, TX) runs its real-estate wholesaling business on. ${COMPANY_FOOTPRINT} A lead has reached this step of a follow-up plan: a property seller, or a buyer (an investor Acme Homes sells deals or Compr to). You are given the step's goal, what you are allowed to do, and everything on file for the lead: their record, texts, calls, notes, timeline, prior action plans and open tasks.
 
 Decide what moves the lead toward the goal right now. You may do at most one of each allowed action, and doing nothing is often right: if they replied recently and a rep is on it, if a call or appointment is already set, if they asked not to be contacted, or if another touch now would be pushy. Never text someone who asked to stop.
 
@@ -77,14 +81,18 @@ const ROUTE_TOOL: Anthropic.Tool = {
   },
 };
 
-type Run = { id: number; workspace_id: number; enrollment_id: number | null; task_id: number | null; plan_step_id: number | null; seller_id: number | null; goal: string; allowed: string[] };
+type Run = { id: number; workspace_id: number; enrollment_id: number | null; task_id: number | null; plan_step_id: number | null; seller_id: number | null; buyer_id: number | null; goal: string; allowed: string[] };
+type Kind = 'seller' | 'buyer';
+const leadOf = (run: Run): { kind: Kind; id: number } | null =>
+  run.seller_id != null ? { kind: 'seller', id: run.seller_id } : run.buyer_id != null ? { kind: 'buyer', id: run.buyer_id } : null;
 
 /** Prior plans and open tasks, which gatherHistory does not carry. */
-async function planContext(admin: SupabaseClient, ws: number, sellerId: number, skipTask: number | null): Promise<string> {
+async function planContext(admin: SupabaseClient, ws: number, kind: Kind, id: number, skipTask: number | null): Promise<string> {
+  const col = kind === 'seller' ? 'seller_id' : 'buyer_id';
   const [plans, tasks] = await Promise.all([
     admin.from('enrollments').select('status, stopped_reason, enrolled_at, completed_at, routed_reason, action_plans!enrollments_plan_id_fkey(name)')
-      .eq('workspace_id', ws).eq('seller_id', sellerId).order('enrolled_at', { ascending: false }).limit(12),
-    admin.from('tasks').select('id, title, task_type, due_at').eq('workspace_id', ws).eq('seller_id', sellerId).eq('done', false)
+      .eq('workspace_id', ws).eq(col, id).order('enrolled_at', { ascending: false }).limit(12),
+    admin.from('tasks').select('id, title, task_type, due_at').eq('workspace_id', ws).eq(col, id).eq('done', false)
       .order('due_at', { ascending: true }).limit(12),
   ]);
   const p = ((plans.data ?? []) as Any[]).map((e) => `- ${e.action_plans?.name ?? 'a plan'}: ${e.status}${e.stopped_reason ? ` (stopped: ${e.stopped_reason})` : ''}, enrolled ${String(e.enrolled_at).slice(0, 10)}${e.routed_reason ? `; ${e.routed_reason}` : ''}`);
@@ -105,9 +113,10 @@ async function finish(admin: SupabaseClient, run: Run, status: 'done' | 'skipped
       notes: [t?.notes || null, summary, status === 'done' && fields.reason ? `Why: ${fields.reason}` : null].filter(Boolean).join('\n').slice(0, 4000),
     }).eq('id', run.task_id).eq('done', false);
   }
-  if (run.seller_id) {
+  const lead = leadOf(run);
+  if (lead) {
     await admin.from('activity').insert({
-      workspace_id: run.workspace_id, entity_type: 'seller', entity_id: run.seller_id, kind: 'plan',
+      workspace_id: run.workspace_id, entity_type: lead.kind, entity_id: lead.id, kind: 'plan',
       title: `${summary.slice(0, 180)}`, body: [`Plan: ${planName}.`, fields.reason ? `Why: ${fields.reason}` : null].filter(Boolean).join('\n'),
     });
   }
@@ -115,7 +124,7 @@ async function finish(admin: SupabaseClient, run: Run, status: 'done' | 'skipped
 
 /** One decide-once step. Returns what happened, for the tick's log. */
 async function decide(admin: SupabaseClient, client: Anthropic | null, run: Run): Promise<string> {
-  const allowed = cleanAllowed(run.allowed);
+  let allowed = cleanAllowed(run.allowed);
   const { data: en } = run.enrollment_id
     ? await admin.from('enrollments').select('id, created_by, status, action_plans!enrollments_plan_id_fkey(name)').eq('id', run.enrollment_id).maybeSingle()
     : { data: null };
@@ -127,13 +136,20 @@ async function decide(admin: SupabaseClient, client: Anthropic | null, run: Run)
     await admin.from('plan_agent_runs').delete().eq('id', run.id);
     return 'skipped';
   }
-  if (!run.seller_id) { await finish(admin, run, 'skipped', { reason: 'decide-once AI steps work seller leads only' }, planName); return 'skipped'; }
+  const lead = leadOf(run);
+  if (!lead) { await finish(admin, run, 'skipped', { reason: 'the task has no seller or buyer' }, planName); return 'skipped'; }
+  // A buyer has no seller stage to move.
+  if (lead.kind === 'buyer') allowed = allowed.filter((a) => a !== 'update_lead_status');
   if (!allowed.length) { await finish(admin, run, 'skipped', { reason: 'the step allows nothing' }, planName); return 'skipped'; }
   if (!client) { await finish(admin, run, 'skipped', { reason: 'ANTHROPIC_API_KEY is not set' }, planName); return 'skipped'; }
 
-  const { data: seller } = await admin.from('sellers').select('id, name, phone, tags, lead_stage, assigned_to').eq('id', run.seller_id).eq('workspace_id', run.workspace_id).maybeSingle();
-  if (!seller) { await finish(admin, run, 'skipped', { reason: 'the seller is gone' }, planName); return 'skipped'; }
-  if (isDoNotEngage(seller as Any)) { await finish(admin, run, 'skipped', { reason: 'the seller is marked do not contact or blacklisted' }, planName); return 'skipped'; }
+  const { data: seller } = lead.kind === 'seller'
+    ? await admin.from('sellers').select('id, name, phone, tags, lead_stage, assigned_to').eq('id', lead.id).eq('workspace_id', run.workspace_id).maybeSingle()
+    : await admin.from('buyers').select('id, name, phone, tags, assigned_to, blacklisted_at, archived_at').eq('id', lead.id).eq('workspace_id', run.workspace_id).maybeSingle();
+  if (!seller) { await finish(admin, run, 'skipped', { reason: `the ${lead.kind} is gone` }, planName); return 'skipped'; }
+  if (isDoNotEngage(seller as Any)) { await finish(admin, run, 'skipped', { reason: `the ${lead.kind} is marked do not contact or blacklisted` }, planName); return 'skipped'; }
+  if ((seller as Any).archived_at) { await finish(admin, run, 'skipped', { reason: 'archived' }, planName); return 'skipped'; }
+  if (((seller as Any).tags ?? []).some((t: string) => String(t).trim().toLowerCase() === EXCLUDE_TAG)) { await finish(admin, run, 'skipped', { reason: 'excluded from Compr sends' }, planName); return 'skipped'; }
 
   // A text cannot go out at night: wait for the lead's morning and decide then.
   const e164 = phoneE164((seller as Any).phone);
@@ -144,10 +160,10 @@ async function decide(admin: SupabaseClient, client: Anthropic | null, run: Run)
     return 'waiting';
   }
 
-  const history = await gatherHistory(admin, run.workspace_id, 'seller', run.seller_id);
-  const context = await planContext(admin, run.workspace_id, run.seller_id, run.task_id);
+  const history = await gatherHistory(admin, run.workspace_id, lead.kind, lead.id);
+  const context = await planContext(admin, run.workspace_id, lead.kind, lead.id, run.task_id);
   const { count: textedBefore } = await admin.from('communications').select('id', { count: 'exact', head: true })
-    .eq('workspace_id', run.workspace_id).eq('seller_id', run.seller_id).eq('channel', 'sms').eq('direction', 'outbound');
+    .eq('workspace_id', run.workspace_id).eq(lead.kind === 'seller' ? 'seller_id' : 'buyer_id', lead.id).eq('channel', 'sms').eq('direction', 'outbound');
   const tool = decideTool(allowed);
   const now = new Date().toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
   const user = [
@@ -165,10 +181,11 @@ async function decide(admin: SupabaseClient, client: Anthropic | null, run: Run)
   try {
     const res = await client.messages.create({
       model: CLAUDE_MODEL, thinking: CLAUDE_THINKING, max_tokens: 2000,
-      system: toolRule('decide') + DECIDE_SYSTEM,
+      system: cachedSystem(toolRule('decide') + DECIDE_SYSTEM),
       tools: [tool as unknown as Anthropic.Tool], tool_choice: { type: 'auto' },
       messages: [{ role: 'user', content: user }],
     });
+    await recordUsage(admin, { ws: run.workspace_id, feature: 'plan_agent_decide', model: res.model, usage: res.usage });
     const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use' && b.name === 'decide');
     if (!call) { await finish(admin, run, 'failed', { reason: 'the model returned no decision' }, planName); return 'failed'; }
     ({ decision, dropped } = parseDecision(call.input, allowed, SELLER_STAGE_LABELS, (seller as Any).lead_stage ?? null));
@@ -184,7 +201,7 @@ async function decide(admin: SupabaseClient, client: Anthropic | null, run: Run)
   const actions: ActionResult[] = [];
   if (decision.send_sms) {
     const body = textedBefore ? decision.send_sms.body : withOptOut(decision.send_sms.body);
-    const sent = await textRecipient(admin, { workspace_id: run.workspace_id, created_by: owner }, { phone: (seller as Any).phone, seller_id: run.seller_id }, body, owner, { contractsLine: false });
+    const sent = await textRecipient(admin, { workspace_id: run.workspace_id, created_by: owner }, { phone: (seller as Any).phone, ...(lead.kind === 'seller' ? { seller_id: lead.id } : { buyer_id: lead.id }) }, body, owner, { contractsLine: false });
     if (!sent.ok && sent.reason === BLACKLIST_UNREAD) {
       // Nothing went out and nothing else was done yet: leave the run to be claimed again, like a model outage.
       await admin.from('plan_agent_runs').update({ reason: 'Could not check the blacklist; it will be tried again.' }).eq('id', run.id);
@@ -195,7 +212,7 @@ async function decide(admin: SupabaseClient, client: Anthropic | null, run: Run)
   if (decision.create_task) {
     const t = decision.create_task;
     const { data, error } = await admin.from('tasks').insert({
-      workspace_id: run.workspace_id, seller_id: run.seller_id, title: t.title, task_type: t.type, priority: 'normal',
+      workspace_id: run.workspace_id, [lead.kind === 'seller' ? 'seller_id' : 'buyer_id']: lead.id, title: t.title, task_type: t.type, priority: 'normal',
       due_at: new Date(Date.now() + t.due_in_hours * 3_600_000).toISOString(), assigned_to: owner, created_by: owner,
       notes: `From the AI step in "${planName}". ${decision.reason}`.slice(0, 2000),
     }).select('id').single();
@@ -203,7 +220,7 @@ async function decide(admin: SupabaseClient, client: Anthropic | null, run: Run)
   }
   // The stage last: a plan that stops on a stage change deletes its open
   // tasks, this step's included, and the run row keeps the record either way.
-  if (decision.update_lead_status) {
+  if (decision.update_lead_status && lead.kind === 'seller') {
     const to = decision.update_lead_status.stage;
     const { error } = await admin.from('sellers').update({ lead_stage: to }).eq('id', run.seller_id).eq('workspace_id', run.workspace_id);
     actions.push(error ? { kind: 'update_lead_status', ok: false, detail: error.message } : { kind: 'update_lead_status', ok: true, detail: `${(seller as Any).lead_stage} → ${to}` });
@@ -229,7 +246,7 @@ async function route(admin: SupabaseClient, client: Anthropic | null, e: Any): P
     return 'left';
   }
   const history = await gatherHistory(admin, e.workspace_id, 'seller', e.seller_id);
-  const context = await planContext(admin, e.workspace_id, e.seller_id, null);
+  const context = await planContext(admin, e.workspace_id, 'seller', e.seller_id, null);
   const user = [
     `The lead ${e.stopped_reason ? `was stopped in (${e.stopped_reason})` : 'finished'} the plan "${e.action_plans?.name ?? 'a plan'}".`,
     `Candidate plans (JSON):\n${JSON.stringify(list.map((p) => ({ id: p.id, name: p.name, description: p.description.slice(0, 300) })))}`,
@@ -242,6 +259,7 @@ async function route(admin: SupabaseClient, client: Anthropic | null, e: Any): P
       system: toolRule('route') + ROUTE_SYSTEM, tools: [ROUTE_TOOL], tool_choice: { type: 'auto' },
       messages: [{ role: 'user', content: user }],
     });
+    await recordUsage(admin, { ws: Number(e.workspace_id), feature: 'plan_agent_route', model: res.model, usage: res.usage });
     const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use' && b.name === 'route');
     const pick = call ? parseRoute(call.input, list.map((p) => p.id)) : null;
     if (!pick) {

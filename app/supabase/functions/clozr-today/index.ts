@@ -34,14 +34,16 @@ import Anthropic from 'npm:@anthropic-ai/sdk';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { UNTRUSTED_RULE, corsFor, fence, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
 import { loadFocus } from '../_shared/focus.ts';
 import { seatBrief } from '../_shared/seat-brief.ts';
+import { COMPANY_FOOTPRINT } from '../_shared/company-profile.ts';
 import { FOCUS_MAX, FOCUS_MIN, applyFocusRank, rulesFocus, type FocusItem } from '../../../lib/focus.ts';
 
 const MAX_ITEMS = 60;
 const MAX_FIELD = 300;
 
-const SYSTEM = `You are the daily planner inside CLOZR, the CRM a real estate investment company runs its wholesaling business on. A rep is starting their day. You are given the candidates the rules already put on their Today list, all of them their own: new leads nobody has called (kind "now"), tasks due or overdue (kind "due"), and offers out with no next step (kind "offers").
+const SYSTEM = `You are the daily planner inside CLOZR, the CRM Acme Homes (San Antonio, TX) runs its real-estate wholesaling business on. ${COMPANY_FOOTPRINT} A rep is starting their day. You are given the candidates the rules already put on their Today list, all of them their own: new leads nobody has called (kind "now"), tasks due or overdue (kind "due"), and offers out with no next step (kind "offers").
 
 Order them by what should happen first. Speed to lead wins: a fresh lead goes cold in minutes. Then overdue promises, then money on the table (the biggest offer or the smallest gap to asking), then the rest. Return every candidate you think is worth doing today, most important first; leave out only true noise.
 
@@ -71,7 +73,7 @@ const RANK_TOOL: Anthropic.Tool = {
   },
 };
 
-const FOCUS_SYSTEM = `You are Clozr, the assistant inside CLOZR — the CRM a real estate investment company runs its wholesaling business on. A rep is opening their day. You are given the candidates the rules found for them: overdue tasks, today's appointments, unassigned new leads nobody has called, tasks due today, deals closing within a week, their leads going cold (no touch in 3+ days, with the seller's stated motivation), and deals sitting 14+ days under contract with no buyer.
+const FOCUS_SYSTEM = `You are Clozr, the assistant inside CLOZR — the CRM Acme Homes (San Antonio, TX) runs its real-estate wholesaling business on. ${COMPANY_FOOTPRINT} A rep is opening their day. You are given the candidates the rules found for them: overdue tasks, today's appointments, unassigned new leads nobody has called, tasks due today, deals closing within a week, their leads going cold (no touch in 3+ days, with the seller's stated motivation), and deals sitting 14+ days under contract with no buyer.
 
 Pick the ${FOCUS_MIN} to ${FOCUS_MAX} that matter most right now and order them: what costs money or trust if it slips today goes first. A fresh lead goes cold in minutes; a closing this week with an open question is next; an overdue promise to a seller beats a routine follow-up; a motivated seller going quiet beats a lukewarm one.
 
@@ -165,6 +167,7 @@ Deno.serve(async (req) => {
         content: `It is ${now} (Central). Rep: ${str(body.name).slice(0, 40) || 'the rep'}.\n\nCandidates (JSON):\n${fence('candidates', JSON.stringify(items), 40_000)}`,
       }],
     });
+    await recordUsage(admin, { ws: workspaceId, feature: 'clozr_today', model: res.model, usage: res.usage });
     const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use' && b.name === 'rank');
     if (!call) return json({ error: 'Clozr AI returned no ranking' }, 502);
     const out = call.input as { greeting?: unknown; items?: unknown };
@@ -224,6 +227,7 @@ async function focus(db: SupabaseClient, ws: number, userId: string, name: strin
         content: `It is ${now} (Central). Rep: ${name || 'the rep'}.\n\nCandidates in the rules' order (JSON):\n${fence('candidates', JSON.stringify(shown), 30_000)}`,
       }],
     });
+    await recordUsage(null, { ws, feature: 'clozr_focus', model: res.model, usage: res.usage });
     const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use' && b.name === 'focus');
     const ranked = call ? applyFocusRank(candidates, call.input as { greeting?: unknown; items?: unknown }) : null;
     if (!ranked) return rules('Ranked by the rules: the AI answer was not usable.');

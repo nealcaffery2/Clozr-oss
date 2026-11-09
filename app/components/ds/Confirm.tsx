@@ -19,7 +19,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useFocusTrap } from '@/app/components/record/useModal';
-import { btn, INK, MUTED, SHADOW } from '@/components/genius/parts';
+import { btn, INK, MUTED, SHADOW } from '@/components/kit/parts';
 
 export type ConfirmAsk = {
   title: string;
@@ -109,7 +109,7 @@ export function ConfirmDialog({ ask, reason, onAnswer }: { ask: ReasonAsk; reaso
   const danger = ask.tone === 'danger';
   return (
     <div role="presentation" data-gx onClick={no}
-      style={{ position: 'fixed', inset: 0, zIndex: 140, background: 'rgba(24,24,27,.45)', display: 'grid', placeItems: 'center', padding: '16px' }}>
+      style={{ position: 'fixed', inset: 0, zIndex: 'calc(var(--z-confirm) + 20)', background: 'rgba(24,24,27,.45)', display: 'grid', placeItems: 'center', padding: '16px' }}>
       <div ref={boxRef} role="alertdialog" aria-modal="true" aria-labelledby={`${id}-t`} aria-describedby={ask.body ? `${id}-b` : undefined}
         data-testid="confirm" onClick={(e) => e.stopPropagation()}
         style={{ width: '100%', maxWidth: '400px', background: 'var(--surface, #fff)', borderRadius: '14px', padding: '16px', boxShadow: SHADOW.lg }}>

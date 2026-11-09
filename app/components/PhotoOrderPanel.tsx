@@ -128,16 +128,22 @@ export function PhotoOrderPanel({ workspaceId, dealId, canWrite, open, onClose, 
               ) : null}
               {status.problem ? <p role="alert" style={{ margin: 0, fontSize: '12.5px', color: 'var(--tx-red, #b91c1c)' }}>{status.problem}</p> : null}
               {status.templates.length > 1 ? (
-                <div>
-                  <label htmlFor={`ivu-tpl-${dealId}`} style={label}>Survey</label>
-                  <select id={`ivu-tpl-${dealId}`} value={template} onChange={(e) => setTemplate(e.target.value)}
-                    style={{ height: '32px', width: '100%', maxWidth: '420px', padding: '0 8px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', background: 'var(--surface, #fff)', fontSize: '13px', color: 'var(--ink, #18181b)' }}>
-                    <option value="">Pick a survey</option>
-                    {status.templates.map((t) => (
-                      <option key={t.id} value={t.id}>{t.name}{t.cost != null ? ` · $${t.cost.toFixed(2)}` : ''}</option>
-                    ))}
-                  </select>
-                </div>
+                // Each order picks its own survey (vacant, occupied, video): no default, so nobody orders the wrong one by habit.
+                <fieldset style={{ border: 0, margin: 0, padding: 0, display: 'grid', gap: '6px' }}>
+                  <legend style={label}>Which inspection</legend>
+                  {status.templates.map((t) => (
+                    <label key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '8px 10px', border: `1px solid ${template === t.id ? '#0A8560' : 'var(--divider, #e4e4e7)'}`, borderRadius: '8px', background: template === t.id ? 'var(--c-action-soft, #e7f5ef)' : 'var(--surface, #fff)', cursor: 'pointer', maxWidth: '520px' }}>
+                      <input type="radio" name={`ivu-tpl-${dealId}`} value={t.id} checked={template === t.id} onChange={() => setTemplate(t.id)}
+                        style={{ width: '16px', height: '16px', marginTop: '1px', accentColor: 'var(--tx-mint, #0a8560)' }} />
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--ink, #18181b)' }}>{t.name}</span>
+                        <span style={{ display: 'block', fontSize: '12px', color: 'var(--meta, #71717a)' }}>
+                          {[accessHint(t.name), t.cost != null ? `$${t.cost.toFixed(2)}` : null, t.slaHours ? `about ${t.slaHours} hours` : null].filter(Boolean).join(' · ')}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </fieldset>
               ) : null}
               <div>
                 <label htmlFor={`ivu-notes-${dealId}`} style={label}>Access notes for the Vuer</label>
@@ -181,6 +187,10 @@ export function PhotoOrderPanel({ workspaceId, dealId, canWrite, open, onClose, 
     </>
   );
 }
+
+/** iVueit's survey description is the Vuer's instructions; the TC needs only how the Vuer gets in. */
+const accessHint = (name: string) => /appointment|occupied/i.test(name) ? 'Occupied: the seller picks a time'
+  : /move-in|vacant|lockbox/i.test(name) ? 'Vacant: lockbox or smart lock' : null;
 
 const WORD: Record<PhotoOrderRow['status'], string> = { ordered: 'On order', completed: 'Photos in', canceled: 'Canceled', failed: 'Failed' };
 const TONE: Record<PhotoOrderRow['status'], React.CSSProperties> = {

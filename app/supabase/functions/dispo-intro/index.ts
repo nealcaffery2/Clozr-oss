@@ -28,6 +28,7 @@ import {
   avoidedIn, buyerFacts, citesAddress, factsText, firstName, inventedNumbers, offerAsk, purchasesFor, stripEmoji,
 } from '../_shared/dispo-rules.ts';
 import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
 
 type Any = any;
 
@@ -168,6 +169,7 @@ Deno.serve(async (req) => {
         ].filter(Boolean).join('\n\n'),
       }],
     });
+    await recordUsage(admin, { ws, feature: 'dispo_intro', model: res.model, usage: res.usage });
     const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     const out = ((call?.input as Any)?.results ?? []) as { buyer_id: unknown; text: unknown }[];
     const byId = new Map(out.map((r) => [Number(r.buyer_id), String(r.text ?? '')]));

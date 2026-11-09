@@ -2,13 +2,11 @@
 // the sections a message splits into, the guard on an AI edit, the carrier
 // review before a push (texts and emails), the suggested wording applied to a
 // designed email's words only, the email photo's centred 3:2 crop, and the
-// counts a Genius pull shows before it is added.
+// counts shown before a list is added.
 // Run: npx tsx tools/marketing-editor.test.ts
 import assert from 'node:assert/strict';
 import { fixHtmlWords, fixWords, mergeTokens, messageSections, reviewMessage, reviseProblem, sectionLabel } from '../lib/message-revise';
 import { coverCrop, emailablePhoto, heroPath } from '../lib/email-photo';
-import { importCounts } from '../lib/genius-import';
-import type { Candidate } from '../lib/genius';
 import { htmlToText } from '../lib/email-text';
 import { SAMPLE_EMAIL_HTML, SAMPLE_EMAIL_SUBJECT, SAMPLE_EMAIL_TEXT } from '../components/dispo-campaign/sample-email';
 
@@ -81,19 +79,6 @@ test('only a public https photo can go in an email', () => {
   assert.ok(!emailablePhoto('https://x.supabase.co/storage/v1/object/sign/deal-files/a.jpg?token=1'));
   assert.ok(!emailablePhoto('http://example.com/a.jpg'));
   assert.ok(!emailablePhoto(null));
-});
-
-test('a Genius pull counts who is on file, reachable, untraced and empty', () => {
-  const base = { key: '', matched_buyer_id: null, contacts: null, contacts_at: null } as unknown as Candidate;
-  const c = (o: Partial<Candidate>) => ({ ...base, ...o }) as Candidate;
-  const hit = (phone: string | null, email: string | null) => [{ name: 'A', phones: phone ? [{ number: phone, type: 'mobile', dnc: false, score: 90 }] : [], emails: email ? [email] : [], mailing: null }];
-  const counts = importCounts([
-    c({ key: 'a', matched_buyer_id: 3, contacts: hit('2105550188', null) as never }),
-    c({ key: 'b', contacts: hit(null, 'b@example.com') as never }),
-    c({ key: 'c' }),
-    c({ key: 'd', contacts: [] as never }),
-  ]);
-  assert.deepEqual(counts, { total: 4, onFile: 1, reachable: 2, untraced: 1, noContact: 1 });
 });
 
 test('the sample deal blast passes as written: capital headings and its "not guaranteed" disclosure are left alone', () => {

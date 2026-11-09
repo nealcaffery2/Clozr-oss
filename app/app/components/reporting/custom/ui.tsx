@@ -4,22 +4,22 @@
 
 import React from 'react';
 
-export const INK = '#18181b', MUTED = '#71717a', LINE = '#e4e4e7', SOFT = '#f0f0f1', ACCENT = '#0A8560';
+export const INK = 'var(--ink, #18181b)', MUTED = 'var(--meta, #71717a)', LINE = 'var(--divider, #e4e4e7)', SOFT = 'var(--divider-2, #f0f0f1)', ACCENT = '#0A8560';
 
-export const field: React.CSSProperties = { width: '100%', height: '32px', padding: '0 11px', border: 0, borderRadius: '10px', fontSize: '12.5px', outline: 0, background: '#fff', color: INK, fontFamily: 'inherit', boxSizing: 'border-box', boxShadow: 'var(--shadow-ring)' };
+export const field: React.CSSProperties = { width: '100%', height: '32px', padding: '0 11px', border: 0, borderRadius: '10px', fontSize: '12.5px', outline: 0, background: 'var(--surface, #fff)', color: INK, fontFamily: 'inherit', boxSizing: 'border-box', boxShadow: 'var(--shadow-ring)' };
 export const eyebrow: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: MUTED, fontWeight: 500, marginBottom: '5px' };
-export const card: React.CSSProperties = { background: '#fff', border: `1px solid ${LINE}`, borderRadius: '12px' };
-export const popover: React.CSSProperties = { position: 'absolute', top: 'calc(100% + 6px)', zIndex: 40, background: '#fff', borderRadius: '12px', boxShadow: 'var(--shadow-md)', padding: '12px', animation: 'clozrPop .16s cubic-bezier(.23,1,.32,1)' };
+export const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px' };
+export const popover: React.CSSProperties = { position: 'absolute', top: 'calc(100% + 6px)', zIndex: 40, background: 'var(--surface, #fff)', borderRadius: '12px', boxShadow: 'var(--shadow-md)', padding: '12px', animation: 'clozrPop .16s cubic-bezier(.23,1,.32,1)' };
 
 const base: React.CSSProperties = { height: '30px', padding: '0 11px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' };
 export const btn = {
-  primary: { ...base, border: `1px solid ${INK}`, background: INK, color: '#fff' } as React.CSSProperties,
-  accent: { ...base, border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff' } as React.CSSProperties,
-  ghost: { ...base, border: `1px solid ${LINE}`, background: '#fff', color: INK } as React.CSSProperties,
+  primary: { ...base, border: `1px solid ${INK}`, background: INK, color: 'var(--on-dark, #fff)' } as React.CSSProperties,
+  accent: { ...base, border: `1px solid ${ACCENT}`, background: ACCENT, color: 'var(--on-dark, #fff)' } as React.CSSProperties,
+  ghost: { ...base, border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', color: INK } as React.CSSProperties,
   plain: { ...base, border: 0, background: 'none', color: MUTED, fontWeight: 500 } as React.CSSProperties,
-  danger: { ...base, border: `1px solid ${LINE}`, background: '#fff', color: '#b91c1c' } as React.CSSProperties,
-  chip: (on: boolean): React.CSSProperties => ({ height: '28px', padding: '0 10px', borderRadius: '7px', border: `1px solid ${on ? ACCENT : LINE}`, background: on ? '#E7F8F1' : '#fff', color: on ? ACCENT : '#27272a', fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }),
-  icon: { width: '30px', height: '30px', borderRadius: '8px', border: `1px solid ${LINE}`, background: '#fff', color: INK, cursor: 'pointer', display: 'inline-grid', placeItems: 'center', padding: 0 } as React.CSSProperties,
+  danger: { ...base, border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', color: 'var(--tx-red, #b91c1c)' } as React.CSSProperties,
+  chip: (on: boolean): React.CSSProperties => ({ height: '28px', padding: '0 10px', borderRadius: '7px', border: `1px solid ${on ? ACCENT : LINE}`, background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: on ? ACCENT : 'var(--ink-2, #27272a)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }),
+  icon: { width: '30px', height: '30px', borderRadius: '8px', border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', color: INK, cursor: 'pointer', display: 'inline-grid', placeItems: 'center', padding: 0 } as React.CSSProperties,
 };
 
 export function Modal({ title, onClose, children, width = 560 }: { title: string; onClose: () => void; children: React.ReactNode; width?: number }) {

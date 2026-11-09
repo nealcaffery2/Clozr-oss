@@ -19,7 +19,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { SearchSelect } from '@/components/SearchSelect';
 import { useConfirm } from '@/components/ds/Confirm';
 import { InlineField, type InlineValue } from '@/components/ds/InlineField';
-import { Badge, btn, GREEN, HAIR, Icon, ICON, INK, INK_2, input, LINE, MUTED, RED } from '@/components/genius/parts';
+import { Badge, btn, GREEN, HAIR, Icon, ICON, INK, INK_2, input, LINE, MUTED, RED } from '@/components/kit/parts';
 import { createBuyerOffer, pofProblem } from '@/lib/buyer-desk';
 import { patchRecord } from '@/lib/crm-write';
 import {
@@ -163,7 +163,7 @@ export function OfferDesk({
                     const under = needsApproval(o.amount, ask, o.ask_at_offer);
                     const on = current?.id === o.id;
                     return (
-                      <tr key={o.id} onClick={() => setPicked(o.id)} style={{ cursor: 'pointer', background: on ? '#f4fbf8' : '#fff' }}>
+                      <tr key={o.id} onClick={() => setPicked(o.id)} style={{ cursor: 'pointer', background: on ? 'var(--c-genius-soft, #f4fbf8)' : 'var(--surface, #fff)' }}>
                         <td style={{ padding: '0 10px', height: '48px', borderBottom: `1px solid ${HAIR}` }}>
                           <input type="radio" name="desk-offer" checked={on} onChange={() => setPicked(o.id)} aria-label={`Select ${b?.company || b?.name || 'buyer'}'s offer of ${fmt(o.amount)}`} style={{ width: '16px', height: '16px', accentColor: GREEN }} />
                         </td>

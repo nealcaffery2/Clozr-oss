@@ -6,7 +6,7 @@
 //   or: deno run supabase/functions/_shared/voice-agent-admin.test.ts
 import {
   ElevenError, FALLBACK_TTS_MODEL, PREVIEW_MAX_CHARS, SAMPLE_CANDIDATE, SAMPLE_MEMORY, agentBody, callOut, checksFromAgent, deleteRemoteAgent, elJson,
-  THINKING_FILLERS, agentToolIds, asrKeywords, builtWriteTools, generateSecret, ignoreTerms, withModelFallback, getSignedUrl, listVoices, previewSpeech, redact, runConnect, toolBody, transferTool, trimVoice, unappliedSettings, webhookCreateBody, webhookUrls,
+  SESSION_OVERRIDES, THINKING_FILLERS, agentToolIds, allowedOverrideKeys, allowsSessionOverrides, draftOverrides, ensureSessionOverrides, overrideConfig, asrKeywords, builtWriteTools, generateSecret, ignoreTerms, withModelFallback, getSignedUrl, listVoices, previewSpeech, redact, runConnect, toolBody, transferTool, trimVoice, unappliedSettings, webhookCreateBody, webhookUrls,
   type ConnectState, type Wiring,
 } from './voice-agent-admin.ts';
 import { buildInitiation, DYNAMIC_VARIABLES, resolveCaller } from './voice-agent.ts';
@@ -52,7 +52,7 @@ eq('boolean variables are booleans', [typeof b.conversation_config.agent.dynamic
 eq('agent tts: model, default tuning', b.conversation_config.tts, { voice_id: 'JBFqnCBsd6RMkjVDRZzb', model_id: 'eleven_v4_turbo', stability: 0.5, similarity_boost: 0.8, speed: 1 });
 eq('expressive and unset: livelier stability', body(mk({ personality: { expressiveness: 'expressive' } })).conversation_config.tts.stability, 0.3);
 eq('tuning reaches the agent', body(mk({ voice: { stability: 0.2, similarity: 0.6, speed: 0.9, tts_model: 'eleven_flash_v2_5' } })).conversation_config.tts, { voice_id: D.voice.voice_id, model_id: 'eleven_flash_v2_5', stability: 0.2, similarity_boost: 0.6, speed: 0.9 });
-const TURN = { turn_model: 'turn_v3', speculative_turn: true, retranscribe_on_turn_timeout: true, interruption_ignore_terms: ignoreTerms(3), soft_timeout_config: { timeout_seconds: 1.5, message: THINKING_FILLERS[0], additional_soft_timeout_messages: THINKING_FILLERS.slice(1), randomize_fillers: true, use_llm_generated_message: false } };
+const TURN = { turn_model: 'turn_v3', initial_wait_time: 3, speculative_turn: true, retranscribe_on_turn_timeout: true, interruption_ignore_terms: ignoreTerms(3), soft_timeout_config: { timeout_seconds: 1.5, message: THINKING_FILLERS[0], additional_soft_timeout_messages: THINKING_FILLERS.slice(1), randomize_fillers: true, use_llm_generated_message: false } };
 eq('call length, turn eagerness and silence timeout', [b.conversation_config.conversation.max_duration_seconds, b.conversation_config.turn], [300, { turn_eagerness: 'normal', silence_end_call_timeout: 30, ...TURN }]);
 eq('silence timeout 0 means off (-1)', body(mk({ call_handling: { silence_timeout_s: 0, turn_eagerness: 'patient' } })).conversation_config.turn, { turn_eagerness: 'patient', silence_end_call_timeout: -1, ...TURN });
 eq('balanced interruptions ignore only "uh huh" sounds', ignoreTerms(3), ['uh huh', 'uh-huh', 'mm hmm', 'mm-hmm', 'mhm', 'hmm']);
@@ -91,7 +91,7 @@ eq('the built write tools ride in tool_ids next to lead_context', body(D, { ...w
 eq('a write tool switched off is not carried', body(mk({ tools: { book_appointment: { enabled: false }, mark_do_not_contact: { enabled: false } } }), { ...wiring, writeToolIds: WRITE_IDS }).conversation_config.agent.prompt.tool_ids, ['tool_1', 'tool_qual']);
 eq('a write tool ElevenLabs has no id for is not carried', body(D, { ...wiring, writeToolIds: { save_qualification: 'tool_qual' } }).conversation_config.agent.prompt.tool_ids, ['tool_1', 'tool_qual']);
 eq('agentToolIds agrees with the body', agentToolIds(D, { toolId: null, writeToolIds: WRITE_IDS }), ['tool_book', 'tool_qual', 'tool_dnc']);
-eq('builtWriteTools follows TOOL_AVAILABLE', builtWriteTools(), ['book_appointment', 'save_qualification', 'mark_do_not_contact', 'get_compr_offer']);
+eq('builtWriteTools follows TOOL_AVAILABLE', builtWriteTools(), ['book_appointment', 'save_qualification', 'mark_do_not_contact', 'get_compr_offer', 'deal_lookup']);
 ok('no secret in the prompt or anywhere but the webhook header', JSON.stringify(b).split('P'.repeat(64)).length === 2);
 
 // ---- voicemail ----
@@ -164,8 +164,8 @@ const happy = mock((c) => {
   return { json: { status: 'ok' } };
 });
 const r1 = await runConnect(happy.cfg, fresh, D, TEMPLATES, urls);
-eq('fresh publish call order', happy.calls.map((c) => `${c.method} ${c.path}`), ['POST /v1/convai/tools', 'POST /v1/convai/tools', 'POST /v1/convai/tools', 'POST /v1/convai/tools', 'POST /v1/convai/tools', 'POST /v1/workspace/webhooks', 'PATCH /v1/workspace/webhooks/wh_new', 'POST /v1/convai/agents/create']);
-eq('the tools created are lead_context and the four write tools', happy.calls.filter((c) => c.path === '/v1/convai/tools').map((c) => c.body.tool_config.name), ['lead_context', 'book_appointment', 'save_qualification', 'mark_do_not_contact', 'get_compr_offer']);
+eq('fresh publish call order', happy.calls.map((c) => `${c.method} ${c.path}`), ['POST /v1/convai/tools', 'POST /v1/convai/tools', 'POST /v1/convai/tools', 'POST /v1/convai/tools', 'POST /v1/convai/tools', 'POST /v1/convai/tools', 'POST /v1/workspace/webhooks', 'PATCH /v1/workspace/webhooks/wh_new', 'POST /v1/convai/agents/create']);
+eq('the tools created are lead_context and the five write tools', happy.calls.filter((c) => c.path === '/v1/convai/tools').map((c) => c.body.tool_config.name), ['lead_context', 'book_appointment', 'save_qualification', 'mark_do_not_contact', 'get_compr_offer', 'deal_lookup']);
 eq('the write tools post to their own routes with the tool secret', happy.calls.slice(1, 4).map((c) => [c.body.tool_config.api_schema.url, c.body.tool_config.api_schema.request_headers['X-Voice-Agent-Secret'] === 'T'.repeat(64)]), [
   ['https://proj.supabase.co/functions/v1/voice-agent/tool/book-appointment', true],
   ['https://proj.supabase.co/functions/v1/voice-agent/tool/save-qualification', true],
@@ -174,20 +174,20 @@ eq('the write tools post to their own routes with the tool secret', happy.calls.
 eq('the write tools carry the conversation id and the caller', Object.fromEntries(['caller_id', 'called_number', 'agent_id', 'conversation_id'].map((k) => [k, happy.calls[1].body.tool_config.api_schema.request_body_schema.properties[k].dynamic_variable])), { caller_id: 'system__caller_id', called_number: 'system__called_number', agent_id: 'system__agent_id', conversation_id: 'system__conversation_id' });
 ok('every LLM-filled write tool property has exactly one value source', happy.calls.slice(1, 4).every((c) => Object.values(c.body.tool_config.api_schema.request_body_schema.properties as Record<string, Record<string, unknown>>).every((p) => ['description', 'dynamic_variable', 'constant_value'].filter((k) => k in p).length === 1)));
 eq('the API key rides on every call', happy.calls.every((c) => c.key === 'xi_TESTKEY_123456'), true);
-eq('fresh publish state', [r1.state.agent_id, r1.state.tool_id, r1.state.webhook_id, r1.state.webhook_secret, r1.state.write_tool_ids], ['agent_new', 'tool_new', 'wh_new', 'wsec_returned', { book_appointment: 'tool_book_appointment', save_qualification: 'tool_save_qualification', mark_do_not_contact: 'tool_mark_do_not_contact', get_compr_offer: 'tool_get_compr_offer' }]);
+eq('fresh publish state', [r1.state.agent_id, r1.state.tool_id, r1.state.webhook_id, r1.state.webhook_secret, r1.state.write_tool_ids], ['agent_new', 'tool_new', 'wh_new', 'wsec_returned', { book_appointment: 'tool_book_appointment', save_qualification: 'tool_save_qualification', mark_do_not_contact: 'tool_mark_do_not_contact', get_compr_offer: 'tool_get_compr_offer', deal_lookup: 'tool_deal_lookup' }]);
 eq('fresh publish checks, errors, connected, model', [r1.checks, r1.errors, r1.connected, r1.tts_model_used], [{ api_key: true, agent: true, personalize_webhook: true, tool: true, post_call_webhook: true, write_tools: true }, [], true, 'eleven_v4_turbo']);
-eq('retries are switched on', happy.calls[6].body, { is_disabled: false, name: 'CLOZR post-call', retry_enabled: true });
-eq('the agent create points at the new tools and webhook, and is tagged', [happy.calls[7].body.conversation_config.agent.prompt.tool_ids, happy.calls[7].body.platform_settings.workspace_overrides.webhooks.post_call_webhook_id, happy.calls[7].body.tags], [['tool_new', 'tool_book_appointment', 'tool_save_qualification', 'tool_mark_do_not_contact'], 'wh_new', ['clozr']]);
+eq('retries are switched on', happy.calls[7].body, { is_disabled: false, name: 'CLOZR post-call', retry_enabled: true });
+eq('the agent create points at the new tools and webhook, and is tagged', [happy.calls[8].body.conversation_config.agent.prompt.tool_ids, happy.calls[8].body.platform_settings.workspace_overrides.webhooks.post_call_webhook_id, happy.calls[8].body.tags], [['tool_new', 'tool_book_appointment', 'tool_save_qualification', 'tool_mark_do_not_contact'], 'wh_new', ['clozr']]);
 
 const again = mock(() => ({ json: { status: 'ok' } }));
 const r2 = await runConnect(again.cfg, r1.state, D, TEMPLATES, urls);
-eq('republish updates in place: no POST at all', again.calls.map((c) => `${c.method} ${c.path}`), ['PATCH /v1/convai/tools/tool_new', 'PATCH /v1/convai/tools/tool_book_appointment', 'PATCH /v1/convai/tools/tool_save_qualification', 'PATCH /v1/convai/tools/tool_mark_do_not_contact', 'PATCH /v1/convai/tools/tool_get_compr_offer', 'PATCH /v1/workspace/webhooks/wh_new', 'PATCH /v1/convai/agents/agent_new']);
+eq('republish updates in place: no POST at all', again.calls.map((c) => `${c.method} ${c.path}`), ['PATCH /v1/convai/tools/tool_new', 'PATCH /v1/convai/tools/tool_book_appointment', 'PATCH /v1/convai/tools/tool_save_qualification', 'PATCH /v1/convai/tools/tool_mark_do_not_contact', 'PATCH /v1/convai/tools/tool_get_compr_offer', 'PATCH /v1/convai/tools/tool_deal_lookup', 'PATCH /v1/workspace/webhooks/wh_new', 'PATCH /v1/convai/agents/agent_new']);
 eq('republish keeps every id and the same secrets', [r2.state, r2.checks.agent], [r1.state, true]);
 
 // A second agent in the workspace reuses the shared tool and webhook and gets its own ElevenLabs agent.
 const second = mock((c) => (c.path === '/v1/convai/agents/create' ? { json: { agent_id: 'agent_two' } } : { json: { status: 'ok' } }));
 const r2b = await runConnect(second.cfg, { ...r1.state, agent_id: null }, mk({ identity: { name: 'Second' } }), TEMPLATES, urls);
-eq('a second agent: tools and webhook updated in place, its own agent created', [second.calls.map((c) => `${c.method} ${c.path}`), r2b.state.agent_id, r2b.state.tool_id, r2b.state.webhook_id], [['PATCH /v1/convai/tools/tool_new', 'PATCH /v1/convai/tools/tool_book_appointment', 'PATCH /v1/convai/tools/tool_save_qualification', 'PATCH /v1/convai/tools/tool_mark_do_not_contact', 'PATCH /v1/convai/tools/tool_get_compr_offer', 'PATCH /v1/workspace/webhooks/wh_new', 'POST /v1/convai/agents/create'], 'agent_two', 'tool_new', 'wh_new']);
+eq('a second agent: tools and webhook updated in place, its own agent created', [second.calls.map((c) => `${c.method} ${c.path}`), r2b.state.agent_id, r2b.state.tool_id, r2b.state.webhook_id], [['PATCH /v1/convai/tools/tool_new', 'PATCH /v1/convai/tools/tool_book_appointment', 'PATCH /v1/convai/tools/tool_save_qualification', 'PATCH /v1/convai/tools/tool_mark_do_not_contact', 'PATCH /v1/convai/tools/tool_get_compr_offer', 'PATCH /v1/convai/tools/tool_deal_lookup', 'PATCH /v1/workspace/webhooks/wh_new', 'POST /v1/convai/agents/create'], 'agent_two', 'tool_new', 'wh_new']);
 const writeGone = mock((c) => {
   if (c.method === 'PATCH' && c.path === '/v1/convai/tools/tool_book_appointment') return { status: 404, json: { detail: 'not found' } };
   if (c.method === 'POST' && c.path === '/v1/convai/tools') return { json: { id: 'tool_book_2' } };
@@ -346,7 +346,7 @@ function fakeAdmin(tables: Rows) {
     from(name: string) {
       const rows = tables[name] ?? [];
       const q: any = { // deno-lint-ignore no-explicit-any
-        select: () => q, eq: () => q, in: () => q, order: () => q, limit: () => q, is: () => q, not: () => q, lte: () => q, gte: () => q,
+        select: () => q, eq: () => q, in: () => q, order: () => q, limit: () => q, is: () => q, not: () => q, lte: () => q, gte: () => q, gt: () => q, like: () => q,
         maybeSingle: () => Promise.resolve({ data: rows[0] ?? null, error: null }),
         then: (res: (v: unknown) => unknown) => res({ data: rows, error: null }),
       };
@@ -365,7 +365,7 @@ const cands = await loadCandidates(admin, 1, '5125550199');
 eq('loadCandidates reads the seller on the number', cands.map((c) => [c.kind, c.id]), [['seller', 11]]);
 const viaDb = await initiationFor(admin, 1, resolveCaller(cands), legIn, persona);
 const direct = buildInitiation(resolveCaller(cands), legIn, { brief: 'Ann wants a written offer.', facts: { first_name: 'Ann', preferred_name: null, property_address: '12 Oak St', last_contact_summary: null, next_step: 'Send the offer.' } }, { ...persona, repName: 'Alex' }, {
-  rep_phone: '+15125550100', lead_source: 'form', property_facts: '', mortgage_payoff_estimate: '', offer_low: '', offer_high: '', seller_asking_price: '$210,000', call_goal: '', rep_available: 'yes',
+  rep_phone: '+15125550100', lead_source: 'form', property_facts: '', mortgage_payoff_estimate: '', offer_low: '', offer_high: '', seller_asking_price: '$210,000', call_goal: '', rep_available: 'yes', covering_for: '',
 });
 eq('initiationFor is buildInitiation over the stored memory, rep, source and asking price', viaDb.dynamic_variables, direct.dynamic_variables);
 eq('...with the brief, rep and rep phone in it', [viaDb.dynamic_variables.lead_brief, viaDb.dynamic_variables.rep_name, viaDb.dynamic_variables.rep_phone, viaDb.dynamic_variables.caller_known], ['Ann wants a written offer.', 'Alex', '+15125550100', true]);
@@ -389,6 +389,11 @@ eq('...with the brief, rep and rep phone in it', [viaDb.dynamic_variables.lead_b
     [true, true, true, false]);
   const started = fakeAdmin({ ...tables, ai_agent_enrollments: [{ record_id: 11, started_by: 'u9', started_at: 'x' }] });
   eq('the rep who switched the AI agent on works the call, before the assigned rep', (await loadCandidates(started, 1, '5125550199')).map((c) => c.assigned_to), ['u9']);
+  const dialled = fakeAdmin({ ...tables, sellers: [{ ...tables.sellers[0], assigned_to: null }], communications: [{ rep_id: 'u7' }] });
+  eq('a record nobody works falls to the rep who last dialled the number from this line', (await loadCandidates(dialled, 1, '5125550199', '7265555755')).map((c) => c.assigned_to), ['u7']);
+  eq('...only when the line is known', (await loadCandidates(dialled, 1, '5125550199')).map((c) => c.assigned_to), [null]);
+  const stranger = await initiationFor(fakeAdmin({ ...tables, communications: [{ rep_id: 'u7' }] }), 1, { status: 'none', matches: [] }, { ...legIn, ours: '7265555755' }, persona, mk({}));
+  eq('an unknown caller is handed to that rep too', stranger.dynamic_variables.rep_phone, '+15125550100');
 }
 eq('no agent: no offer range', [viaDb.dynamic_variables.offer_low, viaDb.dynamic_variables.offer_high], ['', '']);
 const withGoal = await initiationFor(admin, 1, resolveCaller(cands), { ...legIn, direction: 'outbound' }, persona, null, '  Follow up on the offer\n we sent Friday. ');
@@ -454,6 +459,14 @@ for (const id of Object.keys(TEMPLATES)) {
   eq('no rep: the owner', await loadTransferTarget(db({ own: '5125550199' }, lines), 11, null), { userId: 'own', phone: '+15125550199' });
   eq('a rep with no number: the owner\'s line', await loadTransferTarget(db({}, { own: lines.own }), 11, 'rep'), { userId: 'own', phone: '+18645550199' });
   eq('nobody has a number', await loadTransferTarget(db({}, {}), 11, 'rep'), null);
+  // Many lines, none "Main": the caller ID line, else the oldest, whatever order they come back in.
+  const many = (cid: boolean) => ({ rep: [
+    { phone_e164: '+18035550102', label: 'Compr · Columbia', created_at: '2026-10-02' },
+    { phone_e164: '+18035550101', label: 'Compr · Midlands', created_at: '2026-10-01', is_caller_id: false },
+    { phone_e164: '+18035550103', label: 'Compr · Tampa', created_at: '2026-10-03', is_caller_id: cid },
+  ] as never });
+  eq('no main line: the caller ID line', await loadTransferTarget(db({}, many(true)), 11, 'rep'), { userId: 'rep', phone: '+18035550103' });
+  eq('no main or caller ID line: the oldest', await loadTransferTarget(db({}, many(false)), 11, 'rep'), { userId: 'rep', phone: '+18035550101' });
 }
 
 // ---- the brain: a model that refuses a reasoning effort is published on Thinking auto ----
@@ -475,6 +488,45 @@ for (const id of Object.keys(TEMPLATES)) {
 }
 
 eq('a big team never crowds out the call words', (() => { const k = asrKeywords(mk({ identity: { name: 'Riley', company: 'Acme Homes' } }), Array.from({ length: 60 }, (_, i) => `Rep${i}`)); return ['Compr', 'earnest money', 'HOA', 'realtor'].every((w) => k.includes(w)) && k.length <= 50; })(), true);
+
+// ---- draft tests: session overrides ----
+eq('a published agent allows the draft-test overrides', body(D).platform_settings.overrides.conversation_config_override, SESSION_OVERRIDES);
+{
+  const s = mk({ voice: { voice_id: 'voice_draft_01', speed: 1.1 } });
+  const o = draftOverrides(s, TEMPLATES);
+  const b = body(s).conversation_config;
+  eq('draft overrides carry what a publish would send', [o.prompt, o.llm, o.voice_id, o.stability, o.similarity_boost, o.speed], [b.agent.prompt.prompt, b.agent.prompt.llm, b.tts.voice_id, b.tts.stability, b.tts.similarity_boost, b.tts.speed]);
+}
+eq('an agent from before the overrides does not allow them', allowsSessionOverrides({ platform_settings: { overrides: { conversation_config_override: { agent: { first_message: true } } } } }), false);
+eq('an agent with every flag allows them', allowsSessionOverrides({ platform_settings: { overrides: { conversation_config_override: SESSION_OVERRIDES } } }), true);
+{
+  const old = { overrides: { enable_conversation_initiation_client_data_from_webhook: true, conversation_config_override: { agent: { first_message: true } } }, workspace_overrides: { webhooks: { post_call_webhook_id: 'wh_1' } }, auth: { enable_auth: true } };
+  let patched: Record<string, unknown> | null = null;
+  const m = mock((c) => {
+    if (c.method === 'PATCH') { patched = c.body.platform_settings; return { json: { status: 'ok' } }; }
+    return { json: { platform_settings: patched ?? old } };
+  });
+  const allowed = await ensureSessionOverrides(m.cfg, 'agent_1');
+  // deno-lint-ignore no-explicit-any
+  const patch = m.calls[1]?.body?.platform_settings as any;
+  eq('an old agent is patched once with its platform settings kept, then read back', [m.calls.map((c) => `${c.method} ${c.path}`), patch?.auth, patch?.workspace_overrides, patch?.overrides?.enable_conversation_initiation_client_data_from_webhook, patch?.overrides?.conversation_config_override, allowed.length],
+    [['GET /v1/convai/agents/agent_1', 'PATCH /v1/convai/agents/agent_1', 'GET /v1/convai/agents/agent_1'], old.auth, old.workspace_overrides, true, SESSION_OVERRIDES, 6]);
+  const ready = mock(() => ({ json: { platform_settings: { overrides: { conversation_config_override: SESSION_OVERRIDES } } } }));
+  await ensureSessionOverrides(ready.cfg, 'agent_1');
+  eq('an agent that already allows them is only read', ready.calls.map((c) => c.method), ['GET']);
+  // ElevenLabs keeps the prompt and voice flags but drops the rest: only those are reported.
+  const partial = { overrides: { conversation_config_override: { agent: { first_message: true, prompt: { prompt: true } }, tts: { voice_id: true } } } };
+  const some = mock((c) => (c.method === 'PATCH' ? { json: {} } : { json: { platform_settings: partial } }));
+  eq('flags ElevenLabs did not keep are not reported as allowed', await ensureSessionOverrides(some.cfg, 'agent_1'), ['prompt', 'voice_id']);
+  eq('allowed keys read from the agent', allowedOverrideKeys({ platform_settings: partial }), ['prompt', 'voice_id']);
+}
+{
+  const s = mk({ voice: { voice_id: 'voice_draft_01' } });
+  const o = draftOverrides(s, TEMPLATES, ['prompt', 'voice_id']);
+  eq('a draft test sends only the allowed fields', Object.keys(o), ['prompt', 'voice_id']);
+  eq('...in ElevenLabs override shape, no empty tts or llm', [Object.keys(overrideConfig(o)), 'llm' in (overrideConfig(o).prompt ?? {}), overrideConfig(o).tts], [['prompt', 'tts'], false, { voice_id: 'voice_draft_01' }]);
+  eq('prompt alone: no tts block at all', 'tts' in overrideConfig(draftOverrides(s, TEMPLATES, ['prompt'])), false);
+}
 
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
 console.log('\nall passed');

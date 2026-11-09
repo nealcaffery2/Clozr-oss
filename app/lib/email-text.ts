@@ -89,7 +89,8 @@ export function htmlToText(html: string): string {
     .replace(/<li\b[^>]*>/gi, '\n• ')
     .replace(/<[^>]+>/g, ' ');
   s = s.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (m, e: string) => {
-    if (e[0] === '#') { const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); return Number.isFinite(n) ? String.fromCodePoint(n) : ' '; }
+    // fromCodePoint throws past U+10FFFF; a malformed entity is a space, as in email-html.ts htmlToPlain.
+    if (e[0] === '#') { const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); return n > 0 && n < 0x110000 ? String.fromCodePoint(n) : ' '; }
     return ENTITIES[e.toLowerCase()] ?? m;
   });
   return s.replace(/[ \t ]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();

@@ -8,10 +8,13 @@
 // (migration 149); lib/sales-scorecard.ts turns them into one row per rep.
 
 import { WRITING_RULE } from './no-ai-slop.ts';
+import { appLink, appPath } from './app-paths.ts';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { DEFAULT_TZ, buildLeaderboard, periodRange, type LeaderboardRaw } from './leaderboard.ts';
 import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from './models.ts';
+import { recordUsage } from './ai-usage.ts';
+import { everyRowResult } from './every-row.ts';
 import { fence, UNTRUSTED_RULE } from './security.ts';
 import {
   activeScorecards, buildScorecards, fmtTalk, ruleInsights, teamTotals,
@@ -22,7 +25,6 @@ import { FRAMEWORK_STAGES, flagLabel } from '../../../lib/sales-framework.ts';
 // deno-lint-ignore no-explicit-any
 type Any = any;
 
-const COMMS_CAP = 20_000;
 const REVIEWS_CAP = 3_000;
 
 export type ScorecardBundle = {
@@ -44,19 +46,20 @@ export async function loadScorecards(admin: SupabaseClient, ws: number, period: 
   const since = new Date(range.start ?? now - 400 * 86_400_000).toISOString();
   const until = new Date(range.end).toISOString();
 
+  // Paged by id: a bare select, and a .limit() over max-rows, stop at PostgREST's 1,000 rows.
   const [membersQ, sellersQ, dealsQ, commsQ, offersQ, apptsQ, reviewsQ, rpQ] = await Promise.all([
     admin.from('workspace_members').select('user_id, role, profiles(full_name, email, avatar_url)').eq('workspace_id', ws),
-    admin.from('sellers').select('id, created_at, assigned_to, source').eq('workspace_id', ws).is('archived_at', null),
-    admin.from('deals').select('id, seller_id, stage, created_at, stage_entered_at, contract_date, close_date, closed_on, owner_id, dispo_rep_id, assignment_fee, dispo_fee, wholesale_fee, marketed_fee, total_cogs, deal_net_profit, market, coordinator').eq('workspace_id', ws),
-    admin.from('communications').select('seller_id, buyer_id, rep_id, channel, direction, occurred_at, duration_s, status').eq('workspace_id', ws)
-      .gte('occurred_at', since).lt('occurred_at', until).order('occurred_at', { ascending: false }).limit(COMMS_CAP),
-    admin.from('offers').select('seller_id, direction, sent_at, created_by').eq('workspace_id', ws),
-    admin.from('appointments').select('seller_id, assigned_to, starts_at, created_at, deleted_at').eq('workspace_id', ws),
-    admin.from('communications').select('id, rep_id, seller_id, occurred_at, duration_s, coaching_review').eq('workspace_id', ws)
+    everyRowResult<Any>(() => admin.from('sellers').select('id, created_at, assigned_to, source').eq('workspace_id', ws).is('archived_at', null).order('id')),
+    everyRowResult<Any>(() => admin.from('deals').select('id, seller_id, stage, created_at, stage_entered_at, contract_date, close_date, closed_on, owner_id, dispo_rep_id, assignment_fee, dispo_fee, wholesale_fee, marketed_fee, total_cogs, deal_net_profit, market, coordinator').eq('workspace_id', ws).order('id')),
+    // Grouped in SQL (migration 391): per rep, line owner, seller rep, day, channel and direction.
+    admin.rpc('leaderboard_comms', { p_ws: ws, p_tz: tz, p_since: since, p_until: until }),
+    everyRowResult<Any>(() => admin.from('offers').select('seller_id, direction, sent_at, created_by').eq('workspace_id', ws).order('id')),
+    everyRowResult<Any>(() => admin.from('appointments').select('seller_id, assigned_to, starts_at, created_at, deleted_at').eq('workspace_id', ws).order('id')),
+    everyRowResult<Any>(() => admin.from('communications').select('id, rep_id, seller_id, occurred_at, duration_s, coaching_review').eq('workspace_id', ws)
       .in('channel', ['call']).not('coaching_review', 'is', null).gte('occurred_at', since).lt('occurred_at', until)
-      .order('occurred_at', { ascending: false }).limit(REVIEWS_CAP),
-    admin.from('roleplay_sessions').select('user_id, started_at, score, stage_hit_rate, status').eq('workspace_id', ws)
-      .gte('started_at', since).lt('started_at', until).limit(5000),
+      .order('occurred_at', { ascending: false }).order('id', { ascending: false })),
+    everyRowResult<Any>(() => admin.from('roleplay_sessions').select('user_id, started_at, score, stage_hit_rate, status').eq('workspace_id', ws)
+      .gte('started_at', since).lt('started_at', until).order('id')),
   ]);
   for (const q of [membersQ, sellersQ, dealsQ, commsQ, offersQ, reviewsQ]) if (q.error) throw new Error(q.error.message);
   const notes: string[] = [];
@@ -66,12 +69,13 @@ export async function loadScorecards(admin: SupabaseClient, ws: number, period: 
     const p = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles;
     return { id: String(m.user_id), name: p?.full_name || p?.email || 'Teammate', role: String(m.role ?? 'member'), email: p?.email ?? null, avatar: p?.avatar_url ?? null };
   });
+  const grouped = (commsQ.data ?? {}) as { comms?: LeaderboardRaw['comms']; first_touch?: Record<string, string> };
   const raw: LeaderboardRaw = {
     members,
     sellers: (sellersQ.data ?? []) as Any,
     deals: (dealsQ.data ?? []) as Any,
-    comms: (commsQ.data ?? []) as Any,
-    commsCapped: (commsQ.data?.length ?? 0) >= COMMS_CAP,
+    comms: grouped.comms ?? [],
+    firstTouch: grouped.first_touch ?? {},
     offers: (offersQ.data ?? []) as Any,
     appointments: (apptsQ.data ?? []) as Any,
   };
@@ -82,7 +86,7 @@ export async function loadScorecards(admin: SupabaseClient, ws: number, period: 
   // A graded call with no Talkr rep is credited to the seller's assigned rep, as the board does.
   const sellerRep = new Map<number, string | null>();
   for (const s of (sellersQ.data ?? []) as Any[]) sellerRep.set(Number(s.id), s.assigned_to ?? null);
-  const reviews = ((reviewsQ.data ?? []) as Any[]).map((r) => ({
+  const reviews = ((reviewsQ.data ?? []) as Any[]).slice(0, REVIEWS_CAP).map((r) => ({
     id: Number(r.id), rep_id: r.rep_id ?? (r.seller_id != null ? sellerRep.get(Number(r.seller_id)) ?? null : null),
     seller_id: r.seller_id ?? null, occurred_at: String(r.occurred_at), duration_s: r.duration_s ?? null, coaching_review: r.coaching_review,
   }));
@@ -155,6 +159,7 @@ export async function weeklyInsights(apiKey: string | null, card: RepScorecard, 
       tool_choice: { type: 'auto' },
       messages: [{ role: 'user', content: `${facts}\n\nThis week's graded calls:\n${fence('call_notes', notes, 14_000)}` }],
     });
+    await recordUsage(null, { feature: 'sales_manager_weekly', model: res.model, usage: res.usage });
     const use = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     const lines = Array.isArray((use?.input as Any)?.insights)
       ? ((use!.input as Any).insights as unknown[]).map((x) => String(x ?? '').replace(/[—–]/g, ', ').replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 3)
@@ -197,7 +202,7 @@ ${lines.length ? `<div style="font:700 10.5px ${font};letter-spacing:.08em;text-
 <div style="font:400 13px ${font};color:#71717a">${esc(dates)}</div>
 <p style="margin:12px 0 0;font:400 13.5px/1.55 ${font};color:#27272a">Team: ${t.calls} calls, ${t.conversations} conversations, ${t.reviewedCalls} graded${t.avgCallScore != null ? ` (avg ${t.avgCallScore}/100)` : ''}, ${t.flaggedCalls} flagged, ${t.appointmentsSet} appointments set, ${t.contracts} contracts, ${t.roleplaySessions} roleplays.</p>
 ${repBlocks || `<p style="font:400 13px ${font};color:#71717a">No rep activity this week.</p>`}
-<p style="margin:18px 0 0;font:400 12px ${font};color:#71717a">Sent by CLOZR · <a href="${esc(APP())}/#screen=coaching" style="color:#0A8560;font-weight:600">Open Coaching</a> for the flagged calls, every scorecard and roleplay history. Turn this email off there.</p>
+<p style="margin:18px 0 0;font:400 12px ${font};color:#71717a">Sent by CLOZR · <a href="${esc(appLink(APP(), appPath.coaching))}" style="color:#0A8560;font-weight:600">Open Coaching</a> for the flagged calls, every scorecard and roleplay history. Turn this email off there.</p>
 </td></tr></table></body></html>`;
   const text = [
     `${b.workspaceName} weekly rep scorecards, ${dates}`,
@@ -205,7 +210,7 @@ ${repBlocks || `<p style="font:400 13px ${font};color:#71717a">No rep activity t
     ...cards.flatMap((c) => ['', `${c.name}${c.avgCallScore != null ? ` ${c.avgCallScore}/100` : ''}`,
       `Calls ${c.calls} · conversations ${c.conversations} · appts ${c.appointmentsSet}/${c.appointmentsHeld} · offers ${c.offersMade} · contracts ${c.contracts} · flagged ${c.flaggedCalls} · roleplays ${c.roleplaySessions}`,
       ...(insights.get(c.id) ?? ruleInsights(c)).map((l, i) => `${i + 1}. ${l}`)]),
-    '', `Open Coaching: ${APP()}/#screen=coaching`,
+    '', `Open Coaching: ${appLink(APP(), appPath.coaching)}`,
   ].join('\n');
   return { subject: `Weekly rep scorecards · ${b.workspaceName}`, html, text };
 }

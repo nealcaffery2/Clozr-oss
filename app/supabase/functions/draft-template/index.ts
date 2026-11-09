@@ -19,6 +19,8 @@ import Anthropic from 'npm:@anthropic-ai/sdk';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { UNTRUSTED_RULE, corsFor, fence, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
+import { COMPR_TEMPLATE_SYSTEM } from '../_shared/compr-plan-ai.ts';
 
 function anthropicHeaders(): { defaultHeaders?: Record<string, string> } {
   const ws = Deno.env.get('ANTHROPIC_WORKSPACE_ID');
@@ -101,7 +103,9 @@ Deno.serve(async (req) => {
   const rl = await rateLimit(admin, `draft-template:${who.user.id}`, 40, 3600);
   if (!rl.allowed) return tooMany(CORS, rl);
 
-  const brief = SYSTEM;
+  // A Compr workspace sells software to investors: its templates never get the seller brief.
+  const { data: ws } = await admin.from('workspaces').select('buyer_profile:settings->>buyer_profile').eq('id', workspaceId).maybeSingle();
+  const brief = (ws as { buyer_profile?: unknown } | null)?.buyer_profile === 'compr' ? `${COMPR_TEMPLATE_SYSTEM}${UNTRUSTED_RULE}${WRITING_RULE}` : SYSTEM;
 
   try {
     const client = new Anthropic({ apiKey, ...anthropicHeaders() });
@@ -116,6 +120,7 @@ Deno.serve(async (req) => {
         content: `Write a ${channel === 'sms' ? 'text message' : 'email'} template for this audience: ${audience}.\n\nWhat it is for:\n${fence('goal', goal, 2000)}\n\nTone:\n${fence('tone', tone, 200)}`,
       }],
     });
+    await recordUsage(admin, { ws: workspaceId, feature: 'draft_template', model: res.model, usage: res.usage });
     const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     if (!call) return json({ error: 'the draft came back empty' }, 502);
     const out = call.input as { name?: unknown; subject?: unknown; body_text?: unknown; blocks?: unknown };

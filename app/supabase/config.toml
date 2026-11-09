@@ -10,6 +10,9 @@ verify_jwt = false
 [functions.talkr-webhook]
 verify_jwt = false
 
+[functions.cal-webhook]
+verify_jwt = false
+
 [functions.pandadoc-webhook]
 verify_jwt = false
 
@@ -57,11 +60,6 @@ verify_jwt = false
 # runs, log and opt-ins in. Authenticated by the same Deal Machine ingest key
 # as /ingest, because a Chrome extension has no Supabase session.
 [functions.deal-machine]
-verify_jwt = false
-
-# Buyr's sniping queue: aged Deal Machine deals and wholesaler opt-ins.
-# Authenticated by the buyr ingest key.
-[functions.buyr]
 verify_jwt = false
 
 # The TV board's feed. Read-only, authenticated by a `dashboard` ingest key

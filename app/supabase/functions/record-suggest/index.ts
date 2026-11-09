@@ -18,7 +18,8 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { UNTRUSTED_RULE, corsFor, fence, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
-import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
+import { CLAUDE_HAIKU_MODEL, HAIKU_THINKING, cachedSystem, toolRule } from '../_shared/models.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
 
 function anthropicHeaders(): { defaultHeaders?: Record<string, string> } {
   const ws = Deno.env.get('ANTHROPIC_WORKSPACE_ID');
@@ -131,9 +132,9 @@ Deno.serve(async (req) => {
   try {
     const client = new Anthropic({ apiKey, ...anthropicHeaders() });
     const res = await client.messages.create({
-      model: CLAUDE_MODEL, thinking: CLAUDE_THINKING,
+      model: CLAUDE_HAIKU_MODEL, thinking: HAIKU_THINKING,
       max_tokens: 2000,
-      system: toolRule('suggest') + SYSTEM,
+      system: cachedSystem(toolRule('suggest') + SYSTEM),
       tools: [TOOL],
       tool_choice: { type: 'auto' },
       messages: [{
@@ -141,6 +142,7 @@ Deno.serve(async (req) => {
         content: `Now: ${today} (Central).\n\nStages:\n${fence('stages', stages.join('\n'), 4000)}\n\nThe record today:\n${fence('seller_record', JSON.stringify(record, null, 1), 8000)}\n\nThe ${source === 'call' ? 'call transcript' : 'text thread'}:\n${fence(source === 'call' ? 'transcript' : 'messages', conversation, 40_000)}`,
       }],
     });
+    await recordUsage(admin, { ws: workspaceId, feature: 'record_suggest', model: res.model, usage: res.usage });
     const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     const raw = (call?.input as { suggestions?: unknown })?.suggestions;
     const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 500) : undefined);

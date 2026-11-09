@@ -90,7 +90,8 @@ export function docVars(p: DocParties, company: DocCompany, doc: { date?: string
     'deal.special_terms': text(deal?.special_provisions),
     'deal.tc_fee': money(deal?.tc_fee),
 
-    'title.company': text(s(title?.business_name) ?? s(deal?.title_company) ?? s(deal?.title_contact)),
+    // Never the contact's name: a person printed as the title company reads as a typo on a binding contract.
+    'title.company': text(s(title?.business_name) ?? s(deal?.title_company)),
     'title.contact': text(s(title?.contact_name) ?? s(deal?.title_contact)),
     'title.email': text(s(title?.email) ?? s(deal?.title_email)),
     'title.phone': text(s(title?.phone) ?? s(deal?.title_phone)),

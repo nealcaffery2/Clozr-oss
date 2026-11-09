@@ -9,6 +9,7 @@
 
 import { propertyTypeLabel } from '../supabase/functions/_shared/dispo-rules';
 import type { Deal, Person } from './clozr-types';
+import { factFields } from './merge-gaps';
 
 /** https only, and never a private storage object — those 404 in Gmail. */
 export function emailSafeUrl(url: string | null | undefined): string {
@@ -23,7 +24,7 @@ export function isSupabaseUrl(url: string | null | undefined): boolean {
   try { return /(^|\.)supabase\.(co|in)$/i.test(new URL(url ?? '').hostname); } catch { return false; }
 }
 
-export type DispoDealInput = Partial<Pick<Deal, 'arv' | 'rehab' | 'marketing' | 'underwritingUrl' | 'photoUrl' | 'heroUrl' | 'photos'>> & {
+export type DispoDealInput = Partial<Pick<Deal, 'arv' | 'rehab' | 'marketing' | 'underwritingUrl' | 'photoUrl' | 'heroUrl' | 'photos' | 'home'>> & {
   buyerReportUrl?: string | null;
   cmaPdfUrl?: string | null;
   photosUrl?: string | null;
@@ -65,13 +66,16 @@ export function dispoFields(d: DispoDealInput, p: Person, addr: string, price: n
     address: addr, full_address: [addr, cityLine].filter(Boolean).join(', '),
     city: city === '—' ? '' : city, state: p.property.st, zip: p.property.zip === '—' ? '' : p.property.zip,
     price: usd(price), asking_price: usd(price), cash_price: usd(price), arv: usd(d.arv), rehab: usd(d.rehab),
-    beds: num(p.property.beds), baths: num(p.property.baths), sqft: p.property.sqft ? p.property.sqft.toLocaleString('en-US') : '',
-    year_built: num(p.property.year), garage: num(d.marketing?.garage),
+    // The deal's own house first. The seller's property is a different house
+    // on a partner contact (one seller row, hundreds of deals), and a blast
+    // went out with that other house's sqft and year built.
+    ...factFields(d.home ?? p.property),
+    garage: num(d.marketing?.garage),
     headline: d.marketing?.headline ?? '', description: d.marketing?.description ?? '',
     marketing_link: view, comps_link: comps,
     // The deal's page on the app's domain. A campaign overrides it per buyer with their tracked link.
     deal_link: listing,
     photo_url: photo, photos_link: photos,
-    property_type: propertyTypeLabel(p.property.type === '—' ? '' : p.property.type),
+    property_type: propertyTypeLabel(((d.home ?? p.property).type ?? '') === '—' ? '' : (d.home ?? p.property).type),
   };
 }

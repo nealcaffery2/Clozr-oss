@@ -1,6 +1,6 @@
 // People and Buyers search. Run: npx tsx tools/list-search.test.ts
 import assert from 'node:assert/strict';
-import { normSearch, parseSearch, searchKey, searchRank, searchRows } from '../lib/list-search';
+import { normSearch, parseSearch, searchKey, searchRank, searchRows, wordsStart } from '../lib/list-search';
 
 const q = (s: string) => {
   const p = parseSearch(s);
@@ -60,6 +60,14 @@ const rows = [
 ];
 assert.deepEqual(searchRows(rows, (r) => r.k, q('john')).map((r) => r.id), ['c', 'd', 'a', 'b']);
 assert.equal(searchRows(rows, (r) => r.k, null), rows, 'no query returns the list as is');
+
+// Column search: words must start a word of the address
+assert.ok(wordsStart('12 Oak Ln, Greer, SC 29651', q('sc')));
+assert.ok(wordsStart('3082 Scout Dr, Austin, TX', q('sc')));
+assert.ok(!wordsStart('9 Disc Ave, Austin, TX', q('sc')));
+assert.ok(wordsStart('12 Oak Ln, Greer, SC 29651', q('oak sc')));
+assert.ok(!wordsStart('12 Oak Ln, Greer, NC', q('oak sc')));
+assert.ok(wordsStart('anything', parseSearch('')));
 
 // 11,000 rows search fast
 const many = Array.from({ length: 11000 }, (_, i) => searchKey([`Buyer ${i}`, `Company ${i} LLC`], [`buyer${i}@x.com`, 'Dallas, TX'], [`(214) 555-${String(i).padStart(4, '0')}`]));

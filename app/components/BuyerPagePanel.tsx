@@ -92,7 +92,7 @@ export function BuyerPagePanel({
   if (loading) return <div className="mk-card" role="status" style={{ ...card, padding: '14px 16px', fontSize: '12.5px', color: C.muted2 }}>Loading the buyer page…</div>;
 
   const thumb = (
-    <div role="img" aria-label="Deal photo" style={{ width: '72px', height: '54px', borderRadius: '8px', flex: 'none', background: photoUrl ? `#e9ebf0 url(${JSON.stringify(photoUrl)}) center/cover no-repeat` : '#e9ebf0' }} />
+    <div role="img" aria-label="Deal photo" style={{ width: '72px', height: '54px', borderRadius: '8px', flex: 'none', background: photoUrl ? `var(--photo-bg, #e9ebf0) url(${JSON.stringify(photoUrl)}) center/cover no-repeat` : '#e9ebf0' }} />
   );
   const status = !link ? <Status tone="amber">Not published</Status> : link.active ? <Status tone="green">Live</Status> : <Status tone="grey">Off</Status>;
 

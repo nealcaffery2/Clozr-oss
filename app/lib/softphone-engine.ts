@@ -25,11 +25,13 @@
 
 import type { Call as TwilioCall, Device as TwilioDevice } from '@twilio/voice-sdk';
 import type { TelnyxRTC } from '@telnyx/webrtc';
-import { BrowserLegError, browserLegSipKind } from './browser-leg';
-import { adoptRemoteCallElement, isTouchPhone, remoteCallElement } from './phone-audio';
+import { BrowserLegError, browserLegSipKind, socketHeardRecently } from './browser-leg';
+import { adoptRemoteCallElement, carrierHeard, isTouchPhone, remoteCallElement } from './phone-audio';
 import { applyCallRoute, getCallRoute } from './call-route';
 import { peerFromCall } from './vm-playback';
 import { replaceAudioInputTrack } from './telnyx-media';
+import { reportClientError } from './client-errors';
+import { AudioFlowWatch } from './audio-flow-watch';
 
 export type EngineKind = 'twilio' | 'telnyx';
 export type BrowserLegMode = 'client' | 'server';
@@ -55,7 +57,8 @@ export interface EngineCall {
   readonly talkrCallId: string | null;
   /** 'mute' carries the new muted flag, 'error' the SDK's error; the rest carry nothing. */
   on(event: EngineCallEvent, fn: EngineCallListener): void;
-  accept(): void;
+  /** `quiet`: answer with no far-end element (a drop leg), so nothing it carries plays over the call the rep is on. */
+  accept(opts?: { quiet?: boolean }): void;
   reject(): void;
   disconnect(): void;
   mute(on: boolean): void;
@@ -120,6 +123,8 @@ export interface SoftphoneEngine {
   isRegistered(): boolean;
   /** Open the media leg for a Talkr call the server already created. */
   connect(callId: string, opts: ConnectOptions): Promise<EngineCall>;
+  /** Stop waiting for a leg `connect` armed: its promise rejects with `code: 'cancelled'`. */
+  cancelConnect?(): void;
   /** The org's own numbers: a server leg can present any of them, a customer never does. */
   setOwnNumbers?(numbers: string[]): void;
   /** getUserMedia constraints for calls from here on (device, echo cancellation, noise suppression, auto gain). */
@@ -307,11 +312,28 @@ class TelnyxEngineCall implements EngineCall {
   private muted = false;
 
   constructor(
-    readonly call: TelnyxCall,
+    /** Swapped by `rebind` when the SDK re-delivers this invite as a new object. */
+    public call: TelnyxCall,
     talkrCallId: string | null,
+    /** The element the far end plays on once this call is answered (the app's one, lib/phone-audio.ts). */
+    private readonly remoteElement: HTMLAudioElement | null = null,
   ) {
     this.from = call.options.remoteCallerNumber ?? call.options.callerNumber ?? null;
     this.talkrCallId = talkrCallId;
+  }
+
+  isEnded(): boolean {
+    return this.ended;
+  }
+
+  /**
+   * The SDK hands out a new object for the same call id when an invite is
+   * delivered again (socket reconnect, duplicate registration). Its answer()
+   * then silently ignores every object but the newest one ("answer() ignored:
+   * callID already has an active call"), so Answer did nothing on screen.
+   */
+  rebind(call: TelnyxCall): void {
+    if (call !== this.call && !this.ended) this.call = call;
   }
 
   on(event: EngineCallEvent, fn: EngineCallListener): void {
@@ -362,11 +384,31 @@ class TelnyxEngineCall implements EngineCall {
     });
   }
 
-  accept() {
-    void this.call.answer().catch((err: unknown) => {
-      this.emitter.emit('error', { message: err instanceof Error ? err.message : 'could not answer' });
+  accept(opts?: { quiet?: boolean }) {
+    // The far end plays on an element handed to this call alone. Every call
+    // object used to share the client's remoteElement, and the SDK nulls a
+    // shared element's srcObject when any call finalizes without a remote
+    // stream of its own (an inbound invite this browser declined, a caller
+    // who hung up while ringing, a sibling line of a batch): the rep on the
+    // live call went silent while the seller still heard them. A drop leg
+    // gets no element, so nothing it carries plays over the call.
+    const remoteElement = opts?.quiet ? undefined : (this.remoteElement ?? undefined);
+    // Answer on the object the SDK holds for this id, or it ignores us.
+    const session = (this.call as unknown as { session?: { calls?: Record<string, TelnyxCall> } }).session;
+    const current = session?.calls?.[this.call.id];
+    if (current) this.rebind(current);
+    const call = this.call;
+    const failed = (message: string) => {
+      this.emitter.emit('error', { message });
       this.end('cancel');
-    });
+    };
+    void call
+      .answer(remoteElement ? { remoteElement } : undefined)
+      .then(() => {
+        // The SDK returns without error when it ignores an answer; no peer means nothing was answered.
+        if (!this.ended && !(call as { peer?: unknown }).peer) failed('The call could not be answered. Refresh Clozr and try again.');
+      })
+      .catch((err: unknown) => failed(err instanceof Error ? err.message : 'could not answer'));
   }
   reject() {
     void this.call.hangup().catch(() => this.end('reject'));
@@ -443,7 +485,11 @@ class TelnyxAudio implements EngineAudio {
   /** The mic the next call opens on. */
   inputDeviceId: string | null = null;
   private readonly listeners = new Map<string, Set<(arg: never) => void>>();
-  private readonly onChange = () => void this.refresh().then(() => this.emit('deviceChange'));
+  private readonly onChange = () => void this.refresh().then(() => {
+    this.engine.reapplyOutput();
+    void this.engine.reapplyInput();
+    this.emit('deviceChange');
+  });
 
   constructor(private readonly engine: TelnyxEngine) {
     this.speakerDevices = new TelnyxOutputs((id) => engine.applyOutput(id), this.isOutputSelectionSupported);
@@ -510,6 +556,8 @@ class TelnyxEngine implements SoftphoneEngine {
   readonly audio: TelnyxAudio;
   private client: TelnyxRTC | null = null;
   private ready = false;
+  /** Last message on the socket (pings included): a socket that went quiet is not trusted as registered. */
+  private lastHeardAt = 0;
   private destroyed = false;
   private token: string;
   private readonly calls = new Map<string, TelnyxEngineCall>();
@@ -555,10 +603,20 @@ class TelnyxEngine implements SoftphoneEngine {
 
   private build(): TelnyxRTC {
     const client = new this.Ctor({ login_token: this.token });
-    if (this.remoteElement) client.remoteElement = this.remoteElement;
+    // No session-wide remoteElement. The live call's element is handed to
+    // that call at answer (TelnyxEngineCall.accept), so no other call object
+    // the SDK creates for an invite can detach it.
     if (this.mic) void this.pushMic(client, this.mic);
+    // A client being replaced (register() on a quiet socket) still closes
+    // after its successor logs in; its events must not speak for the new one.
+    const current = () => this.client === client;
+    client.on('telnyx.socket.message', () => {
+      if (current()) this.lastHeardAt = Date.now();
+    });
     client.on('telnyx.ready', () => {
+      if (!current()) return;
       this.ready = true;
+      this.lastHeardAt = Date.now();
       this.handlers.onRegistered();
     });
     client.on('telnyx.error', (event: { error?: Error; message?: string }) => {
@@ -566,6 +624,7 @@ class TelnyxEngine implements SoftphoneEngine {
       this.handlers.onError({ message, fatal: /credential|unauthori|token|login|auth/i.test(message) && !this.ready });
     });
     client.on('telnyx.socket.close', () => {
+      if (!current()) return;
       const wasReady = this.ready;
       this.ready = false;
       if (!this.destroyed && wasReady) this.handlers.onUnregistered();
@@ -579,6 +638,7 @@ class TelnyxEngine implements SoftphoneEngine {
   private onCallUpdate(call: TelnyxCall): void {
     const state = String(call.state).toLowerCase();
     let wrapped = this.calls.get(call.id);
+    wrapped?.rebind(call);
     if (!wrapped) {
       // First sight of this leg. Ours if we asked the server for one and the
       // invite comes from our own caller ID; otherwise a real inbound call.
@@ -608,12 +668,15 @@ class TelnyxEngine implements SoftphoneEngine {
       const isOurLeg =
         pending !== null &&
         (exact(pending.expectFrom) || key.length < 10 || this.ownNumbers.has(key));
-      wrapped = new TelnyxEngineCall(call, isOurLeg ? pending!.callId : null);
+      wrapped = new TelnyxEngineCall(call, isOurLeg ? pending!.callId : null, this.remoteElement);
       this.calls.set(call.id, wrapped);
       wrapped.on('accept', () => void this.onLegUp(wrapped!));
       const forget = () => {
         this.calls.delete(call.id);
-        if (this.active === wrapped) this.active = null;
+        if (this.active === wrapped) {
+          this.active = null;
+          this.stopPlaybackWatch();
+        }
       };
       wrapped.on('disconnect', forget);
       wrapped.on('cancel', forget);
@@ -644,7 +707,13 @@ class TelnyxEngine implements SoftphoneEngine {
 
   /** Apply the chosen mic and speaker to a leg that just came up. */
   private async onLegUp(leg: TelnyxEngineCall): Promise<void> {
+    // A second leg coming up never takes the live call's speaker, watchdog or
+    // mic. When it did (a team-line caller answered mid-call, 2026-11-05) the
+    // element followed that leg and, once it ended, stayed on a dead stream:
+    // the rep heard nothing from the seller for the rest of the call.
+    if (this.active && this.active !== leg && !this.active.isEnded()) return;
     this.active = leg;
+    this.startPlaybackWatch();
     // replaceTrack / setSinkId only (applyInput / applyOutput): the SDK's
     // setAudio*Device mid-session has been hanging up the browser leg.
     if (this.audio.inputDeviceId) await this.applyInput(this.audio.inputDeviceId);
@@ -686,17 +755,100 @@ class TelnyxEngine implements SoftphoneEngine {
 
   async applyOutput(deviceId: string): Promise<void> {
     this.speakerId = deviceId;
+    await this.setSink(deviceId);
+  }
+
+  /** The element onto this sink. One the browser refuses (unplugged, another profile's id) falls back to the default, so the call is still heard. */
+  private async setSink(deviceId: string): Promise<void> {
     if (this.client) this.client.speaker = deviceId;
-    const sink = (this.remoteElement as (HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }) | null)?.setSinkId;
-    if (sink && this.remoteElement) await sink.call(this.remoteElement, deviceId).catch(() => undefined);
+    const el = this.remoteElement as (HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }) | null;
+    if (!el?.setSinkId) return;
     // setSinkId only — setAudioOutDevice is the same underneath and is unused.
+    try {
+      await el.setSinkId(deviceId);
+    } catch {
+      if (deviceId) await el.setSinkId('').catch(() => undefined);
+    }
+  }
+
+  /**
+   * After a device change: the chosen speaker again once it is back, the
+   * default while it is gone. Chrome leaves an element bound to an unplugged
+   * sink silent until setSinkId is called again, which is a headset dropping
+   * off reading as the far end going quiet mid-call.
+   */
+  /**
+   * After a device change: a headset unplugged mid-call ends the mic track,
+   * and the seller hears nothing. Put the chosen mic back if it is still
+   * there, else the default. A live track is left alone.
+   */
+  async reapplyInput(): Promise<void> {
+    const leg = this.active;
+    if (!leg || leg.isEnded()) return;
+    const sender = peerFromCall(leg.call)?.getSenders().find((x) => x.track?.kind === 'audio' || x.track === null);
+    if (sender?.track && sender.track.readyState === 'live') return;
+    const want = this.audio.inputDeviceId;
+    await this.applyInput(want && this.audio.availableInputDevices.has(want) ? want : 'default');
+  }
+
+  reapplyOutput(): void {
+    const want = this.speakerId;
+    if (!want || want === 'default') return;
+    void this.setSink(this.audio.availableOutputDevices.has(want) ? want : '');
+  }
+
+  private playbackTimer: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * The live call's far end is on the element, unmuted and playing: checked
+   * as the leg comes up and every two seconds after. A detached stream (any
+   * SDK path that cleared the element), a paused element (an autoplay
+   * refusal) or one the ringback left muted is what a rep reports as "I
+   * can't hear them", and each is put right here instead of waited out.
+   */
+  ensurePlayback(): void {
+    const el = this.remoteElement;
+    const leg = this.active;
+    if (!el || !leg || leg.isEnded()) return;
+    const stream = leg.remoteStream();
+    if (stream && el.srcObject !== stream) el.srcObject = stream;
+    if (!el.srcObject) return;
+    // Muted on purpose while the browser plays its own ringback (lib/phone-audio
+    // setCarrierHeard): unmuting it here was the carrier's ring on a second speaker.
+    if (el.muted && carrierHeard()) el.muted = false;
+    if (el.paused) void el.play().catch(() => undefined);
+  }
+
+  private flowWatch: AudioFlowWatch | null = null;
+
+  private startPlaybackWatch(): void {
+    this.stopPlaybackWatch();
+    this.ensurePlayback();
+    const leg = this.active;
+    this.flowWatch = leg
+      ? new AudioFlowWatch(() => leg.peerConnection(), this.remoteElement, leg.talkrCallId ?? leg.call.id, (message, where) =>
+          reportClientError(new Error(message), { kind: 'softphone', where }),
+        )
+      : null;
+    this.playbackTimer = setInterval(() => {
+      this.ensurePlayback();
+      void this.flowWatch?.tick();
+    }, 2_000);
+  }
+
+  private stopPlaybackWatch(): void {
+    if (this.playbackTimer) clearInterval(this.playbackTimer);
+    this.playbackTimer = null;
+    this.flowWatch?.stop();
+    this.flowWatch = null;
   }
 
   async register(): Promise<void> {
     if (this.destroyed) throw new Error('softphone was shut down');
-    if (this.ready && this.client?.connected) return;
-    // A lost socket is re-logged in with whatever token we hold now; a stale
-    // client is replaced rather than nursed, the SDK has no updateToken.
+    if (this.isRegistered()) return;
+    // A lost socket, or one quiet since a sleep (SOCKET_QUIET_MS), is re-logged
+    // in with whatever token we hold now; a stale client is replaced rather
+    // than nursed, the SDK has no updateToken.
     if (this.client) {
       try {
         await this.client.disconnect();
@@ -728,7 +880,7 @@ class TelnyxEngine implements SoftphoneEngine {
   }
 
   isRegistered() {
-    return this.ready && Boolean(this.client?.connected);
+    return this.ready && Boolean(this.client?.connected) && socketHeardRecently(this.lastHeardAt);
   }
 
   setOwnNumbers(numbers: string[]) {
@@ -758,6 +910,14 @@ class TelnyxEngine implements SoftphoneEngine {
     return leg;
   }
 
+  cancelConnect() {
+    const pending = this.pending;
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.pending = null;
+    pending.reject(Object.assign(new Error('The wait for the call was cancelled.'), { code: 'cancelled' as const }));
+  }
+
   destroy() {
     this.destroyed = true;
     if (this.pending) {
@@ -766,8 +926,10 @@ class TelnyxEngine implements SoftphoneEngine {
       this.pending = null;
     }
     this.audio.dispose();
+    this.stopPlaybackWatch();
     void this.client?.disconnect().catch(() => undefined);
     this.client = null;
-    this.remoteElement?.remove();
+    // The element stays: it is the app's one far-end element (lib/phone-audio.ts),
+    // unlocked by a tap, and the next engine plays on it again.
   }
 }

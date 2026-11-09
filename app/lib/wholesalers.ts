@@ -3,8 +3,8 @@
 // harvester that fills it. The rows are read straight from Supabase; the
 // harvest runs through the dispo-contracts edge function.
 
-import { type Method, METHOD_TAG } from '../supabase/functions/_shared/genius-methods';
-import { entityDisplay, entityKey, familyOf } from '../supabase/functions/_shared/genius-methods';
+import { type Method, METHOD_TAG } from '../supabase/functions/_shared/entity-records';
+import { entityDisplay, entityKey, familyOf } from '../supabase/functions/_shared/entity-records';
 import { createBuyer } from './crm-write';
 import { emptyBuyBox } from './buyer-profile';
 import { supabase } from './supabase';
@@ -149,7 +149,7 @@ export async function entityToBuyer(workspaceId: number, e: Entity, deals: Whole
   const r = await createBuyer(workspaceId, {
     name: person ?? e.name, company: entity ? e.name : null, phone, email,
     buyer_type: 'flipper', entity_type: entity ? 'llc' : 'individual',
-    tags: ['buyer-prospect', METHOD_TAG[method], 'genius'], source: 'genius', status: 'Prospect', criteria: box,
+    tags: ['buyer-prospect', METHOD_TAG[method]], source: 'contract', status: 'Prospect', criteria: box,
   }, userId);
   const id = r.id ?? null;
   if (!id) return { ok: false, message: r.message ?? 'Could not add that buyer.' };

@@ -10,6 +10,7 @@ import { type CrmData, type NotificationRow, type ReuseSlices, emptyLiveData, en
 import { LEAD_BATCH_MS, LEAD_HOLD_AT, RELOAD_DEBOUNCE_MS, planLeadRefresh } from './lead-refresh';
 import { playEvent } from './phone-audio';
 import { supabase } from './supabase';
+import { reportClientError } from './client-errors';
 import { type WorkspaceSettings, loadSettings } from './integrations';
 import { peoplePagesStale, sellersChanged } from './people-page';
 import { ensureCatalogPlans } from './plans';
@@ -236,9 +237,11 @@ export function useCrm(): CrmState {
           return raw ? { ...prev!, data: { ...prev!.data, reporting: { ...prev!.data.reporting, raw: { ...raw, partial: 'failed' } } } } : prev;
         });
       }).finally(settle);
-    }, () => {
+    }, (err: unknown) => {
       // A read that threw used to leave the skeleton up for good. Now the app
-      // opens with its "couldn't load" states and Retry instead.
+      // opens with its "couldn't load" states and Retry instead, and the
+      // reason lands in client_errors.
+      reportClientError(err, { kind: 'app', where: 'loadWorkspace' });
       fullLanded = true;
       // What is already on screen stays (the shell's sellers too), marked failed.
       if (live) setLoaded((prev) => (prev && prev.key.startsWith(`${workspaceId}:`)

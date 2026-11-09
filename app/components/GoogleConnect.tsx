@@ -3,14 +3,14 @@
 // The old card here handed out a secret ICS URL to paste into Google Calendar:
 // one-way, calendar-only, and a code to chase. That feed still exists for
 // Apple Calendar and Outlook and is tucked in at the bottom, but the headline
-// is now a normal OAuth connection — the calendar syncs both ways and mail
+// is now a normal OAuth connection: the calendar syncs both ways and mail
 // goes out from the member's own address.
 'use client';
 
 import React, { useEffect, useState } from 'react';
 import {
   GOOGLE_SCOPE, type DriveTreeStatus, type GoogleStatus, type SyncSummary,
-  connectGoogle, disconnectGoogle, driveTreeLine, driveTreeRun, driveTreeSave, driveTreeStatus, googleStatus, granted, setGoogleSync, syncGoogle, testGoogleMail,
+  connectGoogle, disconnectGoogle, driveTreeLine, driveTreeRun, driveTreeSave, driveTreeStatus, googleStatus, granted, setGoogleSync, syncGoogle, syncsLabel, testGoogleMail,
 } from '@/lib/google';
 import { calendarFeedUrl } from '@/lib/integrations';
 
@@ -36,13 +36,37 @@ const Dot = ({ on }: { on: boolean }) => (
 
 function Toggle({ on, onChange, title, sub, disabled }: { on: boolean; onChange: (v: boolean) => void; title: string; sub: string; disabled?: boolean }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '9px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1 }}>
+    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '9px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1 }}>
       <input type="checkbox" checked={on} disabled={disabled} onChange={(e) => onChange(e.target.checked)} style={{ marginTop: '2px', width: '15px', height: '15px', accentColor: 'var(--tx-mint, #0a8560)', flex: 'none' }} />
       <span style={{ minWidth: 0 }}>
         <span style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--ink, #18181b)' }}>{title}</span>
         <span style={{ display: 'block', fontSize: '12px', color: 'var(--meta, #71717a)', marginTop: '1px', lineHeight: 1.45 }}>{sub}</span>
       </span>
     </label>
+  );
+}
+
+type Syncs = 'mail' | 'both';
+
+/** Gmail only, or Gmail and Calendar: what Google's screen will ask for. Chips per DESIGN.md §7. */
+function SyncChoice({ value, onChange, label, disabled }: { value: Syncs; onChange: (v: Syncs) => void; label: string; disabled?: boolean }) {
+  const opts: { v: Syncs; text: string }[] = [{ v: 'mail', text: 'Gmail only' }, { v: 'both', text: 'Gmail + Calendar' }];
+  return (
+    <div>
+      <div id={`sync-${label.replace(/\W+/g, '-')}`} style={{ fontSize: '11.5px', fontWeight: 500, color: 'var(--meta, #71717a)', marginBottom: '6px' }}>{label}</div>
+      <div role="radiogroup" aria-labelledby={`sync-${label.replace(/\W+/g, '-')}`} style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+        {opts.map((o) => {
+          const on = value === o.v;
+          return (
+            <button key={o.v} type="button" role="radio" aria-checked={on} disabled={disabled} onClick={() => onChange(o.v)}
+              style={{ height: '28px', padding: '0 12px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer',
+                border: on ? '1px solid var(--ink, #18181b)' : '1px solid var(--divider, #e4e4e7)', background: on ? 'var(--ink, #18181b)' : 'var(--surface, #fff)', color: on ? 'var(--surface, #fff)' : 'var(--ink, #18181b)' }}>
+              {o.text}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -66,10 +90,10 @@ const counted = (s: SyncSummary): string => {
     if (invited) bits.push(`${invited} invitation${invited === 1 ? '' : 's'} sent`);
   }
   if (s.gmail?.logged) bits.push(`${s.gmail.logged} email${s.gmail.logged === 1 ? '' : 's'} on records`);
-  return bits.length ? `Synced — ${bits.join(', ')}.` : 'Synced. Nothing had changed.';
+  return bits.length ? `Synced: ${bits.join(', ')}.` : 'Synced. Nothing had changed.';
 };
 
-export function GoogleConnect({ workspaceId, demo, userId, onChange }: { workspaceId: number | null; demo: boolean; userId: string | null; /** Told after a connect, sync or disconnect settles — the inbox re-reads Gmail. */ onChange?: () => void }) {
+export function GoogleConnect({ workspaceId, demo, userId, onChange }: { workspaceId: number | null; demo: boolean; userId: string | null; /** Told after a connect, sync or disconnect settles: the inbox re-reads Gmail. */ onChange?: () => void }) {
   const [loaded, setLoaded] = useState<{ key: number | null; v: GoogleStatus } | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [noteFor, setNoteFor] = useState(workspaceId);
@@ -79,6 +103,8 @@ export function GoogleConnect({ workspaceId, demo, userId, onChange }: { workspa
   }
   const [busy, setBusy] = useState<string | null>(null);
   const [wantMail, setWantMail] = useState(true);
+  const [ownSyncs, setOwnSyncs] = useState<Syncs>('both');
+  const [linkSyncs, setLinkSyncs] = useState<Syncs>('mail');
 
   useEffect(() => {
     if (!workspaceId || demo) return;
@@ -95,7 +121,11 @@ export function GoogleConnect({ workspaceId, demo, userId, onChange }: { workspa
 
   const status = loaded && loaded.key === workspaceId ? loaded.v : null;
   const account = status?.account ?? null;
-  const others = (status?.team ?? []).filter((t) => t.user_id !== userId);
+  const team = status?.team ?? [];
+  // Linked mailboxes (deals@, migration 441) are the workspace's, whoever linked them.
+  const linked = team.filter((t) => t.shared === true);
+  const others = team.filter((t) => t.shared !== true && t.user_id !== userId);
+  const emailOf = (uid: string) => team.find((t) => t.shared !== true && t.user_id === uid)?.email ?? 'a teammate';
 
   const refresh = async () => {
     if (!workspaceId) return;
@@ -107,7 +137,9 @@ export function GoogleConnect({ workspaceId, demo, userId, onChange }: { workspa
   async function connect() {
     if (!workspaceId) return;
     setBusy('connect'); setNote(null);
-    const r = await connectGoogle(workspaceId, { gmailRead: wantMail });
+    // Reconnecting asks again for what the account had; a first connect asks for what was picked.
+    const calendar = account ? granted(account, GOOGLE_SCOPE.calendar) : ownSyncs === 'both';
+    const r = await connectGoogle(workspaceId, { gmailRead: wantMail || !calendar, calendar });
     setNote({ ok: r.ok, text: r.ok ? r.detail : r.message });
     await refresh();
     if (r.ok) {
@@ -135,6 +167,42 @@ export function GoogleConnect({ workspaceId, demo, userId, onChange }: { workspa
     setBusy(null);
   }
 
+  async function allowDrafts() {
+    if (!workspaceId) return;
+    setBusy('drafts'); setNote(null);
+    const r = await connectGoogle(workspaceId, { compose: true });
+    setNote({ ok: r.ok, text: r.ok ? 'CLOZR can now leave drafts in your mailbox.' : r.message });
+    await refresh();
+    setBusy(null);
+  }
+
+  async function addCalendar() {
+    if (!workspaceId || !account) return;
+    setBusy('calendar'); setNote(null);
+    const r = await connectGoogle(workspaceId, { addCalendar: account.id });
+    setNote({ ok: r.ok, text: r.ok ? `${account.email} now syncs Gmail and Calendar.` : r.message });
+    await refresh();
+    setBusy(null);
+  }
+
+  async function linkMailbox() {
+    if (!workspaceId) return;
+    setBusy('link'); setNote(null);
+    const r = await connectGoogle(workspaceId, { shared: true, calendar: linkSyncs === 'both' });
+    setNote({ ok: r.ok, text: r.ok ? `${r.detail} Its mail syncs within a minute.` : r.message });
+    await refresh();
+    setBusy(null);
+  }
+
+  async function unlink(id: number, email: string) {
+    if (!workspaceId || !window.confirm(`Disconnect ${email}? CLOZR stops reading it and Google is told to forget the permission. Mail already synced stays on the records.`)) return;
+    setBusy(`unlink-${id}`); setNote(null);
+    const r = await disconnectGoogle(workspaceId, id);
+    setNote({ ok: r.ok, text: r.ok ? `${email} is disconnected.` : r.message });
+    await refresh();
+    setBusy(null);
+  }
+
   async function drop() {
     if (!workspaceId || !window.confirm('Disconnect Google? CLOZR stops syncing and Google is told to forget the permission. The CLOZR calendar stays in your Google account until you delete it there.')) return;
     setBusy('disconnect'); setNote(null);
@@ -154,28 +222,28 @@ export function GoogleConnect({ workspaceId, demo, userId, onChange }: { workspa
   return (
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-        <h2 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Google Calendar and Gmail</h2>
+        <h2 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Gmail and Google Calendar</h2>
         {account ? <Dot on={account.status === 'active'} /> : null}
       </div>
-      <p style={{ margin: '0 0 14px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
+      <p style={{ margin: '0 0 14px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5, maxWidth: '58ch', textWrap: 'pretty' }}>
         Appointments land on a CLOZR calendar in your Google account and sync both ways: move, rename, invite or delete on either side and the other follows.
         Invitations to sellers, buyers and vendors go out from Google Calendar with Yes / No / Maybe, and their answers show on the appointment.
         Contracts and offers go out from your own address instead of a no-reply one, and replies from people in the CRM show on their record.
       </p>
 
       {demo ? (
-        <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--subtle, #a1a1aa)' }}>Sign in to connect a Google account.</p>
+        <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>Sign in to connect a Google account.</p>
       ) : !status ? (
         <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>Checking…</p>
       ) : !status.configured ? (
         <Setup redirect={status.redirect_uri} />
       ) : account ? (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: '10px 12px', borderRadius: '10px', background: '#f6fbf9', border: '1px solid #d6ece4' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: '10px 12px', borderRadius: '10px', background: 'var(--soft-mint, #f6fbf9)', border: '1px solid var(--soft-mint-line, #d6ece4)' }}>
             <GMark />
             <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ink, #18181b)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{account.email}</span>
-            <span style={{ fontSize: '12px', color: account.status === 'active' ? '#0A8560' : '#b45309' }}>
-              {account.status === 'active' ? `calendar ${ago(account.last_calendar_sync_at)}` : 'needs approving again'}
+            <span style={{ fontSize: '12px', color: account.status === 'active' ? 'var(--muted, #52525b)' : '#b45309' }}>
+              {account.status === 'active' ? `${syncsLabel(account)} · mail ${ago(account.last_gmail_sync_at)}${granted(account, GOOGLE_SCOPE.calendar) ? ` · calendar ${ago(account.last_calendar_sync_at)}` : ''}` : 'needs approving again'}
             </span>
             <span style={{ flex: 1 }} />
             <button type="button" onClick={() => void sync()} disabled={busy !== null} style={ghost}>{busy === 'sync' ? 'Syncing…' : 'Sync now'}</button>
@@ -190,7 +258,7 @@ export function GoogleConnect({ workspaceId, demo, userId, onChange }: { workspa
               onChange={(v) => void toggle({ calendar_sync: v })}
               title="Calendar, both ways"
               sub={granted(account, GOOGLE_SCOPE.calendar)
-                ? 'Appointments sync both ways — including ones made on the CLOZR calendar in Google — and open dated tasks become reminders.'
+                ? 'Appointments sync both ways, including ones made on the CLOZR calendar in Google. Tasks stay in CLOZR.'
                 : 'Not granted. Reconnect and approve calendar access to switch this on.'}
             />
             <Toggle
@@ -206,34 +274,86 @@ export function GoogleConnect({ workspaceId, demo, userId, onChange }: { workspa
               onChange={(v) => void toggle({ gmail_read: v })}
               title="Replies on the record"
               sub={granted(account, GOOGLE_SCOPE.gmailRead)
-                ? `Mail to and from people already in the CRM is logged on their timeline — subject and preview only. Last run ${ago(account.last_gmail_sync_at)}.`
+                ? `Mail to and from people already in the CRM is logged on their timeline, subject and preview only. Last run ${ago(account.last_gmail_sync_at)}.`
                 : 'Not granted. Reconnect and approve reading to switch this on.'}
             />
           </div>
 
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' }}>
             <button type="button" onClick={() => void test()} disabled={busy !== null || !account.gmail_send} style={ghost}>{busy === 'test' ? 'Sending…' : 'Send test email'}</button>
+            {granted(account, GOOGLE_SCOPE.calendar) ? null : (
+              <button type="button" onClick={() => void addCalendar()} disabled={busy !== null} style={ghost} title="Google asks for calendar access only; Gmail stays as it is.">{busy === 'calendar' ? 'Waiting for Google…' : 'Add Calendar'}</button>
+            )}
+            {granted(account, GOOGLE_SCOPE.gmailCompose) ? null : (
+              <button type="button" onClick={() => void allowDrafts()} disabled={busy !== null} style={ghost} title="Daily summaries land in your Drafts instead of being sent.">{busy === 'drafts' ? 'Waiting for Google…' : 'Allow drafts'}</button>
+            )}
             <button type="button" onClick={() => void drop()} disabled={busy !== null} style={{ ...ghost, color: 'var(--tx-red, #b91c1c)', borderColor: 'var(--tint-red-2, #fecaca)' }}>Disconnect</button>
           </div>
           {account.last_error ? <p style={{ margin: '10px 0 0', fontSize: '12px', color: 'var(--tx-amber, #b45309)' }}>{account.last_error}</p> : null}
         </>
       ) : (
         <>
+          <div style={{ marginBottom: '12px' }}>
+            <SyncChoice label="What to sync" value={ownSyncs} onChange={setOwnSyncs} disabled={busy !== null} />
+            <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.45 }}>
+              {ownSyncs === 'mail' ? 'Google is not asked for calendar access. You can add Calendar later from here.' : 'Appointments sync both ways with a CLOZR calendar in your Google account.'}
+            </p>
+          </div>
           <button type="button" onClick={() => void connect()} disabled={busy !== null} style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', height: '40px', padding: '0 16px', borderRadius: '10px', border: '1px solid var(--line-2, #dadce0)', background: 'var(--surface, #fff)', fontSize: '13.5px', fontWeight: 600, color: 'var(--ink-4, #3c4043)', cursor: busy ? 'wait' : 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}>
             <GMark />
             {busy === 'connect' ? 'Waiting for Google…' : 'Connect Google'}
           </button>
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: '9px', marginTop: '12px', fontSize: '12.5px', color: 'var(--muted, #52525b)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={wantMail} onChange={(e) => setWantMail(e.target.checked)} style={{ marginTop: '2px', width: '15px', height: '15px', accentColor: 'var(--tx-mint, #0a8560)', flex: 'none' }} />
-            <span>Also read replies from people already in the CRM onto their record. Untick to ask Google for sending only.</span>
-          </label>
-          <p style={{ margin: '10px 0 0', fontSize: '12px', color: 'var(--subtle, #a1a1aa)', lineHeight: 1.5 }}>
-            Google asks you once, on its own screen. You can untick anything there and CLOZR uses whatever you approve — nothing to paste back here.
+          {ownSyncs === 'both' ? (
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '9px', marginTop: '12px', fontSize: '12.5px', color: 'var(--muted, #52525b)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={wantMail} onChange={(e) => setWantMail(e.target.checked)} style={{ marginTop: '2px', width: '15px', height: '15px', accentColor: 'var(--tx-mint, #0a8560)', flex: 'none' }} />
+              <span>Also read replies from people already in the CRM onto their record. Untick to ask Google for sending only.</span>
+            </label>
+          ) : null}
+          <p style={{ margin: '10px 0 0', fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
+            Google asks you once, on its own screen. You can untick anything there and CLOZR uses whatever you approve. Nothing to paste back here.
           </p>
         </>
       )}
 
-      {note ? <p style={{ margin: '12px 0 0', fontSize: '12.5px', color: note.ok ? 'var(--tx-green, #15803d)' : '#b91c1c' }}>{note.text}</p> : null}
+      {note ? <p role="status" style={{ margin: '12px 0 0', fontSize: '12.5px', color: note.ok ? 'var(--tx-green, #15803d)' : '#b91c1c' }}>{note.text}</p> : null}
+
+      {status?.configured && !demo ? (
+        <section aria-labelledby="gc-linked" style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
+          <h3 id="gc-linked" style={{ margin: '0 0 2px', fontSize: '13px', fontWeight: 600, color: 'var(--ink, #18181b)' }}>Linked mailboxes</h3>
+          <p style={{ margin: '0 0 10px', fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.5, maxWidth: '58ch', textWrap: 'pretty' }}>
+            A shared inbox such as deals@ that is nobody&apos;s login. Its mail lands in the team&apos;s Inbox, and the LLC names on wholesaler blasts and assignment emails go on the wholesaler list for the end-buyer chase. CLOZR only reads it; nothing is sent from it.
+          </p>
+          {linked.length ? (
+            <ul style={{ listStyle: 'none', margin: '0 0 12px', padding: 0 }}>
+              {linked.map((t) => (
+                <li key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: '9px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
+                  <GMark />
+                  <span style={{ minWidth: 0, flex: '1 1 200px' }}>
+                    <span style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--ink, #18181b)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.email}</span>
+                    <span style={{ display: 'block', fontSize: '12px', color: t.status === 'active' ? 'var(--meta, #71717a)' : '#b45309', marginTop: '1px' }}>
+                      {t.status === 'active'
+                        ? `${syncsLabel(t)} · mail ${ago(t.last_gmail_sync_at)} · linked by ${t.user_id === userId ? 'you' : emailOf(t.user_id)}`
+                        : 'Needs approving again: link it again and sign in as this mailbox.'}
+                    </span>
+                    {t.last_error && t.status === 'active' ? <span style={{ display: 'block', fontSize: '12px', color: 'var(--tx-amber, #b45309)', marginTop: '2px' }}>{t.last_error}</span> : null}
+                  </span>
+                  <button type="button" onClick={() => void unlink(t.id, t.email)} disabled={busy !== null} aria-label={`Disconnect ${t.email}`}
+                    style={{ ...ghost, color: 'var(--tx-red, #b91c1c)', borderColor: 'var(--tint-red-2, #fecaca)' }}>{busy === `unlink-${t.id}` ? 'Disconnecting…' : 'Disconnect'}</button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
+            <SyncChoice label="Linked mailbox syncs" value={linkSyncs} onChange={setLinkSyncs} disabled={busy !== null} />
+            <button type="button" onClick={() => void linkMailbox()} disabled={busy !== null} style={{ ...ghost, display: 'inline-flex', alignItems: 'center', gap: '8px', borderColor: '#0A8560', color: 'var(--tx-mint, #0a8560)' }}>
+              <GMark />{busy === 'link' ? 'Waiting for Google…' : linked.length ? 'Link another mailbox' : 'Link a mailbox'}
+            </button>
+          </div>
+          <p style={{ margin: '8px 0 0', fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
+            On Google&apos;s screen, sign in as the shared mailbox, not your own account.
+          </p>
+        </section>
+      ) : null}
 
       {others.length ? (
         <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
@@ -241,7 +361,7 @@ export function GoogleConnect({ workspaceId, demo, userId, onChange }: { workspa
           {others.map((t) => (
             <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: 'var(--muted, #52525b)', padding: '3px 0' }}>
               <Dot on={t.status === 'active'} /><span>{t.email}</span>
-              <span style={{ color: 'var(--subtle, #a1a1aa)' }}>{t.status === 'active' ? `synced ${ago(t.last_calendar_sync_at)}` : 'needs approving again'}</span>
+              <span style={{ color: 'var(--meta, #71717a)' }}>{t.status === 'active' ? `${syncsLabel(t)} · mail ${ago(t.last_gmail_sync_at)}` : 'needs approving again'}</span>
             </div>
           ))}
         </div>
@@ -319,10 +439,10 @@ export function GoogleDriveCard({ workspaceId, demo }: { workspaceId: number | n
         {st ? <Dot on={hasDrive && !!cfg && !cfg.last_error} /> : null}
       </div>
       <p style={{ margin: '0 0 14px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
-        Point CLOZR at your deals folder. Every folder named for a property — and everything under it, Photos folders included — is filed on that deal: contracts, title work and other documents on its Files, pictures in its photos. New files follow every ten minutes. CLOZR only reads Drive; nothing is moved or deleted.
+        Point CLOZR at your deals folder. Every folder named for a property, and everything under it, Photos folders included, is filed on that deal: contracts, title work and other documents on its Files, pictures in its photos. New files follow every ten minutes. CLOZR only reads Drive; nothing is moved or deleted.
       </p>
       {demo ? (
-        <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--subtle, #a1a1aa)' }}>Sign in to connect Google Drive.</p>
+        <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>Sign in to connect Google Drive.</p>
       ) : !st ? (
         <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>Checking…</p>
       ) : !st.email ? (
@@ -332,7 +452,7 @@ export function GoogleDriveCard({ workspaceId, demo }: { workspaceId: number | n
       ) : (
         <>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <input value={folder} onChange={(e) => setFolder(e.target.value)} placeholder={cfg ? `${cfg.root_name ?? 'Folder'} — paste another link to change` : 'Paste the folder link from Drive'}
+            <input value={folder} onChange={(e) => setFolder(e.target.value)} placeholder={cfg ? `${cfg.root_name ?? 'Folder'}: paste another link to change` : 'Paste the folder link from Drive'}
               style={{ flex: '1 1 260px', minWidth: 0, height: '32px', padding: '0 10px', borderRadius: '9px', border: '1px solid var(--divider, #e4e4e7)', fontSize: '12.5px' }} />
             <button type="button" onClick={() => void go('save')} disabled={busy !== null || !folder.trim()} style={ghost}>{busy === 'save' ? 'Reading Drive…' : 'Use this folder'}</button>
             {cfg ? <button type="button" onClick={() => void go('run')} disabled={busy !== null} style={ghost}>{busy === 'run' ? 'Syncing…' : 'Sync now'}</button> : null}
@@ -342,7 +462,7 @@ export function GoogleDriveCard({ workspaceId, demo }: { workspaceId: number | n
               <strong>{cfg.root_name ?? cfg.root_folder_id}</strong> · last run {ago(cfg.last_run_at)}{cfg.running ? ' · running now' : ''}<br />
               {driveTreeLine(cfg.last_notes)}
               {cfg.last_error ? <><br /><span style={{ color: 'var(--tx-amber, #b45309)' }}>{cfg.last_error}</span></> : null}
-              {cfg.last_notes?.unmatched?.length ? <><br /><span style={{ color: 'var(--subtle, #a1a1aa)' }}>No deal yet: {cfg.last_notes.unmatched.slice(0, 8).join(' · ')}</span></> : null}
+              {cfg.last_notes?.unmatched?.length ? <><br /><span style={{ color: 'var(--meta, #71717a)' }}>No deal yet: {cfg.last_notes.unmatched.slice(0, 8).join(' · ')}</span></> : null}
             </p>
           ) : null}
         </>
@@ -354,19 +474,19 @@ export function GoogleDriveCard({ workspaceId, demo }: { workspaceId: number | n
 
 /**
  * Before a Google OAuth client exists on the project there is nothing to
- * connect to, so the card says what to make and — the part that is easy to get
- * wrong — the exact redirect URI it has to carry.
+ * connect to, so the card says what to make and (the part that is easy to get
+ * wrong) the exact redirect URI it has to carry.
  */
 function Setup({ redirect }: { redirect: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div style={{ fontSize: '12.5px', color: 'var(--muted, #52525b)', lineHeight: 1.6 }}>
       <p style={{ margin: '0 0 8px' }}>
-        One setup, once, by whoever owns the Google account — after that everybody here just clicks Connect.
+        One setup, once, by whoever owns the Google account. After that everybody here just clicks Connect.
       </p>
       <ol style={{ margin: '0 0 10px', paddingLeft: '18px' }}>
         <li>In <strong>Google Cloud Console → APIs &amp; Services</strong>, enable the <strong>Google Calendar API</strong> and the <strong>Gmail API</strong>.</li>
-        <li>On the <strong>OAuth consent screen</strong>, pick <strong>Internal</strong> if Acme Homes is on Google Workspace — internal apps skip Google&apos;s review entirely.</li>
+        <li>On the <strong>OAuth consent screen</strong>, pick <strong>Internal</strong> if Acme Homes is on Google Workspace: internal apps skip Google&apos;s review entirely.</li>
         <li>Create an <strong>OAuth client ID → Web application</strong> and give it this authorised redirect URI:</li>
       </ol>
       <code style={mono}>{redirect}</code>
@@ -417,7 +537,7 @@ function OtherCalendars({ workspaceId, demo }: { workspaceId: number | null; dem
     <details onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) void show(); }} style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
       <summary style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)', cursor: 'pointer' }}>Apple Calendar, Outlook, anything else</summary>
       <p style={{ margin: '8px 0', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
-        A read-only feed of the same appointments and tasks. Subscribe to this URL from the other calendar app — one-way, and the URL is the only credential, so treat it as a password and rotate it if it gets out.
+        A read-only feed of the same appointments and tasks. Subscribe to this URL from the other calendar app. One-way, and the URL is the only credential, so treat it as a password and rotate it if it gets out.
       </p>
       {feed ? (
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>

@@ -21,6 +21,8 @@ import {
   type Chart, type Comparison, type EngineRaw, type Range, type Result, type Row, type Source, type Spec, type Token,
 } from '../_shared/report-engine.ts';
 import { runWeeklyScorecards } from '../_shared/sales-manager.ts';
+import { everyRowResult } from '../_shared/every-row.ts';
+import { appLink, appPath } from '../_shared/app-paths.ts';
 
 type Block =
   | { id: string; kind: 'widget'; key: string; chart: string; title: string; spec: Spec; w: 1 | 2 }
@@ -71,17 +73,19 @@ export function nextRunAt(frequency: string, atTime: string, tz: string, from = 
 
 async function loadRaw(admin: SupabaseClient, ws: number, since: number): Promise<EngineRaw> {
   const sinceIso = new Date(Number.isFinite(since) ? since : Date.now() - 400 * DAY).toISOString();
+  // Paged by id: a bare select stops at PostgREST's 1,000 rows, and a report past that counted a slice.
   const [members, sellers, deals, comms, offers, contracts, matches, buyers, appts, tasks] = await Promise.all([
     admin.from('workspace_members').select('user_id,role,profiles(full_name)').eq('workspace_id', ws),
-    admin.from('sellers').select('id,name,created_at,source,assigned_to,lead_stage,property_address,email,phone,tags,stage_entered_at').eq('workspace_id', ws).is('archived_at', null),
-    admin.from('deals').select('id,seller_id,buyer_id,stage,created_at,stage_entered_at,contract_date,close_date,closed_on,marketing_started_on,owner_id,dispo_rep_id,offer_amount,arv,mao,assignment_fee,dispo_fee,sold_price,wholesale_fee,total_cogs,team_commissions_paid,deal_net_profit,final_profit,lead_source,market,marketed_price').eq('workspace_id', ws),
-    admin.from('communications').select('seller_id,buyer_id,channel,direction,occurred_at,duration_s,status').eq('workspace_id', ws).gte('occurred_at', sinceIso).order('occurred_at', { ascending: false }).limit(10_000),
-    admin.from('offers').select('id,deal_id,seller_id,buyer_id,direction,amount,status,sent_at,responded_at,created_by').eq('workspace_id', ws),
-    admin.from('contracts').select('id,deal_id,kind,status,provider,sent_at,viewed_at,completed_at,created_at').eq('workspace_id', ws),
-    admin.from('deal_buyer_matches').select('deal_id,buyer_id,status,sent_at,viewed_at,replied_at').eq('workspace_id', ws),
-    admin.from('buyers').select('id,name,vip,created_at,last_activity_at,blacklisted_at').eq('workspace_id', ws),
-    admin.from('appointments').select('id,seller_id,buyer_id,title,kind,starts_at,assigned_to,source,created_at,deleted_at').eq('workspace_id', ws),
-    admin.from('tasks').select('id,seller_id,title,task_type,priority,due_at,assigned_to,done,completed_at,created_at').eq('workspace_id', ws),
+    everyRowResult(() => admin.from('sellers').select('id,name,created_at,source,assigned_to,lead_stage,property_address,email,phone,tags,stage_entered_at').eq('workspace_id', ws).is('archived_at', null).order('id')),
+    everyRowResult(() => admin.from('deals').select('id,seller_id,buyer_id,stage,created_at,stage_entered_at,contract_date,close_date,closed_on,marketing_started_on,owner_id,dispo_rep_id,offer_amount,arv,mao,assignment_fee,dispo_fee,sold_price,wholesale_fee,total_cogs,team_commissions_paid,deal_net_profit,final_profit,lead_source,market,marketed_price').eq('workspace_id', ws).order('id')),
+    // One jsonb value, so PostgREST's 1,000-row ceiling does not apply (report_comms; migration 391 adds the window).
+    admin.rpc('report_comms', { p_ws: ws, p_limit: 60_000, p_since: sinceIso }),
+    everyRowResult(() => admin.from('offers').select('id,deal_id,seller_id,buyer_id,direction,amount,status,sent_at,responded_at,created_by').eq('workspace_id', ws).order('id')),
+    everyRowResult(() => admin.from('contracts').select('id,deal_id,kind,status,provider,sent_at,viewed_at,completed_at,created_at').eq('workspace_id', ws).order('id')),
+    everyRowResult(() => admin.from('deal_buyer_matches').select('deal_id,buyer_id,status,sent_at,viewed_at,replied_at').eq('workspace_id', ws).order('id')),
+    everyRowResult(() => admin.from('buyers').select('id,name,vip,created_at,last_activity_at,blacklisted_at').eq('workspace_id', ws).order('id')),
+    everyRowResult(() => admin.from('appointments').select('id,seller_id,buyer_id,title,kind,starts_at,assigned_to,source,created_at,deleted_at').eq('workspace_id', ws).order('id')),
+    everyRowResult(() => admin.from('tasks').select('id,seller_id,title,task_type,priority,due_at,assigned_to,done,completed_at,created_at').eq('workspace_id', ws).order('id')),
   ]);
   type M = { user_id: string; role: string; profiles: { full_name: string | null } | { full_name: string | null }[] | null };
   const nameOf = (m: M) => (Array.isArray(m.profiles) ? m.profiles[0]?.full_name : m.profiles?.full_name) || 'Teammate';
@@ -130,9 +134,9 @@ function widgetHtml(b: Block, r: Result | null, theme: Def['theme'], compareLabe
   return title + `<div style="font:700 28px/1.1 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;letter-spacing:-.02em;color:${esc(ink)}">${esc(fmtValue(r.value, r.format))}</div>${d ? `<div style="font:500 11.5px -apple-system,sans-serif;color:${color};margin-top:4px">${esc(d.text)} <span style="color:#71717a">vs ${esc(compareLabel)}</span></div>` : ''}`;
 }
 
-function reportHtml(opts: { name: string; workspace: string; def: Def; range: Range; results: Map<string, Result>; message: string | null; compareLabel: string }): { html: string; text: string } {
+function reportHtml(opts: { name: string; workspace: string; def: Def; range: Range; results: Map<string, Result>; message: string | null; compareLabel: string; tz: string | null }): { html: string; text: string } {
   const { def, range } = opts;
-  const dates = rangeLabel(range);
+  const dates = rangeLabel(range, opts.tz);
   const font = "-apple-system,Segoe UI,Helvetica,Arial,sans-serif";
   const pages = def.pages.map((p) => {
     const cells = p.blocks.map((b) => `<td valign="top" width="${b.w === 2 ? '100%' : '50%'}" ${b.w === 2 ? 'colspan="2"' : ''} style="padding:6px"><div style="background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:12px 14px">${widgetHtml(b, opts.results.get(b.id) ?? null, def.theme, opts.compareLabel)}</div></td>`);
@@ -152,22 +156,22 @@ function reportHtml(opts: { name: string; workspace: string; def: Def; range: Ra
 <div style="font:400 13px ${font};color:#71717a">${esc(dates)}${opts.compareLabel ? ` · compared with the ${esc(opts.compareLabel)}` : ''}</div>
 ${opts.message ? `<p style="margin:14px 0 0;font:400 13.5px/1.55 ${font};color:#27272a;white-space:pre-wrap">${esc(opts.message)}</p>` : ''}
 ${pages}
-<p style="margin:22px 0 0;font:400 12px ${font};color:#71717a">Sent by CLOZR · <a href="${esc(APP())}" style="color:${esc(def.theme?.link || '#0A8560')};font-weight:600">Open Reporting</a> to change the range, the widgets or the schedule.</p>
+<p style="margin:22px 0 0;font:400 12px ${font};color:#71717a">Sent by CLOZR · <a href="${esc(appLink(APP(), appPath.customReports))}" style="color:${esc(def.theme?.link || '#0A8560')};font-weight:600">Open Reporting</a> to change the range, the widgets or the schedule.</p>
 </td></tr></table></body></html>`;
-  const text = [`${opts.name} — ${dates}`, opts.message ?? '', ...def.pages.flatMap((p) => [``, p.title.toUpperCase(), ...p.blocks.map((b) => { const r = opts.results.get(b.id); return b.kind === 'element' ? b.text : `${b.title}: ${r ? fmtValue(r.value, r.format) : '—'}`; })]), '', `Open Reporting: ${APP()}`].join('\n');
+  const text = [`${opts.name} — ${dates}`, opts.message ?? '', ...def.pages.flatMap((p) => [``, p.title.toUpperCase(), ...p.blocks.map((b) => { const r = opts.results.get(b.id); return b.kind === 'element' ? b.text : `${b.title}: ${r ? fmtValue(r.value, r.format) : '—'}`; })]), '', `Open Reporting: ${appLink(APP(), appPath.customReports)}`].join('\n');
   return { html, text };
 }
 
 /** Every block's numbers for the range. `widgetDates` false strips widget-level overrides so the whole mail reads one window. */
-function computeAll(def: Def, raw: EngineRaw, range: Range, widgetDates: boolean): Map<string, Result> {
+function computeAll(def: Def, raw: EngineRaw, range: Range, widgetDates: boolean, tz: string | null): Map<string, Result> {
   const data = normalize(raw) as Record<Source, Row[]>;
   const out = new Map<string, Result>();
   const spec = (s: Spec): Spec => (widgetDates ? s : { ...s, datePreset: null, comparison: 'report' });
   for (const p of def.pages) for (const b of p.blocks) {
-    if (b.kind === 'widget') out.set(b.id, compute(spec(b.spec), range, data, raw, { chart: b.chart as Chart }));
+    if (b.kind === 'widget') out.set(b.id, compute(spec(b.spec), range, data, raw, { chart: b.chart as Chart, tz }));
     else if (b.kind === 'metric') {
-      const value = evalFormula(b.formula, (s) => compute(spec(s), range, data, raw, {}).value);
-      const prev = range.prevStart === null ? null : evalFormula(b.formula, (s) => compute(spec(s), range, data, raw, {}).prev);
+      const value = evalFormula(b.formula, (s) => compute(spec(s), range, data, raw, { tz }).value);
+      const prev = range.prevStart === null ? null : evalFormula(b.formula, (s) => compute(spec(s), range, data, raw, { tz }).prev);
       out.set(b.id, { value, prev, format: b.format === 'usd' ? 'usd' : b.format === 'pct' ? 'pct' : b.format === 'float' ? 'float' : 'int', groups: null, series: null, table: null, funnel: null, n: 0 });
     }
   }
@@ -194,14 +198,15 @@ async function sendMail(to: string, subject: string, html: string, text: string,
   return null;
 }
 
-async function mailReport(admin: SupabaseClient, ws: number, report: { name: string; definition: Def }, opts: { preset: string; comparison: string; widgetDates: boolean; to: string[]; subject: string | null; message: string | null; replyTo: string | null }): Promise<{ sent: number; error: string | null }> {
+async function mailReport(admin: SupabaseClient, ws: number, report: { name: string; definition: Def }, opts: { preset: string; comparison: string; widgetDates: boolean; to: string[]; subject: string | null; message: string | null; replyTo: string | null; tz: string | null }): Promise<{ sent: number; error: string | null }> {
   const { data: w } = await admin.from('workspaces').select('name').eq('id', ws).maybeSingle();
   const def: Def = { ...(report.definition ?? {}), pages: report.definition?.pages ?? [] };
-  const win = presetRange(opts.preset, def.custom ?? null);
+  // Days start at midnight in the schedule's zone, not the edge runtime's UTC.
+  const win = presetRange(opts.preset, def.custom ?? null, new Date(), opts.tz);
   const range = withComparison(win, opts.comparison === 'none' ? 'none' : opts.comparison === 'year' ? 'year' : 'previous');
   const raw = await loadRaw(admin, ws, Math.min(range.prevStart ?? range.start, range.start) - 30 * DAY);
-  const results = computeAll(def, raw, range, opts.widgetDates);
-  const { html, text } = reportHtml({ name: report.name, workspace: w?.name ?? 'CLOZR', def, range, results, message: opts.message, compareLabel: compareLabelOf(opts.preset, opts.comparison, range) });
+  const results = computeAll(def, raw, range, opts.widgetDates, opts.tz);
+  const { html, text } = reportHtml({ name: report.name, workspace: w?.name ?? 'CLOZR', def, range, results, message: opts.message, compareLabel: compareLabelOf(opts.preset, opts.comparison, range), tz: opts.tz });
   let sent = 0, error: string | null = null;
   for (const to of opts.to) {
     const err = await sendMail(to, opts.subject || report.name, html, text, opts.replyTo);
@@ -242,7 +247,7 @@ Deno.serve(async (req) => {
       const { data: report } = await admin.from('reports').select('name,definition').eq('id', s.report_id).maybeSingle();
       if (!report) { await admin.from('report_schedules').update({ enabled: false, last_error: 'report is gone' }).eq('report_id', s.report_id); continue; }
       try {
-        const r = await mailReport(admin, s.workspace_id, report as { name: string; definition: Def }, { preset: s.date_preset, comparison: s.comparison, widgetDates: s.use_widget_dates, to: s.recipients ?? [], subject: s.subject, message: s.message, replyTo: s.from_email });
+        const r = await mailReport(admin, s.workspace_id, report as { name: string; definition: Def }, { preset: s.date_preset, comparison: s.comparison, widgetDates: s.use_widget_dates, to: s.recipients ?? [], subject: s.subject, message: s.message, replyTo: s.from_email, tz: s.tz || null });
         await admin.from('report_schedules').update({ next_run_at: next, last_run_at: nowIso, last_error: r.error }).eq('report_id', s.report_id);
         if (r.error) failed++; else sent++;
       } catch (e) {
@@ -271,7 +276,9 @@ Deno.serve(async (req) => {
     const { data: report } = await asCaller.from('reports').select('name,definition,workspace_id').eq('id', id).eq('workspace_id', ws).maybeSingle();
     if (!report) return json({ error: 'no such report, or not yours to see' }, 404);
     const def = (report as { definition: Def }).definition ?? { pages: [] };
-    const r = await mailReport(admin, ws, report as { name: string; definition: Def }, { preset: input.date_preset || def.datePreset || 'Last 30 days', comparison: input.comparison || def.comparison || 'previous', widgetDates: true, to: [who.user.email], subject: null, message: null, replyTo: null });
+    // A test reads the same days the schedule would, in the schedule's zone when it has one.
+    const { data: sched } = await admin.from('report_schedules').select('tz').eq('report_id', id).maybeSingle();
+    const r = await mailReport(admin, ws, report as { name: string; definition: Def }, { preset: input.date_preset || def.datePreset || 'Last 30 days', comparison: input.comparison || def.comparison || 'previous', widgetDates: true, to: [who.user.email], subject: null, message: null, replyTo: null, tz: (sched as { tz?: string } | null)?.tz || null });
     if (r.error) return json({ ok: false, error: r.error }, 200);
     return json({ ok: true, to: who.user.email });
   }

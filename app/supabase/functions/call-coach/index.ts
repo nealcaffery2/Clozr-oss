@@ -16,7 +16,7 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { corsFor, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
-import { coachTranscript } from '../_shared/coach-run.ts';
+import { coachTranscript, workspaceCallType } from '../_shared/coach-run.ts';
 import {
   firstName, isCoachingReview, measureTalkSplit, shouldRefreshCoaching, type CallCoachingReview, type CoachingSource,
 } from '../../../lib/call-coaching.ts';
@@ -86,7 +86,9 @@ Deno.serve(async (req) => {
       apiKey, transcript, repName: rep, prospectName: prospect, source, talk: measureTalkSplit(transcript, rep, prospect),
       timeline: segs?.length ? segmentsForPrompt(segs, 24_000) : null,
       durationS: row && !('error' in row) ? row.duration_s : null,
+      ws: row && !('error' in row) ? Number(row.workspace_id) : null,
       sellerCall: row && !('error' in row) ? row.buyer_id == null : undefined,
+      ...(row && !('error' in row) ? await workspaceCallType(admin, row.workspace_id) : {}),
     });
     let persisted = false;
     // The dialer files a finished call on its record while this card is being

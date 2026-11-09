@@ -14,7 +14,7 @@ import { parseDollars } from '@/lib/money';
 const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
 const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 500, marginBottom: '5px' };
 const fieldBase: React.CSSProperties = { width: '100%', height: '34px', padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', fontSize: '13px', outline: 0, background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)' };
-const primary = (disabled: boolean): React.CSSProperties => ({ height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid #0A8560', background: disabled ? '#7fcbb2' : '#0A8560', color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer' });
+const primary = (disabled: boolean): React.CSSProperties => ({ height: '34px', padding: '0 14px', borderRadius: '9px', border: '1px solid #0A8560', background: '#0A8560', opacity: disabled ? 0.5 : 1, color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer' });
 const ghost: React.CSSProperties = { height: '34px', padding: '0 12px', borderRadius: '9px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', color: 'var(--ink, #18181b)' };
 
 type Company = NonNullable<WorkspaceSettings['company']>;
@@ -80,7 +80,7 @@ export function ContractSettings({ workspaceId, admin, demo, isMobile }: { works
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <div style={{ width: '170px', height: '48px', border: '1px dashed var(--line, #d4d4d8)', borderRadius: '9px', display: 'grid', placeItems: 'center', background: 'var(--surface, #fff)', overflow: 'hidden' }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                {c.logo ? <img src={c.logo} alt="Logo" style={{ maxWidth: '150px', maxHeight: '36px', objectFit: 'contain' }} /> : <span style={{ fontSize: '11.5px', color: 'var(--subtle, #a1a1aa)' }}>No logo</span>}
+                {c.logo ? <img src={c.logo} alt="Logo" style={{ maxWidth: '150px', maxHeight: '36px', objectFit: 'contain' }} /> : <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>No logo</span>}
               </div>
               {!ro ? (
                 <label style={{ ...ghost, display: 'inline-flex', alignItems: 'center' }}>

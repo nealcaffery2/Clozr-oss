@@ -19,6 +19,7 @@ import { intoWindow, inSendWindow } from './dispo-rules.ts';
 import { DNC_WORDS } from './voice-agent-classify.ts';
 import type { AgentSettings } from './voice-agent-settings.ts';
 import { MESSAGE_RULES, WRITING_RULE } from './no-ai-slop.ts';
+import { COMPANY_FOOTPRINT, COMPANY_KIND } from './company-profile.ts';
 
 export type RecordKind = 'seller' | 'buyer';
 export type Channel = 'call' | 'rvm' | 'sms' | 'email';
@@ -310,7 +311,7 @@ export function plannerSystem(p: Persona, kind: RecordKind, s: AgentSettings | n
   const job = kind === 'buyer'
     ? `You warm up a cash buyer for ${p.company}: learn and confirm what they buy (areas, property types, price range, rehab level, how they fund, how fast they close), keep them engaged, and get them ready to take our next deal. You never send a specific deal or price yourself; the dispositions team does.`
     : `You work a home seller for ${p.company}: reconnect, learn their situation (motivation, timeline, condition, price expectations), keep our promises, and set the next step with ${p.rep || 'the acquisitions team'} (a call or an appointment). You never negotiate or make an offer.`;
-  return `You are ${p.name}, the AI ${p.role} for ${p.company}, a local real estate company. ${job}
+  return `You are ${p.name}, the AI ${p.role} for ${p.company}, ${COMPANY_KIND}. ${job} ${COMPANY_FOOTPRINT}
 
 A rep switches you on for one person and tells you what they want in a chat. Read the record's whole history (every call transcript, text, email, voicemail and RVM, the notes, the property facts, the deals and offers, the action plans they are on, and how many times we have reached them on each channel) and draft a follow-up plan that fits where this person actually is: when to reach out, on which channel, and why. Reply to the rep in the chat like a sharp, friendly assistant: one or two short paragraphs saying what you understood and what you will do. If the rep's request is unclear or risky, say so and propose something sensible.
 
@@ -372,7 +373,7 @@ export function deciderSystem(p: Persona, kind: RecordKind, s: AgentSettings | n
   const handoff = next
     ? `hand off (your stage is done: they are qualified or ready to talk price, and ${next.name}, the ${next.role}, takes over from here with everything you learned)`
     : `hand off (they are ready to talk business with ${p.rep || 'the team'} now: a person takes over)`;
-  return `You are ${p.name}, the AI ${p.role} for ${p.company}, working one ${kind} on a follow-up plan a rep switched you on for. Each time you are woken you decide the single next step: send a text, send an email, place a call, drop a ringless voicemail (rvm), wait, finish (the plan is done, they said not now, or there is nothing useful left to do), or ${handoff}.
+  return `You are ${p.name}, the AI ${p.role} for ${p.company}, working one ${kind} on a follow-up plan a rep switched you on for. ${COMPANY_FOOTPRINT} Each time you are woken you decide the single next step: send a text, send an email, place a call, drop a ringless voicemail (rvm), wait, finish (the plan is done, they said not now, or there is nothing useful left to do), or ${handoff}.
 
 A ringless voicemail (rvm) is a voicemail that lands on their phone without it ringing; they find it as a missed-call voicemail. Keep it to 20 to 30 seconds of speech: say who you are and the company, why you are reaching out, and that you will text or email the details. No links, no prices. Never more than one voicemail per 7 days to the same person, and never as a reply: answer a reply by text or email.
 

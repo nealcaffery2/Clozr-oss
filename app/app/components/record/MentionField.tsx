@@ -134,15 +134,15 @@ export function MentionField({ value, onChange, team, inputRef, flushRef, above 
       {open && hits.length > 0 ? createPortal(
         <div role="listbox" aria-label="Mention a teammate" style={{
           position: 'fixed', left: open.x, zIndex: 90, minWidth: 220, maxWidth: 300, padding: 4,
-          ...(open.above ? { bottom: `calc(100vh - ${open.y - 4}px)` } : { top: open.y + 4 }),
-          background: '#fff', border: '1px solid #e4e4e7', borderRadius: 10,
+          ...(open.above ? { bottom: `calc(100dvh - ${open.y - 4}px)` } : { top: open.y + 4 }),
+          background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: 10,
           boxShadow: '0 2px 6px rgba(18,20,28,0.06),0 28px 60px -24px rgba(18,22,45,0.26)',
         }}>
           {hits.map((m, i) => (
             <button key={m.id} type="button" role="option" aria-selected={i === hi}
               onMouseDown={(e) => e.preventDefault()} onMouseEnter={() => setHi(i)} onClick={() => pick(m)}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '6px 8px', border: 0, borderRadius: 7, cursor: 'pointer', fontSize: 12.5, background: i === hi ? '#E7F8F1' : 'none', color: i === hi ? '#0A8560' : '#27272a' }}>
-              <span style={{ width: 20, height: 20, borderRadius: 6, border: '1px solid #e4e4e7', background: '#fff', display: 'grid', placeItems: 'center', fontSize: 9, fontWeight: 700, color: '#52525b' }}>
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '6px 8px', border: 0, borderRadius: 7, cursor: 'pointer', fontSize: 12.5, background: i === hi ? 'var(--mint-dim, #e7f8f1)' : 'none', color: i === hi ? '#0A8560' : 'var(--ink-2, #27272a)' }}>
+              <span style={{ width: 20, height: 20, borderRadius: 6, border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 700, color: 'var(--muted, #52525b)' }}>
                 {m.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
               </span>
               {m.name}
@@ -161,7 +161,7 @@ export function MentionText({ text }: { text: string }) {
   return (
     <>
       {mentionSegments(text).map((s, i) => ('id' in s ? (
-        <span key={i} title={s.name} style={{ padding: '0 4px', borderRadius: 5, background: '#E7F8F1', color: '#0A8560', fontWeight: 600 }}>@{s.name}</span>
+        <span key={i} title={s.name} style={{ padding: '0 4px', borderRadius: 5, background: 'var(--mint-dim, #e7f8f1)', color: 'var(--tx-mint, #0a8560)', fontWeight: 600 }}>@{s.name}</span>
       ) : <React.Fragment key={i}>{s.text}</React.Fragment>))}
     </>
   );

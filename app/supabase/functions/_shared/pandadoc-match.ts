@@ -101,3 +101,31 @@ export function webhookFields(doc: PdWebhookDoc): {
     template_name: doc.template?.name ?? null,
   };
 }
+
+/** The workspace a document's CLOZR metadata names, or null. */
+export function metaWorkspace(doc: { metadata?: Record<string, string | undefined> | null }): number | null {
+  const n = Number(doc.metadata?.clozr_workspace_id);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Webhook without workspace metadata: the people a document's recipients
+ * match, or null when they sit in more than one workspace. The PandaDoc key
+ * is shared by every workspace, so an email alone cannot say whose it is.
+ */
+export function peopleInOneWorkspace(doc: PdWebhookDoc, people: PersonHit[]): PersonHit[] | null {
+  const emails = new Set(recipientEmails(doc));
+  const hits = people.filter((p) => emails.has(p.email.trim().toLowerCase()));
+  return new Set(hits.map((p) => p.workspace_id)).size > 1 ? null : hits;
+}
+
+/**
+ * sync / backfill: true when a listed document is not this workspace's to
+ * file. Its metadata names another workspace, or it is already filed under
+ * another workspace and not under this one.
+ */
+export function belongsElsewhere(doc: { metadata?: Record<string, string | undefined> | null }, ws: number, filedIn: number[]): boolean {
+  const named = metaWorkspace(doc);
+  if (named && named !== ws) return true;
+  return filedIn.length > 0 && !filedIn.some((w) => Number(w) === ws);
+}

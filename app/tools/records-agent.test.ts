@@ -4,7 +4,7 @@
 //
 //   npx tsx tools/records-agent.test.ts
 
-import { attomOwnerName, mapAttom } from '../supabase/functions/_shared/genius-core';
+import { attomOwnerName, mapAttom } from '../supabase/functions/_shared/property-data';
 import { normalizeAgentDeeds, normalizeListing, normalizeOwner } from '../supabase/functions/_shared/records-agent';
 
 let failed = 0;

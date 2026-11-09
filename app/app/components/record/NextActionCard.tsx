@@ -13,17 +13,17 @@ export function NextActionCard({ V, compact = false }: { V: ClozrView; compact?:
   // "Get access · Overdue · Mark complete". It used to be a dark card with a
   // blue glow and a pulsing dot, a second accent on a green app.
   const late = V.hasNextTask && V.nextTaskOverdue;
-  const ghost: React.CSSProperties = { flex: 1, height: '30px', borderRadius: '8px', border: 0, background: '#fff', color: '#18181b', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', boxShadow: 'var(--shadow-ring)' };
-  const solid: React.CSSProperties = { ...ghost, background: '#18181b', color: '#fff', boxShadow: 'none' };
+  const ghost: React.CSSProperties = { flex: 1, height: '30px', borderRadius: '8px', border: 0, background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', boxShadow: 'var(--shadow-ring)' };
+  const solid: React.CSSProperties = { ...ghost, background: 'var(--ink, #18181b)', color: 'var(--surface, #fff)', boxShadow: 'none' };
   return (
-    <div data-testid="next-action" style={{ borderRadius: '10px', padding: compact ? '10px 12px' : '12px', background: late ? '#fef2f2' : '#fafafa', border: `1px solid ${late ? '#fecaca' : '#e4e4e7'}`, color: '#18181b' }}>
+    <div data-testid="next-action" style={{ borderRadius: '10px', padding: compact ? '10px 12px' : '12px', background: late ? 'var(--tint-red, #fef2f2)' : 'var(--canvas, #fafafa)', border: `1px solid ${late ? 'var(--tint-red-2, #fecaca)' : 'var(--divider, #e4e4e7)'}`, color: 'var(--ink, #18181b)' }}>
       <div style={label}>Next action</div>
-      <div style={{ fontSize: compact ? '13.5px' : '14px', fontWeight: 650, marginTop: '4px', color: V.hasNextTask ? '#18181b' : '#71717a', lineHeight: 1.35 }}>
+      <div style={{ fontSize: compact ? '13.5px' : '14px', fontWeight: 650, marginTop: '4px', color: V.hasNextTask ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)', lineHeight: 1.35 }}>
         {V.nextTaskLabel}
       </div>
-      <div style={{ fontSize: '12px', color: '#71717a', marginTop: '2px' }}>
+      <div style={{ fontSize: '12px', color: 'var(--meta, #71717a)', marginTop: '2px' }}>
         {V.hasNextTask && V.nextTaskDue ? (
-          <span style={{ color: late ? '#b91c1c' : '#71717a', fontWeight: late ? 600 : 400 }}>{late && !/overdue/i.test(V.nextTaskDue) ? 'Overdue · ' : ''}{V.nextTaskDue} · </span>
+          <span style={{ color: late ? 'var(--tx-red, #b91c1c)' : 'var(--meta, #71717a)', fontWeight: late ? 600 : 400 }}>{late && !/overdue/i.test(V.nextTaskDue) ? 'Overdue · ' : ''}{V.nextTaskDue} · </span>
         ) : null}
         Assigned to {V.nextTaskAssignee}
       </div>
@@ -39,6 +39,9 @@ export function NextActionCard({ V, compact = false }: { V: ClozrView; compact?:
           </button>
           <button type="button" className="rec-press rec-ghost" onClick={() => V.rescheduleNext('tomorrow')} title="Moves it to tomorrow at 9 AM" style={{ ...ghost, minWidth: '100px', whiteSpace: 'nowrap' }}>
             Reschedule
+          </button>
+          <button type="button" className="rec-press rec-ghost" onClick={V.editNextTask} title="Change the title, type, due time, owner or note; or delete it" style={{ ...ghost, whiteSpace: 'nowrap' }}>
+            Edit
           </button>
         </div>
       ) : (

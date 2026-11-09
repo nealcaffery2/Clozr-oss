@@ -49,6 +49,15 @@ function keyOf(d: BlastDrop): { key: string; kind: 'blast' | 'plan' } {
   return { key: `legacy:${d.created_by ?? 'nobody'}:${d.created_at.slice(0, 13)}`, kind: 'blast' };
 }
 
+/** callbackRate and cost on a tally, the two fields that need the cost per drop. */
+export function finishBlast(g: Omit<BlastSummary, 'callbackRate' | 'cost'>, costPerDrop: number | null): BlastSummary {
+  return {
+    ...g,
+    callbackRate: g.delivered ? g.callbacks / g.delivered : 0,
+    cost: costPerDrop != null && Number.isFinite(costPerDrop) ? Math.round(g.delivered * costPerDrop * 100) / 100 : null,
+  };
+}
+
 export function blastSummaries(drops: readonly BlastDrop[], costPerDrop: number | null = null): BlastSummary[] {
   const groups = new Map<string, BlastSummary & { byLine: Map<string, LineTally> }>();
   for (const d of drops) {
@@ -80,10 +89,8 @@ export function blastSummaries(drops: readonly BlastDrop[], costPerDrop: number 
       g.byLine.set(d.from_e164, t);
     }
   }
-  return [...groups.values()].map(({ byLine, ...g }) => ({
+  return [...groups.values()].map(({ byLine, ...g }) => finishBlast({
     ...g,
-    callbackRate: g.delivered ? g.callbacks / g.delivered : 0,
-    cost: costPerDrop != null && Number.isFinite(costPerDrop) ? Math.round(g.delivered * costPerDrop * 100) / 100 : null,
     lines: [...byLine.values()].sort((a, b) => b.sent - a.sent || a.line.localeCompare(b.line)),
-  })).sort((a, b) => b.started_at.localeCompare(a.started_at));
+  }, costPerDrop)).sort((a, b) => b.started_at.localeCompare(a.started_at));
 }

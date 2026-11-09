@@ -33,6 +33,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { clientIp, corsFor, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import { type Account, SCOPE, accessFor, has, messageIdOf, sendMail } from '../_shared/google.ts';
 import { guardSend, release } from '../_shared/mailguard.ts';
+import { dropTracking, linkTracking, startTracking } from '../_shared/email-track-store.ts';
 import { textRecipient } from '../_shared/docs-flow.ts';
 import { slopReport } from '../_shared/no-ai-slop.ts';
 import {
@@ -110,7 +111,7 @@ Deno.serve(async (req) => {
     if (!sendEmail && !sendSms) return json({ error: 'Pick email, text or both.' }, 422);
 
     // ------------------------------------------------------ the rep's Google
-    const { data: acct } = await admin.from('google_accounts').select(SELECT).eq('workspace_id', ws).eq('user_id', uid).maybeSingle();
+    const { data: acct } = await admin.from('google_accounts').select(SELECT).eq('workspace_id', ws).eq('user_id', uid).eq('shared', false).maybeSingle();
     const account = acct as Account | null;
     if (!account) return json({ error: 'Connect Google in Settings, Integrations first: the invite goes on your Google Calendar with a Meet link.', code: 'not_connected' }, 409);
     if (account.status !== 'active') return json({ error: 'Google needs your approval again. Reconnect it in Settings, Integrations.', code: 'needs_reauth' }, 409);
@@ -207,11 +208,13 @@ Deno.serve(async (req) => {
       else {
         const subject = inviteSubject(input);
         const ics = icsFile({ uid: String(ev.iCalUID ?? `${ev.id}@google.com`), title, startIso: start.toISOString(), endIso: end.toISOString(), description: inviteText(input), url: meetLink, organizerEmail: account.email, organizerName: repName });
+        // A rep's one-to-one email, so it carries a read receipt like any other (email-track-store.ts).
+        const tracked = await startTracking(admin, { workspaceId: ws, userId: uid, recipients: [email], subject, html: inviteHtml(input), where: 'meeting-invite' });
         const sent = await sendMail(token, {
-          to: email, subject, html: inviteHtml(input), text: inviteText(input),
+          to: email, subject, html: tracked.html, text: inviteText(input),
           attachments: [{ filename: 'invite.ics', contentType: 'text/calendar; method=PUBLISH; charset=UTF-8', data: new TextEncoder().encode(ics) }],
         });
-        if (!sent) { await release(admin, claim.ids); warnings.push('Email not sent: Gmail refused it. Google\'s own invitation still went out.'); }
+        if (!sent) { await release(admin, claim.ids); await dropTracking(admin, tracked.token, 'meeting-invite'); warnings.push('Email not sent: Gmail refused it. Google\'s own invitation still went out.'); }
         else {
           emailed = true;
           const messageId = (await messageIdOf(token, sent.id).catch(() => null)) ?? `gmail:${sent.id}`;
@@ -221,7 +224,8 @@ Deno.serve(async (req) => {
             from_email: account.email.toLowerCase(), to_email: email, status: 'sent', source: 'gmail', source_id: messageId, rep_id: uid,
           }, { onConflict: 'workspace_id,source,source_id' }).select('id').maybeSingle();
           if (cErr) console.error('invite email sent but not recorded', cErr.message);
-          else if (comm?.id) {
+          await linkTracking(admin, tracked.token, (comm?.id as number | undefined) ?? null, 'meeting-invite');
+          if (!cErr && comm?.id) {
             await admin.from('communication_mailboxes').upsert({ communication_id: comm.id, account_id: account.id, workspace_id: ws, user_id: uid }, { onConflict: 'communication_id,account_id', ignoreDuplicates: true });
           }
         }

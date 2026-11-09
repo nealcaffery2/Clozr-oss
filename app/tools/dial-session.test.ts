@@ -2,8 +2,8 @@
 // Run: npx tsx tools/dial-session.test.ts
 import assert from 'node:assert/strict';
 import {
-  emptyTally, firstRows, outcomeForDisposition, parsePrefs, parseSavedRun, personKey, resumeLabel, runAgainCounts, runAgainList,
-  sessionProgress, setupCheck, tallyDrop, tallyOutcome, talkTime, type SavedRow, type SavedRun,
+  emptyTally, firstRows, outcomeForDisposition, parseCalled, parsePrefs, parseSavedRun, personKey, resumeLabel, runAgainCounts, runAgainList,
+  sessionProgress, setupCheck, tallyDrop, tallyOutcome, talkTime, uncalled, type SavedRow, type SavedRun,
 } from '../lib/dial-session';
 import type { ReadinessFacts } from '../lib/dialer-readiness';
 
@@ -138,6 +138,17 @@ assert.equal(parseSavedRun(JSON.stringify({ ...saved, pos: 5 }), now), null, 'no
 assert.equal(parseSavedRun(JSON.stringify({ ...saved, pos: 4, reached: ['n:5125550105'] }), now), null, 'everyone left was reached');
 assert.ok(parseSavedRun(JSON.stringify({ ...saved, tally: { connects: 'x', last: { 'p:a': 'bogus', 'p:b': 'vm' } } }), now)?.tally.last['p:b'] === 'vm', 'a bad tally is cleaned, not fatal');
 assert.equal(parseSavedRun(JSON.stringify({ ...saved, origin: undefined }), now)?.origin.length, 4, 'origin rebuilt from the list');
+
+// ---- the queue picks up past who it dialed today
+const day = 'Fri Oct 23 2026';
+const called = parseCalled(JSON.stringify({ day, ids: ['a', 'b', 7] }), day);
+assert.deepEqual(called, { a: true, b: true }, 'ids read back, junk dropped');
+assert.deepEqual(parseCalled(JSON.stringify({ day: 'Thu Oct 22 2026', ids: ['a'] }), day), {}, 'yesterday starts fresh');
+assert.deepEqual(parseCalled('{oops', day), {});
+assert.deepEqual(parseCalled(null, day), {});
+const todayRows = ['a', 'b', 'c', 'd'].map((id) => ({ done: id === 'c', target: { personId: id } }));
+assert.deepEqual(uncalled(todayRows, called).map((r) => r.target.personId), ['d'], 'restart skips the dialed and the done');
+assert.deepEqual(uncalled([{ done: false, target: {} }], called).length, 1, 'a row with no record is kept');
 
 // ---- run it again
 const origin = [row('a', '1'), row('b', '2'), row('c', '3'), row('d', '4'), row('e', '5'), vendor('6')];

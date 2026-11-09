@@ -44,7 +44,7 @@ export function SaveToCrmDialog({ rows, busy, confirmLabel = 'Save and continue'
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
         <button type="button" onClick={onCancel} style={{ height: '34px', padding: '0 14px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Back</button>
-        <button type="button" disabled={busy} onClick={() => onDone(choices)} style={{ height: '34px', padding: '0 14px', borderRadius: '8px', border: '1px solid #0A8560', background: busy ? '#7fcbb2' : '#0A8560', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer' }}>{busy ? 'Saving…' : confirmLabel}</button>
+        <button type="button" disabled={busy} onClick={() => onDone(choices)} style={{ height: '34px', padding: '0 14px', borderRadius: '8px', border: '1px solid #0A8560', background: '#0A8560', opacity: busy ? 0.5 : 1, color: '#fff', fontSize: '13px', fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer' }}>{busy ? 'Saving…' : confirmLabel}</button>
       </div>
     </CenteredDialog>
   );

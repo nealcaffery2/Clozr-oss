@@ -11,3 +11,10 @@ declare module 'tesseract.js/dist/tesseract.esm.min.js' {
   const Tesseract: typeof import('tesseract.js');
   export default Tesseract;
 }
+
+// Supabase edge functions import supabase-js from JSR. A few _shared modules
+// are also type-checked here because tools/*.test.ts import them; give the
+// specifier the same types as the app's own supabase-js.
+declare module 'jsr:@supabase/supabase-js@2' {
+  export * from '@supabase/supabase-js';
+}

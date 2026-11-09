@@ -19,6 +19,7 @@ import {
   TOOL_KEYS, speaksTags, toolOn, type AgentSettings, type Section, type ToolKey,
 } from './voice-agent-settings.ts';
 import type { AgentTemplate } from './voice-agent-templates.ts';
+import { COMPANY_FOOTPRINT, COMPANY_KIND } from './company-profile.ts';
 
 export type TemplateRegistry = Record<string, AgentTemplate>;
 
@@ -45,6 +46,7 @@ const TOOL_USE: Record<ToolKey, string> = {
   mark_do_not_contact: 'record that the person asked not to be contacted again.',
   get_compr_offer: 'get the offer range COMPR underwrites for the house. Ask what shape it is in first and pass the rehab_level that fits; pass property_address when they name a house that is not on file. It takes about a minute: keep qualifying, and on ready: false call again a minute later with the same values. Never quote until it answers ready: true.',
   request_agreement: 'send the written purchase agreement once the seller accepts a price inside your range. Only say it was sent after the tool confirms it.',
+  deal_lookup: 'our properties for sale right now, with the asking price, ARV, beds and baths. Call it when a buyer asks what we have or names an address (pass query to narrow it), and quote only what it returns. When they make an offer, say you will get it to the team and note it with save_qualification (offer_property, offer_amount); never accept or counter an offer yourself.',
   transfer: 'hand the call to a person (see Live transfer). The tool is transfer_to_number.',
   end_call: 'end the call politely when the conversation is finished, when the caller asks to stop, or when the rules below say to.',
 };
@@ -222,24 +224,58 @@ function transferBlock(s: AgentSettings): string {
   const lt = s.live_transfer;
   const triggers = transferTriggers(s);
   const fallback = {
-    book_callback: toolOn(s, 'book_appointment') ? 'say they just stepped away, then book the soonest time today on their calendar with book_appointment (tomorrow only if today is full)' : 'agree the soonest callback time today and note it',
+    // Say plainly what happened; an invented excuse ("they stepped away") breaks the honesty rules.
+    book_callback: (toolOn(s, 'book_appointment') ? 'say plainly that nobody picked up on our side, then book the soonest time today on their calendar with book_appointment (tomorrow only if today is full)' : 'say plainly that nobody picked up on our side, then agree the soonest callback time today and note it')
+      + '. Never invent a reason for the miss (no "they stepped away from their desk"). Before you book, check the time against any time the caller said does not work and pick another if it clashes',
     voicemail: 'offer to take a message for the team',
     apologize_end: 'apologize, say the team will be in touch, and end the call politely',
   }[lt.fallback];
   const repDest = lt.destinations.some((d) => d.type === 'rep_assigned');
+  // Compr's demo setter hands investors to Alex for a demo; the acquisitions and seller wording is wrong there.
+  const compr = s.identity.role === 'compr_demo_setter';
+  const ask = compr ? 'Want me to grab Alex real quick? He can run one of your deals with you right now.' : 'Want me to grab someone from our acquisitions team real quick? They can go over it with you right now.';
+  const brief = compr ? 'who they are, what they buy and how many deals they comp, the address they want run, and why they want to talk now' : 'who they are, the property, why they are selling, timeline, the price they want and any range you gave';
   const lines = [
     `You can hand the call to a person with the transfer_to_number tool${triggers.length ? ', when: ' + triggers.join('; ') + '.' : '.'}`,
     'A positive conversation goes to a person while it is warm. Do not wrap up a good call with "someone will reach out": offer the live hand-off first, and book a time only when that cannot happen.',
-    ...(repDest ? ['The person is {{rep_name}}, the rep working this lead. If {{rep_available}} is "no" or {{rep_phone}} is empty, they are tied up: do not offer the live hand-off, go straight to booking the soonest time today with them.'] : []),
+    ...(repDest ? [
+      'The person is {{rep_name}}, the rep working this lead. If {{rep_phone}} is empty, there is nobody to ring: go straight to booking the soonest time today with them.',
+      'If {{rep_available}} is "no", their calendar shows them busy: do not offer the live hand-off yourself. But when the caller asks for them or for a person, still try the transfer first, and book only if it does not connect.',
+    ] : []),
     ...(lt.mode === 'warm'
       ? [
-        'Make it a warm hand-off, never a surprise. Ask first ("Want me to grab someone from our acquisitions team real quick? They can go over it with you right now."), and only transfer on a yes.',
-        `${toolOn(s, 'save_qualification') ? 'Then call save_qualification with outcome "transferred" and everything you learned, with notes that brief the person picking up in two sentences (who they are, the property, why they are selling, timeline, the price they want and any range you gave). That brief goes to them as you connect. Then ' : 'Then '}tell the caller one short, natural line ("Okay, stay with me, I\'m bringing them on now.") and call transfer_to_number.`,
+        `Make it a warm hand-off, never a surprise. Ask first ("${ask}"), and only transfer on a yes.`,
+        `${toolOn(s, 'save_qualification') ? `Then call save_qualification with outcome "transferred" and everything you learned, with notes that brief the person picking up in two sentences (${brief}). That brief goes to them as you connect. Then ` : 'Then '}tell the caller one short, natural line ("Okay, stay with me, I\'m bringing them on now.") and call transfer_to_number.`,
       ]
       : ['Tell the caller in one short sentence that you are transferring them, then transfer.']),
     `If nobody picks up or the transfer fails: ${fallback}.`,
   ];
   return `# Live transfer\n${bullets(lines)}`;
+}
+
+/**
+ * Picking up for a rep who did not answer (Talkr no-answer overflow,
+ * docs/voice-agent.md): only on an agent with the switch on, since only then
+ * does /personalize ever set {{covering_for}}. The caller wanted that rep:
+ * help or take a message, and hand the call back to them, never to anyone else.
+ */
+export function coveringBlock(s: AgentSettings): string {
+  if (!s.call_handling.overflow.enabled) return '';
+  const back = toolOn(s, 'transfer') ? 'try them live with transfer_to_number; if {{rep_available}} is "no" or nobody picks up, ' : '';
+  const book = toolOn(s, 'book_appointment') ? 'book their callback with book_appointment' : 'agree a time for them to call back';
+  const save = toolOn(s, 'save_qualification') ? ' and save it with save_qualification (notes: who, about what, best number, what they want back)' : '';
+  return `# Picking up for a teammate
+When {{covering_for}} is not empty, the caller rang {{covering_for}} and got no answer; your opening line said you picked up for them, so do not repeat it. Help within your role if they want to talk now. If they just want {{covering_for}}: take a message${save}, or ${back}${book}. Never hand them to anyone else, and never guess why {{covering_for}} missed the call.`;
+}
+
+/** The dispo lane: a buyer agent talks about what we are selling, not what we would pay a seller. */
+export function dispoLaneBlock(s: AgentSettings): string {
+  if (!toolOn(s, 'deal_lookup')) return '';
+  return `# Our deals for sale
+- What we have is only what deal_lookup returns: the address, the asking price, the ARV, beds, baths and where it stands. Never quote a property, a price or a number it did not return, and never talk about what we are paying the seller, our margin or an offer we made to anyone.
+- A buyer who asks for the price gets the asking price straight, then "Is that in range for you?" If a deal has no asking price yet, say the team is finishing the numbers and {{rep_name}} will call with it.
+- An offer from a buyer: repeat it back ("so that is two ten on Quail Run, right?"), say you will get it to the team today, and note it with save_qualification. You cannot accept, reject or counter.
+- Sellers who want to sell us a house are not your call: take their name, number and address, and say the acquisitions team will call them.`;
 }
 
 function toolsBlock(s: AgentSettings): string {
@@ -264,6 +300,7 @@ Last time we spoke: {{last_contact_summary}}
 Agreed next step: {{next_step}}
 Their rep: {{rep_name}}. Property on file: {{property_address}}. Seller's stated price so far: {{seller_asking_price}}.
 Why we are calling, when we placed this call to follow up (empty otherwise): {{call_goal}}
+Picking up for (the teammate the caller rang who did not answer; empty on every other call): {{covering_for}}
 Use this like someone who remembers them: pick up where things left off, keep our promises, never contradict an earlier offer, and never raise anything listed as "Do not mention" unless they bring it up. Never invent a number, date, address or promise.
 Other people at {{company}}, reps and other AI agents with their own names, may have talked with them before, and this history is theirs as much as yours. You are {{agent_name}} and only {{agent_name}}: never use a name from the history as your own, and never say you were on an earlier call or sent an earlier message unless the history names {{agent_name}}. If they mention someone else ("I talked to Riley last week"), that was a colleague: "That was my colleague. I've got the notes from that call."`;
 
@@ -293,16 +330,18 @@ function audienceOf(s: AgentSettings, templates: TemplateRegistry): Audience {
   return templates[s.script.template_id]?.audience ?? audienceForRole(s.identity.role);
 }
 
-/** The first line is spoken for the agent (voice-agent.ts outboundOpener); this keeps it from saying it twice. */
+/** On a call we placed the agent waits for hello, then says {{opening_line}} (voice-agent.ts outboundOpener); otherwise the first line was spoken for it and this keeps it from saying it twice. */
 export function openingLine(s: AgentSettings, templates: TemplateRegistry = {}): string {
   const audience = audienceOf(s, templates);
   const seller = 'is selling it something they\'d consider, or, if they reached out to us, are they still looking to sell';
   const buyer = 'are they still buying, and what are they looking for right now. Never ask a buyer whether they want to sell';
-  const first = audience === 'buyers' ? `for a buyer: ${buyer}` : audience === 'both' ? `for a seller: ${seller}; for a buyer: ${buyer}` : `for a seller: ${seller}`;
+  const compr = s.identity.role === 'compr_demo_setter';
+  const first = compr ? 'for a Compr lead: what are they working on right now. Never ask whether they are still buying or want to sell' : audience === 'buyers' ? `for a buyer: ${buyer}` : audience === 'both' ? `for a seller: ${seller}; for a buyer: ${buyer}` : `for a seller: ${seller}`;
   const busy = toolOn(s, 'book_appointment') ? 'book a time' : 'agree a time to call back and note it';
-  const followUp = audience === 'buyers' ? 'do not explain who we are or ask whether they are buying' : 'do not explain who we are or ask whether they\'d consider selling';
+  const followUp = compr ? 'do not explain what Compr does again or repeat the demo pitch' : audience === 'buyers' ? 'do not explain who we are or ask whether they are buying' : 'do not explain who we are or ask whether they\'d consider selling';
   return `# Your opening line (this overrides any opening in your script)
-On a call you placed, your first line has already been said for you: their name, who you are, and the property you are calling about when we have one. Do not say it again or introduce yourself a second time.
+On a call you placed, nothing has been said yet when the line connects: wait for them to speak first. If nothing has been said yet, when they say hello, start with {{opening_line}} (word for word, once), then stop and let them answer.
+If {{opening_line}} is empty, your first line has already been said for you: their name, who you are, and the property you are calling about when we have one. Do not say it again or introduce yourself a second time.
 - When they answer ("yeah?", "speaking", "what about it?"), go straight to your first real question from your script, ${first}.
 - If {{call_goal}} starts with "FOLLOW-UP", you have talked before: ${followUp}. Pick up where things left off ({{last_contact_summary}}, {{next_step}}) and ask the one question that moves it forward.
 - Never ask whether it's a good or bad time. Ask your question; if they are busy they will tell you, and then you ${busy}.
@@ -332,9 +371,10 @@ function identity(s: AgentSettings): string {
     ? 'When you introduce yourself, say you are {{agent_name}}, a virtual assistant with {{company}}.'
     : 'When you introduce yourself, say you are {{agent_name}} with {{company}}.';
   const lang = i.languages.length > 1 ? `\nYou can speak ${i.languages.join(', ')}. Reply in the language the caller uses.` : '';
-  // Compr sells software to investors; every other role works for a local real estate company.
-  const what = i.role.startsWith('compr_') ? 'a real estate underwriting software company' : 'a local real estate company';
-  return `You are {{agent_name}}, the ${role} for {{company}}, ${what}. You speak with people on the phone. ${who}${lang}`;
+  // Compr sells software to investors; every other role works for Acme Homes, which buys nationwide.
+  const compr = i.role.startsWith('compr_');
+  const what = compr ? 'a real estate underwriting software company' : COMPANY_KIND;
+  return `You are {{agent_name}}, the ${role} for {{company}}, ${what}. You speak with people on the phone. ${who}${lang}${compr ? '' : `\n${COMPANY_FOOTPRINT}`}`;
 }
 
 /**
@@ -353,6 +393,10 @@ export function assemblePrompt(s: AgentSettings, templates: TemplateRegistry = {
   const rules = rulesBlock(s);
   if (rules) blocks.push(rules);
   blocks.push(transferBlock(s));
+  const covering = coveringBlock(s);
+  if (covering) blocks.push(covering);
+  const lane = dispoLaneBlock(s);
+  if (lane) blocks.push(lane);
   blocks.push(toolsBlock(s));
   const knowledge = knowledgeBlock(s);
   if (knowledge) blocks.push(knowledge);
@@ -392,7 +436,7 @@ export function promptWarnings(s: AgentSettings, templates: TemplateRegistry = {
   if (s.live_transfer.destinations.some((d) => d.type === 'rep_assigned')) w('rep_line', 'info', 'A rep-assigned destination dials the assigned rep\'s phone from their profile; a lead with no rep or no phone cannot be transferred.', 'live_transfer.destinations');
 
   // A tool named in text that resolves to "off" would send the agent to something it does not have.
-  const authored = prompt.replace(lockedBlock(s), '').replace(toolsBlock(s), '');
+  const authored = prompt.replace(lockedBlock(s), '').replace(toolsBlock(s), '').replace(coveringBlock(s), '').replace(dispoLaneBlock(s), '');
   for (const k of TOOL_KEYS) {
     if (toolOn(s, k) || k === 'transfer') continue;
     if (new RegExp(`\\b${k}\\b`).test(authored)) w('tool_referenced_unavailable', 'warning', `The text mentions ${k}, which the agent does not have (${s.tools[k]?.enabled ? 'not built yet' : 'switched off'}). Reword it or wrap it in <<if ${k}>>...<<end>>.`, `tools.${k}`);

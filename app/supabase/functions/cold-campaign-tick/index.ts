@@ -20,6 +20,7 @@
  * re-checks every pool domain's DNS so a send never waits on a stale check.
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
+import { everyRow } from '../_shared/every-row.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { jsonWith } from '../_shared/security.ts';
 import { dayStartUtc, domainOf, localParts } from '../_shared/deliverability-rules.ts';
@@ -31,6 +32,8 @@ import {
 } from '../_shared/cold-campaign.ts';
 import { pollPool, sendPool, textToHtml, type Polled } from '../_shared/cold-transport.ts';
 import { syncWarmup } from '../_shared/cold-warmup.ts';
+import { alertPause, alertSendFailure } from '../_shared/send-alert.ts';
+import { appPath } from '../_shared/app-paths.ts';
 import { sendResend, transactionalFrom } from '../_shared/resend.ts';
 import { checkDomain } from '../deliverability/dns.ts';
 import { advancePatch, claimEnrollment, claimGap, countSend, healthFromRows, healthPass, healthSlot, memo, must, priorSend, type Health, type Pool } from './tick.ts';
@@ -143,11 +146,19 @@ async function sendOne(admin: SupabaseClient, row: Any, now: Date, tally: { sent
     : null;
   const email = String(row.email).toLowerCase();
   const sup = must(await admin.from('email_suppressions').select('email').eq('workspace_id', ws).eq('email', email).maybeSingle(), 'cold suppression');
-  const gate = await verificationBlock(admin, ws, [email], 'bulk', { requireVerified: settings.require_verified });
-  // verificationBlock is the mailguard gate (suppressions are checked below
-  // as well). An unverified address, when the workspace requires it, stops
-  // with that gate's own reason rather than the generic unsafe wording. A
+  const excluded = must(await admin.from('cold_exclusions').select('email').eq('workspace_id', ws).eq('email', email).maybeSingle(), 'cold exclusion');
+  // Cold mail goes only to a verified address, whatever the workspace's
+  // require_verified_email says: unverified sends were most of the pool's
+  // bounces. verificationBlock is the mailguard gate (suppressions are checked
+  // below as well). An address not checked yet (Reoon not reached) waits an
+  // hour for the next check; a failed one stops with the gate's own reason. A
   // failed read throws, so the row waits 15 minutes (the loop's catch).
+  const gate = await verificationBlock(admin, ws, [email], 'bulk', { requireVerified: true });
+  if (gate?.unverified?.length) {
+    await admin.from('cold_enrollments').update({ next_send_at: new Date(now.getTime() + 3600_000).toISOString() }).eq('id', row.id);
+    tally.waited++;
+    return;
+  }
   if (gate) {
     await stopEnrollment(admin, row, 'stopped', gate.message);
     tally.stopped++;
@@ -177,7 +188,7 @@ async function sendOne(admin: SupabaseClient, row: Any, now: Date, tally: { sent
     enrollment: {
       id: Number(row.id), status: String(row.status), email, state,
       stepPosition: Number(row.step_position), lastSentAt: row.last_sent_at, enrolledAt: row.enrolled_at,
-      threadMessageId: row.thread_message_id, suppressed: !!sup,
+      threadMessageId: row.thread_message_id, suppressed: !!sup, excluded: !!excluded,
       safety: 'safe', verificationStatus: buyer?.email_status ?? null,
       pinnedMailboxId: row.mailbox_id == null ? null : Number(row.mailbox_id),
       otherSequence: ((otherSeq ?? []) as Any[]).length > 0,
@@ -321,10 +332,29 @@ async function pollOne(admin: SupabaseClient, mailboxId: number, ws: number, tic
   if (!mailbox) return 0;
   // Read before the poll: a failed read throws here, and the next poll fetches the same unseen mail (BODY.PEEK).
   const settings = await settingsOf(admin, ws, tick);
-  const sends = must(await admin.from('cold_sends').select('id, to_email, rfc_message_id, enrollment_id, workspace_id').eq('mailbox_id', mailboxId).eq('workspace_id', ws).order('sent_at').limit(500), 'cold poll sends');
   const messages = await pollPool(admin, mailbox);
   await admin.from('cold_mailboxes').update({ last_polled_at: new Date().toISOString(), last_error: null }).eq('id', mailboxId);
-  const refs = ((sends ?? []) as Any[]).map((s) => ({ id: Number(s.id), toEmail: String(s.to_email), rfcMessageId: s.rfc_message_id as string | null, enrollmentId: Number(s.enrollment_id) }));
+  // The sends these messages could answer: by the address they came from and
+  // by the message they reply to. Reading the mailbox's oldest 500 sends matched
+  // nothing once it had sent more than that, so replies and unsubscribes to
+  // newer sends were missed and the sequence kept mailing them.
+  const froms = [...new Set(messages.map((m) => m.from.trim().toLowerCase()).filter(Boolean))];
+  const replyTo = [...new Set(messages.map((m) => (m.inReplyTo ?? '').replace(/[<>]/g, '').trim()).filter(Boolean))];
+  const refs: { id: number; toEmail: string; rfcMessageId: string | null; enrollmentId: number }[] = [];
+  const seen = new Set<number>();
+  const take = (rows: Any[] | null) => {
+    for (const s of rows ?? []) {
+      if (seen.has(Number(s.id))) continue;
+      seen.add(Number(s.id));
+      refs.push({ id: Number(s.id), toEmail: String(s.to_email), rfcMessageId: s.rfc_message_id as string | null, enrollmentId: Number(s.enrollment_id) });
+    }
+  };
+  const sendsRead = () => admin.from('cold_sends').select('id, to_email, rfc_message_id, enrollment_id, workspace_id')
+    .eq('mailbox_id', mailboxId).eq('workspace_id', ws).order('sent_at', { ascending: false });
+  for (let i = 0; i < froms.length; i += 200) take(must(await sendsRead().in('to_email', froms.slice(i, i + 200)), 'cold poll sends'));
+  for (let i = 0; i < replyTo.length; i += 100) {
+    take(must(await sendsRead().in('rfc_message_id', replyTo.slice(i, i + 100).flatMap((r) => [r, `<${r}>`])), 'cold poll sends'));
+  }
   let n = 0;
   for (const msg of messages) {
     if (await recordReply(admin, mailbox, ws, msg, refs, settings)) n++;
@@ -369,7 +399,9 @@ async function recordReply(admin: SupabaseClient, mailbox: Any, ws: number, msg:
   }
   const { data: comm } = await admin.from('communications').upsert({
     workspace_id: ws, buyer_id: enrollment.buyer_id, channel: 'email', direction: 'inbound', occurred_at: msg.receivedAt,
-    subject: msg.subject, body: msg.body.slice(0, 20_000), from_email: msg.from, to_email: mailbox.email, status: 'received',
+    subject: msg.subject, body: msg.body.slice(0, 20_000), from_email: msg.from, to_email: mailbox.email,
+    // A bounce is not a reply: 'bounced' keeps plan_on_communication (383) from stopping the plan.
+    status: classification === 'bounce' ? 'bounced' : 'received',
     source: 'cold', source_id: `cold-reply:${mailbox.id}:${msg.providerId}`, rep_id: owner,
   }, { onConflict: 'workspace_id,source,source_id' }).select('id').maybeSingle();
   await admin.from('cold_replies').insert({
@@ -377,7 +409,8 @@ async function recordReply(admin: SupabaseClient, mailbox: Any, ws: number, msg:
     provider_message_id: msg.providerId, from_email: msg.from, subject: msg.subject, snippet: msg.body.slice(0, 500),
     classification, complaint, communication_id: comm?.id ?? null, received_at: msg.receivedAt, assigned_to: owner,
   });
-  if (owner && classification !== 'bounce') {
+  // A bounce, an unsubscribe or a spam complaint is filed above but rings no bell.
+  if (owner && classification !== 'bounce' && classification !== 'unsubscribe') {
     const noted = await admin.from('notifications').insert({
       workspace_id: ws, user_id: owner, category: 'cold_reply', buyer_id: enrollment.buyer_id,
       title: `Cold reply from ${buyerRow?.name || msg.from}`,
@@ -417,6 +450,7 @@ async function pauseUnhealthy(admin: SupabaseClient, ws: number, tick: Tick): Pr
     const reason = poolPauseReason({ ...box, policy: settings.policy });
     if (!reason) continue;
     await admin.from('cold_mailboxes').update({ paused: true, paused_auto: true, paused_reason: `Auto-paused: ${reason}.`, paused_at: new Date().toISOString() }).eq('id', box.id);
+    await alertPause(admin, ws, 'cold_mailbox', box.id, String(box.email ?? 'A cold mailbox'), reason);
     box.paused = true;
     paused++;
   }
@@ -425,6 +459,8 @@ async function pauseUnhealthy(admin: SupabaseClient, ws: number, tick: Tick): Pr
     const reason = poolPauseReason({ ...d, policy: settings.policy });
     if (!reason) continue;
     await admin.from('cold_domains').update({ paused: true, paused_auto: true, paused_reason: `Auto-paused: ${reason}.`, paused_at: new Date().toISOString() }).eq('id', d.id);
+    const name = domainOf(health.mailboxes.find((m) => m.domainId === d.id)?.email ?? '') || 'A cold domain';
+    await alertPause(admin, ws, 'cold_domain', d.id, name, reason);
     paused++;
   }
   const vendor = createWarmupProvider({ provider: settings.warmup_provider, apiBase: settings.warmup_api_base });
@@ -434,9 +470,20 @@ async function pauseUnhealthy(admin: SupabaseClient, ws: number, tick: Tick): Pr
     const why = placementPausesRamp(place, settings.policy.primaryRateFloor);
     if (!why) continue;
     await admin.from('cold_mailboxes').update({ paused: true, paused_auto: true, paused_reason: `Auto-paused: ${why}.`, paused_at: new Date().toISOString() }).eq('id', box.id);
+    await alertPause(admin, ws, 'cold_mailbox', box.id, String(box.email ?? 'A cold mailbox'), why);
     paused++;
   }
   return paused;
+}
+
+/** A domain that passed its DNS check and now fails one that blocks sending (SPF, DKIM, a blocklist). */
+async function alertBlocked(admin: SupabaseClient, ws: number, d: Any, blocking: string[]) {
+  if (!blocking.length || ((d.blocking ?? []) as string[]).length) return;
+  await alertSendFailure(admin, {
+    ws, key: `domain_dns:${d.domain}`, title: `${d.domain} stopped passing its DNS check`,
+    reason: `${blocking.join(' ')} Mail from it is held until the check passes again.`,
+    path: appPath.deliverability, place: 'Email deliverability',
+  });
 }
 
 /**
@@ -471,7 +518,7 @@ type WorkspaceCold = {
 };
 
 async function workspaceSettings(admin: SupabaseClient, ws: number): Promise<WorkspaceCold> {
-  const cols = 'blocked_extra, fallback_timezone, rotation_cursor, warmup_provider, warmup_api_base, instantly_warmup_tag, physical_address, deliverability';
+  const cols = 'blocked_extra, allow_company_domains, fallback_timezone, rotation_cursor, warmup_provider, warmup_api_base, instantly_warmup_tag, physical_address, deliverability';
   // A failed read throws: defaults here would mean the wrong timezone, cursor or warmup tag.
   let row = must(await admin.from('cold_workspace_settings').select(cols).eq('workspace_id', ws).maybeSingle(), 'cold settings') as Any;
   if (!row) {
@@ -482,7 +529,8 @@ async function workspaceSettings(admin: SupabaseClient, ws: number): Promise<Wor
   const fallback = row?.fallback_timezone || (wsRow?.settings as Any)?.timezone || 'America/Chicago';
   const tag = String(row?.instantly_warmup_tag ?? '').trim();
   return {
-    blocked: blockedSendingDomains(row?.blocked_extra ?? []),
+    // 441: only an explicit true lifts the company-domain lock; mailboxSkip then holds those mailboxes to the DNS score too.
+    blocked: blockedSendingDomains(row?.blocked_extra ?? [], { allowCompanyDomains: row?.allow_company_domains === true }),
     fallback_timezone: fallback,
     rotation_cursor: Number(row?.rotation_cursor ?? 0),
     warmup_provider: row?.warmup_provider ?? 'stub',
@@ -495,16 +543,18 @@ async function workspaceSettings(admin: SupabaseClient, ws: number): Promise<Wor
 
 /**
  * Re-run the DNS check on every pool domain, the same write as cold-pool's
- * check_domain. A send needs a check under 7 days old (mailboxSkip), and a
- * person clicking Check DNS once goes stale before warmup ends.
+ * check_domain, then on the workspace's other active email domains, the same
+ * write as deliverability's check_domain. A send needs a check under 7 days
+ * old (mailboxSkip, guardSend), and a person clicking Check DNS once goes stale.
  */
 async function recheckDomains(admin: SupabaseClient, ws: number): Promise<number> {
-  const { data } = await admin.from('cold_domains').select('id, domain, dkim_selectors, tracking_domain').eq('workspace_id', ws);
+  const { data } = await admin.from('cold_domains').select('id, domain, dkim_selectors, tracking_domain, blocking').eq('workspace_id', ws);
   let checked = 0;
   for (const d of (data ?? []) as Any[]) {
     try {
       const r = await checkDomain(d.domain, { dkim_selectors: d.dkim_selectors ?? [], tracking_domain: d.tracking_domain ?? null, uses_resend: false, google_hint: false });
       await admin.from('cold_domains').update({ score: r.score, blocking: r.blocking, report: { checks: r.checks, provider: r.provider }, checked_at: r.checked_at }).eq('id', d.id);
+      await alertBlocked(admin, ws, d, r.blocking);
       // The deliverability page reads the per-check report from email_domains, as cold-pool's check_domain writes it.
       await admin.from('email_domains').upsert({
         workspace_id: ws, domain: d.domain, dkim_selectors: d.dkim_selectors ?? [],
@@ -513,6 +563,19 @@ async function recheckDomains(admin: SupabaseClient, ws: number): Promise<number
       checked++;
     } catch (err) {
       console.error('cold dns', d.domain, err instanceof Error ? err.message : err);
+    }
+  }
+  // The Resend and Gmail domains under Email deliverability: mailguard holds bulk mail on a check over 7 days old too.
+  const pool = new Set(((data ?? []) as Any[]).map((d) => d.domain));
+  const { data: others } = await admin.from('email_domains').select('id, domain, source, dkim_selectors, tracking_domain, uses_resend, blocking').eq('workspace_id', ws).eq('active', true);
+  for (const d of ((others ?? []) as Any[]).filter((x) => !pool.has(x.domain))) {
+    try {
+      const r = await checkDomain(d.domain, { dkim_selectors: d.dkim_selectors ?? [], tracking_domain: d.tracking_domain ?? null, uses_resend: d.uses_resend === true, google_hint: d.source === 'google' });
+      await admin.from('email_domains').update({ score: r.score, blocking: r.blocking, report: { checks: r.checks, provider: r.provider }, checked_at: r.checked_at }).eq('id', d.id);
+      await alertBlocked(admin, ws, d, r.blocking);
+      checked++;
+    } catch (err) {
+      console.error('email dns', d.domain, err instanceof Error ? err.message : err);
     }
   }
   return checked;
@@ -580,8 +643,8 @@ async function loadPool(admin: SupabaseClient, ws: number, now: Date, gateOn = f
   const domains = must(await admin.from('cold_domains').select('*').eq('workspace_id', ws), 'cold pool domains');
   const boxes = must(await admin.from('cold_mailboxes').select('*').eq('workspace_id', ws).order('id'), 'cold pool mailboxes');
   const dayAgo = new Date(now.getTime() - 26 * 3_600_000).toISOString();
-  const sends = must(await admin.from('cold_sends').select('mailbox_id, sent_at, status, to_email').eq('workspace_id', ws).gte('sent_at', dayAgo).neq('status', 'failed'), 'cold pool sends');
-  const sent = (sends ?? []) as Any[];
+  // Every page: a workspace past 1,000 sends in a day undercounted each mailbox and went over its cap.
+  const sent = await everyRow<Any>(() => admin.from('cold_sends').select('mailbox_id, sent_at, status, to_email').eq('workspace_id', ws).gte('sent_at', dayAgo).neq('status', 'failed').order('id'));
   const domainSent = new Map<number, number>();
   const raw = (boxes ?? []) as Any[];
   const mailboxes: ColdMailbox[] = raw.map((m) => {
@@ -610,6 +673,7 @@ async function loadPool(admin: SupabaseClient, ws: number, now: Date, gateOn = f
   const coldDomains: ColdDomain[] = ((domains ?? []) as Any[]).map((d) => ({
     id: Number(d.id), domain: String(d.domain), dailyCap: Number(d.daily_cap), sentToday: domainSent.get(Number(d.id)) ?? 0,
     paused: !!d.paused, blocking: (d.blocking ?? []) as string[], checkedAt: d.checked_at ?? null,
+    score: d.score == null ? null : Number(d.score),
     trackingDomain: d.tracking_domain ?? null,
   }));
   for (const m of mailboxes) {

@@ -11,19 +11,19 @@
 export type Tone = { fg: string; bg: string; line: string };
 
 const tone = (fg: string, bg: string, line: string): Tone => ({ fg, bg, line });
-const GREY = tone('#52525b', '#f4f4f5', '#e4e4e7');
+const GREY = tone('var(--muted, #52525b)', 'var(--surface-2, #f4f4f5)', 'var(--divider, #e4e4e7)');
 
 const TYPE: Record<string, Tone> = {
-  seller: tone('#15803d', '#dcfce7', '#bbf7d0'),
-  buyer: tone('#1d4ed8', '#dbeafe', '#bfdbfe'),
-  agent: tone('#7c3aed', '#ede9fe', '#ddd6fe'),
-  wholesaler: tone('#c2410c', '#ffedd5', '#fed7aa'),
+  seller: tone('var(--tx-green, #15803d)', 'var(--positive-soft, #dcfce7)', 'var(--tint-green-3, #bbf7d0)'),
+  buyer: tone('var(--tx-blue, #1d4ed8)', 'var(--tint-blue-2, #dbeafe)', '#bfdbfe'),
+  agent: tone('#7c3aed', 'var(--tint-violet, #ede9fe)', '#ddd6fe'),
+  wholesaler: tone('var(--tx-orange, #c2410c)', 'var(--tint-orange-2, #ffedd5)', 'var(--tint-orange-3, #fed7aa)'),
   lender: tone('#0e7490', '#cffafe', '#a5f3fc'),
-  title: tone('#b45309', '#fef3c7', '#fde68a'),
-  partner: tone('#be185d', '#fce7f3', '#fbcfe8'),
+  title: tone('var(--tx-amber, #b45309)', 'var(--caution-soft, #fef3c7)', 'var(--tint-amber-2, #fde68a)'),
+  partner: tone('#be185d', '#fce7f3', 'var(--c-lane-line, #fbcfe8)'),
   vendor: tone('#475569', '#f1f5f9', '#e2e8f0'),
-  contractor: tone('#9a3412', '#ffedd5', '#fed7aa'),
-  insurance: tone('#0f766e', '#ccfbf1', '#99f6e4'),
+  contractor: tone('var(--tx-orange-deep, #9a3412)', 'var(--tint-orange-2, #ffedd5)', 'var(--tint-orange-3, #fed7aa)'),
+  insurance: tone('var(--tx-teal, #0f766e)', '#ccfbf1', '#99f6e4'),
   survey: tone('#4d7c0f', '#ecfccb', '#d9f99d'),
   notary: tone('#4338ca', '#e0e7ff', '#c7d2fe'),
   attorney: tone('#334155', '#e2e8f0', '#cbd5e1'),
@@ -55,14 +55,19 @@ export function typeTone(kind: string | null | undefined): Tone {
 }
 
 const STATUS: Record<string, Tone> = {
-  vip: tone('#b45309', '#fef3c7', '#fde68a'),
+  vip: tone('var(--tx-amber, #b45309)', 'var(--caution-soft, #fef3c7)', 'var(--tint-amber-2, #fde68a)'),
   vetted: tone('#0e7490', '#cffafe', '#a5f3fc'),
-  institutional: tone('#6d28d9', '#ede9fe', '#ddd6fe'),
-  active: tone('#15803d', '#dcfce7', '#bbf7d0'),
-  prospect: tone('#6d28d9', '#ede9fe', '#ddd6fe'),
-  'follow-up': tone('#c2410c', '#ffedd5', '#fed7aa'),
-  inactive: tone('#52525b', '#f4f4f5', '#e4e4e7'),
-  blacklisted: tone('#b91c1c', '#fee2e2', '#fecaca'),
+  institutional: tone('var(--tx-violet, #6d28d9)', 'var(--tint-violet, #ede9fe)', '#ddd6fe'),
+  active: tone('var(--tx-green, #15803d)', 'var(--positive-soft, #dcfce7)', 'var(--tint-green-3, #bbf7d0)'),
+  prospect: tone('var(--tx-violet, #6d28d9)', 'var(--tint-violet, #ede9fe)', '#ddd6fe'),
+  'follow-up': tone('var(--tx-orange, #c2410c)', 'var(--tint-orange-2, #ffedd5)', 'var(--tint-orange-3, #fed7aa)'),
+  inactive: tone('var(--muted, #52525b)', 'var(--surface-2, #f4f4f5)', 'var(--divider, #e4e4e7)'),
+  blacklisted: tone('var(--tx-red, #b91c1c)', 'var(--negative-soft, #fee2e2)', 'var(--tint-red-2, #fecaca)'),
+  // Compr stages (migration 417), same colours as their Buyers rail dots.
+  'not-contacted': tone('var(--muted, #52525b)', 'var(--surface-2, #f4f4f5)', 'var(--divider, #e4e4e7)'),
+  contacted: tone('#0f766e', '#ccfbf1', '#99f6e4'),
+  interested: tone('var(--tx-green, #15803d)', 'var(--positive-soft, #dcfce7)', 'var(--tint-green-3, #bbf7d0)'),
+  'not-interested': tone('var(--tx-red, #b91c1c)', 'var(--negative-soft, #fee2e2)', 'var(--tint-red-2, #fecaca)'),
 };
 
 /** The pill colour for a buyer status (VIP, Vetted, Active, Follow-up …). */

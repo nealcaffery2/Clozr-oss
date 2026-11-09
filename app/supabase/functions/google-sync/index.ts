@@ -11,7 +11,7 @@
  *                   stored syncToken (410 → full resync): moved, renamed,
  *                   answered, created there, or deleted there — each lands
  *                   on the appointment row, a delete deletes the row
- *            tasks  open dated tasks become reminders on the same calendar
+ *            tasks  none: task events earlier passes made are taken down
  *            gmail  mail with anyone in the CRM or on a deal — received and
  *                   sent, whole threads — onto the record and the deal
  *                   (_shared/google.ts pullGmail, rules in gmail-match.ts)
@@ -109,15 +109,17 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { clientIp, corsFor, jsonWith, rateLimit, serverError, tooMany, isServiceCaller } from '../_shared/security.ts';
+import { safeOrigin } from '../_shared/parity/security.ts';
 import { type Account, type BookCache, type MailFile, HTML_BODY_MAX, MAX_MESSAGE_BYTES, SCOPE, accessFor, addressesOf, configured, documentForGmail, ensureCalendar, ensureFeeds, fetchAttachment, gmailIdFor, gmailQuick, gmailSignature, has, htmlToText, knowPeople, loadBook, looksLikeHtml, messageIdOf, pullGmail, sendMail, textToHtml, threadOf, withSignature } from '../_shared/google.ts';
 import { googleSyncWorkspace } from '../_shared/google-scope.ts';
+import { type MailCompany, signingEmail } from '../_shared/emails.ts';
 import { changedOnly } from '../_shared/google-writes.ts';
 import { type Lane, FAST_BEHIND_MS, FAST_LOCK_S, SLOW_LOCK_S, laneOf } from '../_shared/gmail-lanes.ts';
-import { instrument, newToken, trackBase } from '../_shared/email-track.ts';
-import { type PullResult, type PushResult, pullAppointments, pushAppointments, pushTasks } from './calendar.ts';
+import { dropTracking, linkTracking, startTracking } from '../_shared/email-track-store.ts';
+import { type PullResult, type PushResult, pullAppointments, pushAppointments, clearTaskEvents } from './calendar.ts';
 import { ensureWatches } from './watch.ts';
 import { calendarDue } from '../_shared/calendar-watch.ts';
-import { type Link, linkFor, mergeLink } from '../_shared/gmail-match.ts';
+import { type Link, dealRank, linkFor, mergeLink, namesStreet, oneHouse, streetKey } from '../_shared/gmail-match.ts';
 import { claimedFor, guardSend, guardSendMany, markSendProvider, release, releaseUnspent, scanBounces, unsubscribeToken, unsubscribeUrl } from '../_shared/mailguard.ts';
 
 type Any = any;
@@ -135,7 +137,7 @@ async function signatureNow(admin: SupabaseClient, account: Account, token: stri
 
 const esc = (v: string) => v.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
 
-const SELECT = 'id, workspace_id, user_id, email, scopes, calendar_id, calendar_sync, gmail_send, gmail_read, status, sync_token, last_calendar_sync_at, last_gmail_sync_at, gmail_signature, gmail_signature_at, last_error';
+const SELECT = 'id, workspace_id, user_id, email, scopes, calendar_id, calendar_sync, gmail_send, gmail_read, status, sync_token, last_calendar_sync_at, last_gmail_sync_at, gmail_signature, gmail_signature_at, last_error, shared';
 
 export type SyncResult = {
   ok: boolean; email: string; status: string;
@@ -210,6 +212,21 @@ async function syncAccount(admin: SupabaseClient, account: Account, opts: { orig
 
   if (opts.calendar !== false && account.calendar_sync && has(account, SCOPE.calendar)) {
     try {
+      // A linked mailbox (deals@, migration 441) is nobody's own calendar:
+      // its events are read into CLOZR, and no appointment or task is pushed
+      // to it, so a member's meetings are not written twice.
+      if (account.shared) {
+        const feeds = await ensureFeeds(admin, account, accessToken);
+        const startedAt = new Date();
+        const pulled = await pullAppointments(admin, account, accessToken, feeds.map((f) => ({ ...f, writable: false })));
+        out.calendar = { created: 0, updated: 0, removed: 0, invited: 0, failed: 0, skipped: 0, ...pulled, tasks: { created: 0, updated: 0, removed: 0 } };
+        if (pulled.pullFailed > 0) throw new Error(pulled.pullFailed + ' calendar events did not save');
+        patch.last_calendar_sync_at = startedAt.toISOString();
+        out.synced_at = patch.last_calendar_sync_at;
+        const write = changedOnly(patch, was);
+        if (Object.keys(write).length) await admin.from('google_accounts').update(write).eq('id', account.id);
+        return out;
+      }
       await ensureCalendar(admin, account, accessToken, opts.workspaceName);
       // Which calendars to read: the one CLOZR owns, and the member's own
       // primary. Until migration 74 these were the same single calendar, which
@@ -218,13 +235,13 @@ async function syncAccount(admin: SupabaseClient, account: Account, opts: { orig
       // Push channels (google-calendar-push): opened once, renewed a day before
       // they lapse, by this same pass. A refusal leaves polling as it was.
       await ensureWatches(admin, account, accessToken).catch((err) => console.error('calendar watch failed', { account: account.id, err: String(err) }));
-      const { data: peers } = await admin.from('google_accounts').select('id, user_id').eq('workspace_id', account.workspace_id).eq('status', 'active').eq('calendar_sync', true).order('id');
+      const { data: peers } = await admin.from('google_accounts').select('id, user_id').eq('workspace_id', account.workspace_id).eq('status', 'active').eq('calendar_sync', true).eq('shared', false).order('id');
       const accounts = (peers ?? []) as Pick<Account, 'id' | 'user_id'>[];
       if (!accounts.some((a) => a.id === account.id)) accounts.push({ id: account.id, user_id: account.user_id });
       const startedAt = new Date();
       const pulled = await pullAppointments(admin, account, accessToken, feeds);
       const pushed = await pushAppointments(admin, account, accessToken, accounts, opts.origin, feeds);
-      const tasks = await pushTasks(admin, account, accessToken, opts.origin);
+      const tasks = await clearTaskEvents(admin, account, accessToken);
       // A push changes Google; read the cursors forward so the next pull does
       // not replay our own writes. Only the calendars CLOZR writes to can have
       // moved, so only those are re-read.
@@ -503,10 +520,14 @@ Deno.serve(async (req) => {
   }
 
   // ------------------------------------------------------------ a member
-  const asCaller = createClient(projectUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
+  // The scheduled-send tick (migration 373) sends a due email as the rep who
+  // wrote it: service role plus as_user_id, the one action the service may
+  // take as a member. Everything below then runs exactly as that rep's send.
+  const asUser = isService && b.action === 'send_email' && typeof b.as_user_id === 'string' && /^[0-9a-f-]{36}$/i.test(b.as_user_id) ? b.as_user_id as string : null;
+  const asCaller = asUser ? admin : createClient(projectUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
     global: { headers: { Authorization: req.headers.get('authorization') ?? '' } }, auth: { persistSession: false },
   });
-  const { data: who } = await asCaller.auth.getUser();
+  const who = asUser ? { user: { id: asUser } } : (await asCaller.auth.getUser()).data;
   if (!who?.user) return json({ error: 'sign in first' }, 401);
 
   const ws = Number(b.workspace_id);
@@ -559,12 +580,17 @@ Deno.serve(async (req) => {
     }
   }
 
-  const { data } = await admin.from('google_accounts').select(SELECT).eq('workspace_id', ws).eq('user_id', who.user.id).maybeSingle();
+  const { data } = await admin.from('google_accounts').select(SELECT).eq('workspace_id', ws).eq('user_id', who.user.id).eq('shared', false).maybeSingle();
   const account = data as Account | null;
   if (!account) return json({ connected: false });
   if (account.status !== 'active') return json({ connected: true, ok: false, status: account.status, message: 'Google needs this connection approved again.' });
 
-  const origin = String(b.origin || req.headers.get('origin') || defaultOrigin).replace(/\/$/, '');
+  // Only an allow-listed CLOZR origin, as esign does: `mail` puts each
+  // signer's token in a `${origin}/sign/` link and the calendar push writes
+  // `${origin}/app/...` links into events, so a body or header origin that
+  // is not ours would send live signing tokens to someone else's host. Anything
+  // else falls back to APP_URL / production.
+  const origin = safeOrigin(b.origin, req.headers.get('origin'));
   // A write nudge is calendar-only; a full Sync now / timer pass still does mail.
   // Skipping Gmail on the hot path is what keeps a busy calendar from stacking
   // concurrent pulls that each burn the isolate's CPU budget (status 546).
@@ -663,19 +689,12 @@ Deno.serve(async (req) => {
       }
       // Read receipts: on unless the caller says not, never on a test or on bulk mail.
       const tracked = kind === 'one_to_one' && b.track !== false;
+      // A failed write sends it untracked and says so in the log (email-track-store.ts).
       let trackToken: string | null = null;
       if (tracked) {
-        const tok = newToken();
-        const { error: tErr } = await admin.from('email_tracking').insert({
-          token: tok, workspace_id: ws, user_id: who.user.id, recipients: everyone.join(', ').slice(0, 1000), subject,
-        });
-        // Before migration 82 there is no table: send untracked rather than not at all.
-        if (!tErr) {
-          const done = instrument(bodyHtml, tok, trackBase());
-          if (done.links.length) await admin.from('email_tracking_links').insert(done.links.map((url, idx) => ({ token: tok, idx, url })));
-          bodyHtml = done.html;
-          trackToken = tok;
-        } else console.error('email tracking skipped', tErr.message);
+        ({ html: bodyHtml, token: trackToken } = await startTracking(admin, {
+          workspaceId: ws, userId: who.user.id, recipients: everyone, subject, html: bodyHtml, where: 'google-sync send_email',
+        }));
       }
 
       const sent = await sendMail(token, {
@@ -685,7 +704,7 @@ Deno.serve(async (req) => {
       });
       if (!sent) {
         await release(admin, claim.ids);
-        if (trackToken) await admin.from('email_tracking').delete().eq('token', trackToken);
+        await dropTracking(admin, trackToken, 'google-sync send_email');
         return json({ connected: true, ok: false, message: 'Gmail refused that send.' });
       }
       if (b.test === true) return json({ connected: true, ok: true, id: sent.id, thread_id: sent.threadId, message_id: null });
@@ -702,50 +721,47 @@ Deno.serve(async (req) => {
       };
       const named = { seller_id: await own('sellers', b.seller_id), buyer_id: await own('buyers', b.buyer_id), vendor_id: await own('vendors', b.vendor_id) };
       const anyNamed = named.seller_id != null || named.buyer_id != null || named.vendor_id != null;
-      // The deal: the one the caller named, else the named seller's latest,
-      // else whatever the Gmail pull would have filed it under (gmail-match.ts).
-      // Before, a send from CLOZR carried no deal at all and never reached the
-      // deal's history.
+      // The deal: the one the caller named, else the deal of the message this
+      // answers (a thread stays on its house), else what the Gmail pull would
+      // file it under (gmail-match.ts: a street named, or the one house the
+      // person is on). Never "the seller's latest deal": a partner on thirty
+      // houses had every email land on the newest one.
       const dealId = Number(b.deal_id);
       const { data: namedDeal } = b.deal_id && Number.isFinite(dealId)
         ? await asCaller.from('deals').select('id, property_id').eq('id', dealId).eq('workspace_id', ws).maybeSingle()
         : { data: null };
       let link = { ...named, deal_id: (namedDeal?.id as number | undefined) ?? null, property_id: (namedDeal?.property_id as number | null | undefined) ?? null };
-      // A named seller's deal is one read. The whole address book (loadBook:
-      // every seller, buyer, vendor, deal and property in the workspace, a
-      // thousand rows a page) is only for a send that names nobody — and
-      // never for bulk mail, which always names its recipient and, when it
-      // is about a deal, says which. It used to run after every bulk email,
-      // 140 pages of buyers each, and that was the "sending…" that never ended.
-      if (!namedDeal && named.seller_id != null) {
-        const { data: d } = await admin.from('deals').select('id, property_id').eq('workspace_id', ws).eq('seller_id', named.seller_id).is('archived_at', null)
-          .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(1).maybeSingle();
-        if (d) link = { ...link, deal_id: d.id as number, property_id: (d.property_id as number | null) ?? null };
+      // A reply files where the message it answers was filed, for whatever the caller left empty.
+      if (inReplyTo) {
+        const { data: parent } = await admin.from('communications').select('seller_id, buyer_id, vendor_id, deal_id, property_id')
+          .eq('workspace_id', ws).eq('source', 'gmail').eq('source_id', inReplyTo).limit(1).maybeSingle();
+        if (parent) link = mergeLink(link, parent as Link);
       }
-      if (!anyNamed || (!namedDeal && named.seller_id == null && kind !== 'bulk')) {
+      // A named seller's deals are one read when the subject names no house.
+      // The whole address book (loadBook) is only for a one-to-one send still
+      // without a deal — never for bulk mail, which always names its recipient
+      // and, when it is about a deal, says which. It used to run after every
+      // bulk email, and that was the "sending…" that never ended.
+      if (link.deal_id == null && named.seller_id != null && (kind === 'bulk' || !namesStreet(subject))) {
+        const { data: ds } = await admin.from('deals').select('id, property_id, stage, properties(line1)').eq('workspace_id', ws).eq('seller_id', named.seller_id).is('archived_at', null)
+          .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(50);
+        const d = oneHouse(((ds ?? []) as Any[]).map((x) => ({ id: x.id, property_id: x.property_id ?? null, seller_id: named.seller_id, street: streetKey((Array.isArray(x.properties) ? x.properties[0] : x.properties)?.line1), rank: dealRank(x.stage) })));
+        if (d) link = { ...link, deal_id: d.id, property_id: d.property_id };
+      }
+      if (!anyNamed || (link.deal_id == null && kind !== 'bulk')) {
         // The mail has gone: a lookup that fails (loadBook throws on a failed
         // read) still records it, on what the caller named, rather than
         // answering 500 for a send that happened.
         try {
           const { book } = await loadBook(admin, ws);
           book.ours.add(account.email.toLowerCase());
-          await knowPeople(admin, ws, book, to);
-          const found = linkFor(book, to, subject);
-          const sellerDeal = named.seller_id != null ? book.dealsBySeller.get(named.seller_id)?.[0] : undefined;
+          await knowPeople(admin, ws, book, everyone);
+          const found = linkFor(book, everyone, subject, false, bodyText.slice(0, 20_000), files.list.map((f) => f.file.filename).join(' | '));
           if (!anyNamed) link = { ...link, seller_id: found.seller_id, buyer_id: found.buyer_id, vendor_id: found.vendor_id };
-          if (!namedDeal) {
-            const d = sellerDeal ? { deal_id: sellerDeal.id, property_id: sellerDeal.property_id } : { deal_id: found.deal_id, property_id: found.property_id };
-            link = { ...link, ...d };
-          }
+          if (link.deal_id == null) link = { ...link, deal_id: found.deal_id, property_id: found.property_id };
         } catch (err) {
           console.error('sent email not matched to a record', String(err));
         }
-      }
-      // A reply files where the message it answers was filed, for whatever the rules above left empty.
-      if (inReplyTo) {
-        const { data: parent } = await admin.from('communications').select('seller_id, buyer_id, vendor_id, deal_id, property_id')
-          .eq('workspace_id', ws).eq('source', 'gmail').eq('source_id', inReplyTo).limit(1).maybeSingle();
-        if (parent) link = mergeLink(link, parent as Link);
       }
       const base = {
         workspace_id: ws, ...link, channel: 'email', direction: 'outbound', occurred_at: new Date().toISOString(),
@@ -776,10 +792,10 @@ Deno.serve(async (req) => {
       }
       if (error) console.error('email sent but not recorded', error.message);
       const commId = (row?.id as number | undefined) ?? null;
+      await linkTracking(admin, trackToken, commId, 'google-sync send_email');
       if (commId) {
         await admin.from('communication_mailboxes').upsert({ communication_id: commId, account_id: account.id, workspace_id: ws, user_id: account.user_id }, { onConflict: 'communication_id,account_id', ignoreDuplicates: true })
           .then(({ error: e }) => { if (e) console.error('mailbox link failed', e.message); });
-        if (trackToken) await admin.from('email_tracking').update({ communication_id: commId }).eq('token', trackToken);
         await recordSentFiles(admin, ws, commId, link.deal_id, files.list);
       }
       return json({ connected: true, ok: true, id: sent.id, thread_id: sent.threadId, message_id: messageId, communication_id: commId, seller_id: link.seller_id, buyer_id: link.buyer_id, deal_id: link.deal_id, tracked: !!trackToken });
@@ -791,14 +807,16 @@ Deno.serve(async (req) => {
       if (!Number.isFinite(contractId)) return json({ error: 'contract_id is required' }, 422);
       // Read the contract as the caller so RLS decides whether they may see it;
       // the signing tokens themselves are service-role only and never leave here.
-      const { data: contract } = await asCaller.from('contracts').select('id, name, message, workspace_id').eq('id', contractId).eq('workspace_id', ws).maybeSingle();
+      const { data: contract } = await asCaller.from('contracts').select('id, name, message, workspace_id, expires_at').eq('id', contractId).eq('workspace_id', ws).maybeSingle();
       if (!contract) return json({ error: 'contract not found' }, 404);
       const token = await accessFor(admin, account);
       if (!token) return json({ connected: true, ok: false, status: 'needs_reauth', emailed: 0 });
 
-      const { data: signers } = await admin.from('contract_signers').select('name, email, token, status, delivery, recipient_type').eq('contract_id', contractId).order('sort');
+      const { data: signers } = await admin.from('contract_signers').select('name, email, token, status, delivery, recipient_type, label, role').eq('contract_id', contractId).order('sort');
       const { data: wsRow } = await admin.from('workspaces').select('settings, name').eq('id', ws).maybeSingle();
-      const company = String(((wsRow?.settings as { company?: { name?: string } } | null)?.company?.name) || wsRow?.name || 'Acme Homes');
+      const co = ((wsRow?.settings as { company?: MailCompany } | null)?.company ?? {}) as MailCompany;
+      const company: MailCompany = { ...co, name: co.name || String(wsRow?.name || '') || 'Acme Homes' };
+      const { data: me } = await admin.from('profiles').select('full_name').eq('id', account.user_id).maybeSingle();
       const message = typeof b.message === 'string' && b.message.trim() ? b.message.trim() : (contract.message as string | null);
 
       let emailed = 0;
@@ -810,14 +828,14 @@ Deno.serve(async (req) => {
         // One-off signing links skip the caps but are counted, and never go to an address that hard-bounced.
         const claim = await guardSend(admin, account, [s.email], 'transactional');
         if (!claim.ok) continue;
-        const link = `${origin}/sign/?t=${s.token}`;
-        const html = `<p>Hi ${esc(String(s.name ?? '').split(' ')[0] || 'there')},</p>`
-          + `<p>${esc(company)} has sent you <strong>${esc(String(contract.name))}</strong> to review and sign.</p>`
-          + (message ? `<p>${esc(message)}</p>` : '')
-          + `<p><a href="${esc(link)}" style="display:inline-block;padding:10px 16px;background:#0A8560;color:#fff;border-radius:8px;text-decoration:none">Review and sign</a></p>`
-          + `<p style="color:#71717a;font-size:12px">Or open this link: ${esc(link)}</p>`;
-        const signed = withSignature(html, htmlToText(html), account.gmail_signature ?? await signatureNow(admin, account, token)).html;
-        if (await sendMail(token, { to: s.email, subject: `${contract.name} — please review and sign`, html: signed })) emailed++;
+        // The same designed request the engine sends, so a Gmail send never looks like a bare note.
+        const mail = signingEmail({
+          company, contractName: String(contract.name), message, url: `${origin}/sign/?t=${s.token}`,
+          signerName: s.name, role: s.label ?? s.role ?? null, expiresAt: contract.expires_at as string | null,
+          senderName: (me as { full_name?: string | null } | null)?.full_name ?? null,
+          others: ((signers ?? []) as { name: string | null; label: string | null; role: string | null; status: string; recipient_type: string | null }[]).filter((o) => o !== s && !['cc', 'viewer', 'approver'].includes(String(o.recipient_type ?? 'signer'))).map((o) => ({ name: o.name, label: o.label ?? o.role, status: o.status })),
+        });
+        if (await sendMail(token, { to: s.email, subject: mail.subject, html: mail.html, text: mail.text })) emailed++;
         else await release(admin, claim.ids);
       }
       return json({ connected: true, ok: true, emailed });

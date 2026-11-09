@@ -14,8 +14,8 @@ type Contact = { first: string; last: string; email: string; phone: string; comp
 
 /**
  * The sign-up wall. Like InvestorLift: an email-first log-in, and a two-step
- * join — who you are, then your buy box. Joining puts the buyer on the
- * buyers list in Clozr and unlocks full addresses, every photo and the COMPR
+ * join — who you are, then your buy box. Joining puts the buyer on the Home
+ * Pros list in Clozr and unlocks full addresses, every photo and the COMPR
  * package on this device.
  */
 export function BuyerGate({ mode: start, reason, markets, onClose, onUnlocked }: {
@@ -30,11 +30,16 @@ export function BuyerGate({ mode: start, reason, markets, onClose, onUnlocked }:
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [login, setLogin] = useState('');
+  /** After /access sent the link: which channel, and what they typed, for "Send it again". */
+  const [sent, setSent] = useState<{ via: 'email' | 'text'; typed: string } | null>(null);
   const [c, setC] = useState<Contact>({ first: '', last: '', email: '', phone: '', company: '', sms: false, terms: false });
   const [box, setBox] = useState({ markets: [] as string[], marketText: '', types: [] as string[], strategies: [] as string[], funding: [] as string[], min: '', max: '', beds: '' });
   const first = useRef<HTMLInputElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => { first.current?.focus(); }, [mode, step]);
+  // The input that had focus is gone once the link is sent; land on the new heading instead.
+  useEffect(() => { if (sent) heading.current?.focus(); }, [sent]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -46,23 +51,41 @@ export function BuyerGate({ mode: start, reason, markets, onClose, onUnlocked }:
     onUnlocked(name);
   };
 
-  async function submitLogin(e: React.FormEvent) {
-    e.preventDefault();
-    const v = login.trim();
-    if (!v) return setErr('Enter the email or phone you joined with.');
-    setBusy(true); setErr('');
+  /** Asks /access to send the sign-in link; true once it went. */
+  async function sendLink(v: string): Promise<boolean> {
     const isEmail = v.includes('@');
-    const r = await api.post<{ access?: string; name?: string; buyer_id?: number }>('access', isEmail ? { email: v } : { phone: v });
-    setBusy(false);
-    if (r.ok && r.data.access) return done(r.data.access, r.data.name ?? null, r.data.buyer_id ?? null);
+    const r = await api.post<{ sent?: 'email' | 'text' }>('access', isEmail ? { email: v } : { phone: v });
+    if (r.ok && r.data.sent) {
+      setSent({ via: r.data.sent, typed: v });
+      setMode('login');
+      setErr('');
+      return true;
+    }
     if (r.data.join) {
       setMode('join');
       setStep(1);
       setC((x) => ({ ...x, email: isEmail ? v : x.email, phone: isEmail ? x.phone : v }));
       setErr('You are not on the list yet. Join below. It takes a minute.');
-      return;
+      return false;
     }
-    setErr(r.data.error || 'That did not go through. Try again.');
+    setErr(r.status === 429 ? 'Too many tries. Wait a few minutes and try again.' : r.data.error || 'That did not go through. Try again.');
+    return false;
+  }
+
+  async function submitLogin(e: React.FormEvent) {
+    e.preventDefault();
+    const v = login.trim();
+    if (!v) return setErr('Enter the email or phone you joined with.');
+    setBusy(true); setErr('');
+    await sendLink(v);
+    setBusy(false);
+  }
+
+  async function resend() {
+    if (!sent) return;
+    setBusy(true); setErr('');
+    await sendLink(sent.typed);
+    setBusy(false);
   }
 
   function nextStep(e: React.FormEvent) {
@@ -83,7 +106,7 @@ export function BuyerGate({ mode: start, reason, markets, onClose, onUnlocked }:
     setBusy(true); setErr('');
     const typed = box.marketText.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
     const allMarkets = [...new Set([...box.markets, ...typed])];
-    const r = await api.post<{ access?: string; name?: string; buyer_id?: number }>('join', {
+    const r = await api.post<{ access?: string; name?: string; buyer_id?: number; created?: boolean }>('join', {
       name: [c.first.trim(), c.last.trim()].filter(Boolean).join(' '),
       email: c.email.trim(),
       phone: c.phone.trim() || undefined,
@@ -99,8 +122,10 @@ export function BuyerGate({ mode: start, reason, markets, onClose, onUnlocked }:
       beds_min: withBox ? box.beds : '',
       company_website: (document.getElementById('mk-trap') as HTMLInputElement | null)?.value ?? '',
     });
+    if (r.ok && r.data.access) { setBusy(false); return done(r.data.access, r.data.name ?? c.first.trim(), r.data.buyer_id ?? null); }
+    // Already on the list: they sign in through the link sent to their email.
+    if (r.ok && r.data.created === false) { await sendLink(c.email.trim()); setBusy(false); return; }
     setBusy(false);
-    if (r.ok && r.data.access) return done(r.data.access, r.data.name ?? c.first.trim(), r.data.buyer_id ?? null);
     if (r.ok) return setErr('You are on the list. Refresh the page if deals do not unlock.');
     setErr(r.data.error || 'That did not go through. Try again.');
   }
@@ -108,7 +133,13 @@ export function BuyerGate({ mode: start, reason, markets, onClose, onUnlocked }:
   const toggle = (k: 'markets' | 'types' | 'strategies' | 'funding', v: string) =>
     setBox((b) => ({ ...b, [k]: b[k].includes(v) ? b[k].filter((x) => x !== v) : [...b[k], v] }));
 
-  const title = mode === 'login' ? 'Welcome back' : step === 1 ? 'Join the Acme Homes buyers list' : 'Set your buy box';
+  const linkSent = mode === 'login' ? sent : null;
+  // Where the link went: what they typed, or the other contact on their profile when that channel could not take it.
+  const sentTo = !linkSent ? ''
+    : (linkSent.via === 'email') === linkSent.typed.includes('@') ? linkSent.typed
+      : linkSent.via === 'email' ? 'the email on your buyer profile' : 'the phone number on your buyer profile';
+  const title = linkSent ? (linkSent.via === 'email' ? 'Check your email' : 'Check your texts')
+    : mode === 'login' ? 'Welcome back' : step === 1 ? 'Join the Acme Homes buyers list' : 'Set your buy box';
 
   return (
     <div className="mk-modal" role="dialog" aria-modal="true" aria-labelledby="mk-gate-title">
@@ -122,10 +153,12 @@ export function BuyerGate({ mode: start, reason, markets, onClose, onUnlocked }:
           <button type="button" className="mk-icon-btn" onClick={onClose} aria-label="Close"><X size={18} aria-hidden /></button>
         </div>
         <div className="mk-gate-body">
-          <h2 id="mk-gate-title">{title}</h2>
+          <h2 id="mk-gate-title" ref={heading} tabIndex={-1}>{title}</h2>
           <p className="mk-gate-sub">
-            {mode === 'login'
-              ? 'Use the email or phone you joined with to see full addresses, every photo, and the COMPR report.'
+            {linkSent
+              ? <>We sent a sign-in link to <strong className="mk-sent-to">{sentTo}</strong>. Open it to see full addresses, every photo, and the COMPR report.</>
+              : mode === 'login'
+              ? 'Use the email or phone you joined with. We send you a link to sign in.'
               : step === 1
                 ? (reason || 'Free for investors. Unlock full addresses, every photo, the COMPR report, and offers.')
                 : 'Tell us what you buy and we send you the deals that fit first. You can skip this.'}
@@ -138,10 +171,17 @@ export function BuyerGate({ mode: start, reason, markets, onClose, onUnlocked }:
             </ul>
           ) : null}
 
-          {mode === 'login' ? (
+          {linkSent ? (
+            <div className="mk-form">
+              <p className="mk-sent-note">The link can take a minute to arrive.{linkSent.via === 'email' ? ' Check your spam folder if you do not see it.' : ''}</p>
+              <button type="button" className="mk-ghost mk-wide" onClick={() => void resend()} disabled={busy}>{busy ? 'Sending…' : 'Send it again'}</button>
+              {err ? <p className="mk-err" role="alert">{err}</p> : null}
+              <p className="mk-gate-switch"><button type="button" onClick={() => { setSent(null); setErr(''); }}>Use a different email or phone</button></p>
+            </div>
+          ) : mode === 'login' ? (
             <form onSubmit={submitLogin} className="mk-form">
               <label>Email or phone<input ref={first} value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="email" inputMode="email" placeholder="you@company.com" /></label>
-              <button type="submit" className="mk-primary mk-wide" disabled={busy}><KeyRound size={16} aria-hidden />{busy ? 'Checking…' : 'Continue'}</button>
+              <button type="submit" className="mk-primary mk-wide" disabled={busy}><KeyRound size={16} aria-hidden />{busy ? 'Sending…' : 'Send sign-in link'}</button>
               {err ? <p className="mk-err" role="alert">{err}</p> : null}
               <p className="mk-gate-switch">New here? <button type="button" onClick={() => { setMode('join'); setStep(1); setErr(''); }}>Join the buyers list</button></p>
             </form>

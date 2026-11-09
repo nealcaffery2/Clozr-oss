@@ -251,6 +251,8 @@ export type ColdDomain = {
   paused: boolean;
   blocking: string[];
   checkedAt: string | null;
+  /** The DNS check score (cold_domains.score). Only a company domain is held to it (companyDomainRefusal). */
+  score?: number | null;
   /** Hostname that rewrites a click, and only when click tracking is on. */
   trackingDomain?: string | null;
 };
@@ -337,9 +339,16 @@ class StubWarmupProvider implements WarmupProvider {
   }
 }
 
-/** The three protected domains, plus anything the workspace added. */
-export function blockedSendingDomains(extra: readonly string[] | null | undefined): string[] {
-  const out = new Set<string>(DEFAULT_BLOCKED_SENDING_DOMAINS);
+/** Per-workspace lock override (cold_workspace_settings.allow_company_domains, migration 442). */
+export type BlockedDomainOpts = { allowCompanyDomains?: boolean };
+
+/**
+ * The three protected domains, plus anything the workspace added. With
+ * allowCompanyDomains the three are left out, but blocked_extra still wins:
+ * a company domain listed there stays blocked.
+ */
+export function blockedSendingDomains(extra: readonly string[] | null | undefined, opts: BlockedDomainOpts = {}): string[] {
+  const out = new Set<string>(opts.allowCompanyDomains ? [] : DEFAULT_BLOCKED_SENDING_DOMAINS);
   for (const raw of extra ?? []) {
     const d = String(raw ?? '').trim().toLowerCase().replace(/\.$/, '');
     if (d && d.includes('.')) out.add(d);
@@ -361,17 +370,36 @@ export function sendingDomainBlocked(emailOrDomain: string, blocked: readonly st
   return domainBlocked(domain, blocked);
 }
 
+/** True for one of the company domains or a subdomain of one, whatever the workspace allows. */
+export function isCompanyDomain(emailOrDomain: string): boolean {
+  return sendingDomainBlocked(emailOrDomain, DEFAULT_BLOCKED_SENDING_DOMAINS);
+}
+
 /**
  * Why an address cannot join the pool, or null. Every way in (CSV, Google,
  * Microsoft, InboxKit) asks this before writing a mailbox row, so the three
- * locked domains are refused whatever the workspace added or removed.
+ * locked domains are refused whatever the workspace added or removed, unless
+ * the workspace turned allowCompanyDomains on (migration 442).
  */
-export function importRefusal(email: string, blocked: readonly string[]): string | null {
+export function importRefusal(email: string, blocked: readonly string[], opts: BlockedDomainOpts = {}): string | null {
   const e = email.trim().toLowerCase();
   if (!e.includes('@')) return 'Not an email address.';
   const domain = domainOf(e);
   if (!domain || !domain.includes('.')) return 'Not a domain name.';
-  if (sendingDomainBlocked(e, blockedSendingDomains(blocked))) return 'Blocked sending domain.';
+  if (sendingDomainBlocked(e, blockedSendingDomains(blocked, opts))) return 'Blocked sending domain.';
+  return null;
+}
+
+/**
+ * The extra guard a company-domain mailbox carries once the lock is off: its
+ * domain's DNS score must reach the warm-up gate score and the check must be
+ * under a week old. Same shape as the dispo blast's bulk guard
+ * (_shared/mailguard.ts). Null when the mailbox may send.
+ */
+export function companyDomainRefusal(domain: { domain: string; score?: number | null; checkedAt: string | null }, now: Date): string | null {
+  if (!domain.checkedAt) return `${domain.domain} has not been checked yet. Run the domain check in Settings → Outbound OS before sending in bulk.`;
+  if (Date.parse(domain.checkedAt) < now.getTime() - 7 * 86_400_000) return `${domain.domain} was last checked over a week ago. Re-run the check before sending in bulk.`;
+  if (domain.score == null || domain.score < WARMUP_GATE_MIN_SCORE) return `${domain.domain} scores ${domain.score ?? 'nothing'} on its DNS check and a company domain needs ${WARMUP_GATE_MIN_SCORE} before cold mail may leave it. Fix what the check lists in Settings → Outbound OS.`;
   return null;
 }
 
@@ -914,7 +942,7 @@ export function isCatchAllStatus(status: string | null | undefined): boolean {
   return (status ?? '').trim().toLowerCase() === 'catch_all';
 }
 
-export type MailboxSkip = 'paused' | 'status' | 'warming' | 'blocked_domain' | 'domain_paused' | 'domain_unchecked' | 'domain_blocking' | 'domain_stale' | 'daily_cap' | 'hourly_cap' | 'domain_cap' | 'gap' | 'resting' | 'provider_spread';
+export type MailboxSkip = 'paused' | 'status' | 'warming' | 'blocked_domain' | 'domain_paused' | 'domain_unchecked' | 'domain_blocking' | 'domain_stale' | 'company_domain_score' | 'daily_cap' | 'hourly_cap' | 'domain_cap' | 'gap' | 'resting' | 'provider_spread';
 
 export function mailboxSkip(m: ColdMailbox, domain: ColdDomain | undefined, blocked: readonly string[], now: Date, policy: ColdDeliverability = DEFAULT_COLD_DELIVERABILITY, recipient?: RecipientProvider): MailboxSkip | null {
   if (m.paused || m.status === 'paused') return 'paused';
@@ -925,6 +953,8 @@ export function mailboxSkip(m: ColdMailbox, domain: ColdDomain | undefined, bloc
   if (!domain.checkedAt) return 'domain_unchecked';
   if (domain.blocking.length) return 'domain_blocking';
   if (Date.parse(domain.checkedAt) < now.getTime() - DNS_FRESH_MS) return 'domain_stale';
+  // A company domain got past the lock only because the workspace allowed it (442): it still has to score.
+  if (isCompanyDomain(m.email) && companyDomainRefusal(domain, now)) return 'company_domain_score';
   const today = localParts(now, m.settings.timezone || 'America/Chicago').date;
   const rampAllowance = coldDailyAllowance(m.settings, today, {
     ceiling: policy.dailyCeiling, rampDays: policy.rampDays, jitterPct: policy.jitterPct, mailboxId: m.id,
@@ -983,12 +1013,33 @@ export function pickPoolMailbox(mailboxes: readonly ColdMailbox[], domains: read
   return mailbox ? { mailbox, skips } : null;
 }
 
+/**
+ * A warm contact (a buyer, seller or Compr user the team already works with)
+ * goes on cold_exclusions, never on email_suppressions. Suppressions block
+ * every send through mailguard, so reps could not email their own people
+ * (the 2026-10-06 Compr import, 647 rows). cold_exclusions is read only by
+ * cold enrollment and the cold send (migration 387).
+ */
+export const COLD_EXCLUDED_REASON = 'Warm contact, kept out of cold campaigns.';
+
+/** Why Launch leaves this contact out of a cold campaign, or null to enroll it. */
+export function coldEnrollBlock(e: { suppressed: boolean; excluded: boolean; elsewhere: boolean; role: boolean; catchAll: boolean }): string | null {
+  if (e.suppressed) return 'On the suppression list.';
+  if (e.excluded) return COLD_EXCLUDED_REASON;
+  if (e.elsewhere) return 'Already in an active sequence.';
+  if (e.role) return 'Role addresses such as info@ and admin@ are suppressed.';
+  if (e.catchAll) return 'Catch-all addresses are suppressed.';
+  return null;
+}
+
 export type StopStatus = 'replied' | 'bounced' | 'unsubscribed' | 'suppressed' | 'completed' | 'stopped';
 
 /** Why an enrollment must not be sent, before a mailbox is chosen. */
 export function sequenceStop(e: {
   status: string;
   suppressed: boolean;
+  /** On cold_exclusions: a warm contact. */
+  excluded?: boolean;
   safety: EmailSafety;
   requireVerified: boolean;
   stepsLeft: boolean;
@@ -1001,6 +1052,7 @@ export function sequenceStop(e: {
   if (e.status === 'bounced') return { status: 'bounced', reason: 'Address bounced.' };
   if (e.status === 'unsubscribed') return { status: 'unsubscribed', reason: 'Prospect unsubscribed.' };
   if (e.status === 'suppressed' || e.suppressed) return { status: 'suppressed', reason: 'Address is on the suppression list.' };
+  if (e.excluded) return { status: 'suppressed', reason: COLD_EXCLUDED_REASON };
   if (e.status === 'completed' || (e.status === 'active' && !e.stepsLeft)) return { status: 'completed', reason: 'Sequence finished.' };
   if (e.status !== 'active') return { status: 'stopped', reason: `Enrollment is ${e.status}.` };
   if ((e.suppressRoles ?? true) && e.email && isRoleAddress(e.email)) {
@@ -1049,6 +1101,7 @@ export function planColdSend(input: {
     enrolledAt: string;
     threadMessageId: string | null;
     suppressed: boolean;
+    excluded?: boolean;
     safety: EmailSafety;
     verificationStatus?: string | null;
     mxHint?: string | null;
@@ -1081,6 +1134,7 @@ export function planColdSend(input: {
   const stop = sequenceStop({
     status: input.enrollment.status,
     suppressed: input.enrollment.suppressed,
+    excluded: input.enrollment.excluded,
     safety: input.enrollment.safety,
     requireVerified: input.requireVerified,
     stepsLeft: !!step,
@@ -1353,6 +1407,22 @@ export type CsvMailbox = {
 };
 
 export type CsvSkip = { line: number; email: string; reason: string };
+
+/** How far before the last poll a Gmail reply check starts again. cold_replies drops the repeats. */
+export const GMAIL_POLL_OVERLAP_MS = 60 * 60_000;
+
+/**
+ * The Gmail search for a reply check: the inbox since the mailbox's last poll,
+ * less an hour so mail that landed while that poll ran, or a poll whose filing
+ * failed after its stamp, is read again. Never more than seven days back, which
+ * is also the window for a mailbox that has never been polled.
+ */
+export function gmailPollQuery(lastPolledAt: string | null | undefined, nowMs: number): string {
+  const floor = nowMs - 7 * 86_400_000;
+  const last = lastPolledAt ? Date.parse(lastPolledAt) : NaN;
+  const since = Number.isFinite(last) ? Math.max(floor, Math.min(nowMs, last) - GMAIL_POLL_OVERLAP_MS) : floor;
+  return `in:inbox after:${Math.floor(since / 1000)}`;
+}
 
 /**
  * Google shows an app password as four groups of four letters. The SMTP

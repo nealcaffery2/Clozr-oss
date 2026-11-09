@@ -25,6 +25,7 @@ import {
   type CallSegment, type StoredSections,
 } from '../../../lib/call-media.ts';
 import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
 
 const MODEL = CLAUDE_MODEL;
 
@@ -144,6 +145,7 @@ Deno.serve(async (req) => {
         tool_choice: { type: 'auto' },
         messages: [{ role: 'user', content: `Question: ${fence('question', query, 400)}\n\nTranscript:\n${transcript}` }],
       });
+      await recordUsage(admin, { ws: Number(row.workspace_id), feature: 'call_search', model: res.model, usage: res.usage });
       const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
       return json({ ok: true, matches: normalizeMatches(call?.input, segments.length), source: 'ai' });
     }
@@ -156,6 +158,7 @@ Deno.serve(async (req) => {
       tool_choice: { type: 'auto' },
       messages: [{ role: 'user', content: `Transcript (${segments.length} lines):\n${transcript}` }],
     });
+    await recordUsage(admin, { ws: Number(row.workspace_id), feature: 'call_sections', model: res.model, usage: res.usage });
     const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     const sections = normalizeSections(call?.input, segments);
     if (!sections) return json({ error: 'The model returned no usable sections.' }, 502);

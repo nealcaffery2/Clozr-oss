@@ -157,7 +157,7 @@ export function buildQuickPlan(i: QuickInput): { recipients: (PlannedRecipient &
     msgs.sort((a, b) => Date.parse(a.send_at) - Date.parse(b.send_at));
     recipients.push({ row: r, buyer_id: r.b.id, level: r.level, probability: r.probability, messages: msgs });
     // Texts, voicemails and calls are spaced out buyer to buyer; an email-only recipe goes out together.
-    if (msgs.some((m) => m.channel !== 'email')) clock = t0 + staggerSeconds('sometimes', r.b.id) * 1000;
+    if (msgs.some((m) => m.channel !== 'email')) clock = t0 + staggerSeconds('at_once', r.b.id) * 1000;
   });
   return { recipients, skipped, steps };
 }

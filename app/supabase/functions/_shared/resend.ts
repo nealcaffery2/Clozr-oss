@@ -21,6 +21,13 @@ const denoEnv: { get: (k: string) => string | undefined } =
 export { type EnvLike, type ResendFrom, type ResendEventKind, classifyResendEvent, parseFrom, resendConnectPayload, suggestBlastFrom, verifyResendWebhook, workspaceResendEnv } from './resend-rules.ts';
 
 /** Blasts first, then the transactional from. Null when Resend is not wired. */
+/**
+ * What a sent email files on communications.body: the HTML the recipient got
+ * when it fits (the cap google.ts HTML_BODY_MAX sets for synced mail), so the
+ * record shows the branded email and not its plain-text part.
+ */
+export const filedEmailBody = (html: string | null | undefined, text: string) => (html && html.length <= 120_000 ? html : text.slice(0, 20_000));
+
 export function blastFrom(env: { get: (k: string) => string | undefined } = denoEnv): ResendFrom | null {
   if (!(env.get('RESEND_API_KEY') ?? '').trim()) return null;
   return parseFrom(env.get('MAIL_FROM_BLASTS')) || parseFrom(env.get('MAIL_FROM'));
@@ -43,6 +50,8 @@ export type ResendSend = {
   headers?: Record<string, string>;
   tags?: Record<string, string>;
   idempotencyKey?: string;
+  /** Files on the email: base64 content (Resend caps a message at 40 MB). */
+  attachments?: { filename: string; content: string }[];
 };
 
 export async function sendResend(msg: ResendSend, env: { get: (k: string) => string | undefined } = denoEnv): Promise<{ id: string } | null> {
@@ -63,6 +72,7 @@ export async function sendResend(msg: ResendSend, env: { get: (k: string) => str
       ...(msg.replyTo ? { reply_to: msg.replyTo } : {}),
       ...(msg.headers ? { headers: msg.headers } : {}),
       ...(msg.tags ? { tags: resendTags(msg.tags) } : {}),
+      ...(msg.attachments?.length ? { attachments: msg.attachments } : {}),
     }),
     signal: AbortSignal.timeout(20_000),
   }).catch(() => null);

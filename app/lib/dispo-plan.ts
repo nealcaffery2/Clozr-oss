@@ -7,7 +7,7 @@ import type { CampaignBuyer, CampaignData, PlannedMessage, PlannedRecipient } fr
 import { profileOf } from './dispo-campaign';
 import {
   type Frequency, bestReplyTime, chooseIntro, dispoBuyerFields, intoWindow, levelOf, noResponseLastN, probabilityToBuy,
-  rotate, smartTime, splitIntro, staggerSeconds,
+  type Pace, rotate, smartTime, splitIntro, staggerSeconds,
 } from '../supabase/functions/_shared/dispo-rules';
 import { isBuyerProspect } from './prospect-lists';
 import { isSecretBlacklisted } from './secret-list';
@@ -23,7 +23,7 @@ export const DEFAULT_FILTERS: Filters = { minScore: 55, radiusMi: '', city: '', 
 
 export type Settings = {
   intro: { mode: 'ai' | 'own' | 'none'; templateBody: string; split: Frequency; emoji: Frequency; instructions: string; tone: string; avoid: string[] };
-  variations: { useImage: boolean; imageUrl: string; reserveLevel: number; frequency: 'sometimes' | 'frequently' };
+  variations: { useImage: boolean; imageUrl: string; reserveLevel: number; frequency: Pace };
   brief: { order: 'sms' | 'email'; wait: number; waitUnit: Unit; sms: boolean; smsBody: string; email: boolean; emailSubject: string; emailBody: string; emailHtml: string | null; rvm?: boolean; rvmBody?: string;
     /** The voicemail recorded for this push (lib/rvm-recording.ts). Every drop in the push plays it; null drops the script. */
     rvmRecording?: { libraryId: number; path: string; variantGroup: string; seconds: number } | null };
@@ -65,8 +65,8 @@ export function skipWhy(b: CampaignBuyer, channel: 'sms' | 'email' | 'any', hand
 }
 
 export type BuyerRow = ReturnType<typeof buyerRow>;
-export function buyerRow(b: CampaignBuyer, data: CampaignData) {
-  const p = profileOf(b, data);
+export function buyerRow(b: CampaignBuyer, data: CampaignData, now = new Date()) {
+  const p = profileOf(b, data, now);
   const lv = levelOf(p.stats);
   return { b, ...p, level: lv.level, levelLabel: lv.label, probability: probabilityToBuy(p.stats) };
 }
@@ -138,9 +138,14 @@ export function buildPlan(
   const tz = s.timezone;
   const picked = new Set(handPicked);
   const why = (b: CampaignBuyer, channel: 'sms' | 'email' | 'any') => skipWhy(b, channel, picked.has(b.id));
-  const start = Math.max(now.getTime(), s.startAt ? Date.parse(s.startAt) : 0);
-  // No VIP or A-list buyer on the list: nobody to go first, so nobody waits.
-  const headStart = s.vipFirst?.on && s.vipFirst.hours > 0 && rows.some(isFirstLook) ? s.vipFirst.hours * 3_600_000 : 0;
+  // A start time that does not parse means now: NaN here made every send_at throw.
+  const startAt = s.startAt ? Date.parse(s.startAt) : 0;
+  const start = Math.max(now.getTime(), Number.isFinite(startAt) ? startAt : 0);
+  // No VIP or A-list buyer who will actually be sent to (an opted-out or
+  // unreachable one is skipped below): nobody goes first, so nobody waits.
+  const headStart = s.vipFirst?.on && s.vipFirst.hours > 0 && rows.some((r) => isFirstLook(r) && !why(r.b, 'any'))
+    ? s.vipFirst.hours * 3_600_000
+    : 0;
   // Two lanes: VIP and A-list from the start, everyone else after the head start.
   const clocks = { first: start, rest: start + headStart };
   const skipped: { name: string; why: string }[] = [];

@@ -1,0 +1,64 @@
+name: Bug signals
+
+# Why this exists. CLOZR's bugs mostly show up as errors nobody reports: a
+# screen crash on someone's phone (public.client_errors), an edge function
+# failing hundreds of times a day, a pg_cron job erroring, a red workflow on
+# main. This reads all of them every night and files each problem as a `bug`
+# issue (or comments on the open one), half an hour before the scheduled
+# Claude bug sweep (.claude/skills/bug-sweep) looks for bugs to fix.
+#
+# 06:15 UTC is 1:15am Central in daylight time and 12:15am in standard time;
+# the sweep runs at 1:46am Central either way.
+#
+# Run it by hand from Actions → "Bug signals" → Run workflow. "dry-run" lists
+# what it would file in the run summary and touches no issues.
+#
+# Credentials: SUPABASE_ACCESS_TOKEN, the same personal access token the
+# migrations and function deploy use (SQL and logs go through the Management
+# API). It expires after 90 days; this job fails loudly when it has.
+# SUPABASE_PROJECT_REF is optional. GitHub access is the job's own token.
+
+on:
+  schedule:
+    - cron: '15 6 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'file issues, or only list what it would file (dry-run)'
+        type: choice
+        default: file
+        options: [file, dry-run]
+
+concurrency:
+  group: bug-signals
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+  statuses: read
+  checks: read
+
+jobs:
+  signals:
+    name: ${{ github.event.inputs.mode || 'file' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Read errors and file issues
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          GITHUB_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event.inputs.mode == 'dry-run' && '1' || '' }}
+        run: node scripts/bug-signals.mjs

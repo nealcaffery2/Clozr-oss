@@ -10,6 +10,7 @@ type Hcaptcha = {
   render: (el: HTMLElement, opts: { sitekey: string; size?: 'normal' | 'compact' | 'invisible' }) => string;
   getResponse: (widgetId?: string) => string;
   reset: (widgetId?: string) => void;
+  remove?: (widgetId?: string) => void;
 };
 
 declare global {

@@ -142,6 +142,21 @@ export function mainSubmitter(records: PartnerCell[]): string {
 
 type VendorHit = { id: number; business_name: string; service_type: string | null };
 
+/**
+ * Every vendor in the workspace. PostgREST caps one response at its max-rows
+ * (1000), so `.limit(8000)` silently dropped the oldest vendors (Offerpad, id 1)
+ * and each import then created a duplicate. Page by id until a short page.
+ */
+async function loadVendors(workspaceId: number): Promise<VendorHit[]> {
+  const out: VendorHit[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data } = await supabase!.from('vendors').select('id, business_name, service_type')
+      .eq('workspace_id', workspaceId).order('id').range(from, from + 999);
+    out.push(...((data ?? []) as VendorHit[]));
+    if ((data ?? []).length < 1000) return out;
+  }
+}
+
 /** Existing vendors keyed the way Podio entity names fold, so "Mark Spain - NC" is Mark Spain. */
 export function indexVendors(rows: VendorHit[]) {
   const exact = new Map<string, VendorHit>();
@@ -301,7 +316,7 @@ export async function previewSubmissions(
   const sb = supabase;
   const names = vendorNamesOf(records, opts.vendorName);
   const keys = names.map(foldKey);
-  const { data: vendors } = await sb.from('vendors').select('id, business_name, service_type').eq('workspace_id', workspaceId).limit(8000);
+  const vendors = await loadVendors(workspaceId);
   const index = indexVendors(vendors ?? []);
   const contactOf = new Map<string, number | null>();
   for (let i = 0; i < records.length; i++) {
@@ -334,7 +349,7 @@ export async function runSubmissionImport(
   // Every partner the file names, resolved once before the parallel batches: one vendor and one contact each.
   const names = vendorNamesOf(records, opts.vendorName);
   const keys = names.map(foldKey);
-  const { data: existingVendors } = await sb.from('vendors').select('id, business_name, service_type').eq('workspace_id', workspaceId).limit(8000);
+  const existingVendors = await loadVendors(workspaceId);
   const vendorIndex = indexVendors(existingVendors ?? []);
   const byName = new Map<string, { vendor: { id: number; name: string }; sellerId: number; count: number }>();
   const errorOf = new Map<string, string>();

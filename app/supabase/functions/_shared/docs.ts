@@ -16,11 +16,13 @@ import { signingResendEnv } from './workspace-email.ts';
 import { completedEmail, signingEmail } from './emails.ts';
 import { buildTokens, fill, longDate, money, partySigner, str, tokensIn, type Party, type Token } from './esign-map.ts';
 import { isPurchaseContract, nextDealStage, signedDealUpdate } from './contract-apply.ts';
+import { signingDay } from './pdf-fields.ts';
 import { docVars, varsIn, type DocParties } from './doc-vars.ts';
-import { appendTcCc, sendTo, type OrderMode, type RecipientType, type ReminderPolicy, type TcCopy } from './signing-order.ts';
+import { appendTcCc, recipientType, sendTo, type OrderMode, type RecipientType, type ReminderPolicy, type TcCopy } from './signing-order.ts';
 import { publishContract } from './contract-webhooks.ts';
 import { kickExtraction } from './extract-kick.ts';
 import { blocksIn, expandBlocks, type BlockUse, type ContentBlock } from './doc-blocks.ts';
+import { defaultContractName } from '../../../lib/contract-name.ts';
 
 /**
  * One audit event. contract_events is append-only and hash-chained in the
@@ -493,7 +495,8 @@ export async function applySignedDeal(admin: SupabaseClient, row: Record<string,
   const tokens = Array.isArray(row.tokens) ? row.tokens as Token[] : [];
   const { data: signers } = await admin.from('contract_signers').select('role').eq('contract_id', row.id);
   const roles = (signers ?? []).map((s) => String(s.role));
-  const signedOn = new Date().toISOString().slice(0, 10);
+  // The Central day, the same one the PDF's date-signed boxes get (pdf-fields signingDay), not the UTC day.
+  const signedOn = signingDay();
   const update = signedDealUpdate({ kind: String(row.kind ?? ''), roles, tokens, signedOn });
   const { data: deal } = await admin.from('deals').select('contract_date, stage').eq('id', row.deal_id).maybeSingle();
   const patch: Record<string, unknown> = { ...update.patch };
@@ -681,7 +684,7 @@ export async function emailSigners(
     void to;
     const cc: string[] = [];
     const mail = signingEmail({
-      company, contractName, message, url: s.url,
+      company, contractName, message, url: s.url, senderName: opts.sender?.name ?? null,
       signerName: s.name, role: s.label ?? s.role ?? null,
       expiresAt: opts.expiresAt ?? null, reminder: opts.reminder,
       others: signers.filter((o) => o !== s).map((o) => ({ name: o.name, label: o.label ?? o.role, status: o.status })),
@@ -706,8 +709,16 @@ export async function emailSigners(
  * is private, and a link that expires beats a binding contract sitting in an
  * inbox forever.
  */
+/** Bytes to base64, in chunks so a large PDF does not overflow the call stack. */
+function b64(bytes: Uint8Array): string {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
 export async function emailCompleted(
   admin: SupabaseClient, row: Record<string, Any>, company: Company, pdfPath: string | null, sha256: string | null, origin: string,
+  files?: { signed: Uint8Array | null; audit: Uint8Array | null },
 ): Promise<number> {
   const env = await signingResendEnv(admin, row.workspace_id as number);
   const from = transactionalFrom(env);
@@ -716,6 +727,12 @@ export async function emailCompleted(
   const all = (signers ?? []) as SignerRow[];
   if (!all.length) return 0;
   const { data: link } = pdfPath ? await admin.storage.from('contracts').createSignedUrl(pdfPath, 7 * 864e2) : { data: null };
+  // The fully executed contract and the audit trail ride on the email itself.
+  const base = String(row.name ?? 'Contract').replace(/[^\w .-]+/g, '').trim().slice(0, 80) || 'Contract';
+  const attachments = [
+    ...(files?.signed ? [{ filename: `${base} - Fully Executed.pdf`, content: b64(files.signed) }] : []),
+    ...(files?.audit ? [{ filename: `${base} - Audit Trail.pdf`, content: b64(files.audit) }] : []),
+  ];
   let sent = 0;
   for (const s of all) {
     if (!s.email) continue;
@@ -729,6 +746,7 @@ export async function emailCompleted(
     const ok = await sendResend({
       to: s.email, from: from.from, subject: mail.subject, html: mail.html, text: mail.text,
       replyTo: company.email || null, tags: { kind: 'signing_completed' },
+      ...(attachments.length ? { attachments } : {}),
     }, env);
     if (ok) sent++;
   }
@@ -778,7 +796,7 @@ export async function createContract(admin: SupabaseClient, i: CreateInput) {
   if (sections.missing.length) throw new Error(`This template uses a section that was deleted (#${sections.missing.join(', #')}). Edit the template and take it out or put it back.`);
   const { text, missing } = fill(sections.text, [...toks, { name: 'doc.ref', value: ref }], varsFor(i.parties, i.company, ref));
   const address = str(i.parties.prop?.line1 || i.parties.seller?.property_address || '');
-  const name = String(i.name || `${i.template.name} - ${address || i.parties.buyer?.name || 'contract'}`).slice(0, 200);
+  const name = String(i.name || defaultContractName({ kind: i.template.kind, templateName: i.template.name, address, party: i.parties.buyer?.name ?? null })).slice(0, 200);
   const signers = i.signers.filter((s) => s.role).map((s, idx) => ({ ...s, sort: idx + 1 }));
   const tcs = await workspaceTcCopies(admin, i.ws);
   const active = appendTcCc(signers.filter((s) => !s.optional || s.name || s.email), tcs)
@@ -794,7 +812,7 @@ export async function createContract(admin: SupabaseClient, i: CreateInput) {
     ref_number: ref, signing_order_mode: i.orderMode === 'sequential' ? 'sequential' : 'parallel',
     ...(i.template.version != null ? { template_version: i.template.version } : {}),
     ...(i.reminders ? { reminder_policy: i.reminders } : {}),
-    name, status: i.send ? 'sent' : 'draft', body_md: text, recipients: active.map((s) => ({ email: s.email ?? null, name: s.name ?? null, role: s.role })), tokens: toks,
+    name, name_auto: !i.name, status: i.send ? 'sent' : 'draft', body_md: text, recipients: active.map((s) => ({ email: s.email ?? null, name: s.name ?? null, role: s.role })), tokens: toks,
     message: i.message ?? null, expires_at: expires, sent_at: i.send ? now.toISOString() : null, created_by: i.userId,
     needs_notary: !!i.notary?.needs, notary_mode: notaryMode, notary_status: notaryStatus, notary_vendor: i.notary?.vendor ?? null,
   }).select('*').single();
@@ -802,7 +820,7 @@ export async function createContract(admin: SupabaseClient, i: CreateInput) {
 
   const { data: signerRows, error: sErr } = await admin.from('contract_signers').insert(active.map((s) => ({
     workspace_id: i.ws, contract_id: row.id, role: s.role, label: s.label ?? s.role, name: s.name ?? null, email: s.email?.trim().toLowerCase() || null, phone: s.phone ?? null, sort: s.sort,
-    recipient_type: s.recipient_type && ['signer', 'cc', 'viewer', 'approver'].includes(s.recipient_type) ? s.recipient_type : 'signer',
+    recipient_type: recipientType(s.recipient_type),
   }))).select('*');
   if (sErr) throw new Error(sErr.message);
 
@@ -819,8 +837,8 @@ export async function createContract(admin: SupabaseClient, i: CreateInput) {
   let emailed = 0;
   // Sequential: only the first turn (and viewers) now; the next signer is mailed when the one before signs. CC waits for the signed copy.
   if (i.send && i.email !== false) {
-    const mailEnv = await signingResendEnv(admin, i.ws);
-    emailed = await emailSigners(i.company, name, i.message ?? null, sendTo(links, row.signing_order_mode), { expiresAt: expires, cc: tcs.map((t) => t.email), contractId: row.id, env: mailEnv });
+    const [mailEnv, sender] = await Promise.all([signingResendEnv(admin, i.ws), signingSender(admin, i.userId)]);
+    emailed = await emailSigners(i.company, name, i.message ?? null, sendTo(links, row.signing_order_mode), { expiresAt: expires, cc: tcs.map((t) => t.email), contractId: row.id, env: mailEnv, sender });
   }
   if (i.notary?.needs && (notaryMode === 'wet' || notaryMode === 'vendor' || i.send)) {
     try { await queueNotary(admin, { ...row, notary_mode: notaryMode, notary_vendor: i.notary.vendor ?? null }, i.origin); } catch (e) { console.error('notary', (e as Error).message); }
@@ -830,23 +848,28 @@ export async function createContract(admin: SupabaseClient, i: CreateInput) {
 
 /** Everyone signed: stamp signatures, add the certificate, store, hash, move the pipeline. */
 export async function completeContract(admin: SupabaseClient, row: Record<string, Any>, company: Company, origin = '') {
+  // A signed amendment with a name CLOZR made is named from what it changed, before the PDF, emails and deal file use the name.
+  row = await (await import('./contract-name-ai.ts')).nameSignedAmendment(admin, row, signingDay());
   const { data: signers } = await admin.from('contract_signers').select('*').eq('contract_id', row.id).order('sort');
   const blocks = parse(String(row.body_md ?? ''));
   // An uploaded PDF: the original pages with the values drawn on, then the same certificate.
   const pdf = row.mode === 'pdf'
     ? await (await import('./pdf-contracts.ts')).flattenPdfContract(admin, row, company, (signers ?? []) as SignerRow[])
     : await toPdf(blocks, { title: row.name, company, contractId: row.id, signers: (signers ?? []) as SignerRow[], certificate: true, hashOf: row.sha256 ?? undefined });
-  // PandaDoc parity: the full audit trail rides on the executed PDF, after the certificate.
-  let finalPdf = pdf;
+  // The executed contract (with its signature certificate) and the full audit
+  // trail as its own PDF: both go to every party when it completes.
+  const finalPdf = pdf;
+  let auditPdf: Uint8Array | null = null;
   try {
     const { appendAuditTrail, loadAudit } = await import('./parity/certificate.ts');
     const { PDFDocument } = await import('npm:pdf-lib@1.17.1');
-    const doc = await PDFDocument.load(pdf, { updateMetadata: false });
+    const doc = await PDFDocument.create();
     await appendAuditTrail(doc, { contract: row, signers: (signers ?? []) as Any[], events: await loadAudit(admin, row.id), company });
-    finalPdf = await doc.save();
-  } catch (e) { console.error('audit trail page', (e as Error).message); }
+    auditPdf = await doc.save();
+  } catch (e) { console.error('audit trail pdf', (e as Error).message); }
   const hash = await sha256Hex(finalPdf);
   const path = await storePdf(admin, row.workspace_id, row.id, 'signed.pdf', finalPdf);
+  if (auditPdf) await storePdf(admin, row.workspace_id, row.id, 'audit-trail.pdf', auditPdf);
   const now = new Date().toISOString();
   await admin.from('contracts').update({ status: 'completed', completed_at: now, pdf_path: path ?? row.pdf_path, sha256: hash, final_sha256: hash, last_event: { status: 'completed', source: 'esign', at: now } }).eq('id', row.id);
   await logEvent(admin, row, 'completed', { provider: 'clozr', sha256: hash, unsigned_sha256: row.sha256 ?? null });
@@ -861,7 +884,7 @@ export async function completeContract(admin: SupabaseClient, row: Record<string
   // and swallowed rather than thrown.
   let emailed = 0;
   try {
-    emailed = await emailCompleted(admin, row, company, path ?? row.pdf_path ?? null, hash, origin || String(Deno.env.get('APP_URL') ?? ''));
+    emailed = await emailCompleted(admin, row, company, path ?? row.pdf_path ?? null, hash, origin || String(Deno.env.get('APP_URL') ?? ''), { signed: finalPdf, audit: auditPdf });
   } catch (e) { console.error('completion mail', (e as Error).message); }
   return { path, hash, emailed };
 }

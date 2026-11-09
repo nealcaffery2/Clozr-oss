@@ -14,7 +14,7 @@
  * BatchDataError, so the caller never caches it or shows it as "no contact found".
  */
 
-import type { Any, SkipRequest } from './genius-core.ts';
+import type { Any, SkipRequest } from './property-data.ts';
 
 export type { SkipRequest };
 

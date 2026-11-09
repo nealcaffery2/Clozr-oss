@@ -5,11 +5,14 @@ name: CI
 # auto-deploy without passing: lint, type-check, the production build, and a
 # production-dependency audit.
 
+# Pull requests only. A merge to main is the PR's own tested head (squash
+# merges), so running again on push doubled the Actions minutes for nothing;
+# Vercel still builds main on every merge. Drafts skip until they are marked
+# ready, so a draft pushed ten times runs once.
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -26,6 +29,7 @@ defaults:
 jobs:
   build:
     name: lint + type-check + build
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -42,26 +46,31 @@ jobs:
           cache-dependency-path: app/pnpm-lock.yaml
 
       - name: Install (lockfile-pinned)
+        id: install
         run: pnpm install --frozen-lockfile
 
-      # One ESLint process type-checks the whole app, and on main it already
-      # peaks close to Node's default ~2 GB heap on the runner; a few thousand
-      # more lines tip it into "JavaScript heap out of memory". 4 GB ran out
-      # too once useClozr.ts passed 11,000 lines; a full lint peaks near 6 GB,
-      # which a 7 GB runner still holds.
+      # A full lint fits in 3 GB once the React Compiler rules skip useClozr.ts
+      # (see eslint.config.mjs); with them on, that one file ran past 6 GB.
+      # 4 GB leaves headroom over Node's ~2 GB default without starving the
+      # 7 GB runner.
       - name: Lint
         run: pnpm lint
         env:
-          NODE_OPTIONS: --max-old-space-size=6144
+          NODE_OPTIONS: --max-old-space-size=4096
 
+      # Run even when Lint fails, so a lint crash never hides a type error or a
+      # broken build. The job still fails if any step does.
       - name: Type-check
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm typecheck
 
       - name: Build (static export)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm build
 
   audit:
     name: production dependency audit
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

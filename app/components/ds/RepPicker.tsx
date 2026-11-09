@@ -8,7 +8,7 @@
 
 import React, { useId } from 'react';
 import type { Rep } from '@/lib/clozr-types';
-import { MUTED, SHADOW, INK } from '@/components/genius/parts';
+import { MUTED, SHADOW, INK } from '@/components/kit/parts';
 
 /** The jobs a picker can ask for. Owners and admins can do every job, so they are always offered. */
 export type RepRole = 'acq' | 'tc' | 'dispo' | 'underwriter';

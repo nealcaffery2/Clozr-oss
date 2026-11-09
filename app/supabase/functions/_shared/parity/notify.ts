@@ -5,6 +5,7 @@
 // attach delivered / opened / bounced events back to the right recipient.
 
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { appLink, appPath } from '../app-paths.ts';
 import { sendResend, transactionalFrom } from '../resend.ts';
 import type { Company } from '../docs.ts';
 
@@ -89,7 +90,7 @@ export async function notifyDeclined(admin: SupabaseClient, row: Any, company: C
       for (const p of ps ?? []) if (p.email) to.add(String(p.email).toLowerCase());
     }
   }
-  const link = `${appOrigin.replace(/\/$/, '')}/docs/?contract=${row.id}`;
+  const link = appLink(appOrigin, appPath.contract(row.id));
   for (const addr of to) {
     const html = shell(company, `${signer.label || signer.role} declined ${row.name}`, `<p><strong>${esc(signer.name || signer.email)}</strong> declined to sign.</p>
 ${reason ? `<p style="background:#fff4ed;padding:12px;border-radius:6px"><strong>Reason:</strong> ${esc(reason)}</p>` : ''}

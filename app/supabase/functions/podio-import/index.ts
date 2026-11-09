@@ -203,10 +203,9 @@ async function resolveItems(podio: Podio, items: Any[], mapping: Mapping, warnOn
  *
  * Two reads stay per item, as before. The deal by Podio item id, right before
  * its write: no unique key stops a second deal for one item, only that read.
- * And the vendors: that read is PostgREST's first 1,000 of the workspace's
- * 127,898 rows, and whether a vendor made a moment ago is among them depends on
- * where Postgres put it (16 of the newest 200 are), so only a fresh read gives
- * the same answer.
+ * And the vendors, by the item's own keys (vendorCandidates): a read of the
+ * table was PostgREST's first 1,000 of the workspace's 127,898 rows, so a
+ * vendor past them, or one made a moment ago, read as new.
  */
 type Pre = {
   sellers: People; buyers: People; roster?: Any[];
@@ -261,14 +260,43 @@ async function loadPlaces(admin: SupabaseClient, ws: number, pre: Pre, deals: Re
   for (const e of exts) pre.importAsked.add(e);
 }
 
+const VENDOR_COLS = 'id,business_name,contact_name,email,phone,service_type,source,source_id';
+
+/**
+ * The vendors these deals' vendor parties could be: by Podio source id, phone
+ * (as Podio wrote it and as a key), email (as given and lowercased) and name,
+ * 200 keys a read, each row once. A bare read of the table is PostgREST's
+ * first 1,000 of this workspace's 127,898 rows, so a vendor past them read as
+ * new and createPeople inserted it again on every import. findRow's rules
+ * still decide the match; this only decides who is in the running.
+ */
+async function vendorCandidates(admin: SupabaseClient, ws: number, deals: Resolved[]): Promise<Any[]> {
+  const parties = deals.flatMap((d) => d.parties.filter((p) => p.role !== 'seller' && p.role !== 'buyer' && !TEAM_ROLES.includes(p.role) && p.target !== 'title_contact'));
+  const uniq = (xs: (string | null | undefined)[]) => [...new Set(xs.filter((x): x is string => !!x))];
+  const sids = uniq(parties.map((p) => p.source_id));
+  const phones = uniq(parties.flatMap((p) => [p.phone, phoneKey(p.phone)]));
+  const emails = uniq(parties.flatMap((p) => [p.email, p.email?.toLowerCase()]));
+  const names = uniq(parties.flatMap((p) => [p.name, p.company]));
+  const out = new Map<number, Any>();
+  const base = () => admin.from('vendors').select(VENDOR_COLS).eq('workspace_id', ws);
+  const read = async (q: (keys: string[]) => PromiseLike<{ data: unknown; error: Any }>, keys: string[]) => {
+    for (let i = 0; i < keys.length; i += 200) for (const r of must(await q(keys.slice(i, i + 200))) ?? []) out.set(r.id, r);
+  };
+  await read((k) => base().eq('source', 'podio').in('source_id', k).order('id'), sids);
+  await read((k) => base().in('phone', k).order('id'), phones);
+  await read((k) => base().in('email', k).order('id'), emails);
+  await read((k) => base().in('business_name', k).order('id'), names);
+  await read((k) => base().in('contact_name', k).order('id'), names);
+  return [...out.values()];
+}
+
 /** Point every party at the CLOZR row it would update (or null = new). One query per table and key kind, none for a key the page already read. */
 async function matchParties(admin: SupabaseClient, ws: number, deals: Resolved[], pre: Pre = newPre()) {
-  const [keys, vendorsRes, dealsRes] = await Promise.all([
+  const [keys, vendors, dealsRes] = await Promise.all([
     loadPeople(admin, ws, pre, deals),
-    admin.from('vendors').select('id,business_name,contact_name,email,phone,service_type,source,source_id').eq('workspace_id', ws),
+    vendorCandidates(admin, ws, deals),
     admin.from('deals').select('id,source_id').eq('workspace_id', ws).eq('source', 'podio').in('source_id', deals.map((d) => String(d.item_id))),
   ]);
-  const vendors: Any[] = must(vendorsRes) ?? [];
   const dealOf = new Map((must(dealsRes) ?? []).map((d: Any) => [String(d.source_id), d.id]));
   const sellers = candidates(pre.sellers, keys);
   const buyers = candidates(pre.buyers, keys);
@@ -1120,6 +1148,7 @@ async function syncAcquisition(c: SyncCtx, app: AppCred, item: Any, led: Ledger 
     property_id: propertyId, property_address: where,
   };
   const extra = { ...a.extra, 'Podio link': a.link ?? '' };
+  let droppedPhone: string | null = null;
 
   if (!sellerId) {
     const row = {
@@ -1129,8 +1158,12 @@ async function syncAcquisition(c: SyncCtx, app: AppCred, item: Any, led: Ledger 
       ...(a.created ? { created_at: a.created } : {}), created_by: null,
     };
     const first = await c.admin.from('sellers').insert(row).select('id').single();
-    // A phone another record holds (sellers_phone_uniq): the seller goes in without it.
-    sellerId = (first.error ? must(await c.admin.from('sellers').insert({ ...row, phone: null }).select('id').single()) : first.data).id as number;
+    // A phone another record holds (sellers_phone_uniq, 23505): the seller goes in
+    // without it and the number is kept with their other numbers below. Any other
+    // error is an error.
+    const phoneTaken = !!first.error && first.error.code === '23505';
+    sellerId = (phoneTaken ? must(await c.admin.from('sellers').insert({ ...row, phone: null }).select('id').single()) : must(first)).id as number;
+    if (phoneTaken) droppedPhone = typeof row.phone === 'string' ? row.phone : null;
     by = 'new';
     c.counts.created++;
   } else {
@@ -1163,8 +1196,14 @@ async function syncAcquisition(c: SyncCtx, app: AppCred, item: Any, led: Ledger 
     }
   }
   // Every number after the first, for the dialer and for matching texts.
-  const more = a.phones.slice(1).map((p, i) => ({ workspace_id: c.ws, seller_id: sellerId, phone: p, phone_key: p, position: i + 1, kind: 'other', source: 'podio' }));
-  if (more.length) await c.admin.from('seller_phones').upsert(more, { onConflict: 'seller_id,phone', ignoreDuplicates: true }).then(() => null, () => null);
+  // Position 1 is the record's own phone; these start at 2. A primary that lost
+  // the sellers_phone_uniq race is kept here too.
+  const extraPhones = [...(droppedPhone ? [droppedPhone] : []), ...a.phones.slice(1)];
+  const more = extraPhones.map((p, i) => ({ workspace_id: c.ws, seller_id: sellerId, phone: p, phone_key: p, position: i + 2, kind: 'other', source: 'podio' }));
+  if (more.length) {
+    const { error: phonesError } = await c.admin.from('seller_phones').upsert(more, { onConflict: 'seller_id,phone', ignoreDuplicates: true });
+    if (phonesError) console.warn('podio seller_phones', a.item_id, phonesError.message);
+  }
   await relinkComms(c, sellerId!, a.phones);
   await remember(c, {
     ...base, seller_id: sellerId, property_id: propertyId, matched_by: by, stage_unmapped: unmapped,

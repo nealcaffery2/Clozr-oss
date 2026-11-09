@@ -25,6 +25,7 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { HARDENING, clientIp, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import { smsAutoReply } from '../_shared/sms-auto-reply.ts';
+import { storeOverflow } from '../_shared/voice-agent-overflow.ts';
 import { hmacHex, safeEqual } from './hmac.ts';
 
 const json = (b: unknown, s = 200) =>
@@ -48,15 +49,30 @@ const CHANNEL: Record<string, 'call' | 'sms' | 'voicemail' | 'email'> = {
   'message.delivered': 'sms',
   'message.failed': 'sms',
   'message.undelivered': 'sms',
+  // A read receipt. Only iMessage and RCS send one; plain SMS never does.
+  'message.read': 'sms',
   'message.status': 'sms',
+};
+
+/** Message events whose name fixes the direction. Every receipt is about a text we sent. */
+const EVENT_DIRECTION: Record<string, 'inbound' | 'outbound'> = {
+  'message.received': 'inbound',
+  'message.sent': 'outbound',
+  'message.delivered': 'outbound',
+  'message.failed': 'outbound',
+  'message.undelivered': 'outbound',
+  'message.read': 'outbound',
 };
 
 /**
  * The carrier status an event carries, when it is about a message.
  *
- * Talkr's own status vocabulary (queued, sending, sent, delivered, undelivered,
- * failed, received) is what the column stores, so a status in the payload wins
- * and the event name is the fallback for a delivery receipt that carries none.
+ * Talkr's own status vocabulary (queued, sending, sent, delivered, read,
+ * undelivered, failed, received) is what the column stores, so a status in the
+ * payload wins and the event name is the fallback for a receipt that carries
+ * none (`message.read` → read). ingest_apply keeps the status forward-only
+ * through comm_status_rank (migration 398: read outranks delivered), and a
+ * trigger there stamps communications.read_at when a row turns read.
  */
 function messageStatus(type: string, d: Record<string, any>): string | undefined {
   const given = pick(d, ['status', 'message.status', 'messageStatus']);
@@ -91,7 +107,10 @@ function toEnvelope(ev: TalkrEvent, deliveryId: string) {
   const type = ev.type ?? 'unknown';
   const channel = CHANNEL[type];
 
-  const direction = pick(d, ['direction', 'call.direction', 'message.direction']);
+  // A message event's name says which way it went when the payload does not:
+  // without this, a received text with no direction took `to` (our own line)
+  // as the counterparty below.
+  const direction = pick(d, ['direction', 'call.direction', 'message.direction']) ?? EVENT_DIRECTION[type];
   const from = pick(d, ['from', 'fromNumber', 'from_number', 'call.from', 'counterparty']);
   const to = pick(d, ['to', 'toNumber', 'to_number', 'call.to']);
 
@@ -215,6 +234,16 @@ Deno.serve(async (req) => {
     ev = JSON.parse(raw);
   } catch {
     return json({ error: 'body is not valid JSON' }, 400);
+  }
+
+  // Talkr is about to dial this caller on from a rep's line to an AI agent's (no-answer
+  // overflow, docs/voice-agent.md "Picking up for reps"). Not a communication: the agent's
+  // own post-call files the call. Stored before we answer, because the forwarded call hits
+  // /personalize within seconds of Talkr hearing back from us.
+  if (ev.type === 'call.overflow') {
+    const note = await storeOverflow(db, workspaceId, (ev.data ?? {}) as Record<string, string>);
+    if (note) console.error(`talkr-webhook overflow event=${ev.id} ${note}`);
+    return json({ ok: !note, stored: !note }, note ? 500 : 200);
   }
 
   const { data, error } = await db.rpc('ingest_apply', {

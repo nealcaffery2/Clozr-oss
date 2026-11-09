@@ -3,7 +3,7 @@
 //
 // Pure functions, no network. Run with:  npx tsx tools/quick-add-dupes.test.ts
 
-import { buyerMergePatch, changedWords, mergeToast, pickDuplicate, quickPatch, sellerFields, type DupeRow } from '../lib/quick-add-dupes';
+import { buyerMergePatch, changedWords, likeExact, mergeToast, pickDuplicate, quickPatch, sellerFields, type DupeRow } from '../lib/quick-add-dupes';
 
 let failed = 0;
 const check = (name: string, pass: boolean, extra = '') => {
@@ -63,6 +63,16 @@ const nothing = buyerMergePatch(buyerOnFile, { name: 'Maria Lopez', email: 'mari
 check('buyer: nothing new typed, nothing written (the buy box is not rewritten)', Object.keys(nothing).length === 0, JSON.stringify(nothing));
 const handWritten = buyerMergePatch({ ...buyerOnFile, buy_box: 'Wants brick only' }, typed, 'fill');
 check('buyer: a buy-box summary written by hand is kept', !('buy_box' in handWritten));
+
+// ---- the ILIKE pattern ----
+// An exact value for .ilike(): the LIKE wildcards are escaped, nothing else is
+// touched. A comma or parenthesis stays, which is why the company match runs
+// as its own .ilike() and never inside an .or() string (PostgREST splits
+// or() on those), and why contract recipients use this and not ilikeSafe
+// (which blanks the underscore in first_last@…).
+check('likeExact escapes % _ and backslash', likeExact('a_b%c\\d') === 'a\\_b\\%c\\\\d', likeExact('a_b%c\\d'));
+check('likeExact keeps an underscored email whole', likeExact('jane_smith@gmail.com') === 'jane\\_smith@gmail.com', likeExact('jane_smith@gmail.com'));
+check('likeExact leaves a comma and parentheses in a company name', likeExact('Park Homes, LLC (Texas)') === 'Park Homes, LLC (Texas)', likeExact('Park Homes, LLC (Texas)'));
 
 // ---- words ----
 check('changed words: the buy box columns read as one', JSON.stringify(changedWords(['company', 'criteria', 'markets', 'min_purchase_price', 'buy_box'])) === JSON.stringify(['company', 'buy box']));

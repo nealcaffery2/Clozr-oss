@@ -91,7 +91,10 @@ Deno.serve(async (req) => {
     if (b.action === 'form_view' || b.action === 'form_start') {
       const { data: form } = await admin.from('doc_forms').select('*, template:doc_templates(id, name, kind, mode, signers, body_md, pdf_path, default_expiry_days, reminder_policy, default_signing_order, workspace_id, version)')
         .eq('slug', String(b.slug ?? '')).maybeSingle();
-      const live = form && form.active && (!form.expires_at || new Date(form.expires_at).getTime() > Date.now()) && (form.max_uses == null || form.uses < form.max_uses);
+      // A form whose public_role no longer names one of the template's roles (the template was edited) cannot
+      // seat the visitor: closed, before a use is claimed and a contract created for nobody.
+      const hasVisitorRole = !!form && ((form.template?.signers ?? []) as Any[]).some((s) => s.role === form.public_role);
+      const live = form && form.active && hasVisitorRole && (!form.expires_at || new Date(form.expires_at).getTime() > Date.now()) && (form.max_uses == null || form.uses < form.max_uses);
       if (!live) return json({ error: 'This form is closed or the link is wrong.' }, 404);
       const { company } = await loadCompany(admin, form.workspace_id);
       if (b.action === 'form_view') {

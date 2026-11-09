@@ -1,6 +1,6 @@
 // Action-plan send and reply totals.
 // Run: npx tsx tools/plan-progress.test.ts
-import { buildPlanProgress, channelWord, replySnippet, type ProgressEnrollment } from '../lib/plan-progress';
+import { buildPlanProgress, channelWord, progressFromInputs, replySnippet, type ProgressComm, type ProgressEnrollment } from '../lib/plan-progress';
 
 let failed = 0;
 const eq = (label: string, got: unknown, exp: unknown) => {
@@ -105,9 +105,11 @@ const drops = one({
     { id: 2, enrollmentId: 10, planStepId: null, status: 'skipped', skipReason: 'no_phone', lastError: null, sentAt: null, buyerId: 7, sellerId: null },
     { id: 3, enrollmentId: 10, planStepId: 99, status: 'dropped', skipReason: null, lastError: null, sentAt: '2026-10-02T15:00:00.000Z', buyerId: 7, sellerId: null },
     { id: 4, enrollmentId: 10, planStepId: 98, status: 'queued', skipReason: null, lastError: null, sentAt: null, buyerId: 7, sellerId: null },
+    { id: 5, enrollmentId: 10, planStepId: 97, status: 'skipped', skipReason: 'plan_stopped', lastError: null, sentAt: null, buyerId: 7, sellerId: null },
   ],
 });
 eq('a drop is counted once, including skips and ones still queued', drops.people[0].attempts.map((a) => a.outcome).sort(), ['failed', 'not_sent', 'sent', 'waiting']);
+eq('a drop the stopped plan never reached is not counted', drops.notSent, 1);
 eq('a skipped drop says why', drops.people[0].attempts.find((a) => a.outcome === 'not_sent')?.reason, 'No phone number');
 
 const agent = one({
@@ -164,5 +166,68 @@ eq('a later enrollment on the same plan keeps the newer reply', fahad.people.map
 eq('another plan is its own tally', two.find((p) => p.planId === 62)!.replies, 0);
 eq('reached is people, sends are steps', { enrolled: fahad.enrolled, reached: fahad.reached }, { enrolled: 2, reached: 0 });
 
+// plan_progress_inputs (migration 428): positional rows map back, a plan email
+// that is also an inbound read counts once, texts are appended as before.
+const comm = (id: number, over: Partial<ProgressComm>): ProgressComm => ({
+  id, buyerId: 7, sellerId: null, direction: 'outbound', channel: 'email', status: 'sent', sourceId: `gmail:${id}`,
+  occurredAt: '2026-10-02T15:00:00.000Z', subject: null, body: null, fromEmail: null, ...over,
+});
+const fromRpc = progressFromInputs({
+  enrollments: [[10, 61, 7, null, 'Fahad', 'active', '2026-10-01T15:00:00.000Z', null]],
+  steps: base.steps,
+  tasks: [[1, 10, 1, true, 'email', '2026-10-02T15:00:00.000Z', null, 'Intro', 'Sent']],
+  mail: [comm(5, { sourceId: 'plan:1' })],
+  inbound: [comm(5, { sourceId: 'plan:1' }), comm(6, { direction: 'inbound', body: 'Yes' })],
+  sms: [comm(7, { channel: 'sms', sourceId: 'msg:7' })],
+  drops: [],
+  coldReplies: [],
+});
+eq('rpc enrollment maps to the object', fromRpc.enrollments[0], { id: 10, planId: 61, buyerId: 7, sellerId: null, name: 'Fahad', status: 'active', enrolledAt: '2026-10-01T15:00:00.000Z', stoppedReason: null });
+eq('rpc task maps to the object', fromRpc.tasks[0], { id: 1, enrollmentId: 10, planStepId: 1, done: true, taskType: 'email', completedAt: '2026-10-02T15:00:00.000Z', dueAt: null, title: 'Intro', notes: 'Sent' });
+eq('rpc comms dedupe mail and inbound, then texts', fromRpc.comms.map((c) => c.id), [5, 6, 7]);
+eq('rpc rows build the same totals', (({ sent, replies }) => ({ sent, replies }))(buildPlanProgress(fromRpc)[0]), { sent: 1, replies: 1 });
+
 console.log(failed ? `${failed} failed` : 'plan-progress: ok');
+if (failed) process.exit(1);
+
+// Report: delivered, bounced, opened, replies and opt-outs by step and week (migration 459).
+{
+  const steps = [{ id: 1, channel: 'email', position: 0, title: 'Intro email' }, { id: 2, channel: 'sms', position: 1, title: 'Text' }];
+  const task = (id: number, enrollmentId: number, planStepId: number, completedAt: string) => ({ id, enrollmentId, planStepId, done: true, taskType: planStepId === 2 ? 'text' : 'email', completedAt, dueAt: null, title: '', notes: null });
+  const comm = (over: Partial<ProgressComm> & Pick<ProgressComm, 'id' | 'sourceId' | 'channel' | 'occurredAt'>): ProgressComm => ({
+    buyerId: 7, sellerId: null, direction: 'outbound', status: 'sent', subject: null, body: null, fromEmail: null, ...over,
+  });
+  const plans = buildPlanProgress({
+    steps, drops: [], coldReplies: [],
+    enrollments: [
+      enrolled({ id: 10, planId: 61, buyerId: 7 }),
+      enrolled({ id: 11, planId: 61, buyerId: 8, stoppedReason: 'not_interested' }),
+    ],
+    tasks: [task(100, 10, 1, '2026-10-06T15:00:00.000Z'), task(101, 10, 2, '2026-10-06T16:00:00.000Z'), task(102, 11, 1, '2026-10-13T15:00:00.000Z'), task(103, 11, 2, '2026-10-13T16:00:00.000Z')],
+    comms: [
+      comm({ id: 1, sourceId: 'plan:100', channel: 'email', occurredAt: '2026-10-06T15:00:00.000Z' }),
+      comm({ id: 2, sourceId: 'msg:a', channel: 'sms', occurredAt: '2026-10-06T16:00:00.000Z', status: 'delivered' }),
+      comm({ id: 3, sourceId: 'plan:102', channel: 'email', occurredAt: '2026-10-13T15:00:00.000Z', buyerId: 8 }),
+      comm({ id: 4, sourceId: 'msg:b', channel: 'sms', occurredAt: '2026-10-13T16:00:00.000Z', buyerId: 8, status: 'sent' }),
+      comm({ id: 5, sourceId: 'msg:c', channel: 'sms', occurredAt: '2026-10-06T17:00:00.000Z', direction: 'inbound', body: 'STOP' }),
+    ],
+    opens: [1],
+    coldBounces: [{ buyerId: 8, at: '2026-10-13T17:00:00.000Z' }],
+  });
+  const r = plans[0].report;
+  eq('report total sent', r.total.sent, 4);
+  eq('report total delivered (sms sent-not-delivered and bounced email excluded)', r.total.delivered, 2);
+  eq('report total bounced from cold_sends', r.total.bounced, 1);
+  eq('report total failed includes the bounce', r.total.failed, 1);
+  eq('report total opened', r.total.opened, 1);
+  eq('report total replies', r.total.replies, 1);
+  eq('report opt-outs: STOP text plus not_interested stop', r.total.optOuts, 2);
+  eq('report step labels in order', r.steps.map((s) => s.label), ['1. Intro email', '2. Text']);
+  eq('report email step', [r.steps[0].sent, r.steps[0].delivered, r.steps[0].bounced, r.steps[0].opened], [2, 1, 1, 1]);
+  eq('report sms step', [r.steps[1].sent, r.steps[1].delivered], [2, 1]);
+  eq('report weeks newest first', r.weeks.map((w) => w.label), ['2026-10-12', '2026-10-05']);
+  eq('report week of the STOP', [r.weeks[1].replies, r.weeks[1].optOuts], [1, 1]);
+  eq('report week of the not_interested stop', r.weeks[0].optOuts, 1);
+  eq('bounced attempt reads Bounced', plans[0].people[1].attempts[0].reason, 'Bounced');
+}
 if (failed) process.exit(1);

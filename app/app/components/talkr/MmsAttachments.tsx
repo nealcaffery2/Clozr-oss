@@ -234,7 +234,7 @@ export function MmsImage({ url, mine, kind: known, name: knownName }: {
         style={{
           ...box,
           height: 138,
-          font: '600 10px/1 var(--sans)',
+          font: '600 11px/1 var(--sans)',
         }}
       >
         <Icon name="image" size={18} />

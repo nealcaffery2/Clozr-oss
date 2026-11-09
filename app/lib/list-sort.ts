@@ -2,12 +2,16 @@
 
 export type SortDir = 'asc' | 'desc';
 
+// Made once: toLocaleDateString builds a new formatter per call, and the
+// Buyers list calls this for every row.
+const ADDED_ON = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
 /** "Sep 26, 2026". Empty when the timestamp is missing. */
 export function addedOn(iso?: string | null): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return ADDED_ON.format(d);
 }
 
 /** A display cell turned into something that sorts: money and plain numbers as numbers, blanks as empty. */

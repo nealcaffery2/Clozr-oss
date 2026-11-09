@@ -9,6 +9,7 @@
  * without the Talkr theme.
  */
 import { useEffect, useRef, useState } from 'react';
+import { Play } from 'lucide-react';
 import { MAX_RVM_SECONDS, clipClock, droppable } from '@/lib/rvm-pick';
 import { useVmLibrary, type VmClip } from './useVmLibrary';
 
@@ -150,7 +151,7 @@ export function RvmRecordingPicker({ workspaceId, value, onChange, disabled, lab
               <option value="">{clips.length ? 'Choose a saved recording…' : 'No saved recordings yet'}</option>
               {clips.map((c) => <option key={c.id} value={String(c.id)}>{c.name}{c.seconds ? ` · ${clipClock(c.seconds)}` : ''}</option>)}
             </select>
-            {chosen ? <button type="button" style={btn} onClick={() => void play()} aria-label={`Play ${chosen.name}`}>▶ Play</button> : null}
+            {chosen ? <button type="button" style={btn} onClick={() => void play()} aria-label={`Play ${chosen.name}`}><Play size={12} aria-hidden /> Play</button> : null}
             <span style={{ font: '400 12px/1 var(--sans, inherit)', color: MUTED }}>or</span>
             <button type="button" style={btn} onClick={() => void start()} disabled={disabled} data-testid="rvm-pick-record" aria-label="Record a new voicemail with the microphone"><Mic /> Record new</button>
           </div>

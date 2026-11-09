@@ -18,6 +18,10 @@ export function sampleMergeFields(repName: string | null): Record<string, string
     rep_name: rep,
     rep_first_name: rep.split(/\s+/)[0] ?? rep,
     phone: '(210) 555-0134',
+    email: 'maria.lopez@gmail.com',
+    asking: '$235,000', offer: '$198,000', mao: '$201,500', arv: '$318,000', condition: 'Dated kitchen, roof 2019', motivation: 'Relocating for work',
+    timeframe: 'Before Sept 30', beds_baths: '3bd/2ba', sqft: '1,640', buybox: '$150K to $250K, SFR, flip', markets: 'San Antonio, New Braunfels',
+    last_purchase: '418 Mesa Ridge, Jun 2026', deal_property: '123 Oakview Drive',
   };
 }
 
@@ -72,6 +76,21 @@ export const SCRIPT_MERGE_FIELDS = [
   'rep_name',
   'rep_first_name',
   'phone',
+  'email',
+  // CLOZR's deal fields, filled from the record on the line (lib/script-doc.ts).
+  'asking',
+  'offer',
+  'mao',
+  'arv',
+  'condition',
+  'motivation',
+  'timeframe',
+  'beds_baths',
+  'sqft',
+  'buybox',
+  'markets',
+  'last_purchase',
+  'deal_property',
 ] as const;
 
 export type ScriptMergeField = (typeof SCRIPT_MERGE_FIELDS)[number];

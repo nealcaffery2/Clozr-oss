@@ -1,0 +1,1 @@
+- `ringback-us.wav`: US ringback (440 + 480 Hz, 2 s on, 4 s off, 60 s, 8 kHz mono). Talkr's conference wait audio for outbound calls (organizations.settings.hold_music = { mode: 'url', url: '<app>/sounds/ringback-us.wav' }): the rep hears it from joining the room until the seller connects, when the conference stops it.

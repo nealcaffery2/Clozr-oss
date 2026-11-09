@@ -6,17 +6,18 @@
 // in app/app/clozr/command-rows.ts, and tools/command.test.ts runs both.
 
 import { parseDue } from './crm-write';
+import { COMMAND_SCREENS, type ScreenDef } from './nav-model';
 
 export type VerbId =
   | 'call' | 'text' | 'email' | 'note' | 'task' | 'appointment'
   | 'newLead' | 'newBuyer' | 'newProperty' | 'newDeal' | 'newVendor'
-  | 'assign' | 'underwrite' | 'offer' | 'stage' | 'go' | 'filter' | 'lane' | 'genius' | 'dealMachine' | 'buyr';
+  | 'assign' | 'underwrite' | 'offer' | 'stage' | 'go' | 'filter' | 'lane' | 'dealMachine';
 
 /**
  * Whose colour a row carries: the product that does the work (Talkr for a
  * call or a text, COMPR for an underwrite), else CLOZR's own.
  */
-export type Mark = 'talkr' | 'compr' | 'lane' | 'genius' | 'dealMachine' | 'buyr' | 'clozr' | 'neutral';
+export type Mark = 'talkr' | 'compr' | 'lane' | 'genius' | 'dealMachine' | 'clozr' | 'neutral';
 
 /**
  * What the words after the verb name.
@@ -62,17 +63,21 @@ export const VERBS: Verb[] = [
   { id: 'go', say: ['go to', 'go', 'open'], label: 'Go to', hint: 'A screen or a record', target: 'screen', needs: null, mark: 'neutral' },
   { id: 'filter', say: ['filter'], label: 'Filter', hint: 'The People list, by what you type', target: 'text', needs: 'people', mark: 'neutral' },
   { id: 'lane', say: ['lane', 'ask lane'], label: 'Lane', hint: 'The TC assistant, on the file · L', target: 'person', needs: null, mark: 'lane' },
-  { id: 'genius', say: ['genius', 'genius mode', 'find buyers'], label: 'Genius', hint: 'Every investor buying around any address', target: 'none', needs: 'genius', mark: 'genius' },
   { id: 'dealMachine', say: ['deal machine'], label: 'Deal Machine', hint: 'The scraper: run, pause, its log and finds', target: 'none', needs: 'dealMachine', mark: 'dealMachine' },
-  { id: 'buyr', say: ['buyr', 'sniping', 'wholesale sniping', 'homefull'], label: 'Buyr', hint: 'Wholesale sniping and Facebook buyer groups', target: 'none', needs: 'buyr', mark: 'buyr' },
 ];
 
 /** The verbs a role may use: a verb that leads to a screen the role cannot open is never offered. */
 export const allowedVerbs = (can: (screen: string) => boolean, verbs: Verb[] = VERBS): Verb[] =>
   verbs.filter((v) => !v.needs || can(v.needs));
 
-/** Lower case, single spaces, trimmed. */
-export const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+/** Accents off and apostrophes dropped, so "jose" finds José and "obrien" O'Brien. ASCII without an apostrophe passes untouched. */
+const fold = (s: string) => {
+  const t = /[^\x00-\x7f]/.test(s) ? s.normalize('NFKD').replace(/[\u0300-\u036f]/g, '') : s;
+  return /['’`]/.test(t) ? t.replace(/['’`]/g, '') : t;
+};
+
+/** Lower case, accents and apostrophes off, single spaces, trimmed. */
+export const norm = (s: string) => fold(s.toLowerCase()).replace(/\s+/g, ' ').trim();
 const digitsOf = (s: string) => s.replace(/\D/g, '');
 
 export type Parsed = {
@@ -122,16 +127,67 @@ export function verbCompletions(raw: string, verbs: Verb[] = VERBS): { verb: Ver
 /** The query's words. Punctuation that is not part of a number or an address goes. */
 export const wordsOf = (q: string) => norm(q).split(' ').map((w) => w.replace(/^[,.;:!?'"]+|[,.;:!?'"]+$/g, '')).filter(Boolean);
 
+/** A query read once, so ranking thousands of records does not re-parse it per record. */
+type Prepared = {
+  nq: string;
+  words: string[];
+  /** Each word's bare digits when it has three or more, else null. */
+  digits: (string | null)[];
+  /** Each word with only its letters and digits, for the word-start test. */
+  alnum: string[];
+};
+function prepare(q: string): Prepared {
+  const words = wordsOf(q);
+  return {
+    nq: norm(q),
+    words,
+    digits: words.map((w) => (/\d/.test(w) && digitsOf(w).length >= 3 ? digitsOf(w) : null)),
+    alnum: words.map((w) => w.replace(/[^a-z0-9]/g, '')),
+  };
+}
+const hitsAll = (p: Prepared, f: string) => p.words.length > 0 && p.words.every((w, i) => f.includes(w) || (p.digits[i] !== null && f.includes(p.digits[i]!)));
+const ALNUM = /[a-z0-9]/;
+/** `a` starts a word of `hay`: at the start, or after a character that is not a letter or digit. */
+function startsWord(hay: string, a: string): boolean {
+  for (let i = hay.indexOf(a); i !== -1; i = hay.indexOf(a, i + 1)) {
+    if (i === 0 || !ALNUM.test(hay[i - 1]!)) return true;
+  }
+  return false;
+}
+/**
+ * A record's name and find as one lowercase, accent-free string: what a query
+ * is matched against. Pass it in a key as `hay` (built once per record) so a
+ * search over thousands of records skips lowercasing each one per keystroke.
+ */
+export const searchHay = (name: string, find: string) => fold((name + ' ' + find).toLowerCase());
+
+function tierOf(p: Prepared, name: string, find: string, built?: string): number {
+  if (!p.nq) return 0;
+  const hay = built ?? searchHay(name, find);
+  if (!hitsAll(p, hay)) return 0;
+  // The name can only equal or start with the query when its first letter is the query's (hay starts with the name).
+  if (hay.charCodeAt(0) === p.nq.charCodeAt(0) || /^\s/.test(name)) {
+    const nn = norm(name);
+    if (nn === p.nq) return 4;
+    if (nn.startsWith(p.nq)) return 3;
+  }
+  if (p.alnum.every((a) => a !== '' && startsWord(hay, a))) return 2;
+  return 1;
+}
+
+/** matchTier for many records against one query: the query is read once. */
+export function tierFor(q: string): (name: string, find: string, hay?: string) => number {
+  const p = prepare(q);
+  return (name, find, hay) => tierOf(p, name, find, hay);
+}
+
 /**
  * Every word must match somewhere in `find`. A word with digits in it also
  * matches as bare digits, so "210-555" finds (210) 555-0136 when the find
  * string carries the digits-only phone.
  */
 export function matches(q: string, find: string): boolean {
-  const f = find.toLowerCase();
-  const ws = wordsOf(q);
-  if (!ws.length) return false;
-  return ws.every((w) => f.includes(w) || (/\d/.test(w) && digitsOf(w).length >= 3 && f.includes(digitsOf(w))));
+  return hitsAll(prepare(q), fold(find.toLowerCase()));
 }
 
 /**
@@ -140,14 +196,7 @@ export function matches(q: string, find: string): boolean {
  * is somewhere inside, 0 no match.
  */
 export function matchTier(q: string, name: string, find: string): number {
-  const nq = norm(q);
-  if (!nq || !matches(q, name + ' ' + find)) return 0;
-  const nn = norm(name);
-  if (nn === nq) return 4;
-  if (nn.startsWith(nq)) return 3;
-  const starts = (norm(name + ' ' + find).match(/[a-z0-9]+/g) ?? []);
-  if (wordsOf(q).every((w) => starts.some((s) => s.startsWith(w.replace(/[^a-z0-9]/g, '')) && w.replace(/[^a-z0-9]/g, '') !== ''))) return 2;
-  return 1;
+  return tierOf(prepare(q), name, find);
 }
 
 /**
@@ -155,15 +204,16 @@ export function matchTier(q: string, name: string, find: string): number {
  * word start, then anywhere. Ties go to the more recently opened record, then
  * to the list's own order.
  */
-export function rankRecords<T>(items: T[], q: string, key: (t: T) => { name: string; find: string; recent?: number }): T[] {
-  return items
-    .map((item, i) => {
-      const k = key(item);
-      return { item, i, tier: matchTier(q, k.name, k.find), recent: k.recent ?? Infinity };
-    })
-    .filter((x) => x.tier > 0)
-    .sort((a, b) => b.tier - a.tier || a.recent - b.recent || a.i - b.i)
-    .map((x) => x.item);
+export function rankRecords<T>(items: T[], q: string, key: (t: T) => { name: string; find: string; hay?: string; recent?: number }): T[] {
+  const p = prepare(q);
+  if (!p.nq) return [];
+  const hits: { item: T; i: number; tier: number; recent: number }[] = [];
+  items.forEach((item, i) => {
+    const k = key(item);
+    const tier = tierOf(p, k.name, k.find, k.hay);
+    if (tier > 0) hits.push({ item, i, tier, recent: k.recent ?? Infinity });
+  });
+  return hits.sort((a, b) => b.tier - a.tier || a.recent - b.recent || a.i - b.i).map((x) => x.item);
 }
 
 /** "person:p1" → { kind: 'person', id: 'p1' }. */
@@ -259,35 +309,10 @@ export function apptFields(iso: string, now: Date): { day?: string; time: string
 
 // ---- screens ----------------------------------------------------------------------
 
-export type ScreenDef = { key: string; label: string; say: string[]; hint: string; mark: Mark };
+export type { ScreenDef } from './nav-model';
 
-/** Where "go …" can take you. Only the ones the role can open are offered. */
-export const SCREENS: ScreenDef[] = [
-  { key: 'today', label: 'Today', say: ['today', 'call list', 'queue'], hint: 'Your list to call', mark: 'neutral' },
-  { key: 'home', label: 'Home', say: ['home', 'dashboard'], hint: 'Priority queue, inbound, closings', mark: 'neutral' },
-  { key: 'people', label: 'People', say: ['people', 'sellers', 'leads', 'contacts'], hint: 'Smart lists and the record table', mark: 'neutral' },
-  { key: 'inbox', label: 'Inbox', say: ['inbox', 'messages', 'threads'], hint: 'Texts and email, one place', mark: 'neutral' },
-  { key: 'dialer', label: 'Dialer', say: ['dialer', 'phone', 'talkr', 'calls'], hint: 'Talkr: queue, recents, voicemail', mark: 'talkr' },
-  { key: 'tasks', label: 'Tasks', say: ['tasks', 'todos', 'to do'], hint: 'Today, upcoming, overdue', mark: 'neutral' },
-  { key: 'calendar', label: 'Calendar', say: ['calendar', 'appointments', 'schedule'], hint: 'The week', mark: 'neutral' },
-  { key: 'deals', label: 'Deals', say: ['deals', 'pipeline'], hint: 'The pipeline', mark: 'neutral' },
-  { key: 'contracts', label: 'Contracts', say: ['contracts', 'contract', 'psa', 'agreements', 'documents'], hint: 'Purchase and assignment agreements', mark: 'neutral' },
-  { key: 'tc', label: 'Transaction coordination', say: ['tc', 'transaction', 'closing file', 'title file'], hint: 'The closing files, furthest along first', mark: 'neutral' },
-  { key: 'dispo', label: 'Dispo', say: ['dispo', 'dispositions', 'inventory'], hint: 'Inventory to market', mark: 'neutral' },
-  { key: 'buyers', label: 'Buyers', say: ['buyers', 'cash buyers'], hint: 'The buyer database', mark: 'genius' },
-  { key: 'reporting', label: 'Reporting', say: ['reporting', 'reports', 'report', 'kpis', 'stats'], hint: 'Executive overview', mark: 'neutral' },
-  { key: 'coaching', label: 'Coaching', say: ['coaching', 'coach', 'scorecard', 'roleplay', 'graded calls'], hint: 'Graded calls, scorecard and roleplay', mark: 'neutral' },
-  { key: 'leaderboard', label: 'Sales leaderboard', say: ['leaderboard', 'tv', 'scoreboard'], hint: 'The office TV board', mark: 'neutral' },
-  { key: 'automations', label: 'Automations', say: ['automations', 'sequences', 'triggers'], hint: 'Sequences and triggers', mark: 'neutral' },
-  { key: 'plans', label: 'Action plans', say: ['action plans', 'plans', 'drips'], hint: 'Follow-up plans', mark: 'neutral' },
-  { key: 'import', label: 'Import', say: ['import', 'upload', 'csv'], hint: 'Sellers, buyers or vendors from a file', mark: 'neutral' },
-  { key: 'liveLists', label: 'Live database', say: ['live database', 'database', 'vendors', 'lists'], hint: 'Buyers, vendors and sellers', mark: 'neutral' },
-  { key: 'genius', label: 'Genius', say: ['genius', 'genius mode'], hint: 'Every investor buying around any address', mark: 'genius' },
-  { key: 'dealMachine', label: 'Deal Machine', say: ['deal machine', 'scraper'], hint: 'The scraper: run, pause, its log and finds', mark: 'dealMachine' },
-  { key: 'buyr', label: 'Buyr', say: ['buyr', 'sniping', 'wholesale sniping', 'homefull'], hint: 'Wholesale sniping and Facebook buyer groups', mark: 'buyr' },
-  { key: 'settings', label: 'Settings', say: ['settings', 'preferences'], hint: 'Workspace and your own', mark: 'neutral' },
-  { key: 'account', label: 'Account', say: ['account', 'profile'], hint: 'You', mark: 'neutral' },
-];
+/** Where "go …" can take you: the places in lib/nav-model.ts. Only the ones the role can open are offered. */
+export const SCREENS: readonly ScreenDef[] = COMMAND_SCREENS;
 
 /** The screens a role can open that match what was typed, best first. Everything the role can open when nothing is typed. */
 export function matchScreens(q: string, can: (screen: string) => boolean): ScreenDef[] {

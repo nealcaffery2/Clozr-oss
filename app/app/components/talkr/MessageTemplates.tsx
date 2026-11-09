@@ -13,6 +13,7 @@
  * read-only rather than throwing.
  */
 
+import { sourceLine } from '@/lib/merge-gaps';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   api,
@@ -95,34 +96,49 @@ export function hasMergeFields(body: string): boolean {
 export function MergeChips({
   onInsert,
   fields = SMS_MERGE_FIELDS,
+  explain = false,
 }: {
   onInsert: (token: string) => void;
   fields?: Array<{ token: string; label: string }>;
+  /**
+   * A line under the chips saying where the field in focus gets its value
+   * ("{{beds}} comes from the property's Beds on the deal"), so a template
+   * author knows what has to be filled in before a send shows it.
+   */
+  explain?: boolean;
 }) {
+  const [active, setActive] = useState<string | null>(null);
+  const line = explain ? (active ? sourceLine(active) : null) ?? 'Point at a field to see where its value comes from.' : null;
   return (
-    <span className="flex flex-wrap gap-1">
-      {fields.map((f) => (
-        <button
-          key={f.token}
-          type="button"
-          title={`Insert ${f.token}`}
-          // Keep the caret: a mousedown would move focus out of the field first.
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => onInsert(f.token)}
-          style={{
-            padding: '3px 7px',
-            borderRadius: 6,
-            border: '1px solid var(--line)',
-            background: 'var(--panel)',
-            font: '600 10px/1 var(--sans)',
-            color: 'var(--accent)',
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {f.label}
-        </button>
-      ))}
+    <span className="flex flex-col gap-1">
+      <span className="flex flex-wrap gap-1">
+        {fields.map((f) => (
+          <button
+            key={f.token}
+            type="button"
+            title={(explain && sourceLine(f.token)) || `Insert ${f.token}`}
+            // Keep the caret: a mousedown would move focus out of the field first.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { onInsert(f.token); setActive(f.token); }}
+            onMouseEnter={explain ? () => setActive(f.token) : undefined}
+            onFocus={explain ? () => setActive(f.token) : undefined}
+            style={{
+              padding: '3px 7px',
+              minHeight: 24,
+              borderRadius: 6,
+              border: '1px solid var(--line)',
+              background: 'var(--panel)',
+              font: '600 11px/1 var(--sans)',
+              color: 'var(--accent)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {f.label}
+          </button>
+        ))}
+      </span>
+      {line ? <span data-testid="merge-source" aria-live="polite" style={{ font: '500 11.5px/1.4 var(--sans)', color: 'var(--muted)' }}>{line}</span> : null}
     </span>
   );
 }
@@ -267,7 +283,7 @@ export function CategoryChip({ category }: { category: string }) {
         borderRadius: 5,
         background: tone.bg,
         color: tone.fg,
-        font: '700 8.5px/1 var(--sans)',
+        font: '700 11px/1 var(--sans)',
         whiteSpace: 'nowrap',
       }}
     >
@@ -353,7 +369,7 @@ export function TemplateManager({
     <div className="flex flex-col gap-2.5">
       <div className="flex flex-wrap items-center gap-2">
         <Eyebrow>Templates</Eyebrow>
-        <span className="mr-auto" style={{ font: '500 10px/1 var(--sans)', color: 'var(--muted-2)' }}>
+        <span className="mr-auto" style={{ font: '500 11px/1 var(--sans)', color: 'var(--muted-2)' }}>
           {onUse ? 'Click to insert' : `${templates.length} total`}
         </span>
         {writable && (
@@ -504,7 +520,7 @@ function TemplateRow({
       </span>
       <span style={{ font: '400 11px/1.4 var(--sans)', color: 'var(--muted)' }}>{excerpt}</span>
       {t.use_count > 0 && !compact && (
-        <span style={{ font: '500 10px/1 var(--sans)', color: 'var(--muted-2)' }}>
+        <span style={{ font: '500 11px/1 var(--sans)', color: 'var(--muted-2)' }}>
           Used {t.use_count} {t.use_count === 1 ? 'time' : 'times'}
         </span>
       )}

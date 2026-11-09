@@ -14,7 +14,7 @@ export const BELL_CAT_NOTIFY_EVENTS: Record<string, NotifyEvent[]> = {
 };
 
 export function bellNotifEvent(n: Pick<Notification, 'cat' | 'text' | 'link'>): NotifyEvent | null {
-  if (n.cat === 'SMS' || n.cat === 'inbound_sms' || n.cat === 'Email reply') return 'sms';
+  if (n.cat === 'SMS' || n.cat === 'inbound_sms' || n.cat === 'Email reply' || n.cat === 'Hot buyer') return 'sms';
   if (n.cat === 'Call') {
     if (n.link.screen === 'person' && !n.link.tab) return 'voicemail';
     if (/voicemail/i.test(n.text)) return 'voicemail';

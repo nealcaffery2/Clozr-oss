@@ -13,7 +13,7 @@ import { formatPhone } from '@/lib/talkr';
 import { api, type NumberReputationDto, type ReputationChecklistItemDto, type ReputationGrade, type SmsGateMode } from '@/lib/talkr-web/api';
 import { loadReputation, putNumberReputation, setSummary, toggleReputationPanel, useReputation } from './reputationStore';
 import { Btn, INK, LINE, MUTED, NoteBox, card, errText, field, invokeFn, label, type Note } from './ui';
-import { requestSettingsTab } from '@/app/clozr/screens/settingsTab';
+import { openSettings } from '@/lib/settings-sections';
 import { useSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
 
@@ -195,7 +195,7 @@ function GuardStatus() {
 
 function CompanyLink() {
   return (
-    <button type="button" onClick={() => requestSettingsTab({ main: 'workspace', tab: 'company' })} style={{ padding: 0, border: 0, background: 'none', color: 'var(--tx-mint, #0a8560)', fontWeight: 600, fontSize: 'inherit', cursor: 'pointer', fontFamily: 'inherit' }}>
+    <button type="button" onClick={() => openSettings('workspace/company')} style={{ padding: 0, border: 0, background: 'none', color: 'var(--tx-mint, #0a8560)', fontWeight: 600, fontSize: 'inherit', cursor: 'pointer', fontFamily: 'inherit' }}>
       Edit company facts
     </button>
   );

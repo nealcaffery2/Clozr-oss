@@ -18,7 +18,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import { PdfPageCanvas, usePdf, useWidth } from '@/components/PdfPages';
-import { FIELD_META, type FieldType, displayValue, recipientColor } from '@/supabase/functions/_shared/pdf-fields';
+import { DEFAULT_FONT_PT, FIELD_META, FONT_CSS, LINE_HEIGHT, type FieldType, type FontFamily, displayValue, isMultiline, recipientColor } from '@/supabase/functions/_shared/pdf-fields';
+import { DayInput } from '@/components/DayInput';
 import { type Conditions, type LogicField, blockers, computeFormulas, isVisible, valueMap } from '@/supabase/functions/_shared/parity/field-logic';
 import { AdoptSignature, handToPng } from './AdoptSignature';
 
@@ -29,6 +30,7 @@ type Field = {
   required: boolean; read_only: boolean; label: string | null; options: string[] | null;
   value: string | null; filled_at: string | null; mine: boolean; color: number; who: string | null;
   field_key?: string | null; group_key?: string | null; conditions?: Conditions; formula?: string | null; placeholder?: string | null;
+  font_size?: number | null; font_family?: FontFamily | null;
 };
 /** docs-public (collect file): same credential as esign, the signing token and gate. */
 type Upload = (body: Record<string, unknown>) => Promise<Res<{ attachment: { id: number; label: string } }>>;
@@ -66,6 +68,11 @@ export function PdfSigning({ token, gate, api, upload, me, canAct, onDone, onDec
       setData(r.data);
     });
     return () => { live = false; };
+  }, [api, token, gate]);
+  /** After signing: the server stamped the date-signed boxes, so show what it saved. */
+  const reload = useCallback(async () => {
+    const r = await api<{ fields: Field[]; source_url: string | null }>({ action: 'fields', token, gate });
+    if (r.ok) setData((d) => (d ? { ...d, fields: r.data.fields } : r.data));
   }, [api, token, gate]);
 
   const { doc, sizes, error: pdfErr } = usePdf(data?.source_url ?? null);
@@ -118,13 +125,18 @@ export function PdfSigning({ token, gate, api, upload, me, canAct, onDone, onDec
   async function attach(f: Field, file: File) {
     if (file.size > 25 * 1024 * 1024) { setErr({ text: 'Files up to 25 MB.', field: f.id }); return; }
     setBusy(true);
-    const data_base64 = await new Promise<string>((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => bad(r.error); r.readAsDataURL(file); });
-    const r = await upload({ action: 'attachment_upload', token, gate, field_id: f.id, label: f.label || file.name, filename: file.name, content_type: file.type, data_base64 });
-    setBusy(false);
-    if (!r.ok) { setErr({ text: r.message, field: f.id }); return; }
-    const { id, label } = r.data.attachment;
-    setData((d) => (d ? { ...d, fields: d.fields.map((x) => (x.id === f.id ? { ...x, value: String(id), placeholder: label } : x)) } : d));
-    setErr(null);
+    try {
+      const data_base64 = await new Promise<string>((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => bad(r.error); r.readAsDataURL(file); });
+      const r = await upload({ action: 'attachment_upload', token, gate, field_id: f.id, label: f.label || file.name, filename: file.name, content_type: file.type, data_base64 });
+      if (!r.ok) { setErr({ text: r.message, field: f.id }); return; }
+      const { id, label } = r.data.attachment;
+      setData((d) => (d ? { ...d, fields: d.fields.map((x) => (x.id === f.id ? { ...x, value: String(id), placeholder: label } : x)) } : d));
+      setErr(null);
+    } catch {
+      setErr({ text: 'That file could not be read. Pick it again.', field: f.id });
+    } finally {
+      setBusy(false);
+    }
   }
 
   /** A stamp or seal: any image, saved as a PNG no wider than 600px. */
@@ -149,7 +161,7 @@ export function PdfSigning({ token, gate, api, upload, me, canAct, onDone, onDec
     if (!f) return;
     const el = document.getElementById(`cz-f-${f.id}`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    const box = el?.querySelector<HTMLElement>('input, select, button');
+    const box = el?.querySelector<HTMLElement>('input, textarea, select, button');
     window.setTimeout(() => box?.focus({ preventScroll: true }), 350);
   };
   const next = async () => {
@@ -190,6 +202,7 @@ export function PdfSigning({ token, gate, api, upload, me, canAct, onDone, onDec
       const r = await api<Signed>({ action: 'fill_done', token, gate, consent: true, origin: window.location.origin });
       setBusy(false);
       if (!r.ok) { setErr({ text: r.message }); return; }
+      void reload();
       onDone({ completed: r.data.completed, pdf_url: r.data.pdf_url ?? null, waiting: r.data.waiting_on, redirect_url: r.data.redirect_url ?? null });
       return;
     }
@@ -199,6 +212,7 @@ export function PdfSigning({ token, gate, api, upload, me, canAct, onDone, onDec
     const r = await api<Signed>({ action: 'sign', token, gate, name: a.name, signature_png: a.png, consent: true, origin: window.location.origin });
     setBusy(false);
     if (!r.ok) { setErr({ text: r.message }); return; }
+    void reload();
     onDone({ completed: r.data.completed, pdf_url: r.data.pdf_url ?? null, waiting: r.data.waiting_on, redirect_url: r.data.redirect_url ?? null });
   }
 
@@ -222,7 +236,7 @@ export function PdfSigning({ token, gate, api, upload, me, canAct, onDone, onDec
               <div key={i} style={{ position: 'relative', width: `${pw}px`, height: `${ph}px`, boxShadow: '0 1px 6px rgba(0,0,0,.15)' }}>
                 <PdfPageCanvas doc={doc} page={i + 1} width={pw} height={ph} />
                 {fields.filter((f) => f.page === i + 1).map((f) => (
-                  <FieldBox key={f.id} f={f} pw={pw} ph={ph} value={valueOf(f)} canAct={canAct} bad={err?.field === f.id}
+                  <FieldBox key={f.id} f={f} pw={pw} ph={ph} pt={pw / s.width} value={valueOf(f)} canAct={canAct} bad={err?.field === f.id}
                     required={open.has(f.id)}
                     onEdit={(v) => edit(f, v)} onSet={(v) => setNow(f, v)} onBlur={() => void flush()} onSign={() => void signBox(f)}
                     onFile={(file) => void (f.type === 'stamp' ? stamp(f, file) : attach(f, file))} />
@@ -268,8 +282,10 @@ export function PdfSigning({ token, gate, api, upload, me, canAct, onDone, onDec
 }
 
 /** One field over the page: an input when it is mine to fill, the value otherwise. */
-function FieldBox({ f, pw, ph, value, canAct, bad, required, onEdit, onSet, onBlur, onSign, onFile }: {
+function FieldBox({ f, pw, ph, pt, value, canAct, bad, required, onEdit, onSet, onBlur, onSign, onFile }: {
   f: Field; pw: number; ph: number; value: string; canAct: boolean; bad: boolean;
+  /** Screen pixels per PDF point, so text shows at the size it is drawn on the signed PDF. */
+  pt: number;
   /** Still blocks finishing (required now, conditions and groups applied). */
   required: boolean;
   onEdit: (v: string | null) => void; onSet: (v: string | null) => void; onBlur: () => void; onSign: () => void; onFile: (file: File) => void;
@@ -277,13 +293,16 @@ function FieldBox({ f, pw, ph, value, canAct, bad, required, onEdit, onSet, onBl
   const color = recipientColor(f.color);
   const editable = f.mine && canAct && !f.read_only && f.type !== 'date_signed' && f.type !== 'formula';
   const h = f.h * ph;
-  const font = Math.max(9, Math.min(16, h * 0.62));
+  // The size the signed PDF draws it at (one size across the document), never below legible on screen.
+  const font = Math.max(9, (f.font_size ?? DEFAULT_FONT_PT) * pt);
   const empty = !value.trim();
+  const multi = isMultiline(f.type, h / pt, f.font_size);
   const box: React.CSSProperties = {
     position: 'absolute', left: `${f.x * pw}px`, top: `${f.y * ph}px`, width: `${f.w * pw}px`, height: `${h}px`, boxSizing: 'border-box',
     border: editable ? `1.5px solid ${bad ? '#b91c1c' : color}` : f.mine ? `1px dashed ${color}` : '0', borderRadius: 3,
     background: editable ? (required ? 'rgba(255,216,77,.35)' : `${color}14`) : 'transparent',
-    display: 'flex', alignItems: 'center', overflow: 'hidden', fontSize: `${font}px`, color: '#0f1730',
+    display: 'flex', alignItems: multi ? 'stretch' : 'center', overflow: f.type === 'date' ? 'visible' : 'hidden', fontSize: `${font}px`, lineHeight: multi ? LINE_HEIGHT : undefined, color: '#0f1730',
+    fontFamily: f.font_family && f.font_family !== 'auto' ? FONT_CSS[f.font_family] : FONT_CSS.helvetica,
   };
   const inputStyle: React.CSSProperties = { width: '100%', height: '100%', border: 0, background: 'transparent', font: 'inherit', color: 'inherit', padding: '0 3px', outline: 'none' };
   const title = `${f.label || FIELD_META[f.type].label}${f.required ? ' (required)' : ''}${f.mine ? '' : f.who ? ` · ${f.who}` : ''}`;
@@ -344,8 +363,9 @@ function FieldBox({ f, pw, ph, value, canAct, bad, required, onEdit, onSet, onBl
     );
   }
   if (!editable) {
-    const shown = f.type === 'date_signed' && empty && f.mine ? 'Date signed' : displayValue(f, value);
-    return <div id={`cz-f-${f.id}`} style={box} title={title}><span style={{ padding: '0 3px', whiteSpace: 'nowrap', color: f.type === 'date_signed' && empty ? '#9ca3af' : undefined }}>{shown}</span></div>;
+    // The placeholder only while it is still this signer's turn; once signed the stamped date shows (reload above).
+    const shown = f.type === 'date_signed' && empty && f.mine && canAct ? 'Filled in when you sign' : displayValue(f, value);
+    return <div id={`cz-f-${f.id}`} style={box} title={title}><span style={{ padding: multi ? '2px 3px' : '0 3px', whiteSpace: multi ? 'pre-wrap' : 'nowrap', overflowWrap: multi ? 'anywhere' : undefined, color: f.type === 'date_signed' && empty ? '#9ca3af' : undefined }}>{shown}</span></div>;
   }
   if (f.type === 'dropdown') {
     return (
@@ -357,11 +377,29 @@ function FieldBox({ f, pw, ph, value, canAct, bad, required, onEdit, onSet, onBl
       </div>
     );
   }
+  if (f.type === 'date') {
+    return (
+      <div id={`cz-f-${f.id}`} style={box} title={title}>
+        <DayInput value={value} onSet={onSet} label={f.label || 'Date'} placeholder={f.placeholder || 'MM/DD/YYYY'} style={inputStyle} />
+      </div>
+    );
+  }
+  if (multi) {
+    // Paragraph box: Enter starts a new line and the signed PDF wraps the same way.
+    return (
+      <div id={`cz-f-${f.id}`} style={box} title={title}>
+        <textarea
+          value={value} onChange={(e) => onEdit(e.target.value)} onBlur={onBlur} aria-label={f.label || FIELD_META[f.type].label}
+          placeholder={f.placeholder || f.label || ''} style={{ ...inputStyle, padding: '2px 3px', lineHeight: 'inherit', resize: 'none', overflowWrap: 'anywhere' }}
+        />
+      </div>
+    );
+  }
   return (
     <div id={`cz-f-${f.id}`} style={box} title={title}>
       <input
         value={value} onChange={(e) => onEdit(e.target.value)} onBlur={onBlur} aria-label={f.label || FIELD_META[f.type].label}
-        type={f.type === 'date' ? 'date' : f.type === 'email' ? 'email' : f.type === 'phone' ? 'tel' : 'text'}
+        type={f.type === 'email' ? 'email' : f.type === 'phone' ? 'tel' : 'text'}
         inputMode={f.type === 'number' || f.type === 'currency' ? 'decimal' : undefined}
         placeholder={f.placeholder || f.label || (f.type === 'currency' ? '$' : '')} style={inputStyle}
       />
@@ -377,5 +415,5 @@ function Dot({ size }: { size: number }) {
 /** A signature or initials image: a data URL, so there is nothing for an image loader to optimize. */
 function Ink({ src, alt }: { src: string; alt: string }) {
   // eslint-disable-next-line @next/next/no-img-element
-  return <img alt={alt} src={src} style={{ maxWidth: '100%', maxHeight: '100%', margin: '0 auto', display: 'block' }} />;
+  return <img alt={alt} src={src} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />;
 }

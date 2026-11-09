@@ -37,7 +37,7 @@ export function KeyNumbers({ V }: { V: ClozrView }) {
       {cells.map((c) => (
         <div key={c.k} className="rec2-number" title={c.hint ?? (c.k === 'Offer range' ? `${money(o.low)} – ${money(o.high)}` : undefined)}>
           <div style={label}>{c.k}</div>
-          <div className="rec-money" style={{ fontSize: '19px', fontWeight: 700, letterSpacing: '-0.02em', marginTop: '4px', color: c.v === '—' ? '#71717a' : c.tone ?? '#18181b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <div className="rec-money" style={{ fontSize: '19px', fontWeight: 700, letterSpacing: '-0.02em', marginTop: '4px', color: c.v === '—' ? 'var(--meta, #71717a)' : c.tone ?? 'var(--ink, #18181b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {c.v}
           </div>
         </div>
@@ -59,7 +59,7 @@ function Row({ k, children }: { k: string; children: React.ReactNode }) {
   return (
     <div className="rec2-row">
       <dt style={label}>{k}</dt>
-      <dd style={{ margin: 0, minWidth: 0, fontSize: '13px', fontWeight: 500, color: '#18181b' }}>{children}</dd>
+      <dd style={{ margin: 0, minWidth: 0, fontSize: '13px', fontWeight: 500, color: 'var(--ink, #18181b)' }}>{children}</dd>
     </div>
   );
 }

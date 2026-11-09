@@ -44,7 +44,7 @@ const filed: Record<string, unknown>[] = [];
 const sb = supabase as unknown as { from: unknown; auth: { getSession: unknown } };
 const realFrom = sb.from;
 const realSession = sb.auth.getSession;
-sb.from = () => ({ insert: async (row: Record<string, unknown>) => { filed.push(row); return { error: null }; } });
+sb.from = () => ({ upsert: async (row: Record<string, unknown>) => { filed.push(row); return { error: null }; } });
 sb.auth.getSession = async () => ({ data: { session: null }, error: null });
 const realSend = talkr.sendMessage;
 const calls: unknown[] = [];
@@ -63,6 +63,8 @@ await textOne(5, kara, '', { fromPhoneNumberId: null, mediaUrls: ['https://m/2.j
 eq('a photo with no caption still sends', calls[2], { to_number: '+12105550136', body: '', media_urls: ['https://m/2.jpg'] });
 const blocked = await textOne(5, kara, 'x', { mediaUrls: ['https://m/3.jpg'] }, { ok: true, blocked: { sellers: new Set([1]), buyers: new Set() } });
 eq('the blacklist still stops a text with media', [blocked.status, calls.length], ['blocked', 3]);
+// The record write runs behind the send (textOne does not hold the toast for it): let it land.
+await new Promise((r) => setTimeout(r, 0));
 eq('the record copy names the photo', filed[0]?.body, 'Hi Kara, the photo\nAttachment: https://m/1.jpg');
 eq('the record copy of a plain text is the text', filed[1]?.body, 'No photo');
 eq('the record copy is keyed by Talkr\'s message id', filed[0]?.source_id, 'msg:m1');

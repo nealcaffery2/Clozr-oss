@@ -125,3 +125,13 @@
 :root[data-theme="dark"] .dia .dia-hi-dark { fill: var(--dia-hi); }
 :root[data-theme="dark"] .dia .dia-hi-dark-stroke { stroke: var(--dia-hi); }
 :root[data-theme="dark"] .dia .dia-on-fill { display: none; }
+
+/* Reporting header filters (screens/Reporting.tsx): rep and Custom range days. */
+.rep-filter { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--meta, #71717a); }
+.rep-filter select, .rep-filter input {
+  height: 28px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--divider, #e4e4e7);
+  background: var(--surface, #fff); color: var(--ink, #18181b); font: inherit; font-size: 12px; color-scheme: light dark;
+}
+.rep-filter select { max-width: 180px; }
+.rep-filter select:focus-visible, .rep-filter input:focus-visible { outline: 2px solid #0A8560; outline-offset: 2px; }
+@media (max-width: 767px) { .rep-filter select, .rep-filter input { font-size: 16px; } }

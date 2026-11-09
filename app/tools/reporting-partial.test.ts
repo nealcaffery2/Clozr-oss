@@ -26,7 +26,8 @@ assert.equal(tile(b, 'New leads'), '1');
 b = buildReport('Overview', '30 Days', { ...raw, partial: 'loading' }, { admin: true, now: NOW });
 assert.equal(b[0].kind, 'note');
 assert.equal(tile(b, 'Offers sent'), '…');
-assert.equal(tile(b, 'Leads contacted'), '…');
+assert.equal(tile(b, 'Closed revenue'), '…');
+assert.equal(tile(b, 'Pending fees'), '…');
 assert.equal(tile(b, 'Net profit'), '…');
 assert.equal(tile(b, 'New leads'), '1');
 

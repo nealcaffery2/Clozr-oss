@@ -61,6 +61,16 @@ import { createPdfContract, draftFields, saveDraftFields } from '../_shared/pdf-
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': ALLOW_HEADERS, 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
+/**
+ * The notary choice a create sends, cut to what the contract row takes: a
+ * mode of digital, wet or vendor (contracts_notary_mode_check), else digital
+ * as the notary action does; a vendor only when it is text.
+ */
+const notaryOf = (n: Any): { needs: boolean; mode: 'digital' | 'wet' | 'vendor'; vendor: string | null } | null =>
+  n && typeof n === 'object'
+    ? { needs: !!n.needs, mode: ['digital', 'wet', 'vendor'].includes(n.mode) ? n.mode : 'digital', vendor: typeof n.vendor === 'string' ? n.vendor : null }
+    : null;
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
@@ -79,7 +89,7 @@ Deno.serve(async (req) => {
   // Every member may look (folders, the library, a contract's PDF and
   // recipients); sending and editing stay with the roles that run deals.
   const READ_ACTIONS = new Set(['folders', 'library', 'blocks', 'template_versions', 'pdf', 'recipients', 'fields', 'pdf_fields', 'template', 'templates']);
-  if (!READ_ACTIONS.has(String(b.action ?? '')) && !['owner', 'admin', 'acquisitions', 'dispositions', 'tc'].includes(member.role)) return json({ error: 'your role cannot send contracts' }, 403);
+  if (!READ_ACTIONS.has(String(b.action ?? '')) && !['owner', 'admin', 'acquisitions', 'dispositions', 'tc', 'partnerships'].includes(member.role)) return json({ error: 'your role cannot send contracts' }, 403);
   const origin = String(b.origin || req.headers.get('origin') || Deno.env.get('APP_URL') || 'https://your-clozr-site.example.com');
 
   const loadContract = async (id: number) => (await asCaller.from('contracts').select('*').eq('id', id).eq('workspace_id', ws).maybeSingle()).data as Record<string, Any> | null;
@@ -266,7 +276,7 @@ Deno.serve(async (req) => {
         const out = await createContract(admin, {
           ws, userId: who.user.id, origin, template: tpl as Any, ids: { sellerId: parties.seller?.id, dealId: parties.deal?.id, buyerId: parties.buyer?.id, offerId: b.offer_id ?? null },
           signers, tokens: Array.isArray(b.tokens) ? b.tokens : [], name: b.name ?? null, message: b.message ?? null, expiresDays: b.expires_days ?? tpl.default_expiry_days ?? 14, send: !!b.send && !viaFlow,
-          notary: b.notary ?? null,
+          notary: notaryOf(b.notary),
           // The form sends what the person chose; the template's defaults cover a caller that did not.
           orderMode: (b.order_mode ?? tpl.default_signing_order) === 'sequential' ? 'sequential' : 'parallel',
           reminders: !b.reminders && tpl.reminder_policy && typeof tpl.reminder_policy === 'object' ? tpl.reminder_policy : b.reminders && typeof b.reminders === 'object' ? {
@@ -305,6 +315,8 @@ Deno.serve(async (req) => {
         const row = await loadContract(Number(b.contract_id));
         if (!row || row.provider !== 'clozr') return json({ error: 'contract not found' }, 404);
         if (['completed', 'voided'].includes(row.status)) return json({ error: `this contract is already ${row.status}` }, 409);
+        // Already out: a second send would re-run applySent (stage rows, TC pings) and re-mail every link. Remind is the resend.
+        if (['sent', 'viewed'].includes(row.status)) return json({ error: 'This contract is already out for signature. Use Remind to send the links again.' }, 409);
         // Migration 114: approvers sign off first, and some recipients get their link by text.
         const people = await loadRecipients(admin, row.id);
         if (needsApproval(people) || people.some((s) => normalizeDelivery(s.delivery) !== 'email')) {
@@ -449,7 +461,7 @@ Deno.serve(async (req) => {
           kind: tpl ? String(tpl.kind) : kinds.has(String(b.kind)) ? String(b.kind) : 'other',
           name: b.name ?? null, ids: { sellerId: parties.seller?.id, dealId: parties.deal?.id, buyerId: parties.buyer?.id, offerId: b.offer_id ?? null },
           signers, fields: Array.isArray(b.fields) ? b.fields : null, tokens: Array.isArray(b.tokens) ? b.tokens : [],
-          message: b.message ?? null, expiresDays: b.expires_days ?? tpl?.default_expiry_days ?? 14, send: !!b.send && !pdfViaFlow, notary: b.notary ?? null,
+          message: b.message ?? null, expiresDays: b.expires_days ?? tpl?.default_expiry_days ?? 14, send: !!b.send && !pdfViaFlow, notary: notaryOf(b.notary),
           orderMode: b.order_mode === 'sequential' ? 'sequential' : 'parallel',
           reminders: b.reminders && typeof b.reminders === 'object' ? {
             first_after_days: Math.max(0, Math.min(30, Number(b.reminders.first_after_days ?? 1))),

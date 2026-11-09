@@ -13,6 +13,14 @@ import { LocalNumbers } from '../LocalNumbers';
 
 const SENS = ['Very hard to interrupt', 'Hard to interrupt', 'Balanced', 'Easy to interrupt', 'Very easy to interrupt'];
 
+/** Who this agent picks up for, by its role (the server's coversTitle, in words). */
+function overflowHelp(role: string): string {
+  if (role === 'buyer_assistant' || role === 'jr_dispo') return 'Dispositions reps: teammates whose title says Dispositions.';
+  if (role === 'acquisitions') return 'Acquisitions reps: teammates whose title says Acquisitions.';
+  if (role === 'lead_manager') return 'Teammates with no team on their title.';
+  return 'This role picks up for nobody; only acquisitions, dispositions and lead manager agents do.';
+}
+
 export function HandlingTab({ form, canEdit, agentKey, workspaceId, published, epoch, demo }: TabCtx) {
   const { draft, errors, set } = form;
   const ch = draft.call_handling;
@@ -74,6 +82,19 @@ export function HandlingTab({ form, canEdit, agentKey, workspaceId, published, e
             hint="Retries still stay inside the call hours." error={errors['call_handling.retry.gap_hours']} onChange={(v) => set(['call_handling', 'retry', 'gap_hours'], v)} />
         </div>
         <p style={{ margin: '10px 0 0', fontSize: 12, color: MUTED, lineHeight: 1.5 }}>ElevenLabs has no retry setting through the API. Retries are listed as a manual step when you publish.</p>
+      </Section>
+
+      <Section id="va-overflow" title="Pick up for reps" description="When a rep on this agent's team does not answer a call to their own line, this agent picks up instead of voicemail.">
+        <SettingRow first title="Pick up for reps on no answer" help={overflowHelp(draft.identity.role)}>
+          <Switch label="Pick up for reps on no answer" on={ch.overflow.enabled} disabled={off} onChange={(v) => set(['call_handling', 'overflow', 'enabled'], v)} />
+        </SettingRow>
+        {ch.overflow.enabled ? (
+          <div className="va-in" style={{ ...grid(280), paddingTop: 4 }}>
+            <RangeField id={fieldId('call_handling.overflow.ring_seconds')} label="Ring the rep for" value={ch.overflow.ring_seconds} min={5} max={60} step={5} format={(n) => `${n} s`} disabled={off}
+              hint="How long their phone rings before the call comes to this agent." error={errors['call_handling.overflow.ring_seconds']} onChange={(v) => set(['call_handling', 'overflow', 'ring_seconds'], v)} />
+          </div>
+        ) : null}
+        <p style={{ margin: '10px 0 0', fontSize: 12, color: MUTED, lineHeight: 1.5 }}>Which reps: teammates whose profile title names the team this agent covers (Settings, Team). The agent greets as covering for the rep, can help or take a message, and hands the call back to that rep. Publish applies it to their lines.</p>
       </Section>
 
       <Section id="va-numbers" title="Local presence numbers" description="One number per market. Each call goes out from the number local to the lead.">

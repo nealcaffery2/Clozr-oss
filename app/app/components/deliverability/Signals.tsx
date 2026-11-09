@@ -15,7 +15,7 @@
 import React, { useEffect, useState } from 'react';
 import { connectGoogle } from '@/lib/google';
 import { type DomainVerification, type MailboxRow, type Overview, type Postmaster as PM, type PostmasterDay, type Warmup as WU, type WarmupKeys, campaignChecklist, deliverability, textValue } from '@/lib/deliverability';
-import { requestSettingsTab } from '@/app/clozr/screens/settingsTab';
+import { openSettings } from '@/lib/settings-sections';
 import { Badge, Copy, Icon, Note, NotSetUp, Section, danger, fieldLabel, ghost, input, mono, pct, primary, relDays, row } from './ui';
 
 const REP_TONE = { HIGH: 'good', MEDIUM: 'warn', LOW: 'bad', BAD: 'bad' } as const;
@@ -114,7 +114,7 @@ export function PostmasterCard({ workspaceId, me, data, onLoad }: { workspaceId:
   const why = 'Gmail’s own report card for your domain: how often people press Report spam and how much of your mail passes SPF, DKIM and DMARC. Optional.';
 
   if (!me) {
-    return <NotSetUp title="Gmail Postmaster" why={why} how={how} action={<button type="button" style={ghost} onClick={() => requestSettingsTab({ main: 'outbound', tab: 'google' })}>Connect Google first</button>} />;
+    return <NotSetUp title="Gmail Postmaster" why={why} how={how} action={<button type="button" style={ghost} onClick={() => openSettings('email/google')}>Connect Google first</button>} />;
   }
   if (!me.postmaster) {
     return (

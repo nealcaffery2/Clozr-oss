@@ -19,6 +19,8 @@ export function usePdf(url: string | null): { doc: PdfDoc | null; sizes: PageSiz
     (async () => {
       try {
         const doc = await openPdf(url);
+        // Unmounted, or the URL changed, while opening: nothing would destroy it later.
+        if (!live) { void doc.destroy(); return; }
         opened = doc;
         const sizes: PageSize[] = [];
         for (let n = 1; n <= doc.numPages; n++) {

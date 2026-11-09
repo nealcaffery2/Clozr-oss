@@ -14,7 +14,7 @@ const box: React.CSSProperties = { background: 'var(--surface, #fff)', border: `
 const field: React.CSSProperties = { width: '100%', height: '36px', borderRadius: '8px', border: `1px solid ${LINE}`, padding: '0 10px', fontSize: '14px', color: INK, background: 'var(--surface, #fff)', fontFamily: 'inherit', boxSizing: 'border-box' };
 const lab: React.CSSProperties = { display: 'grid', gap: '6px', fontSize: '13px', color: MUTED, fontWeight: 500 };
 const btn = (primary = false, off = false): React.CSSProperties => ({
-  height: '36px', padding: '0 14px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: off ? 'not-allowed' : 'pointer', opacity: off ? 0.6 : 1,
+  height: '36px', padding: '0 14px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: off ? 'not-allowed' : 'pointer', opacity: off ? 0.5 : 1,
   border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? GREEN : 'var(--surface, #fff)', color: primary ? 'var(--surface, #fff)' : INK, fontFamily: 'inherit',
 });
 const h: React.CSSProperties = { margin: '0 0 6px', fontSize: '17px', fontWeight: 700, letterSpacing: '-0.015em', color: INK };

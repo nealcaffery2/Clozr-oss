@@ -22,6 +22,7 @@ import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { UNTRUSTED_RULE, corsFor, fence, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import { ruleScore, type History } from '../_shared/buyer-score-rule.ts';
 import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
 
 const TTL_MS = 7 * 864e5;
 const MODEL = CLAUDE_MODEL;
@@ -87,7 +88,7 @@ function latest(h: History): number {
   return ts.length ? Math.max(...ts) : 0;
 }
 
-async function aiScore(client: Anthropic, h: History, rule: ReturnType<typeof ruleScore>): Promise<{ response_rate: number | null; score: number; reason: string }> {
+async function aiScore(client: Anthropic, h: History, rule: ReturnType<typeof ruleScore>, ws: number): Promise<{ response_rate: number | null; score: number; reason: string }> {
   const thread = h.comms.slice(0, 80).reverse().map((c) =>
     `[${String(c.occurred_at ?? '').slice(0, 10)}] ${c.channel} ${c.direction === 'inbound' ? 'BUYER' : 'TEAM'}${c.status ? ` (${c.status})` : ''}: ${String(c.body ?? c.summary ?? c.subject ?? '').replace(/\s+/g, ' ').slice(0, 280)}`,
   ).join('\n');
@@ -108,6 +109,7 @@ async function aiScore(client: Anthropic, h: History, rule: ReturnType<typeof ru
       content: `Today: ${new Date().toISOString().slice(0, 10)}.\n\nFacts:\n${JSON.stringify(facts, null, 1)}\n\nMessages, oldest first (the newest 80):\n${fence('messages', thread || '(none)', 30_000)}`,
     }],
   });
+  await recordUsage(null, { ws, feature: 'buyer_score', model: res.model, usage: res.usage });
   const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
   const out = (call?.input ?? {}) as { response_rate?: unknown; score?: unknown; reason?: unknown };
   const clamp = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : null);
@@ -177,7 +179,7 @@ Deno.serve(async (req) => {
       let out: Score = { response_rate: rule.response_rate, score: rule.score, reason: rule.reason, source: 'rule', computed_at: new Date().toISOString(), stats: rule.stats };
       if (client) {
         try {
-          const ai = await aiScore(client, h, rule);
+          const ai = await aiScore(client, h, rule, ws);
           out = { ...ai, source: 'ai', computed_at: out.computed_at, stats: rule.stats };
         } catch (e) {
           aiFailed++;

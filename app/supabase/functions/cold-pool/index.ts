@@ -4,6 +4,9 @@
  * Body: { workspace_id, action, ... }
  *   overview, health                         any member
  *   save_blocked { extra }                   owner/admin
+ *   save_company_domains { allow }           owner/admin. Lets cold mail send from
+ *                                            the company domains (442). Every gate
+ *                                            still applies, plus the DNS score.
  *   save_warmup  { provider, api_base, key, instantly_tag } owner/admin.
  *                The key is sealed. provider 'instantly' turns the gate on: a
  *                warming mailbox sends no cold mail until it has warmed 14 days
@@ -37,6 +40,8 @@
  * action checks the caller's JWT and workspace membership.
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
+import { everyRow } from '../_shared/every-row.ts';
+import { appLink, appPath } from '../_shared/app-paths.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { HARDENING, clientIp, corsFor, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import { domainOf, isDomain } from '../_shared/deliverability-rules.ts';
@@ -44,7 +49,7 @@ import { checkDomain } from '../deliverability/dns.ts';
 import { ENTITY_LABELS, entityKind } from '../../../lib/market-geo.ts';
 import {
   DEFAULT_BLOCKED_SENDING_DOMAINS, GOOGLE_WORKSPACE_IMAP, GOOGLE_WORKSPACE_SMTP, WARMUP_GATE_MIN_SCORE, WARMUP_SPAM_PAUSE_PCT,
-  blockedSendingDomains, buyerInAudience, coldDeliverability, healthRates, importRefusal, isCatchAllStatus, isRoleAddress, normalizeMailboxPassword, parseMailboxCsv,
+  type BlockedDomainOpts, blockedSendingDomains, buyerInAudience, coldDeliverability, coldEnrollBlock, healthRates, importRefusal, isCatchAllStatus, isCompanyDomain, isRoleAddress, normalizeMailboxPassword, parseMailboxCsv,
   sendingDomainBlocked, stateOf, warmupGate, warmupGateOn, type AudienceBuyer, type AudienceSpec,
 } from '../_shared/cold-campaign.ts';
 import { instantlyClient } from '../_shared/instantly.ts';
@@ -63,7 +68,7 @@ const APP = () => String(Deno.env.get('APP_URL') || 'https://your-clozr-site.exa
 function back(ok: boolean, origin: string | null, detail: string): Response {
   const base = String(origin || APP()).replace(/\/$/, '');
   const q = new URLSearchParams({ cold: ok ? 'ok' : 'error', m: detail.slice(0, 300) });
-  return new Response(null, { status: 302, headers: { ...HARDENING, Location: `${base}/app/?${q}` } });
+  return new Response(null, { status: 302, headers: { ...HARDENING, Location: `${appLink(base, appPath.base)}?${q}` } });
 }
 
 function cleanDomain(raw: unknown): string {
@@ -111,12 +116,22 @@ Deno.serve(async (req) => {
         return json(await health(admin, ws));
       case 'save_blocked': {
         if (!isAdmin) return adminOnly();
+        const settings = await readSettings(admin, ws);
+        // With the lock on, a company domain in the extras is noise; with it off, listing one there is how an admin re-blocks it.
         const extra = (Array.isArray(b.extra) ? b.extra : String(b.extra ?? '').split(/[\s,]+/))
-          .map(cleanDomain).filter((d: string) => isDomain(d) && !DEFAULT_BLOCKED_SENDING_DOMAINS.includes(d as typeof DEFAULT_BLOCKED_SENDING_DOMAINS[number])).slice(0, 40);
-        await ensureSettings(admin, ws);
+          .map(cleanDomain).filter((d: string) => isDomain(d) && (settings.allow_company_domains || !isCompanyDomain(d))).slice(0, 40);
         const { error } = await admin.from('cold_workspace_settings').update({ blocked_extra: extra }).eq('workspace_id', ws);
         if (error) throw error;
-        return json({ ok: true, blocked: blockedSendingDomains(extra), extra });
+        return json({ ok: true, blocked: blockedSendingDomains(extra, { allowCompanyDomains: settings.allow_company_domains }), extra });
+      }
+      case 'save_company_domains': {
+        if (!isAdmin) return adminOnly();
+        const allow = b.allow === true;
+        await ensureSettings(admin, ws);
+        const { error } = await admin.from('cold_workspace_settings').update({ allow_company_domains: allow }).eq('workspace_id', ws);
+        if (error) throw error;
+        const settings = await readSettings(admin, ws);
+        return json({ ok: true, allow_company_domains: settings.allow_company_domains, blocked: settings.blocked, locked_domains: settings.locked });
       }
       case 'save_warmup': {
         if (!isAdmin) return adminOnly();
@@ -191,7 +206,7 @@ Deno.serve(async (req) => {
         const updated: string[] = [];
         const skipped: { email: string; reason: string }[] = [];
         for (const m of listed) {
-          const refusal = importRefusal(m.email, settings.blocked);
+          const refusal = importRefusal(m.email, settings.blocked, settings.lockOpts);
           if (refusal) { skipped.push({ email: m.email, reason: refusal }); continue; }
           if (m.platform !== 'GOOGLE') { skipped.push({ email: m.email, reason: 'Only Google Workspace mailboxes import this way.' }); continue; }
           if (m.status && m.status !== 'active') { skipped.push({ email: m.email, reason: `InboxKit lists it as ${m.status}.` }); continue; }
@@ -291,7 +306,7 @@ Deno.serve(async (req) => {
         const skipped: { email: string; reason: string }[] = parsed.skipped.map((s) => ({ email: s.email || `row ${s.line}`, reason: s.reason }));
         for (const row of parsed.rows) {
           const domain = domainOf(row.email);
-          const refusal = importRefusal(row.email, settings.blocked) ?? (isDomain(domain) ? null : 'Not a domain name.');
+          const refusal = importRefusal(row.email, settings.blocked, settings.lockOpts) ?? (isDomain(domain) ? null : 'Not a domain name.');
           if (refusal) { skipped.push({ email: row.email, reason: refusal }); continue; }
           if (!row.smtpPassword) { skipped.push({ email: row.email, reason: 'App password is required.' }); continue; }
           const domainId = await ensureDomain(admin, ws, domain);
@@ -408,7 +423,7 @@ async function oauthCallback(admin: SupabaseClient, url: URL, provider: 'google_
     const email = String(profile.email ?? '').trim().toLowerCase();
     if (!email.includes('@')) return back(false, opener, 'The account did not share an email address.');
     const settings = await readSettings(admin, ws);
-    if (importRefusal(email, settings.blocked)) return back(false, opener, `${domainOf(email)} cannot be used for cold email.`);
+    if (importRefusal(email, settings.blocked, settings.lockOpts)) return back(false, opener, `${domainOf(email)} cannot be used for cold email.`);
     const domainId = await ensureDomain(admin, ws, domainOf(email));
     const mailboxId = await upsertMailbox(admin, ws, {
       domain_id: domainId, email, display_name: profile.name ?? null, provider, status: 'warming',
@@ -446,7 +461,9 @@ async function overview(admin: SupabaseClient, asCaller: SupabaseClient, ws: num
   return {
     admin: isAdmin,
     autopilot,
-    locked_domains: [...DEFAULT_BLOCKED_SENDING_DOMAINS],
+    locked_domains: settings.locked,
+    allow_company_domains: settings.allow_company_domains,
+    company_domains: [...DEFAULT_BLOCKED_SENDING_DOMAINS],
     blocked: settings.blocked,
     blocked_extra: settings.extra,
     fallback_timezone: settings.fallback_timezone,
@@ -600,26 +617,19 @@ async function launch(admin: SupabaseClient, ws: number, id: number) {
       const emails = [...new Set(matches.map((b) => String(b.email).trim().toLowerCase()))];
       const { data: sup } = await admin.from('email_suppressions').select('email').eq('workspace_id', ws).in('email', emails);
       const blocked = new Set(((sup ?? []) as Any[]).map((s) => String(s.email)));
+      const { data: warm } = await admin.from('cold_exclusions').select('email').eq('workspace_id', ws).in('email', emails);
+      const excluded = new Set(((warm ?? []) as Any[]).map((s) => String(s.email)));
       const { data: busy } = await admin.from('cold_enrollments').select('email, campaign_id').eq('workspace_id', ws).eq('status', 'active').in('email', emails);
       const taken = new Set(((busy ?? []) as Any[]).filter((r) => Number(r.campaign_id) !== id).map((r) => String(r.email)));
       const rows = matches.map((b) => {
         const email = String(b.email).trim().toLowerCase();
-        const role = policy.suppressRoles && isRoleAddress(email);
-        const catchAll = policy.suppressCatchAll && isCatchAllStatus(b.email_status);
-        const elsewhere = taken.has(email);
-        const stopped = blocked.has(email) || role || catchAll || elsewhere;
-        const reason = blocked.has(email)
-          ? 'On the suppression list.'
-          : elsewhere
-            ? 'Already in an active sequence.'
-            : role
-              ? 'Role addresses such as info@ and admin@ are suppressed.'
-              : catchAll
-                ? 'Catch-all addresses are suppressed.'
-                : null;
+        const reason = coldEnrollBlock({
+          suppressed: blocked.has(email), excluded: excluded.has(email), elsewhere: taken.has(email),
+          role: policy.suppressRoles && isRoleAddress(email), catchAll: policy.suppressCatchAll && isCatchAllStatus(b.email_status),
+        });
         return {
           workspace_id: ws, campaign_id: id, buyer_id: b.id, email, state: stateOf(null, b.markets ?? []),
-          status: stopped ? 'suppressed' : 'active', stop_reason: reason,
+          status: reason ? 'suppressed' : 'active', stop_reason: reason,
           step_position: 1, next_send_at: new Date().toISOString(),
         };
       });
@@ -663,9 +673,9 @@ async function ownerNames(admin: SupabaseClient, ws: number): Promise<Map<string
 }
 
 async function enrollmentCounts(admin: SupabaseClient, ws: number): Promise<Map<number, number>> {
-  const { data } = await admin.from('cold_enrollments').select('campaign_id, status').eq('workspace_id', ws).limit(5000);
+  const data = await everyRow<Any>(() => admin.from('cold_enrollments').select('campaign_id, status').eq('workspace_id', ws).order('id')).catch(() => [] as Any[]);
   const map = new Map<number, number>();
-  for (const row of (data ?? []) as Any[]) {
+  for (const row of data) {
     if (row.status === 'suppressed') continue;
     map.set(Number(row.campaign_id), (map.get(Number(row.campaign_id)) ?? 0) + 1);
   }
@@ -705,14 +715,21 @@ async function ensureSettings(admin: SupabaseClient, ws: number): Promise<void> 
   await admin.from('cold_workspace_settings').upsert({ workspace_id: ws }, { onConflict: 'workspace_id', ignoreDuplicates: true });
 }
 
-async function readSettings(admin: SupabaseClient, ws: number): Promise<{ blocked: string[]; extra: string[]; fallback_timezone: string; warmup_provider: string; warmup_api_base: string | null; instantly_warmup_tag: string | null; physical_address: string; policy: ReturnType<typeof coldDeliverability>; deliverability_raw: Record<string, unknown> | null; inboxkit_workspace_uid: string | null; warmup_synced_at: string | null; warmup_sync_error: string | null }> {
+async function readSettings(admin: SupabaseClient, ws: number): Promise<{ blocked: string[]; locked: string[]; allow_company_domains: boolean; lockOpts: BlockedDomainOpts; extra: string[]; fallback_timezone: string; warmup_provider: string; warmup_api_base: string | null; instantly_warmup_tag: string | null; physical_address: string; policy: ReturnType<typeof coldDeliverability>; deliverability_raw: Record<string, unknown> | null; inboxkit_workspace_uid: string | null; warmup_synced_at: string | null; warmup_sync_error: string | null }> {
   await ensureSettings(admin, ws);
-  const row = (await admin.from('cold_workspace_settings').select('blocked_extra, fallback_timezone, warmup_provider, warmup_api_base, instantly_warmup_tag, physical_address, deliverability, inboxkit_workspace_uid, warmup_synced_at, warmup_sync_error').eq('workspace_id', ws).maybeSingle()).data as Any;
+  const row = (await admin.from('cold_workspace_settings').select('blocked_extra, allow_company_domains, fallback_timezone, warmup_provider, warmup_api_base, instantly_warmup_tag, physical_address, deliverability, inboxkit_workspace_uid, warmup_synced_at, warmup_sync_error').eq('workspace_id', ws).maybeSingle()).data as Any;
   const { data: wsRow } = await admin.from('workspaces').select('settings').eq('id', ws).maybeSingle();
   const tag = String(row?.instantly_warmup_tag ?? '').trim();
   const raw = row?.deliverability && typeof row.deliverability === 'object' ? row.deliverability as Record<string, unknown> : null;
+  // Anything but an explicit true (an unapplied 442 reads as undefined) keeps the lock on.
+  const allowCompany = row?.allow_company_domains === true;
+  const lockOpts: BlockedDomainOpts = { allowCompanyDomains: allowCompany };
   return {
-    blocked: blockedSendingDomains(row?.blocked_extra ?? []),
+    blocked: blockedSendingDomains(row?.blocked_extra ?? [], lockOpts),
+    // What the Safety rules show as locked: the three, unless the workspace let them through.
+    locked: allowCompany ? [] : [...DEFAULT_BLOCKED_SENDING_DOMAINS],
+    allow_company_domains: allowCompany,
+    lockOpts,
     extra: (row?.blocked_extra ?? []) as string[],
     fallback_timezone: row?.fallback_timezone || (wsRow?.settings as Any)?.timezone || 'America/Chicago',
     warmup_provider: row?.warmup_provider ?? 'stub',

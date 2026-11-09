@@ -26,8 +26,8 @@ import { VAR_HELP } from '@/supabase/functions/_shared/doc-vars';
 import { assignRoles, detectFields } from '@/lib/pdf-autodetect';
 import { readLayout } from '@/lib/pdf-shapes';
 import {
-  FIELD_META, FIELD_TYPES, type FieldDef, type FieldType, clampRect, fieldAllowedFor, newField, normalizeField, recipientColor,
-} from '@/supabase/functions/_shared/pdf-fields';
+  FIELD_META, FIELD_TYPES, type FieldDef, type FieldType, clampRect, fieldAllowedFor, newField, normalizeField, recipientColor, DEFAULT_FONT_PT, FONT_CSS, FONT_FAMILIES, type FontFamily, LINE_HEIGHT, isMultiline } from '@/supabase/functions/_shared/pdf-fields';
+import { DayInput } from '@/components/DayInput';
 import { type ConditionOp, type LogicField, computeFormulas } from '@/supabase/functions/_shared/parity/field-logic';
 import {
   AtSign, Calendar, CalendarCheck, CaseUpper, ChevronDown, CircleDot, DollarSign, Hash, type LucideIcon, Paperclip, PenLine, Phone, Sigma, SquareCheck, Stamp, Type,
@@ -51,7 +51,7 @@ type Props = {
   prepare?: { onSend: (fields: FieldDef[]) => Promise<{ ok: true } | { ok: false; message: string }> } | null;
 };
 type Item = FieldDef & { key: string };
-type Drag = { key: string; mode: 'move' | 'resize'; px: number; py: number; start: { x: number; y: number; w: number; h: number }; pw: number; ph: number };
+type Drag = { key: string; mode: 'move' | 'resize' | 'resize-x' | 'resize-y'; px: number; py: number; start: { x: number; y: number; w: number; h: number }; pw: number; ph: number };
 
 const INK = 'var(--ink, #18181b)';
 const MUTED = 'var(--meta, #71717a)';
@@ -59,7 +59,7 @@ const LINE = 'var(--divider, #e4e4e7)';
 const GREEN = '#0A8560';
 const btn = (primary = false, disabled = false): React.CSSProperties => ({
   height: '30px', padding: '0 11px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
-  border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? (disabled ? '#7fcbb2' : GREEN) : '#fff', color: primary ? '#fff' : INK, opacity: !primary && disabled ? 0.55 : 1, fontFamily: 'inherit',
+  border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? GREEN : 'var(--surface, #fff)', color: primary ? '#fff' : INK, opacity: !primary && disabled ? 0.5 : 1, fontFamily: 'inherit',
 });
 const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: MUTED, fontWeight: 500, margin: '16px 0 6px' };
 const input: React.CSSProperties = { width: '100%', height: '30px', padding: '0 8px', border: `1px solid ${LINE}`, borderRadius: '7px', fontSize: '12.5px', background: 'var(--surface, #fff)', color: INK, boxSizing: 'border-box' };
@@ -84,13 +84,16 @@ const signsLabel = (who: string, t: FieldType) => `${who} ${t === 'date_signed' 
  * a tick for checkboxes and radios, a menu for dropdowns, and a formula's
  * result shown read-only. Pointer-down stays here so typing never drags.
  */
-function FillBox({ f, ph, color, value, hint, onFocus, onChange }: {
+function FillBox({ f, ph, pt, color, value, hint, onFocus, onChange }: {
   f: FieldDef; ph: number; color: string; value: string; hint: string; onFocus: () => void; onChange: (v: string | null) => void;
+  /** Screen pixels per PDF point: text shows at the size the signed PDF draws it. */
+  pt: number;
 }) {
   const h = f.h * ph;
-  const font = Math.max(9, Math.min(15, h * 0.62));
+  const font = Math.max(8, (f.font_size ?? DEFAULT_FONT_PT) * pt);
   const stop = (e: { stopPropagation: () => void }) => { e.stopPropagation(); onFocus(); };
-  const base: React.CSSProperties = { width: '100%', height: '100%', border: 0, background: 'transparent', font: 'inherit', fontSize: `${font}px`, fontWeight: 500, color: INK, padding: '0 2px', outline: 'none', minWidth: 0 };
+  const base: React.CSSProperties = { width: '100%', height: '100%', border: 0, background: 'transparent', font: 'inherit', fontSize: `${font}px`, fontWeight: 500, color: INK, padding: '0 2px', outline: 'none', minWidth: 0,
+    fontFamily: f.font_family && f.font_family !== 'auto' ? FONT_CSS[f.font_family] : FONT_CSS.helvetica };
   if (f.type === 'checkbox' || f.type === 'radio') {
     const on = value === 'true';
     const dot = h * 0.5;
@@ -112,9 +115,16 @@ function FillBox({ f, ph, color, value, hint, onFocus, onChange }: {
     );
   }
   if (f.type === 'attachment') return <span style={{ ...base, display: 'flex', alignItems: 'center', color, fontWeight: 650, fontSize: `${Math.min(12, font)}px` }}>{hint}: the signer uploads it</span>;
+  if (f.type === 'date') return <DayInput value={value} onSet={onChange} label={f.label || hint} onFocus={onFocus} onPointerDown={stop} style={base} />;
+  if (isMultiline(f.type, h / pt, f.font_size)) {
+    return (
+      <textarea value={value} onPointerDown={stop} onFocus={onFocus} onChange={(e) => onChange(e.target.value)} aria-label={f.label || hint} placeholder={hint}
+        style={{ ...base, padding: '2px', lineHeight: LINE_HEIGHT, resize: 'none', overflowWrap: 'anywhere', alignSelf: 'stretch' }} />
+    );
+  }
   return (
     <input value={value} onPointerDown={stop} onFocus={onFocus} onChange={(e) => onChange(e.target.value)} aria-label={f.label || hint} placeholder={hint}
-      type={f.type === 'date' ? 'date' : f.type === 'email' ? 'email' : f.type === 'phone' ? 'tel' : 'text'}
+      type={f.type === 'email' ? 'email' : f.type === 'phone' ? 'tel' : 'text'}
       inputMode={f.type === 'number' || f.type === 'currency' ? 'decimal' : undefined} style={base} />
   );
 }
@@ -223,7 +233,10 @@ export default function PdfFieldEditor({ title, sourceUrl, roles, initial, onSav
     const d = drag.current;
     if (!d) return;
     const dx = (e.clientX - d.px) / d.pw, dy = (e.clientY - d.py) / d.ph;
-    const r = d.mode === 'move' ? { ...d.start, x: d.start.x + dx, y: d.start.y + dy } : { ...d.start, w: d.start.w + dx, h: d.start.h + dy };
+    const r = d.mode === 'move' ? { ...d.start, x: d.start.x + dx, y: d.start.y + dy }
+      : d.mode === 'resize-x' ? { ...d.start, w: d.start.w + dx }
+      : d.mode === 'resize-y' ? { ...d.start, h: d.start.h + dy }
+      : { ...d.start, w: d.start.w + dx, h: d.start.h + dy };
     change(d.key, clampRect(r));
   };
   const endDrag = () => { drag.current = null; };
@@ -304,7 +317,7 @@ export default function PdfFieldEditor({ title, sourceUrl, roles, initial, onSav
   const unsigned = roles.filter((r) => r.recipient_type !== 'filler' && !items.some((f) => f.role === r.role && f.type === 'signature'));
 
   return (
-    <div role="dialog" aria-modal="true" aria-label={title} onKeyDown={onKey} tabIndex={-1} className="cz-fe" style={{ position: 'fixed', inset: 0, zIndex: 150, display: 'flex', flexDirection: 'column', background: '#eef0f3', color: INK, outline: 0, fontFamily: 'inherit' }}>
+    <div role="dialog" aria-modal="true" aria-label={title} onKeyDown={onKey} tabIndex={-1} className="cz-fe" style={{ position: 'fixed', inset: 0, zIndex: 150, display: 'flex', flexDirection: 'column', background: 'var(--soft-page, #eef0f3)', color: INK, outline: 0, fontFamily: 'inherit' }}>
       <style>{FE_CSS}</style>
       {/* top bar */}
       <div className="cz-fe-top">
@@ -355,7 +368,7 @@ export default function PdfFieldEditor({ title, sourceUrl, roles, initial, onSav
               <button key={n} type="button" onClick={() => goToPage(n)} className={`cz-fe-thumb${page === n ? ' is-on' : ''}`} aria-label={`Page ${n}`}>
                 <span className="cz-fe-thumb-n">{n}</span>
                 <span style={{ display: 'flex', gap: '2px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                  {roles.map((r) => { const c = k.filter((f) => f.role === r.role).length; return c ? <span key={r.role} title={`${r.label}: ${c}`} style={{ minWidth: '14px', height: '14px', borderRadius: '7px', padding: '0 3px', background: colorOf(r.role), color: '#fff', fontSize: '9.5px', lineHeight: '14px', fontWeight: 700 }}>{c}</span> : null; })}
+                  {roles.map((r) => { const c = k.filter((f) => f.role === r.role).length; return c ? <span key={r.role} title={`${r.label}: ${c}`} style={{ minWidth: '14px', height: '14px', borderRadius: '7px', padding: '0 3px', background: colorOf(r.role), color: '#fff', fontSize: '11px', lineHeight: '14px', fontWeight: 700 }}>{c}</span> : null; })}
                 </span>
               </button>
             );
@@ -386,7 +399,7 @@ export default function PdfFieldEditor({ title, sourceUrl, roles, initial, onSav
                             display: 'flex', alignItems: 'center', gap: '3px', overflow: 'visible', fontSize: `${Math.max(8, Math.min(12, f.h * ph * 0.55))}px`, color: c, fontWeight: 650, padding: '0 4px', whiteSpace: 'nowrap', userSelect: 'none',
                             boxShadow: on ? `0 0 0 3px ${c}33` : 'none', zIndex: on ? 3 : 2 }}>
                           {prepare && !readOnly && fillable(f.type)
-                            ? <FillBox f={f} ph={ph} color={c} value={f.type === 'formula' ? sums.get(f.key) ?? f.value ?? '' : f.value ?? ''} hint={text}
+                            ? <FillBox f={f} ph={ph} pt={pw / (sizes[n - 1]?.width ?? 612)} color={c} value={f.type === 'formula' ? sums.get(f.key) ?? f.value ?? '' : f.value ?? ''} hint={text}
                                 onFocus={() => setSelected(f.key)} onChange={(v) => setValue(f, v)} />
                             : f.type === 'checkbox' || f.type === 'radio' ? null
                             : <><FieldIcon type={f.type} size={Math.max(9, Math.min(12, f.h * ph * 0.55))} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{prepare && FIELD_META[f.type].signs ? signsLabel(roleOf(f.role)?.label ?? f.role, f.type) : text}{f.required && !f.variable_key ? ' *' : ''}</span></>}
@@ -395,14 +408,21 @@ export default function PdfFieldEditor({ title, sourceUrl, roles, initial, onSav
                               style={{ position: 'absolute', left: '-6px', top: '-6px', width: '11px', height: '11px', background: c, border: '2px solid var(--surface, #fff)', borderRadius: '3px', cursor: 'move', touchAction: 'none' }} />
                           ) : null}
                           {on && !readOnly ? (
-                            <span onPointerDown={(e) => startDrag(e, f, 'resize')} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} aria-label="Resize"
-                              style={{ position: 'absolute', right: '-6px', bottom: '-6px', width: '11px', height: '11px', background: 'var(--surface, #fff)', border: `2px solid ${c}`, borderRadius: '3px', cursor: 'nwse-resize', touchAction: 'none' }} />
+                            <>
+                              {/* Pull the right edge for width, the bottom edge for height, the corner for both. */}
+                              <span onPointerDown={(e) => startDrag(e, f, 'resize-x')} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} aria-label="Resize width" title="Drag to change the width"
+                                style={{ position: 'absolute', right: '-5px', top: '50%', transform: 'translateY(-50%)', width: '9px', height: 'max(14px, 60%)', background: 'var(--surface, #fff)', border: `2px solid ${c}`, borderRadius: '4px', cursor: 'ew-resize', touchAction: 'none' }} />
+                              <span onPointerDown={(e) => startDrag(e, f, 'resize-y')} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} aria-label="Resize height" title="Drag to change the height"
+                                style={{ position: 'absolute', bottom: '-5px', left: '50%', transform: 'translateX(-50%)', height: '9px', width: 'max(14px, 30%)', background: 'var(--surface, #fff)', border: `2px solid ${c}`, borderRadius: '4px', cursor: 'ns-resize', touchAction: 'none' }} />
+                              <span onPointerDown={(e) => startDrag(e, f, 'resize')} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} aria-label="Resize" title="Drag to resize"
+                                style={{ position: 'absolute', right: '-8px', bottom: '-8px', width: '15px', height: '15px', background: 'var(--surface, #fff)', border: `2px solid ${c}`, borderRadius: '4px', cursor: 'nwse-resize', touchAction: 'none' }} />
+                            </>
                           ) : null}
                         </div>
                       );
                     })}
                   </div>
-                  <span style={{ position: 'absolute', right: 0, bottom: '-18px', fontSize: '11px', color: 'var(--subtle, #a1a1aa)' }}>{n} / {pages}</span>
+                  <span style={{ position: 'absolute', right: 0, bottom: '-18px', fontSize: '11px', color: 'var(--meta, #71717a)' }}>{n} / {pages}</span>
                 </div>
               );
             })}
@@ -477,6 +497,21 @@ export default function PdfFieldEditor({ title, sourceUrl, roles, initial, onSav
                     </label>
                   ) : null}
                   {bound ? <div style={{ fontSize: '11.5px', color: MUTED }}>Filled from {bound} when the contract is created, and locked. If the record has no value, the recipient types it.</div> : null}
+                  {(!FIELD_META[cur.type].signs || cur.type === 'date_signed') && cur.type !== 'checkbox' && cur.type !== 'radio' && cur.type !== 'attachment' ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 92px', gap: '8px' }}>
+                      <label>Font
+                        <select value={cur.font_family ?? 'auto'} disabled={readOnly} onChange={(e) => change(cur.key, { font_family: e.target.value === 'auto' ? null : e.target.value as FontFamily })} style={input}>
+                          {FONT_FAMILIES.map((ff) => <option key={ff} value={ff}>{ff === 'auto' ? 'Match document' : ff === 'helvetica' ? 'Helvetica / Arial' : ff === 'times' ? 'Times' : 'Courier'}</option>)}
+                        </select>
+                      </label>
+                      <label>Size
+                        <select value={cur.font_size ?? ''} disabled={readOnly} onChange={(e) => change(cur.key, { font_size: e.target.value ? Number(e.target.value) : null })} style={input}>
+                          <option value="">{DEFAULT_FONT_PT} pt</option>
+                          {[7, 8, 9, 11, 12, 14, 16, 18, 20, 24].map((n) => <option key={n} value={n}>{n} pt</option>)}
+                        </select>
+                      </label>
+                    </div>
+                  ) : null}
                   {cur.type !== 'date_signed' && cur.type !== 'formula' ? (
                     <label style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                       <input type="checkbox" checked={!!cur.required} disabled={readOnly || !!cur.variable_key} onChange={(e) => change(cur.key, { required: e.target.checked })} /> Required

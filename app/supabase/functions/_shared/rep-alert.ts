@@ -6,19 +6,20 @@
  * repAlertEmail is pure (rep-alert.test.ts); emailRep does the lookups and the send.
  */
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { appLink, appPath } from './app-paths.ts';
 import { clozrAppOrigin } from './app-url.ts';
 import { sendResend, transactionalFrom } from './resend.ts';
 
 export type RecordKind = 'seller' | 'buyer';
 
-/** The CLOZR link that opens a record (useClozr's hash routes). */
+/** The CLOZR link that opens a record: `/app/people/s12`, `/app/buyers/b45` (lib/routes.ts). */
 export function recordLink(origin: string, kind: RecordKind, id: number): string {
-  return `${origin.replace(/\/+$/, '')}/app#screen=${kind === 'buyer' ? 'buyer' : 'person'}&id=${kind === 'buyer' ? 'b' : 's'}${id}`;
+  return appLink(origin, kind === 'buyer' ? appPath.buyer(id) : appPath.seller(id));
 }
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-export type RepAlert = { subject: string; lines: string[]; name: string; phone: string | null; link: string };
+export type RepAlert = { subject: string; lines: string[]; name: string; phone: string | null; link: string; note?: string };
 
 /** The email: what happened, a tap-to-call number and a button that opens the record. */
 export function repAlertEmail(a: RepAlert): { subject: string; html: string; text: string } {
@@ -32,7 +33,7 @@ export function repAlertEmail(a: RepAlert): { subject: string; html: string; tex
     tel ? button(`tel:${tel}`, `Call ${a.name}`, '#15803d') : '',
     button(a.link, `Open ${a.name} in CLOZR`, '#6d28d9'),
     '</p>',
-    '<p style="margin:12px 0 0;font-size:12px;color:#71717a">The texts, calls and notes the AI agent had are on the record\'s Activity tab.</p>',
+    `<p style="margin:12px 0 0;font-size:12px;color:#71717a">${esc(a.note ?? "The texts, calls and notes the AI agent had are on the record's Activity tab.")}</p>`,
     '</div>',
   ].join('');
   const text = [...a.lines, tel ? `Call: ${tel}` : '', `Open in CLOZR: ${a.link}`].filter(Boolean).join('\n');
@@ -42,18 +43,20 @@ export function repAlertEmail(a: RepAlert): { subject: string; html: string; tex
 /**
  * Email the rep. Best effort: no Resend, no email on the profile, or a failed
  * send leaves the bell notification and the task, which are already written.
+ * True when Resend took it.
  */
-export async function emailRep(admin: SupabaseClient, userId: string | null | undefined, a: Omit<RepAlert, 'link'> & { kind: RecordKind; id: number; key?: string }): Promise<void> {
+export async function emailRep(admin: SupabaseClient, userId: string | null | undefined, a: Omit<RepAlert, 'link'> & { kind: RecordKind; id: number; key?: string }): Promise<boolean> {
   try {
-    if (!userId) return;
+    if (!userId) return false;
     const from = transactionalFrom();
-    if (!from) return;
+    if (!from) return false;
     const { data } = await admin.from('profiles').select('email').eq('id', userId).maybeSingle();
     const to = String((data as { email?: string } | null)?.email ?? '').trim();
-    if (!to) return;
+    if (!to) return false;
     const mail = repAlertEmail({ ...a, link: recordLink(clozrAppOrigin(), a.kind, a.id) });
-    await sendResend({ to, from: from.from, ...mail, ...(a.key ? { idempotencyKey: a.key } : {}), tags: { kind: 'rep_alert' } });
+    return !!(await sendResend({ to, from: from.from, ...mail, ...(a.key ? { idempotencyKey: a.key } : {}), tags: { kind: 'rep_alert' } }));
   } catch (e) {
     console.error('rep alert email', String(e));
+    return false;
   }
 }

@@ -15,13 +15,18 @@ import { BulkSendPanel, DocsReports, FormLinksPanel } from '@/components/DocsToo
 import { ContractTemplatePicker } from '@/components/ContractTemplatePicker';
 import { folderAndBelow, folderTree } from '@/supabase/functions/_shared/doc-library';
 import { useFocusTrap } from '@/app/components/record/useModal';
-import { saveRecipientToCrm } from '@/lib/contract-recipients';
+import { saveRecipientToCrm, searchContacts } from '@/lib/contract-recipients';
+import type { Contact } from '@/lib/contact-search';
+import { KindBadge } from '@/components/RecipientPicker';
 import { loadDealForSeller } from '@/lib/deal-sheet';
 import { supabase } from '@/lib/supabase';
 import type { ClozrView } from '@/app/clozr/view';
 import { ContractRequestNote, DemoRequests } from '@/components/contract-request/ContractRequestNote';
 import { requestedContracts } from '@/lib/contract-request-api';
 import { setPendingContract, useRequestStore } from '@/lib/contract-request-store';
+import { DealSmartSummary, DealSummaryList } from '@/app/components/record/DealSmartSummary';
+import { demoDealMemory } from '@/lib/deal-memory';
+import { ScreenHeader } from '@/components/ds/Screen';
 
 const INK = 'var(--ink, #18181b)';
 const MUTED = 'var(--meta, #71717a)';
@@ -130,6 +135,7 @@ export function ContractPopup({ V, target, onClose, onChanged, startTemplateId, 
         <ContractRequestNote workspaceId={ids.workspaceId} contractId={target.contractId}
           nameOf={(id) => V.requestTeam.find((m) => m.id === id)?.name ?? 'a teammate'} />
       ) : null}
+      {target.dealId && ids?.workspaceId ? <DealSmartSummary key={target.dealId} workspaceId={ids.workspaceId} dealId={target.dealId} /> : null}
       <ContractsCard
         key={start.n}
         workspaceId={ids?.workspaceId ?? null}
@@ -205,9 +211,21 @@ function NewParty({ workspaceId, kind, start, onDone, onCancel }: { workspaceId:
   );
 }
 
-/** Pick who a new contract is for: search people (sellers) and buyers by name, address, phone or email, or add someone new. */
+/**
+ * Pick who a new contract is for: everyone the home search finds (People,
+ * Buyers, Vendors, the team), or add someone new. The loaded lists answer
+ * first (they know each seller's houses); the database answers the rest, so a
+ * buyer added a minute ago, or one past what this page loaded, is found too.
+ */
 function PartyPicker({ dir, onPick, hint, workspaceId }: { dir: Directory; onPick: (t: Target) => void; hint?: string; workspaceId: number | null }) {
   const [q, setQ] = useState('');
+  const [found, setFound] = useState<{ q: string; list: Contact[] } | null>(null);
+  useEffect(() => {
+    if (!workspaceId || q.trim().length < 2) return;
+    let live = true;
+    const t = window.setTimeout(() => { void searchContacts(workspaceId, q, 25).then((list) => { if (live) setFound({ q, list }); }); }, 200);
+    return () => { live = false; window.clearTimeout(t); };
+  }, [q, workspaceId]);
   const [adding, setAdding] = useState<'seller' | 'buyer' | null>(null);
   // A seller on more than one open house: which house the contract is for.
   const [houseOf, setHouseOf] = useState<Seller | null>(null);
@@ -215,6 +233,24 @@ function PartyPicker({ dir, onPick, hint, workspaceId }: { dir: Directory; onPic
   const hit = (s: string) => terms.every((t) => s.toLowerCase().includes(t));
   const sellers = terms.length ? dir.sellers.filter((s) => hit(`${s.name} ${s.addr} ${s.phone} ${s.email}`)).slice(0, 25) : dir.sellers.slice(0, 12);
   const buyers = terms.length ? dir.buyers.filter((b) => hit(`${b.name} ${b.company} ${b.phone} ${b.email}`)).slice(0, 15) : [];
+  const shownIds = new Set([...sellers.map((x) => `seller:${x.id}`), ...buyers.map((x) => `buyer:${x.id}`)]);
+  const extra = found && found.q === q && terms.length ? found.list.filter((c) => !shownIds.has(`${c.kind}:${c.id}`)) : [];
+  const searching = terms.length > 0 && q.trim().length >= 2 && (!found || found.q !== q);
+  const pickContact = (c: Contact) => {
+    const title = `Contracts · ${c.company || c.name}`;
+    if (c.kind === 'seller') {
+      const s = dir.sellers.find((x) => x.id === c.id);
+      if (s && (s.houses?.length ?? 0) > 1) { setHouseOf(s); return; }
+      onPick({ sellerId: Number(c.id), dealId: s?.dealId ?? null, buyerId: null, title, seller: s ?? { id: Number(c.id), name: c.name, email: c.email ?? '', phone: c.phone ?? '', addr: c.sub ?? '', dealId: null } });
+      return;
+    }
+    if (c.kind === 'buyer') {
+      onPick({ sellerId: null, dealId: null, buyerId: Number(c.id), title, buyer: { id: Number(c.id), name: c.name, company: c.company ?? '', email: c.email ?? '', phone: c.phone ?? '' } });
+      return;
+    }
+    // A vendor or teammate has no contracts link of their own: they fill the first recipient.
+    onPick({ sellerId: null, dealId: null, buyerId: null, title, seller: { id: 0, name: c.name, email: c.email ?? '', phone: c.phone ?? '', addr: c.sub ?? '', dealId: null } });
+  };
   const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left', padding: '9px 12px', border: 0, borderBottom: `1px solid ${HAIR}`, background: 'var(--surface, #fff)', cursor: 'pointer', fontFamily: 'inherit', fontSize: '13px' };
   if (houseOf) {
     // The house in view (or the best deal) first.
@@ -237,23 +273,30 @@ function PartyPicker({ dir, onPick, hint, workspaceId }: { dir: Directory; onPic
   return (
     <div>
       {hint ? <p style={{ margin: '0 0 12px', fontSize: '13px', color: 'var(--muted, #52525b)', lineHeight: 1.45 }}>{hint}</p> : null}
-      <input autoFocus type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a person or buyer by name, address, phone or email…" aria-label="Search who the contract is for" style={{ width: '100%', height: '38px', borderRadius: '9px', border: `1px solid ${LINE}`, padding: '0 12px', fontSize: '14px', background: 'var(--surface, #fff)', marginBottom: '12px' }} />
+      <input autoFocus type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search people, buyers, vendors, team by name, phone or email…" aria-label="Search who the contract is for" style={{ width: '100%', height: '38px', borderRadius: '9px', border: `1px solid ${LINE}`, padding: '0 12px', fontSize: '14px', background: 'var(--surface, #fff)', marginBottom: '12px' }} />
       <div style={{ border: `1px solid ${LINE}`, borderRadius: '10px', overflow: 'hidden', background: 'var(--surface, #fff)' }}>
         {sellers.map((s) => (
           <button key={'s' + s.id} type="button" className="dc2" style={row} onClick={() => ((s.houses?.length ?? 0) > 1 ? setHouseOf(s) : onPick({ sellerId: s.id, dealId: s.dealId, buyerId: null, title: `Contracts · ${s.name}`, seller: s }))}>
-            <span style={{ fontSize: '10px', fontWeight: 700, color: GREEN, background: 'var(--mint-dim, #e7f8f1)', borderRadius: '999px', padding: '2px 7px' }}>PERSON</span>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: GREEN, background: 'var(--mint-dim, #e7f8f1)', borderRadius: '999px', padding: '2px 7px' }}>PERSON</span>
             <span style={{ fontWeight: 600, color: INK }}>{s.name}</span>
             <span style={{ color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.addr}</span>
           </button>
         ))}
         {buyers.map((b) => (
           <button key={'b' + b.id} type="button" className="dc2" style={row} onClick={() => onPick({ sellerId: null, dealId: null, buyerId: b.id, title: `Contracts · ${b.company || b.name}`, buyer: b })}>
-            <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--tx-mint-deep, #08694c)', background: 'var(--c-action-soft, #e7f5ef)', borderRadius: '999px', padding: '2px 7px' }}>BUYER</span>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--tx-mint-deep, #08694c)', background: 'var(--c-action-soft, #e7f5ef)', borderRadius: '999px', padding: '2px 7px' }}>BUYER</span>
             <span style={{ fontWeight: 600, color: INK }}>{b.company || b.name}</span>
             <span style={{ color: MUTED }}>{b.company ? b.name : ''}</span>
           </button>
         ))}
-        {!sellers.length && !buyers.length ? <div style={{ padding: '14px', fontSize: '13px', color: MUTED }}>No one matches “{q}”.</div> : null}
+        {extra.map((c) => (
+          <button key={`${c.kind}-${c.id}`} type="button" className="dc2" style={row} onClick={() => pickContact(c)}>
+            <KindBadge kind={c.kind} />
+            <span style={{ fontWeight: 600, color: INK }}>{c.name}</span>
+            <span style={{ color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.sub ?? ''}</span>
+          </button>
+        ))}
+        {!sellers.length && !buyers.length && !extra.length ? <div style={{ padding: '14px', fontSize: '13px', color: MUTED }}>{searching ? 'Searching…' : `No one matches “${q}”.`}</div> : null}
       </div>
       {workspaceId ? (
         adding ? (
@@ -270,6 +313,8 @@ function PartyPicker({ dir, onPick, hint, workspaceId }: { dir: Directory; onPic
     </div>
   );
 }
+
+type HubTab = 'contracts' | 'summaries' | 'terms' | 'bulk' | 'forms' | 'reports';
 
 /** The list of every contract. `embedded` drops the page chrome for the popup. */
 export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean }) {
@@ -291,8 +336,17 @@ export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean
   const [picking, setPicking] = useState(false);
   /** Set when New contract was started from a template preview. Cleared for a blank new contract. */
   const [pendingTemplate, setPendingTemplate] = useState<{ id: number; name: string } | null>(null);
-  // The list of contracts, or every term Claude read off their PDFs.
-  const [tab, setTab] = useState<'contracts' | 'terms' | 'bulk' | 'forms' | 'reports'>('contracts');
+  // The list of contracts, or every term Claude read off their PDFs. The
+  // page's tab is in its address (/app/contracts/terms) and pushes a history
+  // entry; the popup keeps its own. Bulk send and Form links are for writers.
+  const [ownTab, setOwnTab] = useState<HubTab>('contracts');
+  const routedTab = (V.contractsTab ?? 'contracts') as HubTab;
+  const tab: HubTab = embedded ? ownTab : !ids?.canWrite && (routedTab === 'bulk' || routedTab === 'forms') ? 'contracts' : routedTab;
+  const setContractsTab = V.setContractsTab;
+  const setTab = (t: HubTab) => (embedded ? setOwnTab(t) : setContractsTab(t === 'contracts' ? null : t));
+  // The contract open over the page is in its address too (/app/contracts/k123), replacing the entry.
+  const setContractId = V.setContractId;
+  const routedContract = embedded ? null : V.contractId;
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [folders, setFolders] = useState<DocFolder[]>([]);
   const [folderRev, setFolderRev] = useState(0);
@@ -404,18 +458,80 @@ export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean
     open(pendingRow);
   }
   useEffect(() => { if (pendingRow) setPendingContract(null); }, [pendingRow]);
+  // The address follows the open contract; a link to one this workspace does not have says so.
+  const openId = target?.contractId ?? null;
+  useEffect(() => { if (!embedded && openId != null) setContractId('k' + openId); }, [embedded, openId, setContractId]);
+  const showToast = V.showToast;
+  useEffect(() => {
+    if (!routedContract || !rows || rows.some((c) => 'k' + c.id === routedContract)) return;
+    setContractId(null);
+    setPendingContract(null);
+    showToast('That contract isn’t in this workspace');
+  }, [routedContract, rows, setContractId, showToast]);
+
+  /** What a row says about a contract: its status word, signature progress and whether it is about to expire. */
+  const rowOf = (c: ContractRow) => {
+    const out = ['sent', 'viewed'].includes(c.status);
+    const partly = out && (progress.get(c.id)?.signed ?? 0) > 0;
+    const st = partly ? { ...statusLabel(c.status), text: 'Partially signed' } : statusLabel(c.status);
+    const soon = out && !!c.expires_at && Date.parse(c.expires_at) - now < 3 * DAY;
+    return { out, st, soon, p: partyOf(c), pr: progress.get(c.id) };
+  };
+  const kindLine = (c: ContractRow) => `${KIND_LABELS[c.kind as keyof typeof KIND_LABELS] ?? c.kind}${c.provider === 'pandadoc' ? ' · PandaDoc' : ''}${requested.has(c.id) ? ` · requested by ${V.requestTeam.find((m) => m.id === requested.get(c.id)?.requestedBy)?.name ?? 'a teammate'}` : ''}`;
+  const signatures = (pr: Progress | undefined) => {
+    if (!pr || !pr.total) return '—';
+    const bar = Math.round((pr.signed / pr.total) * 100);
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }} title={`${pr.viewed} of ${pr.total} opened it`}>
+        <span style={{ width: '44px', height: '4px', borderRadius: '999px', background: HAIR, overflow: 'hidden' }}><span style={{ display: 'block', height: '100%', width: `${bar}%`, background: GREEN }} /></span>
+        {pr.signed} of {pr.total} signed
+      </span>
+    );
+  };
+  const folderSelect = (c: ContractRow, height: string) => (
+    <select value={folderOfContract(c) ?? ''} onChange={(e) => void file(c, e.target.value ? Number(e.target.value) : null)} aria-label="Move to folder" style={{ height, maxWidth: V.isMobile ? undefined : '170px', minWidth: 0, flex: V.isMobile ? 1 : undefined, borderRadius: '7px', border: `1px solid ${LINE}`, padding: '0 6px', fontSize: '12px', background: 'var(--surface, #fff)', fontFamily: 'inherit', color: INK }}>
+      <option value="">No folder</option>
+      {tree.map((f) => <option key={f.id} value={f.id}>{'\u00a0\u00a0'.repeat(f.depth)}{f.name}</option>)}
+    </select>
+  );
+  const emptyText = rows ? (rows.length ? 'No contracts match.' : 'No contracts yet. Press + New contract to send one.') : 'Loading contracts…';
 
   const tabs = (
-    <div role="tablist" aria-label="Contracts or extracted terms" style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
-      {([['contracts', 'Contracts'], ['terms', 'Extracted terms'], ...(ids?.canWrite ? [['bulk', 'Bulk send'], ['forms', 'Form links']] as const : []), ['reports', 'Reports']] as const).map(([id, text]) => (
+    <div role="tablist" aria-label="Contracts or extracted terms" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+      {([['contracts', 'Contracts'], ['summaries', 'Deal summaries'], ['terms', 'Extracted terms'], ...(ids?.canWrite ? [['bulk', 'Bulk send'], ['forms', 'Form links']] as const : []), ['reports', 'Reports']] as const).map(([id, text]) => (
         <button key={id} type="button" role="tab" aria-selected={tab === id} className="dc2" onClick={() => setTab(id)} style={{ ...chip(tab === id), borderRadius: '8px' }}>{text}</button>
       ))}
     </div>
   );
+  // One summary per deal that has a contract, newest contract first.
+  const summaryDeals = useMemo(() => {
+    const seen = new Set<number>();
+    const out: { dealId: number; label: string }[] = [];
+    for (const c of rows ?? []) {
+      const id = c.deal_id ?? (c.seller_id ? sellerById.get(c.seller_id)?.dealId : null) ?? null;
+      if (id == null || seen.has(id)) continue;
+      seen.add(id);
+      const s = sellerByDeal.get(id);
+      out.push({ dealId: id, label: [s?.addr, s?.name].filter(Boolean).join(' · ') || c.name || `Deal ${id}` });
+      if (out.length >= 40) break;
+    }
+    return out;
+  }, [rows, sellerById, sellerByDeal]);
+  const [demoMemory] = useState(() => demoDealMemory({ dealId: 0, address: '4873 Orchard Dr' }));
   const body = !wsId ? (
     <>
+      <h2 style={{ margin: '0 0 8px', fontSize: '13.5px', fontWeight: 650, color: INK }}>Deal summaries</h2>
+      <DealSummaryList workspaceId={null} deals={[{ dealId: 0, label: '4873 Orchard Dr · Linda Orton' }]} demo={demoMemory} />
       <DemoRequests V={V} />
       <div style={{ padding: '28px', textAlign: 'center', color: MUTED, fontSize: '13px' }}>Contracts live on a signed-in workspace. Sign in to see and send them.</div>
+    </>
+  ) : tab === 'summaries' ? (
+    <>
+      {tabs}
+      <p style={{ margin: '0 0 12px', fontSize: '12.5px', color: MUTED, maxWidth: '72ch', lineHeight: 1.5 }}>
+        One Smart Summary per deal with a contract: what the PDFs, the deal sheet and the mail disagree on, and what is missing. Deals with conflicts come first.
+      </p>
+      {rows ? <DealSummaryList workspaceId={wsId} deals={summaryDeals} /> : <p role="status" style={{ fontSize: '12.5px', color: MUTED }}>Loading contracts…</p>}
     </>
   ) : tab === 'terms' ? (
     <>
@@ -454,6 +570,35 @@ export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean
           {ids?.canWrite && typeof folderSel === 'number' ? <button type="button" onClick={() => void folderAction('delete')} style={{ ...btn(), height: '30px', color: 'var(--tx-red, #b91c1c)' }}>Delete folder</button> : null}
         </div>
       ) : null}
+      {V.isMobile ? (
+        <div>
+          {shown.map((c) => {
+            const r = rowOf(c);
+            return (
+              <div key={c.id} role="button" tabIndex={0} onClick={() => open(c)} onKeyDown={V.cardKey} className="dc2" style={{ background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '13px', padding: '12px 13px', marginBottom: '8px', cursor: 'pointer' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="t-name" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name || c.template_name || 'Contract'}</span>
+                  <span style={{ flex: 'none', fontSize: '11px', fontWeight: 700, color: r.st.color, background: r.st.bg, borderRadius: '999px', padding: '3px 9px' }}>{r.st.text}</span>
+                </div>
+                <div className="t-meta" style={{ marginTop: '2px' }}>{kindLine(c)}</div>
+                {r.p.label !== '—' ? <div style={{ marginTop: '6px', fontSize: '13px', color: 'var(--ink-2, #3f3f46)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.p.label}</div> : null}
+                <div className="t-meta" style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '4px 10px', alignItems: 'center' }}>
+                  {r.pr?.total ? signatures(r.pr) : null}
+                  <span>{c.sent_at ? `Sent ${fmtDate(c.sent_at)}` : 'Not sent'}</span>
+                  {r.out && c.expires_at ? <span style={r.soon ? { color: '#b45309', fontWeight: 650 } : undefined}>Expires {fmtDate(c.expires_at)}</span> : null}
+                  {c.completed_at ? <span>Signed {fmtDate(c.completed_at)}</span> : null}
+                  {tree.length && !ids?.canWrite ? <span>{tree.find((f) => f.id === folderOfContract(c))?.path ?? 'No folder'}</span> : null}
+                </div>
+                <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} style={{ display: 'flex', gap: '8px', marginTop: '10px', paddingTop: '10px', borderTop: `1px solid ${HAIR}` }}>
+                  <button type="button" className="dc2" onClick={() => open(c)} style={{ ...btn(), height: '36px', flex: 1 }}>Open</button>
+                  {tree.length && ids?.canWrite ? folderSelect(c, '36px') : null}
+                </div>
+              </div>
+            );
+          })}
+          {!shown.length ? <p role="status" style={{ margin: 0, padding: '28px 0', textAlign: 'center', color: MUTED, fontSize: '13px' }}>{emptyText}</p> : null}
+        </div>
+      ) : (
       <div style={{ background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'auto', maxHeight: embedded ? '62vh' : undefined }}>
         <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: '760px' }}>
           <thead>
@@ -461,51 +606,32 @@ export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean
           </thead>
           <tbody>
             {shown.map((c) => {
-              const partly = ['sent', 'viewed'].includes(c.status) && (progress.get(c.id)?.signed ?? 0) > 0;
-              const st = partly ? { ...statusLabel(c.status), text: 'Partially signed' } : statusLabel(c.status);
-              const p = partyOf(c);
+              const { st, p, pr, out, soon } = rowOf(c);
               return (
                 <tr key={c.id} className="dc2" onClick={() => open(c)} style={{ cursor: 'pointer' }}>
                   <td style={{ ...td, color: INK }}>
                     <div style={{ fontWeight: 650 }}>{c.name || c.template_name || 'Contract'}</div>
-                    <div style={{ fontSize: '11px', color: MUTED }}>{KIND_LABELS[c.kind as keyof typeof KIND_LABELS] ?? c.kind}{c.provider === 'pandadoc' ? ' · PandaDoc' : ''}{requested.has(c.id) ? ` · requested by ${V.requestTeam.find((m) => m.id === requested.get(c.id)?.requestedBy)?.name ?? 'a teammate'}` : ''}</div>
+                    <div style={{ fontSize: '11px', color: MUTED }}>{kindLine(c)}</div>
                   </td>
                   <td style={{ ...td, maxWidth: '320px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.label}</td>
                   <td style={td}><span style={{ fontSize: '11px', fontWeight: 700, color: st.color, background: st.bg, borderRadius: '999px', padding: '3px 9px' }}>{st.text}</span></td>
-                  <td style={td}>{(() => {
-                    const pr = progress.get(c.id);
-                    if (!pr || !pr.total) return '—';
-                    const bar = Math.round((pr.signed / pr.total) * 100);
-                    return (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }} title={`${pr.viewed} of ${pr.total} opened it`}>
-                        <span style={{ width: '44px', height: '4px', borderRadius: '999px', background: HAIR, overflow: 'hidden' }}><span style={{ display: 'block', height: '100%', width: `${bar}%`, background: GREEN }} /></span>
-                        {pr.signed} of {pr.total} signed
-                      </span>
-                    );
-                  })()}</td>
+                  <td style={td}>{signatures(pr)}</td>
                   <td style={td}>{fmtDate(c.sent_at)}</td>
-                  <td style={{ ...td, color: ['sent', 'viewed'].includes(c.status) && c.expires_at && Date.parse(c.expires_at) - now < 3 * DAY ? '#b45309' : td.color, fontWeight: ['sent', 'viewed'].includes(c.status) && c.expires_at && Date.parse(c.expires_at) - now < 3 * DAY ? 650 : 400 }}>{['sent', 'viewed'].includes(c.status) ? fmtDate(c.expires_at) : '—'}</td>
+                  <td style={{ ...td, color: soon ? '#b45309' : td.color, fontWeight: soon ? 650 : 400 }}>{out ? fmtDate(c.expires_at) : '—'}</td>
                   <td style={td}>{fmtDate(c.completed_at)}</td>
                   {tree.length ? (
                     <td style={td} onClick={(e) => e.stopPropagation()}>
-                      {ids?.canWrite ? (
-                        <select value={folderOfContract(c) ?? ''} onChange={(e) => void file(c, e.target.value ? Number(e.target.value) : null)} aria-label="Move to folder" style={{ height: '28px', maxWidth: '170px', borderRadius: '7px', border: `1px solid ${LINE}`, padding: '0 6px', fontSize: '12px', background: 'var(--surface, #fff)', fontFamily: 'inherit' }}>
-                          <option value="">—</option>
-                          {tree.map((f) => <option key={f.id} value={f.id}>{'\u00a0\u00a0'.repeat(f.depth)}{f.name}</option>)}
-                        </select>
-                      ) : (tree.find((f) => f.id === folderOfContract(c))?.path ?? '—')}
+                      {ids?.canWrite ? folderSelect(c, '28px') : (tree.find((f) => f.id === folderOfContract(c))?.path ?? '—')}
                     </td>
                   ) : null}
                 </tr>
               );
             })}
-            {rows && !shown.length ? (
-              <tr><td colSpan={tree.length ? 8 : 7} style={{ ...td, height: '80px', textAlign: 'center', color: MUTED }}>{rows.length ? 'No contracts match.' : 'No contracts yet. Press + New contract to send one.'}</td></tr>
-            ) : null}
-            {!rows ? <tr><td colSpan={tree.length ? 8 : 7} style={{ ...td, height: '80px', textAlign: 'center', color: MUTED }}>Loading contracts…</td></tr> : null}
+            {!shown.length ? <tr><td colSpan={tree.length ? 8 : 7} style={{ ...td, height: '80px', textAlign: 'center', color: MUTED }}>{emptyText}</td></tr> : null}
           </tbody>
         </table>
       </div>
+      )}
     </>
   );
 
@@ -513,11 +639,8 @@ export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean
     <>
       {embedded ? body : (
         <section data-screen-label="Contracts" style={{ flex: 1, minWidth: 0, overflow: 'auto', background: 'var(--canvas, #fafafa)' }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', padding: '14px 20px', background: 'var(--surface, #fff)', borderBottom: `1px solid ${LINE}` }}>
-            <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em' }}>Contracts</h1>
-            <span style={{ fontSize: '12px', color: MUTED }}>{rows ? `${rows.length} in this workspace` : ''}</span>
-          </div>
-          <div style={{ padding: '16px 20px' }}>{body}</div>
+          <ScreenHeader title="Contracts" meta={rows ? `${rows.length} in this workspace` : undefined} />
+          <div style={{ padding: 'var(--gutter)' }}>{body}</div>
         </section>
       )}
       {picking ? (
@@ -545,7 +668,7 @@ export function ContractsHub({ V, embedded }: { V: ClozrView; embedded?: boolean
           target={target}
           startTemplateId={pendingTemplate?.id ?? null}
           newSend={!target.contractId && !pendingTemplate}
-          onClose={() => { setTarget(null); setPendingTemplate(null); }}
+          onClose={() => { setTarget(null); setPendingTemplate(null); if (!embedded) setContractId(null); }}
           onChanged={() => setRev((r) => r + 1)}
         />
       ) : null}

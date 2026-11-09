@@ -2,6 +2,7 @@
 // zeroed after an import, the monthly wheel prize, and who already spun.
 
 import { supabase } from './supabase';
+import { localIsoDay } from './deal-close';
 import { loadSettings, saveSettings, type WorkspaceSettings } from './integrations';
 import type { FloorBoard, FloorEvent, FloorSnap } from './floor-show';
 import { EMPTY_SNAP } from './floor-show';
@@ -122,12 +123,13 @@ export function hasSpun(contractId: string): boolean {
   return loadSpins().includes(contractId);
 }
 
+// The rep's own calendar day, not UTC's: that one rolled over at 6 or 7 pm Central and showed the nudge twice in an evening.
 export function nudgeShownToday(): boolean {
-  try { return localStorage.getItem(NUDGE_KEY) === new Date().toISOString().slice(0, 10); } catch { return false; }
+  try { return localStorage.getItem(NUDGE_KEY) === localIsoDay(); } catch { return false; }
 }
 
 export function markNudgeShown() {
-  try { localStorage.setItem(NUDGE_KEY, new Date().toISOString().slice(0, 10)); } catch { /* private mode */ }
+  try { localStorage.setItem(NUDGE_KEY, localIsoDay()); } catch { /* private mode */ }
 }
 
 function fromWorkspace(s: WorkspaceSettings): FloorSettings {

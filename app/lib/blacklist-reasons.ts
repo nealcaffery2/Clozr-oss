@@ -4,6 +4,7 @@
 // it just cannot say why.
 
 import { supabase } from './supabase';
+import { everyRow } from './every-row';
 
 export const BLACKLIST_REASONS = [
   'Asked not to be contacted',
@@ -52,10 +53,13 @@ export async function saveBlacklistReason(
 export async function loadBlacklistReasons(workspaceId: number | null): Promise<Map<string, string>> {
   const out = new Map(local);
   if (!supabase || workspaceId == null) return out;
-  const { data, error } = await supabase.from('blacklist_reasons')
-    .select('record_kind, record_id, reason').eq('workspace_id', workspaceId).limit(5000);
-  if (error) return out;
-  for (const r of data ?? []) {
+  let data: { record_kind: Parameters<typeof key>[0]; record_id: number; reason: string }[];
+  try {
+    data = await everyRow(() => supabase!.from('blacklist_reasons').select('record_kind, record_id, reason').eq('workspace_id', workspaceId).order('id'));
+  } catch {
+    return out;
+  }
+  for (const r of data) {
     out.set(key(r.record_kind, r.record_id), r.reason);
   }
   for (const [k, v] of local) out.set(k, v);

@@ -67,10 +67,13 @@ export function useCallQueue(workspaceId: number | null, userId: string | null):
 
   const add = useCallback<CallQueue['add']>(async (kind, recordIds) => {
     const ids = [...new Set(recordIds.filter((n) => Number.isFinite(n)))];
-    const have = new Set(items.filter((i) => i.kind === kind).map((i) => i.recordId));
-    const fresh = ids.filter((n) => !have.has(n));
-    if (!fresh.length) return { ok: true, added: 0, already: ids.length };
+    const notQueued = (list: QueueItem[]) => {
+      const have = new Set(list.filter((i) => i.kind === kind).map((i) => i.recordId));
+      return ids.filter((n) => !have.has(n));
+    };
+    let fresh = notQueued(items);
     if (store === 'workspace') {
+      if (!fresh.length) return { ok: true, added: 0, already: ids.length };
       // Ascending positions keep the selection's order; ignoreDuplicates lets a
       // row another tab queued in the meantime be skipped instead of failing all.
       const base = Date.now();
@@ -84,7 +87,13 @@ export function useCallQueue(workspaceId: number | null, userId: string | null):
       if (next) setItems(next);
       return { ok: true, added: fresh.length, already: ids.length - fresh.length };
     }
-    setItems((prev) => [...prev, ...fresh.map((n) => ({ id: `${kind}-${n}`, kind, recordId: n }))]);
+    // In memory there is no unique index, so dedupe against the latest list,
+    // not the `items` this callback closed over: two quick adds before a
+    // render saw the same list and queued the same person twice.
+    setItems((prev) => {
+      fresh = notQueued(prev);
+      return fresh.length ? [...prev, ...fresh.map((n) => ({ id: `${kind}-${n}`, kind, recordId: n }))] : prev;
+    });
     return { ok: true, added: fresh.length, already: ids.length - fresh.length };
   }, [items, store, workspaceId, read]);
 

@@ -51,11 +51,11 @@ export const DEAL_MACHINE = '#ea580c';
 export const DEAL_MACHINE_TINT = 'var(--tint-orange, #fff7ed)';
 
 /**
- * Buyr — wholesale sniping, Homefull, and Facebook buyer comments.
+ * Facebook buyer comments and discovered buyers.
  * Teal, so the Tools row can tell it apart from Genius violet and Deal Machine orange.
  */
 export const BUYR = '#0f766e';
-/** Buyr's tint, for the selected deal and the Homefull note. */
+/** Tint for the selected deal and discovery notes. */
 export const BUYR_TINT = '#f0fdfa';
 
 /**

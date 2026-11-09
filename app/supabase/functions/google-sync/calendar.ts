@@ -38,10 +38,10 @@
  *                    (the CRM's unsent edit wins; it is pushed next)
  *       new id     → an appointment is inserted with source='google', on the
  *                    account holder's calendar, kind guessed from the title
- *       task event → due_at follows the event start (legacy links table)
+ *       task event → ignored (tasks no longer go on the calendar)
  *
- * Tasks still ride google_event_links, one-way plus the moved date coming
- * back: a due task is a reminder, nobody is invited to it.
+ * Tasks are not pushed: clearTaskEvents takes down the task events earlier
+ * passes made. A task event still on a calendar is ignored on the way back.
  *
  * Everything is idempotent: a second run with nothing changed does nothing
  * but list.
@@ -49,6 +49,8 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { Account, Feed } from '../_shared/google.ts';
 import { conferenceFor, keepMeetLink, writeQuery } from '../_shared/meeting-invite.ts';
+import { pulledCalendarId } from '../_shared/calendar-pull.ts';
+import { appLink, appPath, isOwnCalendarLink } from '../_shared/app-paths.ts';
 
 export { writeQuery };
 
@@ -120,6 +122,21 @@ let meetCols: boolean | null = null;
 const missingMeet = (err: { message?: string } | null | undefined) => !!err && /meet(_link)?\b/.test(String(err.message ?? '')) && /column|does not exist|schema cache/i.test(String(err.message ?? ''));
 
 /** Select appointments with the Meet columns when the database has them. `q` builds the query from a column list. */
+/** appointments.ical_uid (migration 369): null until a read tells, false when this database has no such column. */
+let icalCol: boolean | null = null;
+
+/** The row cal-webhook filed for a booking whose event the pull now sees for the first time. */
+async function adoptByIcal(admin: SupabaseClient, ws: number, icalUid: string): Promise<ApptRow | null> {
+  if (icalCol === false) return null;
+  const { data, error } = await admin.from('appointments').select('id').eq('workspace_id', ws).eq('ical_uid', icalUid)
+    .is('google_event_id', null).is('deleted_at', null).limit(1);
+  if (error) { if (/ical_uid/.test(error.message ?? '')) icalCol = false; return null; }
+  icalCol = true;
+  const id = (data as { id: number }[] | null)?.[0]?.id;
+  if (!id) return null;
+  return (await selectAppts((cols) => admin.from('appointments').select(cols).eq('id', id)))[0] ?? null;
+}
+
 async function selectAppts(q: (cols: string) => PromiseLike<{ data: unknown; error: { message?: string } | null }>): Promise<ApptRow[]> {
   if (meetCols !== false) {
     const r = await q(APPT_MEET);
@@ -160,16 +177,18 @@ export function eventBody(row: ApptRow, seller: SellerLite | null, origin: strin
   // A Meet invite is read by the person invited (a Compr prospect, a seller):
   // only the notes go in, never the CRM's link or name.
   const guestFacing = !!row.meet;
+  // The record it is about, else the calendar (lib/routes.ts paths).
+  const link = appLink(origin, row.seller_id ? appPath.seller(row.seller_id) : row.buyer_id ? appPath.buyer(row.buyer_id) : appPath.calendar);
   return {
     summary: row.title || row.kind || 'Appointment',
-    description: (guestFacing ? [row.notes ?? ''] : [who, row.notes ?? '', `${origin}/clozr/`]).filter(Boolean).join('\n\n'),
+    description: (guestFacing ? [row.notes ?? ''] : [who, row.notes ?? '', link]).filter(Boolean).join('\n\n'),
     location: row.location ?? seller?.property_address ?? undefined,
     start: row.all_day ? { date: localDate(row.starts_at) } : { dateTime: iso(start) },
     end: row.all_day ? { date: nextDate(row.ends_at ?? row.starts_at) } : { dateTime: iso(end > start ? end : new Date(start.getTime() + 30 * 60_000)) },
     attendees: (row.attendees ?? []).filter((a) => a?.email).map((a) => ({ email: a.email, displayName: a.name ?? undefined })),
     guestsCanInviteOthers: false,
     extendedProperties: { private: { clozr: '1', clozr_source: 'appointment', clozr_id: String(row.id), clozr_ws: String(row.workspace_id), clozr_kind: row.kind } },
-    ...(guestFacing ? {} : { source: { title: 'Open in CLOZR', url: `${origin}/clozr/` } }),
+    ...(guestFacing ? {} : { source: { title: 'Open in CLOZR', url: link } }),
     status: 'confirmed',
     ...conferenceFor(row),
   };
@@ -440,9 +459,11 @@ export async function pullAppointments(admin: SupabaseClient, account: Account, 
     ? feeds
     // Migration 74 not applied here: read the one calendar, exactly as before.
     : (account.calendar_id ? [{ calendar_id: account.calendar_id, summary: null, writable: true, enabled: true, sync_token: account.sync_token }] : []);
+  // The calendars CLOZR owns, as the push counts them.
+  const writable = new Set<string>([...(account.calendar_id ? [account.calendar_id] : []), ...list.filter((f) => f.writable).map((f) => f.calendar_id)]);
   for (const feed of list) {
     try {
-      await pullFeed(admin, account, accessToken, feed, out);
+      await pullFeed(admin, account, accessToken, feed, writable, out);
     } catch (err) {
       out.pullFailed++;
       console.error('calendar feed read failed', { account: account.id, calendar: feed.calendar_id, err: String(err) });
@@ -454,7 +475,7 @@ export async function pullAppointments(admin: SupabaseClient, account: Account, 
   return out;
 }
 
-async function pullFeed(admin: SupabaseClient, account: Account, accessToken: string, feed: Feed, out: PullResult): Promise<void> {
+async function pullFeed(admin: SupabaseClient, account: Account, accessToken: string, feed: Feed, writable: ReadonlySet<string>, out: PullResult): Promise<void> {
   const calendarId = feed.calendar_id;
   const ws = account.workspace_id;
 
@@ -487,28 +508,32 @@ async function pullFeed(admin: SupabaseClient, account: Account, accessToken: st
       for (const r of data) byLegacyId.set(r.id, r);
     }
   }
+  // The iCal UIDs cal-webhook has a row waiting for, read 200 at a time. Asking
+  // per event was one round-trip for every unknown instance, cancelled ones
+  // included: a calendar with thousands of them never finished a pass, so its
+  // syncToken never moved and every pass re-read the same backlog (504/546).
+  const icalWaiting = new Set<string>();
+  const icals = [...new Set(work.filter((ev) => ev.iCalUID && !byEventId.has(String(ev.id ?? ''))).map((ev) => String(ev.iCalUID)))];
+  for (let i = 0; icalCol !== false && i < icals.length; i += 200) {
+    const { data, error } = await admin.from('appointments').select('ical_uid').eq('workspace_id', ws)
+      .in('ical_uid', icals.slice(i, i + 200)).is('google_event_id', null).is('deleted_at', null);
+    if (error) { if (/ical_uid/.test(error.message ?? '')) icalCol = false; break; }
+    for (const row of (data ?? []) as { ical_uid: string }[]) icalWaiting.add(row.ical_uid);
+  }
 
   for (const ev of work) {
     try {
       const props = ev.extendedProperties?.private ?? {};
-      // A task's reminder: only its date is ours to follow.
-      if (props.clozr_source === 'task') {
-        const id = Number(props.clozr_id);
-        const start = ev.start?.dateTime ?? null;
-        if (ev.status !== 'cancelled' && Number.isFinite(id) && start) {
-          const { data: row } = await admin.from('tasks').select('id, due_at').eq('id', id).eq('workspace_id', ws).maybeSingle();
-          if (row && (!row.due_at || new Date(row.due_at).getTime() !== new Date(start).getTime())) {
-            await admin.from('tasks').update({ due_at: new Date(start).toISOString() }).eq('id', id);
-            out.applied++;
-          }
-        }
-        continue;
-      }
+      // A task event an earlier pass made: on its way off the calendar, never read back.
+      if (props.clozr_source === 'task') continue;
 
       let r: ApptRow | null = byEventId.get(String(ev.id ?? '')) ?? null;
       if (!r && props.clozr_source === 'appointment' && Number.isFinite(Number(props.clozr_id))) {
         r = byLegacyId.get(Number(props.clozr_id)) ?? null;
       }
+      // A Cal.com booking: cal-webhook may have filed the row first, with the
+      // contact on it. Adopt that row rather than add a second copy.
+      if (!r && ev.iCalUID && icalWaiting.has(String(ev.iCalUID))) r = await adoptByIcal(admin, ws, String(ev.iCalUID));
       const now = iso(new Date());
 
       if (ev.status === 'cancelled') {
@@ -544,7 +569,8 @@ async function pullFeed(admin: SupabaseClient, account: Account, accessToken: st
           // Google's link when the event has one (a Meet added in Google
           // Calendar comes in too), else the one we stored: never wiped.
           ...(meetCols ? { meet_link: keepMeetLink(ev, r.meet_link), ...(ev.hangoutLink ? { meet: true } : {}) } : {}),
-          google_event_id: ev.id, google_calendar_id: calendarId, google_etag: ev.etag ?? null, google_updated_at: ev.updated ?? now,
+          google_event_id: ev.id, google_calendar_id: pulledCalendarId(r.google_calendar_id, calendarId, feed.writable, writable),
+          google_etag: ev.etag ?? null, google_updated_at: ev.updated ?? now,
           sync_state: 'synced', sync_error: null, last_synced_at: now,
         }).eq('id', r.id);
         out.applied++;
@@ -565,6 +591,7 @@ async function pullFeed(admin: SupabaseClient, account: Account, accessToken: st
           ...(meetCols && ev.hangoutLink ? { meet: true, meet_link: String(ev.hangoutLink) } : {}),
           created_by: account.user_id, assigned_to: account.user_id,
           source: 'google',
+          ...(icalCol !== false && ev.iCalUID ? { ical_uid: String(ev.iCalUID) } : {}),
           google_event_id: ev.id, google_calendar_id: calendarId, google_etag: ev.etag ?? null, google_updated_at: ev.updated ?? now,
           sync_state: 'synced', last_synced_at: now,
         });
@@ -608,7 +635,7 @@ async function pullFeed(admin: SupabaseClient, account: Account, accessToken: st
 /** Our push writes "who — address", the notes, and the CLOZR link into the description; only the notes belong back in the row. */
 function stripOurFooter(description: unknown, fallback: string | null): string | null {
   if (typeof description !== 'string') return fallback;
-  const parts = description.split(/\n\n+/).map((s) => s.trim()).filter((s) => s && !/\/clozr\/?$/.test(s));
+  const parts = description.split(/\n\n+/).map((s) => s.trim()).filter((s) => s && !isOwnCalendarLink(s));
   if (!parts.length) return null;
   // The first block is the seller line when it matches "Name — address"; the notes follow.
   const body = parts.length > 1 && / — /.test(parts[0]) ? parts.slice(1) : parts;
@@ -616,122 +643,27 @@ function stripOurFooter(description: unknown, fallback: string | null): string |
 }
 
 // ------------------------------------------------------------------- tasks
-type Ev = { summary: string; description: string; start: string; end: string };
-const enc = new TextEncoder();
-async function fingerprint(o: unknown): Promise<string> {
-  const bits = await crypto.subtle.digest('SHA-256', enc.encode(JSON.stringify(o)));
-  return Array.from(new Uint8Array(bits)).slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
 /**
- * Open dated tasks from the last month forward, one-way, through
- * google_event_links exactly as before. Links left over from appointments
- * (which now carry their own event) are removed with their events, so a
- * calendar that held a copy of every rep's appointments is tidied up.
- *
- * Only the account owner's own tasks, and never an action plan step. Plan
- * steps are the sequence engine's queue (texts, emails and drops it sends
- * itself, plus a call per contact), thousands of rows in a Compr workspace;
- * on the calendar they buried every real meeting, and they stay on the CLOZR
- * task list. Both reads page past PostgREST's 1,000-row cap: the old single
- * read saw only 1,000 links, so every sync re-created an event for each task
- * past that, the link insert hit (account, source, source_id), and the new
- * event was orphaned. sweepOrphanTaskEvents clears those up.
+ * Tasks no longer go on anyone's Google Calendar (Oct 30, 2026: the owner
+ * asked for none at all; Alex's calendar held 1,352 of them). Each pass
+ * drops the account's task links and takes down the task events CLOZR made,
+ * found by their private clozr_source=task property, so nothing a person put
+ * on the calendar is touched. ORPHAN_SWEEP_BUDGET deletes a pass; the next
+ * pass carries on until none are left, then the list call finds nothing.
  */
-export async function pushTasks(admin: SupabaseClient, account: Account, accessToken: string, origin: string): Promise<{ created: number; updated: number; removed: number }> {
+export async function clearTaskEvents(admin: SupabaseClient, account: Account, accessToken: string): Promise<{ created: number; updated: number; removed: number }> {
   const calendarId = account.calendar_id;
   if (!calendarId) return { created: 0, updated: 0, removed: 0 };
-  const ws = account.workspace_id;
-  const since = iso(new Date(Date.now() - 30 * 24 * HOUR));
-  const [tasks, links] = await Promise.all([
-    pageAll((from, to) => admin.from('tasks').select('id, title, task_type, due_at, done, seller_id').eq('workspace_id', ws).eq('done', false)
-      .eq('assigned_to', account.user_id).is('enrollment_id', null).not('due_at', 'is', null).gte('due_at', since).order('id').range(from, to)),
-    pageAll((from, to) => admin.from('google_event_links').select('id, source, source_id, event_id, pushed').eq('account_id', account.id).order('id').range(from, to)),
-  ]);
-  // A partial read would look like tasks that stopped qualifying and take their events down.
-  if (!tasks || !links) throw new Error('task push: could not read tasks or links');
-  // Only the sellers these tasks name. The whole workspace (13,000 rows) was
-  // read on every calendar pass and PostgREST cut it at 1,000, so most task
-  // events went out without the seller's name.
-  const sellerIds = [...new Set(((tasks ?? []) as Any[]).map((t) => t.seller_id).filter((x) => x != null))];
-  const { data: sellers } = sellerIds.length
-    ? await admin.from('sellers').select('id, name, property_address').in('id', sellerIds)
-    : { data: [] as Any[] };
-  const who = new Map((sellers ?? []).map((s: Any) => [s.id, s]));
-  const linkOf = new Map((links ?? []).map((l: Any) => [`${l.source}:${l.source_id}`, l]));
-
-  const want = new Map<string, Ev>();
-  for (const t of (tasks ?? []) as Any[]) {
-    const s = t.seller_id ? who.get(t.seller_id) : null;
-    want.set(`task:${t.id}`, {
-      summary: `${t.task_type}: ${t.title}`,
-      description: [s ? `${s.name}${s.property_address ? ' — ' + s.property_address : ''}` : 'CLOZR task', `${origin}/clozr/`].join('\n\n'),
-      start: new Date(t.due_at).toISOString(),
-      end: new Date(new Date(t.due_at).getTime() + 30 * 60_000).toISOString(),
-    });
-  }
-
-  let created = 0, updated = 0, removed = 0;
-  for (const [key, ev] of want) {
-    const link = linkOf.get(key);
-    const print = await fingerprint(ev);
-    if (link && link.pushed === print) continue;
-    const body = {
-      summary: ev.summary, description: ev.description,
-      start: { dateTime: ev.start }, end: { dateTime: ev.end },
-      extendedProperties: { private: { clozr: '1', clozr_source: 'task', clozr_id: key.slice(5), clozr_ws: String(ws) } },
-      source: { title: 'Open in CLOZR', url: `${origin}/clozr/` },
-      status: 'confirmed',
-    };
-    try {
-      if (link) {
-        await api(accessToken, evUrl(calendarId, link.event_id), { method: 'PATCH', body: JSON.stringify(body) });
-        await admin.from('google_event_links').update({ pushed: print }).eq('id', link.id);
-        updated++;
-      } else {
-        const made = await api(accessToken, evUrl(calendarId), { method: 'POST', body: JSON.stringify(body) });
-        const { error: linkErr } = await admin.from('google_event_links').insert({ account_id: account.id, source: 'task', source_id: Number(key.slice(5)), event_id: made.id, pushed: print });
-        if (linkErr) {
-          // Without a link nothing would ever update or remove this event: take it back now.
-          console.error('task link not kept, removing its event', { key, err: linkErr.message });
-          await api(accessToken, evUrl(calendarId, made.id), { method: 'DELETE' }).catch(() => null);
-          continue;
-        }
-        created++;
-      }
-    } catch (err) {
-      if (err instanceof GoogleError && err.status === 404 && link) await admin.from('google_event_links').delete().eq('id', link.id);
-      else console.error('task push failed', { key, err: String(err) });
-    }
-  }
-  for (const [key, link] of linkOf) {
-    if (want.has(key)) continue;
-    await api(accessToken, evUrl(calendarId, link.event_id), { method: 'DELETE' }).catch(() => null);
-    await admin.from('google_event_links').delete().eq('id', link.id);
-    linkOf.delete(key);
-    removed++;
-  }
-  removed += await sweepOrphanTaskEvents(accessToken, calendarId, new Set([...linkOf.values()].map((l: Any) => String(l.event_id))));
-  return { created, updated, removed };
-}
-
-/** Every row of a query, 1,000 at a time. Null when a page fails, so a partial read is never taken for the whole. */
-async function pageAll(page: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>): Promise<Any[] | null> {
-  const out: Any[] = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await page(from, from + 999);
-    if (error) { console.error('paged read failed', error.message); return null; }
-    out.push(...(data ?? []));
-    if (!data || data.length < 1000) return out;
-  }
+  await admin.from('google_event_links').delete().eq('account_id', account.id).eq('source', 'task');
+  const removed = await sweepOrphanTaskEvents(accessToken, calendarId, new Set());
+  return { created: 0, updated: 0, removed };
 }
 
 /** Deletes per sync: drains a flooded calendar within a few hours and stays inside one run. */
 export const ORPHAN_SWEEP_BUDGET = 400;
 
 /**
- * Task events on the CLOZR calendar that no link points at: the duplicates
- * the capped read made, and any other task event CLOZR lost track of. Only
+ * Task events on the CLOZR calendar not in `keep` (now always empty). Only
  * events carrying our private clozr_source=task property are listed, so
  * nothing a person put on the calendar is touched. Up to ORPHAN_SWEEP_BUDGET
  * a run; the next sync carries on.

@@ -22,8 +22,9 @@ import { type Any, loadCompany, logContractFeed, logEvent } from '../_shared/doc
 import { deliverLinks } from '../_shared/docs-flow.ts';
 import { inSendingHours, pendingApprovals, reminderDue, turn } from '../_shared/signing-order.ts';
 import { publishContract } from '../_shared/contract-webhooks.ts';
-import { wantsEmail } from '../_shared/docs-people.ts';
+import { wantsEmail, wantsSms } from '../_shared/docs-people.ts';
 import { BLACKLIST_UNREAD } from '../../../lib/blacklist.ts';
+import { everyRowResult } from '../_shared/every-row.ts';
 
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...HARDENING, 'Content-Type': 'application/json' } });
 
@@ -37,9 +38,11 @@ Deno.serve(async (req) => {
   const nowIso = new Date(now).toISOString();
   const out = { expired: 0, reminded: 0, warned: 0, errors: [] as string[] };
 
-  const { data: open, error } = await admin.from('contracts')
+  // Every open contract, paged by id: a .limit(500) with no order handed the
+  // same arbitrary 500 to every tick, and the rest never expired or got a nudge.
+  const { data: open, error } = await everyRowResult<Any>(() => admin.from('contracts')
     .select('id, workspace_id, name, status, expires_at, sent_at, approval_requested_at, message, signing_order_mode, reminder_policy, created_by, deal_id, seller_id, buyer_id, last_event, ref_number, kind, provider')
-    .eq('provider', 'clozr').in('status', ['sent', 'viewed', 'awaiting_approval']).is('deleted_at', null).limit(500);
+    .eq('provider', 'clozr').in('status', ['sent', 'viewed', 'awaiting_approval']).is('deleted_at', null).order('id'));
   if (error) return json({ error: error.message }, 500);
 
   const companies = new Map<number, Awaited<ReturnType<typeof loadCompany>>['company']>();
@@ -104,8 +107,11 @@ Deno.serve(async (req) => {
       const sent = d.emailed + d.texted;
       // A text held because the blacklist could not be read reached nobody: a text-only signer is not counted as reminded, so the next run tries again.
       const held = new Set(d.failed.filter((f) => f.reason === BLACKLIST_UNREAD).map((f) => f.id));
-      for (const s of due) if (!held.has(s.id) || wantsEmail(s)) await admin.from('contract_signers').update({ last_reminded_at: nowIso, reminder_count: Number(s.reminder_count ?? 0) + 1 }).eq('id', s.id);
-      await logEvent(admin, row, 'reminded', { to: due.map((s) => s.label || s.role), emailed: d.emailed, texted: d.texted, ...(d.failed.length ? { failed: d.failed } : {}), automatic: true });
+      // Same for email when none went out (Resend unset or refused: d.emailed is 0): counting it would spend the
+      // recipient's reminders on nothing and stop them for good. Only someone a mail or text went to is stamped.
+      const reached = due.filter((s) => (wantsEmail(s) && d.emailed > 0) || (wantsSms(s) && !held.has(s.id)));
+      for (const s of reached) await admin.from('contract_signers').update({ last_reminded_at: nowIso, reminder_count: Number(s.reminder_count ?? 0) + 1 }).eq('id', s.id);
+      if (reached.length) await logEvent(admin, row, 'reminded', { to: reached.map((s) => s.label || s.role), emailed: d.emailed, texted: d.texted, ...(d.failed.length ? { failed: d.failed } : {}), automatic: true });
       out.reminded += sent;
     } catch (e) {
       out.errors.push(`${row.id}: ${e instanceof Error ? e.message : String(e)}`);

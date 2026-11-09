@@ -1,0 +1,60 @@
+name: Bug
+description: Something in CLOZR is broken or acting wrong. The nightly bug sweep picks these up.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw. Paste any error text exactly.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where in CLOZR
+      description: Screen, tab or feature, e.g. "Record > Notes", "AI Agent test call", "Buyers import".
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      options:
+        - iPhone
+        - Android phone
+        - iPad / tablet
+        - Computer
+        - Both phone and computer
+    validations:
+      required: true
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      options:
+        - Safari
+        - Chrome
+        - Edge
+        - Firefox
+        - Not sure
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen
+      description: Numbered clicks or taps from a fresh page load. Skip if you don't know.
+      placeholder: |
+        1. Open a seller record
+        2. Tap Notes
+        3. ...
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or anything else
+      description: Drag in screenshots or a screen recording. Mention the seller, deal or workspace if it only happens on one.

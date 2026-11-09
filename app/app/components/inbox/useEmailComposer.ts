@@ -62,6 +62,17 @@ export function useEmailComposer({ thread, workspaceId, recordFor, mergeFor, toa
   const [err, setErr] = useState<string | null>(null);
   // A View-as preview sends nothing and uploads nothing; say so in the box.
   const canWrite = useCanWrite();
+  // The Gmail pane stays mounted while the rep clicks from thread to thread.
+  // Seeded once, To and Subject kept the first thread's person, and a reply
+  // to the second thread went to the first thread's person. Reseed per thread.
+  const threadKey = thread?.key ?? null;
+  const [seededFor, setSeededFor] = useState(threadKey);
+  if (seededFor !== threadKey) {
+    setSeededFor(threadKey);
+    setTo(thread?.counterpart ?? initialTo ?? '');
+    setSubject(thread ? `Re: ${thread.subject}` : '');
+    setCc(''); setBcc(''); setShowCopies(false); setFiles([]); setDraft(''); setTpl(null); setErr(null);
+  }
 
   const rec = to.includes('@') ? recordFor?.(to) ?? null : null;
   const name = rec?.name ?? thread?.counterpart ?? to ?? '';
@@ -118,15 +129,18 @@ export function useEmailComposer({ thread, workspaceId, recordFor, mergeFor, toa
     // The newest message id in the thread, which is what makes Gmail file the
     // reply under it rather than starting a conversation of its own.
     const inReplyTo = [...(thread?.rows ?? [])].reverse().find((r) => r.source_id.startsWith('<'))?.source_id ?? null;
+    // The thread's record only while the reply still goes to the thread's person; a changed To files on whoever it now goes to.
+    const sameParty = !!thread?.counterpart && to.trim().toLowerCase() === thread.counterpart.toLowerCase();
     const r = await sendEmail(workspaceId, {
       to, cc: cc.trim() || undefined, bcc: bcc.trim() || undefined,
       subject: subject.trim(), body_text: text, body_html: rendered?.html ?? undefined, in_reply_to: inReplyTo,
       attachments: files.flatMap((f) => (f.kind === 'upload' ? [f.file] : [])),
       deal_file_ids: files.flatMap((f) => (f.kind === 'deal' ? [f.id] : [])),
       email_attachment_ids: files.flatMap((f) => (f.kind === 'email' ? [f.id] : [])),
-      track, deal_id: dealId ?? thread?.deal_id ?? null,
-      seller_id: thread?.seller_id ?? (rec?.kind === 'seller' ? rec.id ?? null : null),
-      buyer_id: thread?.buyer_id ?? (rec?.kind === 'buyer' ? rec.id ?? null : null),
+      // A reply stays on its thread's house; only a new email takes the folder's deal.
+      track, deal_id: (thread ? thread.deal_id ?? dealId : dealId) ?? null,
+      seller_id: (sameParty ? thread?.seller_id : null) ?? (rec?.kind === 'seller' ? rec.id ?? null : null),
+      buyer_id: (sameParty ? thread?.buyer_id : null) ?? (rec?.kind === 'buyer' ? rec.id ?? null : null),
     });
     setSending(false);
     if (!r.ok) return setErr(r.message);

@@ -89,3 +89,16 @@ export const MESSAGE_RULES = `No AI slop in anything you send. Plain words, cont
 /** For an agent on a call. */
 export const SPOKEN_RULES = `# How you talk (no AI slop)
 Talk like a real person on the phone, not a script. Short, plain, specific. Never say: ${SLOP_WORDS.filter((w) => !/s$|ing$|ed$/.test(w) && !w.includes('-')).join(', ')}. Never say "it's worth noting", "at the end of the day", "when it comes to", "the truth is", "here's the thing", "let me be clear", "I'll be honest", "what nobody tells you", "what if I told you", "it's not just X, it's Y", "a testament to" or "plays a vital role". Don't sum up what you just said or end on a line that tries to sound wise. Answer the question, then ask the next one.`;
+
+/**
+ * The mechanical patterns fixed in place: bold markers dropped, an em dash
+ * made a comma, emoji removed. What is left is wording, which never blocks a
+ * send (owner, 2026-10-20: messages go out).
+ */
+export function cleanMechanicalSlop(text: string): string {
+  return text
+    .replace(/\*\*([^*\n]{1,200})\*\*/g, '$1')
+    .replace(/\s?\u2014\s?|\s\u2013\s|\s--\s/g, ', ')
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\uFE0F?/gu, '')
+    .replace(/[ \t]{2,}/g, ' ');
+}

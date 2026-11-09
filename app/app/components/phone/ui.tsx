@@ -26,7 +26,7 @@ export function Btn({ primary, danger, disabled, onClick, children, title, small
       className={primary ? 'dc3' : 'dc2'}
       style={{
         height: small ? '26px' : '30px', padding: small ? '0 8px' : '0 11px', borderRadius: '8px', fontSize: small ? '11.5px' : '12px', fontWeight: 600, whiteSpace: 'nowrap',
-        cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1,
+        cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1,
         border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? GREEN : 'var(--surface, #fff)', color: primary ? 'var(--surface, #fff)' : danger ? '#b91c1c' : INK,
       }}
     >

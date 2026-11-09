@@ -7,12 +7,13 @@ import React from 'react';
 import type { ClozrView } from '@/app/clozr/view';
 import { displayName, useSession } from '@/lib/session';
 import { ROLE_LABEL, type Role } from '@/lib/team';
+import { ThemeMenuItem } from './ThemeBubble';
 
 /** Quick add: every record type the role can create, with its Q shortcut. */
 export function QuickAddMenu({ V, style }: { V: ClozrView; style: React.CSSProperties }) {
   return (
-    <div className="cz-menu" style={{ zIndex: 60, ...style }}>
-      <div style={{fontSize: "10.5px", fontWeight: "600", letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--subtle, #a1a1aa)", padding: "8px 10px 6px"}}>
+    <div className="cz-menu" style={{ zIndex: 'var(--z-popover)', ...style }}>
+      <div style={{fontSize: "11.5px", fontWeight: "500", color: "var(--muted, #71717a)", padding: "8px 10px 6px"}}>
         Quick add
       </div>
       {(V.quickAddItems || []).map((q, q__i) => (
@@ -21,7 +22,7 @@ export function QuickAddMenu({ V, style }: { V: ClozrView; style: React.CSSPrope
           <span>
             {q.label}
           </span>
-          <span style={{fontSize: "11px", color: "var(--subtle, #a1a1aa)"}}>
+          <span style={{fontSize: "11px", color: "var(--meta, #71717a)"}}>
             {q.key}
           </span>
         </button>
@@ -37,13 +38,13 @@ export function AccountMenu({ V, className, style }: { V: ClozrView; className: 
   const who = displayName(session);
   return (
     <>
-    <div onClick={V.closeAccountMenu} style={{position: "fixed", inset: "0", zIndex: "59"}}></div>
-    <div role="menu" className={className} style={{ zIndex: 60, ...style }}>
+    <div onClick={V.closeAccountMenu} style={{position: "fixed", inset: "0", zIndex: "calc(var(--z-popover) - 1)"}}></div>
+    <div role="menu" className={className} style={{ zIndex: 'var(--z-popover)', ...style }}>
       <div style={{padding: "9px 10px 10px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", marginBottom: "4px"}}>
         <div style={{fontSize: "13.5px", fontWeight: "600", letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
           {who}
         </div>
-        <div style={{fontSize: "11.5px", color: "var(--subtle, #a1a1aa)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
+        <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
           {session.user?.email ?? 'Sample data · not signed in'}
         </div>
         {(session.workspace) ? (
@@ -54,7 +55,7 @@ export function AccountMenu({ V, className, style }: { V: ClozrView; className: 
       </div>
       {session.workspaces.length > 1 ? (
         <div style={{padding: "2px 0 4px"}}>
-          <div style={{fontSize: "10.5px", fontWeight: "600", letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--subtle, #a1a1aa)", padding: "6px 10px 4px"}}>
+          <div style={{fontSize: "11.5px", fontWeight: "500", color: "var(--muted, #71717a)", padding: "6px 10px 4px"}}>
             Workspaces
           </div>
           {session.workspaces.map((w) => {
@@ -73,7 +74,7 @@ export function AccountMenu({ V, className, style }: { V: ClozrView; className: 
                   <span style={{display: "block", fontSize: "13px", fontWeight: on ? "600" : "500", color: "var(--ink, #18181b)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
                     {w.name}
                   </span>
-                  <span style={{display: "block", fontSize: "11px", color: "var(--subtle, #a1a1aa)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
+                  <span style={{display: "block", fontSize: "11px", color: "var(--meta, #71717a)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
                     {role}
                   </span>
                 </span>
@@ -90,6 +91,7 @@ export function AccountMenu({ V, className, style }: { V: ClozrView; className: 
       <button role="menuitem" className="dc2" onClick={V.goSettings} style={{display: "block", width: "100%", textAlign: "left", height: "34px", padding: "0 10px", border: "0", borderRadius: "8px", background: "none", cursor: "pointer", fontSize: "13px", color: "var(--ink, #18181b)"}}>
         Settings
       </button>
+      <ThemeMenuItem />
       <div style={{height: "1px", background: "var(--divider-2, #f0f0f1)", margin: "4px 0"}}></div>
       {(session.demo) ? (
         <a role="menuitem" href="/login" className="dc2" style={{display: "block", width: "100%", textAlign: "left", lineHeight: "34px", height: "34px", padding: "0 10px", borderRadius: "8px", fontSize: "13px", color: "var(--ink, #18181b)", textDecoration: "none"}}>

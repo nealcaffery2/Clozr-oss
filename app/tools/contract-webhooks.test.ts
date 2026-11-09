@@ -11,7 +11,7 @@ assert.deepEqual(signed, {
   name: 'PSA - 912 Cordial Rd', contract_name: 'PSA - 912 Cordial Rd', kind: 'psa', status: 'sent', provider: 'clozr',
   deal_id: 7, seller_id: 812, buyer_id: null,
   signer: { name: 'Sam Seller', email: 'sam@example.com', role: 'Seller' },
-  reason: null, fields: null, url: 'https://app.example/app?deal=7',
+  reason: null, fields: null, url: 'https://app.example/app/deals/d7',
 });
 // Nothing private rides along: no body, no filled values, no signing tokens.
 assert.ok(!('body_md' in signed) && !('tokens' in signed));

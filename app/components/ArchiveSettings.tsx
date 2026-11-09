@@ -5,9 +5,9 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { archiveBuyers, archiveSellers } from '@/lib/crm-write';
+import { archiveBuyers, archiveSellers, restoreVendors } from '@/lib/crm-write';
 
-type Kind = 'seller' | 'buyer';
+type Kind = 'seller' | 'buyer' | 'vendor';
 type Row = { id: number; name: string | null; phone: string | null; email: string | null; where: string | null; archived_at: string };
 
 const MUTED = 'var(--meta, #71717a)';
@@ -15,7 +15,7 @@ const LINE = 'var(--divider, #e4e4e7)';
 const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' };
 const btn = (primary = false): React.CSSProperties => ({
   height: '30px', padding: '0 12px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
-  border: `1px solid ${primary ? '#0A8560' : LINE}`, background: primary ? '#0A8560' : '#fff', color: primary ? '#fff' : '#18181b',
+  border: `1px solid ${primary ? '#0A8560' : LINE}`, background: primary ? '#0A8560' : 'var(--surface, #fff)', color: primary ? '#fff' : '#18181b',
 });
 const PAGE = 100;
 /** "%" and "_" are wildcards to ILIKE; "," and parentheses break an or() filter. */
@@ -38,13 +38,16 @@ export function ArchiveSettings({ workspaceId, canWrite, onOpen, onRestored }: {
   const load = useCallback(async (k: Kind, query: string) => {
     if (!supabase || !workspaceId) return { rows: [] as Row[], error: null };
     const s = likeSafe(query);
-    const cols = k === 'seller' ? 'id, name, phone, email, property_address, archived_at' : 'id, name, phone, email, company, archived_at';
-    let req = supabase.from(k === 'seller' ? 'sellers' : 'buyers').select(cols).eq('workspace_id', workspaceId).not('archived_at', 'is', null);
-    if (s) req = req.or(k === 'seller' ? `name.ilike.%${s}%,phone.ilike.%${s}%,email.ilike.%${s}%,property_address.ilike.%${s}%` : `name.ilike.%${s}%,phone.ilike.%${s}%,email.ilike.%${s}%,company.ilike.%${s}%`);
-    const { data, error: e } = await req.order('archived_at', { ascending: false }).limit(PAGE);
+    // A vendor has no archived_at: its status says archived (lib/crm-write archiveVendors), and updated_at is when.
+    const cols = k === 'seller' ? 'id, name, phone, email, property_address, archived_at' : k === 'buyer' ? 'id, name, phone, email, company, archived_at' : 'id, business_name, contact_name, phone, email, service_type, updated_at';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let req: any = (supabase.from(k === 'seller' ? 'sellers' : k === 'buyer' ? 'buyers' : 'vendors') as any).select(cols).eq('workspace_id', workspaceId);
+    req = k === 'vendor' ? req.eq('status', 'archived') : req.not('archived_at', 'is', null);
+    if (s) req = req.or(k === 'seller' ? `name.ilike.%${s}%,phone.ilike.%${s}%,email.ilike.%${s}%,property_address.ilike.%${s}%` : k === 'buyer' ? `name.ilike.%${s}%,phone.ilike.%${s}%,email.ilike.%${s}%,company.ilike.%${s}%` : `business_name.ilike.%${s}%,contact_name.ilike.%${s}%,phone.ilike.%${s}%,email.ilike.%${s}%`);
+    const { data, error: e } = await req.order(k === 'vendor' ? 'updated_at' : 'archived_at', { ascending: false }).limit(PAGE);
     if (e) return { rows: [] as Row[], error: e.message };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return { rows: ((data ?? []) as any[]).map((r) => ({ id: r.id, name: r.name, phone: r.phone, email: r.email, where: r.property_address ?? r.company ?? null, archived_at: r.archived_at })), error: null };
+    return { rows: ((data ?? []) as any[]).map((r) => ({ id: r.id, name: r.name ?? [r.business_name, r.contact_name].filter(Boolean).join(' · ') ?? null, phone: r.phone, email: r.email, where: r.property_address ?? r.company ?? r.service_type ?? null, archived_at: r.archived_at ?? r.updated_at })), error: null };
   }, [workspaceId]);
 
   // Typing settles for a moment before it searches; the result lands in a callback, not the effect body.
@@ -59,11 +62,11 @@ export function ArchiveSettings({ workspaceId, canWrite, onOpen, onRestored }: {
   const restore = async (list: number[], open?: number) => {
     if (!list.length) return;
     setBusy(true); setMsg(null);
-    const ids = list.map((id) => (kind === 'seller' ? 's' : 'b') + id);
-    const r = kind === 'seller' ? await archiveSellers(ids, false) : await archiveBuyers(ids, false);
+    const ids = list.map((id) => (kind === 'seller' ? 's' : kind === 'buyer' ? 'b' : '') + id);
+    const r = kind === 'seller' ? await archiveSellers(ids, false) : kind === 'buyer' ? await archiveBuyers(ids, false) : await restoreVendors(ids);
     setBusy(false);
     if (!r.ok) { setMsg(r.message ?? 'Could not restore.'); return; }
-    setMsg(`${list.length} ${kind === 'seller' ? (list.length === 1 ? 'seller' : 'sellers') : (list.length === 1 ? 'buyer' : 'buyers')} back on every list.`);
+    setMsg(`${list.length} ${list.length === 1 ? kind : kind + 's'} back on every list.`);
     onRestored?.();
     if (open != null) onOpen?.(kind, open);
     setTick((t) => t + 1);
@@ -77,13 +80,13 @@ export function ArchiveSettings({ workspaceId, canWrite, onOpen, onRestored }: {
     <div style={card}>
       <h2 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 600 }}>Archive</h2>
       <p style={{ margin: '0 0 12px', fontSize: '12.5px', color: MUTED }}>
-        Archived sellers and buyers are off every list, nothing deleted. Restore puts them back. Adding someone again from Quick Add also offers to bring them back.
+        Archived sellers, buyers and vendors are off every list, nothing deleted. Restore puts them back. Adding someone again from Quick Add also offers to bring them back.
       </p>
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '10px' }}>
-        {(['seller', 'buyer'] as const).map((k) => (
+        {(['seller', 'buyer', 'vendor'] as const).map((k) => (
           <button key={k} type="button" onClick={() => { setKind(k); setRows(null); }} aria-pressed={kind === k}
             style={{ ...btn(), borderRadius: '999px', borderColor: kind === k ? '#0A8560' : LINE, background: kind === k ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: kind === k ? '#0A8560' : 'var(--ink-2, #27272a)' }}>
-            {k === 'seller' ? 'Sellers' : 'Buyers'}
+            {k === 'seller' ? 'Sellers' : k === 'buyer' ? 'Buyers' : 'Vendors'}
           </button>
         ))}
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, phone, email, address" aria-label="Search the archive"

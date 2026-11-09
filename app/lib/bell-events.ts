@@ -46,14 +46,16 @@ export type BellItem = {
   tone?: ReplyTone;
 };
 
-const MISSED = /^(no_answer|missed|busy|failed|canceled|cancelled|unanswered|rejected)$/i;
+const MISSED = /^(no_answer|missed|voicemail|completed|busy|failed|canceled|cancelled|unanswered|rejected)$/i;
 
 export function isMissedCall(c: Pick<BellComm, 'channel' | 'dir' | 'status' | 'dur'>): boolean {
   if (c.dir !== 'in') return false;
   if (c.channel === 'voicemail') return true;
   if (c.channel !== 'call') return false;
   if (c.dur) return false;
-  if (c.status && /answered|completed|in_progress|connected/i.test(c.status)) return false;
+  // Talkr closes an inbound call nobody picked up as "completed" with no talk
+  // time (127 of 179 in two weeks, 2026-10-26): with no duration it was not answered.
+  if (c.status && /answered|in_progress|connected/i.test(c.status)) return false;
   return !c.status || MISSED.test(c.status);
 }
 
@@ -73,7 +75,8 @@ export function bellFromComms(comms: BellComm[], limit = 25): BellItem[] {
     const tb = b.at ? Date.parse(b.at) : NaN;
     return Number.isFinite(ta) && Number.isFinite(tb) ? ta > tb : a.ts < b.ts;
   };
-  const who = (c: BellComm) => (c.personId ? 'p:' + c.personId : c.buyerId ? 'b:' + c.buyerId : '');
+  // A caller with no record yet (a new seller ringing in) is keyed by their number: dropping them hid most missed calls.
+  const who = (c: BellComm) => (c.personId ? 'p:' + c.personId : c.buyerId ? 'b:' + c.buyerId : phoneTail(c.phone) ? 'n:' + phoneTail(c.phone) : '');
   const lastOut = new Map<string, BellComm>();
   for (const c of comms) {
     const k = who(c);
@@ -98,17 +101,17 @@ export function bellFromComms(comms: BellComm[], limit = 25): BellItem[] {
   }
   const items: { ts: number; item: BellItem }[] = [];
   for (const { cat, newest: c, count } of groups.values()) {
-    const base = c.personId ? { screen: 'person', id: c.personId } : { screen: 'buyer', id: c.buyerId ?? '' };
+    const base: NotifLink = c.personId ? { screen: 'person', id: c.personId } : c.buyerId ? { screen: 'buyer', id: c.buyerId } : { screen: 'inboxSms', id: c.phone ?? '' };
     // A seller's record opens on its Calls or Texts; a buyer's has no such tab.
     const at = (k: 'Call' | 'SMS'): NotifLink => (base.screen === 'person' ? { ...base, tab: commTab(k) } : base);
     const party = c.party || 'Unknown';
     const extra = { owner: c.owner ?? null, time: c.time, unread: true, ...(c.phone ? { phone: c.phone } : {}), ...(count > 1 ? { count } : {}) };
     if (cat === 'Call') {
       // The Calls tab lists calls only; a voicemail shows on Activity.
-      const link = c.channel === 'voicemail' ? base : at('Call');
+      const link = c.channel === 'voicemail' || base.screen === 'inboxSms' ? base : at('Call');
       items.push({
         ts: c.ts,
-        item: { id: 'bell-call-' + c.id, cat: 'Call', text: count > 1 ? `${count} missed calls from ${party}` : `Missed call from ${party}`, link, ...extra },
+        item: { id: 'bell-call-' + c.id, cat: 'Call', text: c.channel === 'voicemail' ? (count > 1 ? `${count} voicemails from ${party}` : `Voicemail from ${party}`) : count > 1 ? `${count} missed calls from ${party}` : `Missed call from ${party}`, link, ...extra },
       });
     } else {
       const preview = (c.preview || '').trim();

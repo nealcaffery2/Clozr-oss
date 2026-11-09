@@ -1,12 +1,12 @@
 'use client';
 
-// A list as a map: the Genius map (components/genius/GeniusMap) with the
+// A list as a map: the Genius map (components/genius/PinMap) with the
 // lasso on, fitted to whatever the list's filters left, and a bar that says
 // what is selected. Buyers and People both use it; each decides where its rows
 // sit and what a selection does.
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { GeniusMap, type MapPin } from '@/components/genius/GeniusMap';
+import { PinMap, type MapPin } from '@/components/maps/PinMap';
 import { boundsOf, loadCentroids, type CentroidIndex } from '@/lib/geo-centroids';
 
 const PURPLE = '#0A8560';
@@ -80,11 +80,11 @@ export function ListMap({ pins, height, selected, onLasso, onPin, popup, popupId
   const bounds = useMemo(() => boundsOf(pins), [pins]);
   return (
     <div style={{ position: 'relative', height, minHeight: 0 }}>
-      <GeniusMap center={bounds ? { lat: (bounds.n + bounds.s) / 2, lng: (bounds.e + bounds.w) / 2 } : US} bounds={bounds} zoom={bounds ? 12 : 4} subject={false}
+      <PinMap center={bounds ? { lat: (bounds.n + bounds.s) / 2, lng: (bounds.e + bounds.w) / 2 } : US} bounds={bounds} zoom={bounds ? 12 : 4} subject={false}
         pins={pins} height={height} selected={selected} onLasso={onLasso} onPin={onPin} popup={popup} popupId={popupId} onClosePopup={onClosePopup}
         noun={noun} countBy="group" label={label} topLeft={status}>
         {legend?.length ? <MapLegend items={legend} /> : null}
-      </GeniusMap>
+      </PinMap>
       {note ? (
         <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', zIndex: 7, pointerEvents: 'none', background: 'rgba(24,24,27,.86)', color: '#fff', fontSize: '12.5px', padding: '10px 14px', borderRadius: '10px', maxWidth: '80%', textAlign: 'center', lineHeight: 1.45 }}>
           {note}

@@ -64,6 +64,8 @@
      lightness, not hue). Fills and borders keep their literal colour; only
      `color:` moves. */
   --tx-mint:        #0A8560;  --tx-mint-deep:  #08694C;
+  /* One-off light literals the Talkr parts, table heads and photo wells use. */
+  --tint-cool: #e8ecf3;  --ink-strong: #111111;  --thead-ink: #4b4b55;  --photo-bg: #e9ebf0;
   --tx-green:       #15803d;  --tx-green-deep: #1f7a4d;  --tx-green-2: #0e7a57;
   --tx-red:         #b91c1c;  --tx-red-deep:   #991b1b;  --tx-hot:     #dc2626;
   --tx-amber:       #b45309;  --tx-amber-deep: #92400e;
@@ -195,20 +197,25 @@
   --edge:          #dde2ea;   /* card hairline */
   --edge-hover:    #c9d1dd;
 
-  /* Elevation tiers. 1 card, 2 lifted card, 3 modal / drawer / popover /
-     sticky bar, 4 toast. Two stops each: a tight contact shadow and a soft
-     ambient one, both in the page's cool ink so they read as one light. */
-  --elev-1: 0 1px 2px rgba(20, 30, 55, .07), 0 2px 8px -2px rgba(20, 30, 55, .08);
-  --elev-2: 0 2px 4px rgba(20, 30, 55, .07), 0 10px 24px -6px rgba(20, 30, 55, .16);
-  --elev-3: 0 4px 8px rgba(20, 30, 55, .08), 0 18px 44px -10px rgba(20, 30, 55, .26);
-  --elev-4: 0 8px 16px rgba(20, 30, 55, .10), 0 28px 60px -12px rgba(20, 30, 55, .38);
-  --elev-inset: inset 0 1px 2px rgba(20, 30, 55, .08), inset 0 0 0 1px rgba(20, 30, 55, .02);
-  --elev-press: inset 0 1px 3px rgba(20, 30, 55, .14);
-  --elev-rail: inset -1px 0 0 rgba(255, 255, 255, .75);
-  /* Tier 3 thrown upward, for a bar that sits on the bottom edge (composer, sticky action bar). */
-  --elev-3-up: 0 -2px 6px rgba(20, 30, 55, .05), 0 -10px 26px -10px rgba(20, 30, 55, .16);
-  /* A raised key: lit top edge, contact shadow, soft ambient. Pressed reads as --elev-press. */
-  --elev-key: inset 0 1px 0 rgba(255, 255, 255, .95), 0 1px 2px rgba(20, 30, 55, .18), 0 4px 10px -3px rgba(20, 30, 55, .16);
+  /* Elevation: the old --elev-* tiers are names for the three recipes in
+     DESIGN.md §5 (see Shadows below), kept so the screens that read them
+     need no edit. Card and key: ring. Lifted card, popover, drawer, sticky
+     bar, toast: md. Only a modal reads --shadow-lg. Recessed panels and the
+     rail draw with their surface colour and border, not a shadow. Pressed
+     is feedback, not elevation: a neutral inset. */
+  --elev-1:     var(--shadow-ring);
+  --elev-2:     var(--shadow-md);
+  --elev-3:     var(--shadow-md);
+  --elev-4:     var(--shadow-md);
+  --elev-3-up:  var(--shadow-md);
+  --elev-key:   var(--shadow-ring);
+  --elev-inset: none;
+  --elev-rail:  none;
+  --elev-press: inset 0 1px 2px rgba(0, 0, 0, .12);
+  /* Hand-written shadows read `rgb(var(--shadow-rgb, 20 30 55) / a)`. Neutral
+     black in both themes (DESIGN.md §5: never tinted), so the navy fallback
+     never applies. */
+  --shadow-rgb: 0 0 0;
 
   /* A trough the raised cards sit in (board lanes). Darker than --inset so a
      white card on it reads as lifted, not as more page. */
@@ -223,22 +230,48 @@
   --info-bg:   #ecf2ff;  --info-line:   #bfd2fa;  --info-ink:   #1e40af;
   --chip-ok:   #d6f1e4;  --chip-warn:   #fbe7b0;  --chip-danger: #f9d0d0;  --chip-info: #d5e2fd;
 
-  /* ---- Radius --------------------------------------------- */
-  --r-sm:   8px;
-  --r-btn:  10px;
-  --r:      14px;
-  --r-lg:   18px;
-  --r-xl:   20px;
-  --r-2xl:  24px;
-  --r-pill: 16px; /* soft tray chip — not a full capsule */
+  /* ---- Radius, by role (DESIGN.md §4) --------------------- */
+  --r-badge:   6px;    /* badges, small status chips */
+  --r-control: 8px;    /* buttons, chips, inputs, menus' rows */
+  --r-map:     10px;   /* map controls */
+  --r-card:    12px;   /* cards and panels in the page body (12-14) */
+  --r-sheet:   16px;   /* bottom sheets (top corners only), dialogs */
+  /* Older names, mapped onto the roles. */
+  --r-sm:   var(--r-control);
+  --r-btn:  var(--r-control);
+  --r:      14px;              /* the large-card end of the card role */
+  --r-lg:   var(--r-sheet);
+  --r-xl:   var(--r-sheet);
 
-  /* ---- Shadows (DESIGN.md §5 beautiful-shadows) ----------- */
+  /* ---- Shadows (DESIGN.md §5 beautiful-shadows) -----------
+     Exactly three recipes, neutral black, never tinted. ring: buttons,
+     chips, inputs, small floating pills, cards. md: popovers, menus,
+     drawers, map cards, toasts. lg: modals only. */
   --shadow-ring: 0 0 0 1px rgba(0,0,0,.08), 0 1px 2px -1px rgba(0,0,0,.08), 0 2px 4px 0 rgba(0,0,0,.04);
+  --shadow-md:   0 0 0 1px rgba(0,0,0,.06), 0 1px 1px -.5px rgba(0,0,0,.06), 0 3px 3px -1.5px rgba(0,0,0,.06), 0 6px 6px -3px rgba(0,0,0,.06), 0 12px 12px -6px rgba(0,0,0,.06);
+  --shadow-lg:   0 2.8px 2.2px rgba(0,0,0,.034), 0 6.7px 5.3px rgba(0,0,0,.048), 0 12.5px 10px rgba(0,0,0,.06), 0 22.3px 17.9px rgba(0,0,0,.072), 0 41.8px 33.4px rgba(0,0,0,.086), 0 100px 80px rgba(0,0,0,.12);
   --shadow-soft: var(--shadow-ring);
-  --shadow-md:   var(--elev-3);   /* menus and popovers: tier 3 */
-  --shadow-lg:   var(--elev-3);   /* dialogs: tier 3 (toasts alone are tier 4) */
-  --shadow-pop:  0 4px 14px rgba(10, 133, 96, .14), 0 12px 40px -8px rgba(10, 133, 96, .12);
-  --shadow-warm: 0 4px 14px rgba(255, 122, 69, 0.32);
+
+  /* ---- Stacking (z-index) -----------------------------------
+     One ladder for everything that floats over a screen. Toasts sit
+     under sheets and dialogs, so a notice never covers the sheet the
+     person is working in. Read these instead of writing numbers.      */
+  --z-base:    1;    /* lifted inside a screen: a sticky column, a selected card */
+  --z-sticky:  40;   /* the phone top bar, sticky headers and action bars */
+  --z-drawer:  46;   /* Notifications, Ask CLOZR, Lane (Ask and Lane add 1) */
+  --z-toast:   47;   /* toasts and the floor show stack */
+  --z-tabbar:  48;   /* the phone's bottom tabs */
+  --z-sheet:   50;   /* bottom sheets (More); the scrim sits at --z-sheet - 1 */
+  --z-popover: 60;   /* menus that open from the chrome: account, quick add, the dialer sheet */
+  --z-phone:   65;   /* the full-screen phone */
+  --z-dialog:  72;   /* modals and their scrims (Quick add, the command bar) */
+  --z-viewer:  80;   /* the photo viewer, which opens from a dialog */
+  --z-confirm: 120;  /* a confirm or a takeover over everything (archive, the floor show) */
+
+  /* ---- Hit targets ------------------------------------------
+     DESIGN.md §7: at least 24px with a mouse, 44px on touch. The
+     primitives in components/ds read --hit-min for their minimum box.  */
+  --hit-min:   24px;
 
   /* ---- Motion --------------------------------------------- */
   --ease:     cubic-bezier(0.22, 1, 0.36, 1);
@@ -252,11 +285,14 @@
   --num: 'tnum' 1;
 
   --fs-offer:  clamp(46px, 7.4vw, 70px);
-  --fs-xl:     22px;
-  --fs-lg:     18px;
-  --fs-md:     15px;
-  --fs-sm:     13px;
-  --fs-xs:     11px;
+  /* Type roles (DESIGN.md §3). */
+  --fs-figure: 22px;   /* a KPI number: 22 / 650, tabular, -0.02em */
+  --fs-title:  16px;   /* the screen title, one h1: 16 / 700, -0.015em */
+  --fs-name:   15px;   /* record and row names: 15 / 700 */
+  --fs-card:   13.5px; /* card and section titles: 13.5 / 650 */
+  --fs-body:   13px;   /* body, controls, buttons: 12.5-13 / 500 */
+  --fs-label:  11.5px; /* labels, meta, helper: 11.5 / 500, muted */
+  --fs-badge:  11px;   /* badges: 11 / 600, no tracking */
 
   --ls-tight:     -0.04em;
   --ls-snug:      -0.02em;
@@ -278,6 +314,9 @@
 :root { --ds-input-size: 13px; }
 @media (max-width: 640px), (pointer: coarse) { :root { --ds-input-size: 16px; } }
 
+/* Fingers need a 44px box (DESIGN.md §7). */
+@media (pointer: coarse) { :root { --hit-min: 44px; } }
+
 /* ============================================================
    Dark mode (RULES.md theme contract). Black and white: near-black
    surfaces, white and grey text and lines. Colour that carries meaning
@@ -290,6 +329,8 @@
    --meta 6.9, --subtle 3.9 (placeholders only), --c-link 7.4.
    ============================================================ */
 :root[data-theme="dark"] {
+  --c-accent-2: var(--tx-mint-deep);
+  --tint-cool: #27272a;  --ink-strong: #f4f4f5;  --thead-ink: #a1a1aa;  --photo-bg: #18181b;
   --surface:     #111113;
   --surface-2:   #18181b;
   --surface-3:   #27272a;
@@ -377,26 +418,62 @@
   --tx-blue:   #93c5fd;  --tx-navy:        #93c5fd;  --tx-cold:    #93c5fd;
   --tx-sky:    #7dd3fc;  --tx-violet:      #c4b5fd;  --tx-teal:    #5eead4;
 
-  /* Shadows barely read on black; a light hairline does the lifting. */
-  --elev-1: 0 0 0 1px rgba(255, 255, 255, .06), 0 1px 2px rgba(0, 0, 0, .5);
-  --elev-2: 0 0 0 1px rgba(255, 255, 255, .08), 0 10px 24px -6px rgba(0, 0, 0, .6);
-  --elev-3: 0 0 0 1px rgba(255, 255, 255, .10), 0 18px 44px -10px rgba(0, 0, 0, .7);
-  --elev-4: 0 0 0 1px rgba(255, 255, 255, .12), 0 28px 60px -12px rgba(0, 0, 0, .8);
-  --elev-inset: inset 0 1px 2px rgba(0, 0, 0, .5), inset 0 0 0 1px rgba(255, 255, 255, .04);
+  /* Shadows barely read on black; a light hairline does the lifting. The
+     same three recipes; --elev-* follow them. */
   --elev-press: inset 0 1px 3px rgba(0, 0, 0, .6);
-  --elev-rail: inset -1px 0 0 rgba(255, 255, 255, .06);
-  --elev-3-up: 0 0 0 1px rgba(255, 255, 255, .08), 0 -10px 26px -10px rgba(0, 0, 0, .6);
-  --elev-key: inset 0 1px 0 rgba(255, 255, 255, .08), 0 1px 2px rgba(0, 0, 0, .5), 0 4px 10px -3px rgba(0, 0, 0, .5);
   --shadow-ring: 0 0 0 1px rgba(255, 255, 255, .10), 0 1px 2px -1px rgba(0, 0, 0, .4), 0 2px 4px 0 rgba(0, 0, 0, .3);
-  --shadow-pop:  0 4px 14px rgba(0, 0, 0, .5), 0 12px 40px -8px rgba(0, 0, 0, .6);
+  --shadow-md:   0 0 0 1px rgba(255, 255, 255, .10), 0 18px 44px -10px rgba(0, 0, 0, .7);
+  --shadow-lg:   0 0 0 1px rgba(255, 255, 255, .12), 0 28px 60px -12px rgba(0, 0, 0, .8);
 
   --grid-dot: radial-gradient(circle, rgba(255, 255, 255, .13) 1px, transparent 1.5px);
+
+  /* Dark-only re-keys. These have no light value on purpose: each call site
+     keeps its light colour as the var() fallback (`var(--warm-card, #fdfcfa)`),
+     so light mode stays exactly as drawn and only dark mode moves. */
+  --ink-fill:        #1e1e23;  /* panels that stay dark in both themes (save bar, incoming call) */
+  --mint-hover:      rgba(95, 217, 176, .08);  /* row hover wash, #e9f6f0 in light */
+  --press:           #27272a;
+  --shadow-rgb:      0 0 0;  /* the navy shadow tint, as `rgb(var(--shadow-rgb, 20 30 55) / a)` */
+  --glass:           rgba(17, 17, 19, .72);
+  --glass-thread:    rgba(20, 20, 22, .86);
+  --glass-strong:    rgba(17, 17, 19, .92);
+  --glass-field:     rgba(255, 255, 255, .06);
+  --glass-hi:        rgba(255, 255, 255, .04);  /* the 1px top highlight on bars */
+  --skel:            #1c1c20;
+  --skel-shine:      #27272c;
+  --skel-fill:       rgba(10, 133, 96, .28);
+  --badge-seller-bg: rgba(22, 163, 74, .16);
+  --badge-buyer-bg:  rgba(37, 99, 235, .20);
+  --badge-teal-bg:   rgba(20, 184, 166, .16);
+  --badge-teal-ink:  #5eead4;
+  --hairline:        var(--divider);
+  --soft-well:       var(--surface-2);
+  --soft-page:       var(--page);
+  --soft-mint:       rgba(95, 217, 176, .08);
+  --soft-mint-line:  rgba(95, 217, 176, .28);
+  /* The warm leaderboard / floor-show palette (#f4f2ec page, #fdfcfa cards). */
+  --warm-page:       var(--canvas);
+  --warm-card:       var(--surface);
+  --warm-card-hi:    var(--surface-2);
+  --warm-well:       var(--surface-2);
+  --warm-hover:      var(--surface-2);
+  --warm-line:       var(--divider);
+  --warm-line-2:     var(--line);
+  --warm-track:      var(--surface-3);
+  --warm-on:         rgba(95, 217, 176, .12);
+  --warm-muted:      var(--muted);
+  --warm-meta:       var(--meta);
+  --warm-ink-2:      var(--ink-2);
+  --warm-face-ink:   var(--surface);
+  --warm-hi:         rgba(255, 255, 255, .08);
 
   color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root[data-theme="system"] {
+    --c-accent-2: var(--tx-mint-deep);
+    --tint-cool: #27272a;  --ink-strong: #f4f4f5;  --thead-ink: #a1a1aa;  --photo-bg: #18181b;
     --surface:     #111113;
     --surface-2:   #18181b;
     --surface-3:   #27272a;
@@ -484,20 +561,54 @@
     --tx-blue:   #93c5fd;  --tx-navy:        #93c5fd;  --tx-cold:    #93c5fd;
     --tx-sky:    #7dd3fc;  --tx-violet:      #c4b5fd;  --tx-teal:    #5eead4;
 
-    /* Shadows barely read on black; a light hairline does the lifting. */
-    --elev-1: 0 0 0 1px rgba(255, 255, 255, .06), 0 1px 2px rgba(0, 0, 0, .5);
-    --elev-2: 0 0 0 1px rgba(255, 255, 255, .08), 0 10px 24px -6px rgba(0, 0, 0, .6);
-    --elev-3: 0 0 0 1px rgba(255, 255, 255, .10), 0 18px 44px -10px rgba(0, 0, 0, .7);
-    --elev-4: 0 0 0 1px rgba(255, 255, 255, .12), 0 28px 60px -12px rgba(0, 0, 0, .8);
-    --elev-inset: inset 0 1px 2px rgba(0, 0, 0, .5), inset 0 0 0 1px rgba(255, 255, 255, .04);
+    /* Shadows barely read on black; a light hairline does the lifting. The
+       same three recipes; --elev-* follow them. */
     --elev-press: inset 0 1px 3px rgba(0, 0, 0, .6);
-    --elev-rail: inset -1px 0 0 rgba(255, 255, 255, .06);
-    --elev-3-up: 0 0 0 1px rgba(255, 255, 255, .08), 0 -10px 26px -10px rgba(0, 0, 0, .6);
-    --elev-key: inset 0 1px 0 rgba(255, 255, 255, .08), 0 1px 2px rgba(0, 0, 0, .5), 0 4px 10px -3px rgba(0, 0, 0, .5);
     --shadow-ring: 0 0 0 1px rgba(255, 255, 255, .10), 0 1px 2px -1px rgba(0, 0, 0, .4), 0 2px 4px 0 rgba(0, 0, 0, .3);
-    --shadow-pop:  0 4px 14px rgba(0, 0, 0, .5), 0 12px 40px -8px rgba(0, 0, 0, .6);
+    --shadow-md:   0 0 0 1px rgba(255, 255, 255, .10), 0 18px 44px -10px rgba(0, 0, 0, .7);
+    --shadow-lg:   0 0 0 1px rgba(255, 255, 255, .12), 0 28px 60px -12px rgba(0, 0, 0, .8);
 
     --grid-dot: radial-gradient(circle, rgba(255, 255, 255, .13) 1px, transparent 1.5px);
+
+    /* Dark-only re-keys. These have no light value on purpose: each call site
+       keeps its light colour as the var() fallback (`var(--warm-card, #fdfcfa)`),
+       so light mode stays exactly as drawn and only dark mode moves. */
+    --ink-fill:        #1e1e23;  /* panels that stay dark in both themes (save bar, incoming call) */
+    --mint-hover:      rgba(95, 217, 176, .08);  /* row hover wash, #e9f6f0 in light */
+    --press:           #27272a;
+    --shadow-rgb:      0 0 0;  /* the navy shadow tint, as `rgb(var(--shadow-rgb, 20 30 55) / a)` */
+    --glass:           rgba(17, 17, 19, .72);
+    --glass-thread:    rgba(20, 20, 22, .86);
+    --glass-strong:    rgba(17, 17, 19, .92);
+    --glass-field:     rgba(255, 255, 255, .06);
+    --glass-hi:        rgba(255, 255, 255, .04);  /* the 1px top highlight on bars */
+    --skel:            #1c1c20;
+    --skel-shine:      #27272c;
+    --skel-fill:       rgba(10, 133, 96, .28);
+    --badge-seller-bg: rgba(22, 163, 74, .16);
+    --badge-buyer-bg:  rgba(37, 99, 235, .20);
+    --badge-teal-bg:   rgba(20, 184, 166, .16);
+    --badge-teal-ink:  #5eead4;
+    --hairline:        var(--divider);
+    --soft-well:       var(--surface-2);
+    --soft-page:       var(--page);
+    --soft-mint:       rgba(95, 217, 176, .08);
+    --soft-mint-line:  rgba(95, 217, 176, .28);
+    /* The warm leaderboard / floor-show palette (#f4f2ec page, #fdfcfa cards). */
+    --warm-page:       var(--canvas);
+    --warm-card:       var(--surface);
+    --warm-card-hi:    var(--surface-2);
+    --warm-well:       var(--surface-2);
+    --warm-hover:      var(--surface-2);
+    --warm-line:       var(--divider);
+    --warm-line-2:     var(--line);
+    --warm-track:      var(--surface-3);
+    --warm-on:         rgba(95, 217, 176, .12);
+    --warm-muted:      var(--muted);
+    --warm-meta:       var(--meta);
+    --warm-ink-2:      var(--ink-2);
+    --warm-face-ink:   var(--surface);
+    --warm-hi:         rgba(255, 255, 255, .08);
 
     color-scheme: dark;
   }

@@ -4,7 +4,8 @@
 // Templates manager shares with it: Channel, Audience, Owner, search.
 
 import React, { useState } from 'react';
-import { AUDIENCES, AUDIENCE_LABEL, type Channel, type MessageTemplate } from '@/lib/message-templates';
+import { AUDIENCES, AUDIENCE_LABEL, type Channel, type MessageTemplate, templatesForRole } from '@/lib/message-templates';
+import { useSession } from '@/lib/session';
 import type { Teammate } from '@/lib/team';
 import { Icon } from '@/app/components/talkr/Icon';
 import { FIELD } from '@/app/components/talkr/ui';
@@ -68,12 +69,14 @@ export function TemplatePicker({ channel, audience, templates, team, userId, loa
   onPick: (t: MessageTemplate) => void; onManage: () => void; onClose: () => void;
 }) {
   const [f, setF] = useState<TemplateFilter>({ channel, audience, owner: 'any', q: '' });
-  const shown = filterTemplates(templates, f, userId);
+  // A TC sees TC templates, dispositions dispo and TC ones (templatesForRole).
+  const role = useSession().workspace?.role;
+  const shown = filterTemplates(templatesForRole(templates, role), f, userId);
   return (
     <div className="flex max-h-80 flex-col gap-2 px-3 py-3 md:px-6" style={{ borderTop: '1px solid var(--line)', background: 'var(--bg)' }}>
       <div className="flex items-center gap-2">
         <span className="eyebrow mr-auto">CLOZR templates · {channel === 'sms' ? 'SMS' : 'Email'}</span>
-        <button type="button" onClick={onManage} style={{ font: '600 11px/1 var(--sans)', color: 'var(--accent)', cursor: 'pointer' }}>Manage</button>
+        <button type="button" onClick={onManage} aria-label="Manage templates" style={{ font: '600 11px/1 var(--sans)', color: 'var(--accent)', cursor: 'pointer' }}>Manage templates</button>
         <button type="button" aria-label="Close templates" onClick={onClose} style={{ color: 'var(--muted-2)', cursor: 'pointer' }}><Icon name="x" size={14} /></button>
       </div>
       <TemplateFilters f={f} set={(p) => setF((cur) => ({ ...cur, ...p }))} team={team} />

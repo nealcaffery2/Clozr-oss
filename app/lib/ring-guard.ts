@@ -64,3 +64,28 @@ export function ringVerdict(input: { status: string | null | undefined; roster: 
   }
   return null;
 }
+
+/**
+ * Whether the seller has picked up on an outbound conference call.
+ *
+ * The rep's leg is answered the moment it joins the room, seconds before the
+ * seller's phone even rings, so the browser keeps its own ringback going
+ * until this says 'answered'. Talkr journals `call.customer_dial_claimed`
+ * right before it rings the seller, so a `call.answered` after that claim is
+ * the seller's leg. No claim at all means the call is not a conference
+ * hand-dial (bridge, Twilio) and there is nothing to wait for.
+ */
+export type SellerState = 'answered' | 'ringing' | 'no_claim';
+
+export function sellerState(events: { type: string; occurred_at: string }[] | null | undefined): SellerState {
+  const list = events ?? [];
+  const claim = list.find((e) => e.type === 'call.customer_dial_claimed');
+  if (!claim) return 'no_claim';
+  const at = Date.parse(claim.occurred_at);
+  return list.some((e) => e.type === 'call.answered' && Date.parse(e.occurred_at) > at) ? 'answered' : 'ringing';
+}
+
+/** How often the browser re-reads the call while the seller's phone is ringing. Short: the ringback must stop on their hello. */
+export const SELLER_POLL_MS = 500;
+/** Talkr claims the seller dial within about a second of the rep joining; past this with no claim, stop waiting. */
+export const SELLER_CLAIM_GRACE_MS = 4_000;

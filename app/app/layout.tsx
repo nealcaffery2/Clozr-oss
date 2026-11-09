@@ -4,10 +4,12 @@ import './globals.css';
 // CSS-only chunk whose JS half Vite never writes, and every page then preloaded
 // /_next/static/chunks/tokens-*.js and logged a 404 on each load.
 import './clozr/tokens.css';
+import '@/components/ds/ds.css';
 import { Inter } from 'next/font/google';
 import { SessionProvider } from '@/lib/session';
 import { ConfirmProvider } from '@/components/ds/Confirm';
 import { CHUNK_RELOAD_SCRIPT } from '@/lib/chunk-reload';
+import { SHELL_HISTORY_SCRIPT } from '@/lib/shell-history';
 import { THEME_BOOT } from '@/lib/theme';
 
 // Inter is CLOZR's face on every platform (tokens.css --font-sans,
@@ -71,6 +73,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         {/* Inline and first, so a tab older than the live deploy reloads onto
             the new chunks instead of failing its first lazy import. */}
         <script dangerouslySetInnerHTML={{ __html: CHUNK_RELOAD_SCRIPT }} />
+        {/* Before the router's module entry, so Back and Forward between the
+            app's own paths stay in the page (lib/shell-history.ts says why). */}
+        <script dangerouslySetInnerHTML={{ __html: SHELL_HISTORY_SCRIPT }} />
         {/* The theme choice (lib/theme.ts) before first paint: no white flash on a dark tab. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
       </head>

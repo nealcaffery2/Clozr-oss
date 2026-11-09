@@ -22,4 +22,6 @@ eq('channel lowercased', box.preferred_channel, 'sms');
 eq('unknown channel dropped', buyBoxFromFlat({ preferred_channel: 'fax' }).preferred_channel, undefined);
 eq('nothing asked, nothing filled', buyBoxFromFlat({ name: 'x' }), {});
 eq('fill only empty columns', fillOnly({ beds_min: 2, property_types: [], max_purchase_price: null }, { beds_min: 3, property_types: ['Land'], max_purchase_price: 9 }), { property_types: ['Land'], max_purchase_price: 9 });
+// The buyers-list form (listing /join) sends company and buy_box too: a returning buyer's own words stay.
+eq('any column on file is kept, not only the buy box', fillOnly({ company: 'Ann Homes LLC', buy_box: '', financing_types: null }, { company: 'Someone Else', buy_box: 'SFR under 200k', financing_types: ['Cash'] }), { buy_box: 'SFR under 200k', financing_types: ['Cash'] });
 if (failed) process.exit(1);

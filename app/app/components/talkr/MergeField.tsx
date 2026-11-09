@@ -184,6 +184,8 @@ export function MergeTextArea({
   const pendingCaret = useRef<number | null>(null);
   /** The `/` index of the run the caret is in, so a dismissal cannot outlive it. */
   const lastStart = useRef<number | null>(null);
+  /** Where the last keystroke left the caret; put back after React re-renders the value. */
+  const typedCaret = useRef<number | null>(null);
 
   const [caret, setCaret] = useState(0);
   const [focused, setFocused] = useState(false);
@@ -228,6 +230,17 @@ export function MergeTextArea({
       setDismissed(null);
     }
   }, [active]);
+
+  // A keystroke's caret, pinned once the controlled value lands: a browser
+  // or extension that resets the selection on a value write (seen as text
+  // typing in backwards, Backspace doing nothing) is put right every time.
+  useLayoutEffect(() => {
+    const at = typedCaret.current;
+    typedCaret.current = null;
+    const el = ref.current;
+    if (at == null || !el || document.activeElement !== el) return;
+    if (el.selectionStart !== at || el.selectionEnd !== at) el.setSelectionRange(at, at);
+  }, [value]);
 
   // Put the caret back after an insert, and keep focus in the textarea.
   useEffect(() => {
@@ -340,7 +353,9 @@ export function MergeTextArea({
         aria-controls={open ? listId : undefined}
         aria-activedescendant={open && highlighted ? `${listId}-${highlighted.field}` : undefined}
         onChange={(e) => {
-          setCaret(e.target.selectionStart ?? e.target.value.length);
+          const at = e.target.selectionStart ?? e.target.value.length;
+          setCaret(at);
+          typedCaret.current = at;
           onChange(e.target.value);
         }}
         onSelect={syncCaret}

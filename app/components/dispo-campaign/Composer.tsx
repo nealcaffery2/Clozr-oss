@@ -13,12 +13,14 @@
 // timed plan to dispo_campaign_launch. On /demo (`demo` set) none of that runs:
 // the rows are sample data and every write ends in a "(demo)" toast.
 
-import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { MERGE_SOURCES, bulkGapSummary, gapNotice, labelOf } from '@/lib/merge-gaps';
 import { createPortal } from 'react-dom';
 import { useSession } from '@/lib/session';
 import { talkr, formatPhone, type MeDto } from '@/lib/talkr';
+import { isAiLine } from '@/lib/caller-spin';
 import type { SendContext } from '@/lib/sms';
-import { type AiOptions, type CampaignBuyer, type CampaignData, type PlannedRecipient, isRealtor, launchCampaign, forgetCampaignData, loadCampaignBuyersByIds, loadCampaignData, loadMarketRealtors, realtorInMarket, REALTOR_CAP, writeWithAi } from '@/lib/dispo-campaign';
+import { type AiOptions, type CampaignBuyer, type CampaignData, type PlannedRecipient, isProspectBuyer, isRealtor, launchCampaign, forgetCampaignData, loadCampaignBuyersByIds, loadCampaignData, loadMarketRealtors, prospectInMarket, realtorInMarket, REALTOR_CAP, rotationLines, writeWithAi } from '@/lib/dispo-campaign';
 import { savePushRecording, retirePushRecording, pushRecordingUrl } from '@/lib/rvm-recording';
 import { useVmLibrary } from '@/app/components/talkr/useVmLibrary';
 import { clipClock, droppable, pinnedGroup } from '@/lib/rvm-pick';
@@ -35,7 +37,7 @@ import {
   GENERIC_INTRO, chooseIntro, dealCountLabel, dispoBuyerFields, distanceLabel, inSendWindow, offerAsk, propertyTypeLabel, rotate, WINDOW,
 } from '@/supabase/functions/_shared/dispo-rules';
 import { type DemoMarketing, demoIntro } from './demo-data';
-import { audienceView, cadenceLabel, channelWords, closestField, dropToken, dropTokenHtml, launchSentence, mergeCheck, planSummary, plural, swapToken, tzLabel, whenLabel } from './logic';
+import { type FactFix, audienceView, cadenceLabel, channelWords, closestField, dropToken, dropTokenHtml, launchSentence, mergeCheck, planSummary, plural, swapToken, tzLabel, whenLabel } from './logic';
 import { Avatar, Btn, C, Choice, Dialog, Disclosure, Eyebrow, Icon, Note, Status, Svg, Switch } from './ui';
 import { EmailView, Scaled, SmsThread } from './Preview';
 import { type LightboxDraft, MessageLightbox } from './MessageLightbox';
@@ -43,8 +45,9 @@ import { carrierCheck } from '@/lib/carrier-safe';
 import { htmlToText } from '@/lib/email-text';
 import { type CarrierReview, findingLine, fixHtmlWords, fixWords, reviewMessage } from '@/lib/message-revise';
 import { RvmRecorder } from './RvmRecorder';
-import { GeniusImport } from './GeniusImport';
 import { PushReview, type ReviewSegment, type ReviewVariant } from './PushReview';
+import { PriorBlastsNote, usePriorBlasts } from './PriorBlasts';
+import { blastDupes } from '@/lib/blast-dupes';
 
 export type ComposerProps = {
   workspaceId: number; dealId: number; canWrite: boolean; isMobile: boolean; dealFields: Record<string, string>; textCtx: { repName: string; company: string };
@@ -60,6 +63,8 @@ export type ComposerProps = {
   onAgent?: (buyerIds: number[]) => void | Promise<void>;
   /** Switch to the one-screen quick send. */
   onQuick?: () => void;
+  /** Where a blank deal field is fixed (DispoProperty: the record's Property details, or a save on the deal's house). */
+  factFix?: FactFix;
 };
 
 const TONES = ['casual', 'professional', 'friendly', 'direct', 'urgent'];
@@ -90,12 +95,12 @@ function emailChoices(ts: CampaignData['templates']): CampaignData['templates'] 
 
 const INITIAL: Settings = {
   intro: { mode: 'ai', templateBody: GENERIC_INTRO, split: 'never', emoji: 'never', instructions: '', tone: 'friendly', avoid: [] },
-  variations: { useImage: false, imageUrl: '', reserveLevel: 0, frequency: 'sometimes' },
+  variations: { useImage: false, imageUrl: '', reserveLevel: 0, frequency: 'at_once' },
   brief: { order: 'sms', wait: 1, waitUnit: 'hours', sms: true, smsBody: SMS_BRIEF, email: true, emailSubject: EMAIL_SUBJECT, emailBody: EMAIL_BRIEF, emailHtml: null, rvm: false, rvmBody: 'Hi {{first_name}}, this is about {{address}}. Call me back when you have a minute.' },
   followups: { after: 1, afterUnit: 'hours', order: 'sms', wait: 23, waitUnit: 'hours', smart: false, sms: true, smsAi: false, smsList: [], email: true, emailAi: false, emailList: [], pauseUnengaged: true, unengagedN: 3 },
   timezone: browserTz(), startAt: '',
   // The SOP: VIP and A-list buyers get the first 24 hours, then the list.
-  vipFirst: { on: true, hours: 24 },
+  vipFirst: { on: false, hours: 24 },
 };
 
 /** The workspace's templates as the composer's starting point (the old builder's defaults, unchanged). */
@@ -133,7 +138,7 @@ function demoAi(rows: BuyerRow[], tone: string, repFirst: string, deal: Campaign
   }]));
 }
 
-export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, textCtx, prefill, onToast, onLaunched, onClose, demo, reveal, onQueue, onAgent, onQuick }: ComposerProps) {
+export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, textCtx, prefill, onToast, onLaunched, onClose, demo, reveal, onQueue, onAgent, onQuick, factFix }: ComposerProps) {
   const session = useSession();
   const me = session.user?.id ?? null;
   const role = (session as unknown as { workspace?: { role?: string } | null }).workspace?.role ?? '';
@@ -201,6 +206,8 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
   const [realtorsBusy, setRealtorsBusy] = useState(false);
   const [realtorsErr, setRealtorsErr] = useState<string | null>(null);
   const [realtorsAll, setRealtorsAll] = useState(false);
+  // Buyer prospects who buy in the deal's state, as their own segment.
+  const [prospectsOn, setProspectsOn] = useState(false);
   // Playback of the push's recording: the take itself, so it plays without a signed URL.
   const [recUrl, setRecUrl] = useState<string | null>(null);
   useEffect(() => () => { if (recUrl) URL.revokeObjectURL(recUrl); }, [recUrl]);
@@ -283,13 +290,28 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
     const known = new Map(rows.map((r) => [r.b.id, r]));
     return realtorPool.rows.map((b) => known.get(b.id) ?? buyerRow(b, data));
   }, [data, realtorsOn, realtorPool, rows]);
+  // Prospects (the area-code buy-box list, Buyer Prospects) who buy in the
+  // deal's state score under the match cutoff, so they join as a segment.
+  // Switching it on picks them, which lets them past the prospect skip.
+  const prospectRows = useMemo(() => {
+    if (!data) return [];
+    return rows.filter((r) => isProspectBuyer(r.b) && !r.b.blacklisted && !/inactive/i.test(r.b.status) && prospectInMarket(r.b, data.deal));
+  }, [data, rows]);
   const audience = useMemo(() => {
-    if (!realtorRows.length) return view.audience;
+    const extra = [...realtorRows, ...(prospectsOn ? prospectRows : [])];
+    if (!extra.length) return view.audience;
     const inA = new Set(view.audience.map((r) => r.b.id));
-    return [...view.audience, ...realtorRows.filter((r) => !inA.has(r.b.id) && include[r.b.id] !== false)];
-  }, [view.audience, realtorRows, include]);
-  const firstLook = useMemo(() => audience.filter(isFirstLook).length, [audience]);
-  const handPicked = useMemo(() => Object.entries(include).flatMap(([id, on]) => (on ? [Number(id)] : [])), [include]);
+    return [...view.audience, ...extra.filter((r) => { if (inA.has(r.b.id) || include[r.b.id] === false) return false; inA.add(r.b.id); return true; })];
+  }, [view.audience, realtorRows, prospectRows, prospectsOn, include]);
+  const handPicked = useMemo(() => [
+    ...Object.entries(include).flatMap(([id, on]) => (on ? [Number(id)] : [])),
+    ...(prospectsOn ? prospectRows.flatMap((r) => (include[r.b.id] === false ? [] : [r.b.id])) : []),
+  ], [include, prospectsOn, prospectRows]);
+  // Only first-look buyers who will be sent to: an opted-out VIP gets no head start, so it holds no one back.
+  const firstLook = useMemo(() => {
+    const picked = new Set(handPicked);
+    return audience.filter((r) => isFirstLook(r) && !skipWhy(r.b, 'any', picked.has(r.b.id))).length;
+  }, [audience, handPicked]);
   const scoreOf = (r: BuyerRow) => r.match?.score ?? 0;
   // The plan renders from a deferred copy, so typing in a brief never waits on hundreds of buyers.
   const lagging = useDeferredValue(settings);
@@ -300,6 +322,9 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
     [data, audience, lagging, fields, ai, overrides, now, links, handPicked, textCtx.repName, textCtx.company, session.profile?.phone, session.user?.email],
   );
   const sum = useMemo(() => planSummary(plan), [plan]);
+  // Buyers a blast for this property already reached: left out unless the rep ticks "Send again".
+  const prior = usePriorBlasts(workspaceId, dealId, me, confirming, !!demo);
+  const dupes = useMemo(() => blastDupes(plan.recipients.map((r) => r.buyer_id), prior.prior ?? [], settings.timezone), [plan, prior.prior, settings.timezone]);
 
   // Demo: the preview opens with the AI's first samples already written, as if the rep had asked for them.
   const [seeded, setSeeded] = useState(false);
@@ -392,8 +417,11 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
   const emailCount = sum.emailBuyers;
   const firstSend = sum.firstSend ?? undefined;
   const outside = !inSendWindow(settings.startAt ? new Date(settings.startAt) : now, settings.timezone);
-  const numbers = talkrMe?.org_numbers ?? [];
+  // Never an AI agent's line: a buyer's reply there reaches the agent, not the rep.
+  const numbers = (talkrMe?.org_numbers ?? []).filter((n) => !isAiLine(n));
   const defaultNumber = talkrMe ? (talkrMe.org_numbers.find((n) => n.id === talkrMe.default_phone_number_id)?.phone_e164 ?? talkrMe.numbers[0]?.phone_e164 ?? null) : null;
+  // With no number picked the server rotates across all of these (rotationLines).
+  const myLines = talkrMe ? rotationLines(talkrMe) : [];
   const gmailChoices = data.gmail.filter((g) => g.user_id === me || ['owner', 'admin'].includes(role));
   const account = data.gmail.find((g) => String(g.id) === delivery.accountId) ?? null;
   const useResend = !!resend?.configured && !!resend.sender;
@@ -409,8 +437,10 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
       const e = xs.filter((p) => p.messages.some((m) => m.channel === 'email')).length;
       return `${t} by text · ${e} by email`;
     };
+    const prospectIds = new Set(prospectsOn ? prospectRows.map((r) => r.b.id) : []);
     const agents = recs.filter((p) => isRealtorRow(p.row));
-    const buyers = recs.filter((p) => !isRealtorRow(p.row));
+    const leads = recs.filter((p) => !isRealtorRow(p.row) && prospectIds.has(p.row.b.id));
+    const buyers = recs.filter((p) => !isRealtorRow(p.row) && !prospectIds.has(p.row.b.id));
     const out: ReviewSegment[] = [{
       key: 'buyers', label: 'Buyers', count: buyers.length,
       detail: `Matched, scoring ${filters.minScore}+${view.byHand ? `, ${view.byHand} set by hand` : ''} · ${by(buyers)}${sum.skippedTotal ? ` · ${sum.skippedTotal} skipped` : ''}`,
@@ -420,6 +450,9 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
         key: 'realtors', label: 'Realtors', count: agents.length,
         detail: `${realtorsOn ? `Working ${data.deal.city || 'this market'}` : 'Matched this deal'} · ${by(agents)}`,
       });
+    }
+    if (prospectsOn) {
+      out.push({ key: 'prospects', label: 'Buyer prospects', count: leads.length, detail: `Buying in ${data.deal.state || data.deal.city || 'this market'} · ${by(leads)}` });
     }
     return out;
   };
@@ -484,7 +517,9 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
       : 'Pick a connected Gmail account in Delivery, or turn email off.');
     setLaunching(true);
     // Re-timed from this moment: the review may have been open a while, and a send time in the past would lose the spacing.
-    const fresh = buildPlan(audience, settings, fields, ctx, data, ai, overrides, new Date(), links, handPicked);
+    const leaveOut = prior.resend ? new Set<number>() : dupes.ids;
+    const built = buildPlan(audience, settings, fields, ctx, data, ai, overrides, new Date(), links, handPicked);
+    const fresh = { ...built, recipients: built.recipients.filter((r) => !leaveOut.has(r.buyer_id)) };
     if (demo) {
       await new Promise((res) => setTimeout(res, 350));
       setLaunching(false); setConfirming(false);
@@ -498,7 +533,7 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
     const clip = settings.brief.rvmRecording ?? null;
     const pickedIds = new Set(handPicked);
     const drops = settings.brief.rvm && (settings.brief.rvmBody?.trim() || clip)
-      ? audience.flatMap((row) => (skipWhy(row.b, 'sms', pickedIds.has(row.b.id)) ? [] : [{
+      ? audience.flatMap((row) => (leaveOut.has(row.b.id) || skipWhy(row.b, 'sms', pickedIds.has(row.b.id)) ? [] : [{
         buyerId: row.b.id, phone: row.b.phone as string, script: renderMerge(settings.brief.rvmBody ?? '', fieldsForBuyer(row, fields, ctx, links)),
       }]))
       : [];
@@ -511,12 +546,14 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
     // it. With no text or email to launch, there is no campaign to tie them to.
     if (!fresh.recipients.length) {
       setLaunching(false); setConfirming(false);
-      return onToast(drops.length
+      return onToast(built.recipients.length
+        ? 'Every buyer here already got a blast for this property. Switch on "Send again" to send anyway.'
+        : drops.length
         ? 'Turn on a text or email to launch. For voicemail only, use RVM matches on the Matches tab.'
         : 'Nobody in this campaign can be reached by text or email.');
     }
     const rvmQueued = drops.length;
-    const r = await launchCampaign(workspaceId, dealId, JSON.parse(JSON.stringify({ filters, intro: { ...settings.intro, templateBody: undefined }, variations: settings.variations, brief: { order: settings.brief.order, wait: settings.brief.wait, waitUnit: settings.brief.waitUnit, sms: settings.brief.sms, email: settings.brief.email, rvm: !!settings.brief.rvm, rvmBody: settings.brief.rvm ? settings.brief.rvmBody ?? '' : undefined, rvmRecording: settings.brief.rvm ? clip : undefined, rvmQueued }, followups: { ...settings.followups, smsList: undefined, emailList: undefined }, segments: segmentsOf(fresh.recipients).map(({ key, label, count }) => ({ key, label, count })) })), {
+    const r = await launchCampaign(workspaceId, dealId, JSON.parse(JSON.stringify({ filters, intro: { ...settings.intro, templateBody: undefined }, variations: settings.variations, vipFirst: settings.vipFirst, sendRepeats: prior.resend && dupes.ids.size > 0, brief: { order: settings.brief.order, wait: settings.brief.wait, waitUnit: settings.brief.waitUnit, sms: settings.brief.sms, email: settings.brief.email, rvm: !!settings.brief.rvm, rvmBody: settings.brief.rvm ? settings.brief.rvmBody ?? '' : undefined, rvmRecording: settings.brief.rvm ? clip : undefined, rvmQueued }, followups: { ...settings.followups, smsList: undefined, emailList: undefined }, segments: segmentsOf(fresh.recipients).map(({ key, label, count }) => ({ key, label, count })) })), {
       from_phone_number_id: delivery.phoneMode === 'custom' && delivery.numberId ? delivery.numberId : null,
       from_phone: delivery.phoneMode === 'custom' ? numbers.find((n) => n.id === delivery.numberId)?.phone_e164 ?? null : defaultNumber,
       email_account_id: account ? account.id : null, from_name: delivery.fromName.trim() || null,
@@ -541,7 +578,7 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
   const pFields = pRow ? fieldsForBuyer(pRow, fields, ctx, pLinks) : fields;
   const pEmail = pRec?.messages.find((m) => m.channel === 'email' && m.kind === 'brief') ?? null;
   const spam = pEmail ? spamRisk({ subject: pEmail.subject ?? '', html: pEmail.body_html, text: pEmail.body, kind: 'bulk', recipients: 1 }) : null;
-  const fromLine = talkrMe && defaultNumber ? formatPhone(delivery.phoneMode === 'custom' ? numbers.find((n) => n.id === delivery.numberId)?.phone_e164 ?? defaultNumber : defaultNumber) : 'your Talkr line';
+  const fromLine = delivery.phoneMode === 'default' && myLines.length > 1 ? `your ${myLines.length} lines, rotating` : talkrMe && defaultNumber ? formatPhone(delivery.phoneMode === 'custom' ? numbers.find((n) => n.id === delivery.numberId)?.phone_e164 ?? defaultNumber : defaultNumber) : 'your Talkr line';
   const blastPool = useResend ? repSenderPool(resend?.senders?.length ? resend.senders : resend?.sender ? [resend.sender] : [], me) : [];
   const poolLead = blastPool.find((s) => s.reply_to) ?? blastPool[0];
   const emailFrom = useResend
@@ -655,6 +692,9 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
     settings.intro.mode !== 'none' && 'intro', settings.brief.sms && 'brief-sms', settings.brief.email && 'brief-email',
     ...fuSmsAt.map(({ i }) => `fu-sms-${i}`), ...fuEmailAt.map(({ i }) => `fu-email-${i}`),
   ].filter((t): t is string => !!t);
+  const where = dealFields.address || dealFields.full_address || 'this deal';
+  const emailBlank = new Set<string>();
+  const emailRecipients = plan.recipients.filter((r) => r.messages.some((x) => x.channel === 'email')).length;
   for (const t of msgTargets) {
     const d = draftOf(t);
     if (!d) continue;
@@ -671,17 +711,34 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
     }
     if (m.blank.length) {
       const labels = m.blank.map((b) => FIELD_LABEL[b] ?? b);
+      const onHouse = m.blank.some((b) => MERGE_SOURCES[b]?.fix === 'property');
       issues.push({
         level: 'warn', stage: 1, edit: t,
         text: (
           <>
-            <b>{name}</b>: this deal has nothing on file for {m.blank.map((b) => `{{${b}}}`).join(', ')}, so {m.blank.length === 1 ? 'it goes' : 'they go'} out blank. Fill in below for this campaign, or take {m.blank.length === 1 ? 'it' : 'them'} out.
-            {m.blank.map((b) => <FillField key={b} label={FIELD_LABEL[b] ?? b} onUse={(v) => { setFill((x) => ({ ...x, [b]: v })); onToast(`${FIELD_LABEL[b] ?? b} filled in for this campaign`); }} />)}
+            <b>{name}</b>: {gapNotice(m.blank, where)} Every buyer who gets it sees {m.blank.length === 1 ? 'that spot' : 'those spots'} blank. {factFix?.saveFact ? 'Save a value on the property, use one for this campaign only, or take the field out.' : 'Fill one in for this campaign, or take the field out.'}
+            {m.blank.map((b) => <FillField key={b} name={b} label={labelOf(b)}
+              onSave={factFix?.saveFact && MERGE_SOURCES[b]?.field ? (v) => factFix.saveFact!(MERGE_SOURCES[b].field!, v) : undefined}
+              onUse={(v, saved) => { setFill((x) => ({ ...x, [b]: b === 'sqft' && /^\d+$/.test(v) ? Number(v).toLocaleString('en-US') : v })); onToast(saved ? `${FIELD_LABEL[b] ?? b} saved on ${where}` : `${FIELD_LABEL[b] ?? b} filled in for this campaign`); }} />)}
           </>
         ),
-        actions: [{ label: m.blank.length === 1 ? 'Take it out' : 'Take them out', run: () => { dropFields(t, m.blank); onToast(`${name}: ${labels.join(', ')} taken out`); } }],
+        actions: [
+          ...(onHouse && factFix?.openFacts ? [{ label: 'Open property facts', run: factFix.openFacts }] : []),
+          { label: m.blank.length === 1 ? 'Take it out' : 'Take them out', run: () => { dropFields(t, m.blank); onToast(`${name}: ${labels.join(', ')} taken out`); } },
+        ],
       });
+      if (/email/.test(t)) for (const b of m.blank) emailBlank.add(b);
     }
+  }
+  // Before launch: how many buyers' emails would carry each blank, so a blast
+  // never goes out with empty spots without this line in the review.
+  if (emailBlank.size && emailRecipients) {
+    const lines = bulkGapSummary(Object.fromEntries(Array.from(emailBlank).map((b) => [b, emailRecipients])), emailRecipients);
+    issues.push({
+      level: 'warn', stage: 2,
+      text: <>{lines.join(' ')}</>,
+      actions: Array.from(emailBlank).some((b) => MERGE_SOURCES[b]?.fix === 'property') && factFix?.openFacts ? [{ label: 'Open property facts', run: factFix.openFacts }] : undefined,
+    });
   }
   if (emailCount && resend && !useResend && !account) issues.push({ level: 'block', stage: 2, text: 'Email needs a sender. Resend is not set up, so pick a connected Gmail account under Sending from, or turn email off.' });
   const room = useResend ? poolRoom(blastPool) : null;
@@ -777,9 +834,10 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
           ) : null}
         </div>
 
-        <GeniusImport workspaceId={workspaceId} dealId={dealId} address={data.deal.address || null} userId={me} canWrite={canWrite} demo={!!demo} onImported={importBuyers} />
 
         {realtorCard()}
+
+        {prospectCard()}
 
         <div className="mk-card" style={{ overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0 14px', borderBottom: `1px solid ${C.line2}`, flexWrap: 'wrap' }}>
@@ -898,6 +956,31 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
                     {pool.length > shown.length ? <div><Btn size="sm" onClick={() => setRealtorsAll(true)}>Show {pool.length - shown.length} more</Btn></div> : null}
                   </>
                 )}
+      </div>
+    );
+  };
+
+  const prospectCard = () => {
+    const where = data.deal.state || data.deal.city || 'this market';
+    const inA = new Set(audience.map((r) => r.b.id));
+    const n = prospectRows.filter((r) => inA.has(r.b.id)).length;
+    const phones = prospectRows.filter((r) => r.b.phone).length;
+    return (
+      <div className="mk-card" id="mk-sec-prospects" style={{ padding: '12px 16px', display: 'grid', gap: '10px', scrollMarginTop: '12px' }} data-testid="prospect-segment">
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '13.5px', fontWeight: 650 }}>Buyer prospects</div>
+            <div style={{ fontSize: '12px', color: C.muted, marginTop: '2px' }}>Also send this deal to prospects who buy in {where}: the area-code buy-box list and Buyers › Buyer Prospects. Texts follow the same line, cap and opt-out rules.</div>
+          </div>
+          <Switch on={prospectsOn} set={setProspectsOn}><span style={srOnly}>Market this deal to buyer prospects</span></Switch>
+        </div>
+        {!prospectsOn ? null
+          : !prospectRows.length ? <span style={{ fontSize: '12px', color: C.muted }}>No buyer prospect on file buys in {where}.</span>
+            : (
+              <div className="mk-num" style={{ fontSize: '12.5px' }} role="status">
+                <b>{n.toLocaleString('en-US')}</b> of {plural(prospectRows.length, 'prospect')} in {where} are in this push <span style={{ color: C.muted }}>· {phones.toLocaleString('en-US')} with a phone</span>
+              </div>
+            )}
       </div>
     );
   };
@@ -1041,7 +1124,7 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
                 ) : <span style={{ fontSize: '12px', color: C.muted2 }}>This deal has no photo links yet: add an https photo link on the Files tab.</span>) : null}
               </Row>
               <Row label="Send pace">
-                <Choice label="Send pace" value={settings.variations.frequency} options={['sometimes', 'frequently'] as const} labels={{ sometimes: 'Steady · a buyer every 1.5–3.5 min', frequently: 'Fast · every 30–60 s' }} onChange={(v) => set('variations', { frequency: v })} />
+                <Choice label="Send pace" value={settings.variations.frequency} options={['at_once', 'frequently', 'sometimes'] as const} labels={{ at_once: 'All at once · everyone at launch', frequently: 'Fast · a buyer every 30–60 s', sometimes: 'Steady · every 1.5–3.5 min' }} onChange={(v) => set('variations', { frequency: v })} />
               </Row>
             </Group>
             <Group title="Deal brief order">
@@ -1312,9 +1395,15 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
           <div style={{ display: 'grid', gap: '12px', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
             <div style={{ display: 'grid', gap: '6px', alignContent: 'start' }}>
               <span style={{ fontSize: '12px', color: C.muted, display: 'flex', alignItems: 'center', gap: '6px' }}><Svg d={Icon.text} size={13} color="var(--c-talkr)" /> Texts, through Talkr as you</span>
-              <Choice label="Sending number" value={delivery.phoneMode} options={['default', 'custom'] as const} labels={{ default: 'My caller ID', custom: 'Another number' }} onChange={(v) => setDelivery({ ...delivery, phoneMode: v })} />
+              <Choice label="Sending number" value={delivery.phoneMode} options={['default', 'custom'] as const} labels={{ default: myLines.length > 1 ? 'Rotate my lines' : 'My caller ID', custom: 'One number' }} onChange={(v) => setDelivery({ ...delivery, phoneMode: v })} />
               {talkrErr ? <Note level="warn">Talkr did not answer ({talkrErr}). Texts go from your default line.</Note> : !talkrMe ? <span role="status" style={{ fontSize: '12px', color: C.muted2 }}>Loading your Talkr numbers…</span>
-                : delivery.phoneMode === 'default' ? <span className="mk-num" style={{ fontSize: '12.5px' }}>{defaultNumber ? formatPhone(defaultNumber) : 'Talkr picks your default line'}</span>
+                : delivery.phoneMode === 'default' ? (
+                  myLines.length > 1 ? (
+                    <span className="mk-num" style={{ fontSize: '12.5px', lineHeight: 1.5 }} data-testid="rotation-lines">
+                      Each buyer gets one of your {myLines.length} lines (the one they already hear from, else a local one, else the least used): {myLines.map((n) => formatPhone(n.phone_e164)).join(' · ')}. Replies come back to your Inbox.
+                    </span>
+                  ) : <span className="mk-num" style={{ fontSize: '12.5px' }}>{defaultNumber ? formatPhone(defaultNumber) : 'Talkr picks your default line'}</span>
+                )
                   : (
                     <select value={delivery.numberId} onChange={(e) => setDelivery({ ...delivery, numberId: e.target.value })} className="mk-field" style={{ maxWidth: '320px' }} aria-label="Number">
                       <option value="">Pick a number…</option>
@@ -1348,12 +1437,12 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
     <>
       {onClose ? <Btn kind="quiet" onClick={onClose}>Cancel</Btn> : null}
       <Btn onClick={() => go(1)}>Edit message</Btn>
-      <Btn kind="primary" size="lg" disabled={!audience.length} title={!audience.length ? 'Nobody is in this campaign yet' : undefined} onClick={() => go(2)} data-testid="to-review">Review {plural(sum.buyers || audience.length, 'buyer')} →</Btn>
+      <Btn kind="primary" size="lg" disabled={!audience.length} title={!audience.length ? 'Nobody is in this campaign yet' : undefined} onClick={() => go(2)} data-testid="to-review">Review {plural(sum.buyers || audience.length, 'buyer')}</Btn>
     </>
   ) : stage === 1 ? (
     <>
-      <Btn onClick={() => go(0)}>← Audience</Btn>
-      <Btn kind="primary" size="lg" disabled={!audience.length} onClick={() => go(2)} data-testid="to-review">Review {plural(sum.buyers || audience.length, 'buyer')} →</Btn>
+      <Btn onClick={() => go(0)}>Back to audience</Btn>
+      <Btn kind="primary" size="lg" disabled={!audience.length} onClick={() => go(2)} data-testid="to-review">Review {plural(sum.buyers || audience.length, 'buyer')}</Btn>
     </>
   ) : (
     <>
@@ -1533,14 +1622,15 @@ export function Composer({ workspaceId, dealId, canWrite, isMobile, dealFields, 
       ) : null}
 
       {confirming ? (
-        <Dialog title={`Send to ${plural(sum.buyers, 'buyer')}?`} onClose={() => { if (!launching) setConfirming(false); }} actions={
+        <Dialog title={`Send to ${plural(sum.buyers - (prior.resend ? 0 : dupes.ids.size), 'buyer')}?`} onClose={() => { if (!launching) setConfirming(false); }} actions={
           <>
             <Btn onClick={() => setConfirming(false)} disabled={launching} data-autofocus>Cancel</Btn>
-            <Btn kind="primary" onClick={() => void launch()} disabled={launching} data-testid="confirm-send">{launching ? 'Launching…' : demo ? 'Send now (demo)' : 'Send now'}</Btn>
+            <Btn kind="primary" onClick={() => void launch()} disabled={launching || prior.prior === null} data-testid="confirm-send">{launching ? 'Launching…' : prior.prior === null ? 'Checking earlier blasts…' : demo ? 'Send now (demo)' : 'Send now'}</Btn>
           </>
         }>
           <div style={{ display: 'grid', gap: '10px', fontSize: '13px' }}>
             <p style={{ margin: 0, color: C.muted, lineHeight: 1.5 }}>{sentence}. Once it starts, it runs on the server whether this tab is open or not.</p>
+            <PriorBlastsNote dupes={dupes} address={data?.deal.address ?? ''} err={prior.err} resend={prior.resend} setResend={prior.setResend} disabled={launching} />
             <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr)', gap: '6px 14px' }}>
               {smsCount ? <><dt style={dt}>Texts</dt><dd style={dd} className="mk-num">{plural(sum.texts, 'text')} to {plural(smsCount, 'buyer')} · ≈ {plural(sum.segments, 'segment')} · from {fromLine}</dd></> : null}
               {emailCount ? <><dt style={dt}>Emails</dt><dd style={dd} className="mk-num">{plural(sum.emails, 'email')} to {plural(emailCount, 'buyer')} · from {emailFrom}</dd></> : null}
@@ -1611,14 +1701,40 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 const Off = ({ children }: { children: React.ReactNode }) => <div style={{ fontSize: '12.5px', color: C.muted2 }}>{children}</div>;
-/** A deal field a check found blank, typed in right there. */
-function FillField({ label, onUse }: { label: string; onUse: (v: string) => void }) {
+/**
+ * A deal field a check found blank, typed in right there: saved on the deal's
+ * house when it is a property fact and the page can save, else used for this
+ * campaign only. The label sits above the box.
+ */
+function FillField({ name, label, onSave, onUse }: { name: string; label: string; onSave?: (v: string) => Promise<{ ok: true } | { ok: false; message?: string }>; onUse: (v: string, saved: boolean) => void }) {
+  const id = useId();
   const [v, setV] = useState('');
-  const use = () => { if (v.trim()) onUse(v.trim()); };
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const use = async (save: boolean) => {
+    const value = v.trim();
+    if (!value) return;
+    setErr(null);
+    if (save && onSave) {
+      setBusy(true);
+      const r = await onSave(value);
+      setBusy(false);
+      if (!r.ok) { setErr(r.message || 'That did not save.'); return; }
+    }
+    onUse(value, save && !!onSave);
+    setV('');
+  };
   return (
-    <form onSubmit={(e) => { e.preventDefault(); use(); }} style={{ display: 'flex', gap: '4px', marginTop: '6px', minWidth: 0 }}>
-      <input value={v} onChange={(e) => setV(e.target.value)} className="mk-field" aria-label={label} placeholder={`${label}…`} style={{ flex: 1, width: 0, height: '26px' }} />
-      <Btn size="sm" type="submit" disabled={!v.trim()} style={{ height: '26px' }}>Use</Btn>
+    <form onSubmit={(e) => { e.preventDefault(); void use(!!onSave); }} style={{ display: 'grid', gap: '4px', marginTop: '8px', minWidth: 0 }} data-testid={`fill-${name}`}>
+      <label htmlFor={id} style={{ fontSize: '11.5px', fontWeight: 500, color: C.muted }}>{label}</label>
+      <span style={{ display: 'flex', gap: '4px', minWidth: 0, flexWrap: 'wrap' }}>
+        <input id={id} value={v} onChange={(e) => setV(e.target.value)} className="mk-field" autoComplete="off" aria-invalid={!!err}
+          style={{ flex: '1 1 80px', minWidth: 0, height: '28px' }} />
+        {onSave ? <Btn size="sm" type="submit" disabled={!v.trim() || busy} style={{ height: '28px' }}>{busy ? 'Saving…' : 'Save'}</Btn> : null}
+        <Btn size="sm" kind={onSave ? 'quiet' : undefined} type={onSave ? 'button' : 'submit'} disabled={!v.trim() || busy} onClick={onSave ? () => void use(false) : undefined}
+          style={{ height: '28px' }} title={onSave ? 'Use it in this campaign without saving it on the property' : undefined}>{onSave ? 'This campaign only' : 'Use'}</Btn>
+      </span>
+      {err ? <span role="alert" style={{ fontSize: '11.5px', color: C.red }}>{err}</span> : null}
     </form>
   );
 }
@@ -1675,6 +1791,8 @@ export const COMPOSER_CSS = `
 @container (min-width: 880px) {
   .mk-grid { grid-template-columns: minmax(0, 1fr) minmax(420px, 520px); grid-template-areas: "main side"; align-items: start; }
   .mk-side { display: grid; gap: 12px; grid-area: side; position: sticky; top: 12px; align-self: start; }
+  /* Inside the side column the summary and the preview stack. Their named areas only exist on the wide grid; here they put both in one cell and the preview covered the checks. */
+  .mk-side > .mk-summary, .mk-side > .mk-preview { grid-area: auto; }
   .mk-summary { max-height: 240px; overflow: auto; }
   .mk-preview-body { min-height: 420px; max-height: calc(100dvh - 260px); height: auto; }
   .mk-row-2 { grid-template-columns: 170px minmax(0, 1fr) !important; align-items: start; }
@@ -1682,6 +1800,8 @@ export const COMPOSER_CSS = `
 @container (min-width: 1240px) {
   .mk-grid { grid-template-columns: minmax(0, 1fr) minmax(440px, 640px) 250px; grid-template-areas: "main preview summary"; }
   .mk-side { display: contents; }
+  .mk-side > .mk-summary { grid-area: summary; }
+  .mk-side > .mk-preview { grid-area: preview; }
   .mk-summary, .mk-preview { position: sticky; top: 12px; align-self: start; }
   .mk-summary { max-height: calc(100dvh - 330px); }
   .mk-preview-body { min-height: 480px; max-height: calc(100dvh - 220px); height: auto; }

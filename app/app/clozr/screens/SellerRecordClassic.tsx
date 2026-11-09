@@ -3,8 +3,8 @@
 // record components, so fixes to them land in both.
 //
 // Desktop: a header toolbar (Call, Text, Email, More ▾); on the left who they
-// are, the stage, the property and what we know; in the middle one activity
-// stream and one composer; on the right Next action, tasks, the CLOZR AI card
+// are, the stage and what we know; in the middle the house (PropertyHero), the composer,
+// the Smart Summary bar and one activity stream; on the right Next action, tasks, the CLOZR AI card
 // and the offer. Everything else lives behind More ▾ in the Record details
 // sheet. Phone: one column with the composer docked above the tab bar.
 //
@@ -24,13 +24,15 @@ import { useSession } from '@/lib/session';
 import { NextActionCard } from '@/app/components/record/NextActionCard';
 import { RecordHeader } from '@/app/components/record/RecordHeader';
 import { openMeetingInvite } from '@/app/components/meeting/MeetingInvite';
-import { Identity, PropertyCard } from '@/app/components/record/PropertyCard';
+import { Identity } from '@/app/components/record/PropertyCard';
+import { PropertyHero } from '@/app/components/record/PropertyHero';
 import { StageCard } from '@/app/components/record/StageCard';
 import { OutcomeBar } from '@/app/components/record/OutcomeBar';
 import { WhatWeKnow } from '@/app/components/record/WhatWeKnow';
-import { ActivityStream } from '@/app/components/record/ActivityStream';
+import { ActivityStream, readOrder, saveOrder, type StreamOrder } from '@/app/components/record/ActivityStream';
 import { ActivityChips } from '@/app/components/record/ActivityChips';
 import { Composer } from '@/app/components/record/Composer';
+import { SmartSummary } from '@/app/components/record/SmartSummary';
 import { OfferSheet } from '@/app/components/record/OfferSheet';
 import { RecordDetailsSheet, SECTION_LABELS, type SectionKey } from '@/app/components/record/RecordDetailsSheet';
 import { RecordActionPlans, AiRecommended } from '@/app/components/record/RailCards';
@@ -43,8 +45,9 @@ import { CenteredDialog } from '@/components/ContractsHub';
 import { shortcutAllowed } from '@/app/components/record/record-logic';
 import { isArchiveKey, isTypingTarget, peopleNavAction, recordNavBlocked } from '@/lib/people-keys';
 import { useRailPrefs } from '@/app/components/record/useRailPrefs';
+import { RailSplit } from '@/app/components/record/RailSplit';
 import '@/app/components/record/record.css';
-import { DEAL_SHEET_BTN } from '@/app/components/record/deal-sheet-style';
+import { buttonClass } from '@/components/ds/Button';
 
 /** Old tab names another screen may still hand over, and where they live now. */
 const TAB_TO_SECTION: Record<string, SectionKey> = { TC: 'closing', 'Files & Links': 'files' };
@@ -87,8 +90,18 @@ export function SellerRecordClassic({ V }: { V: ClozrView }) {
   // false: closed; null: open, nothing picked; a number: open on that template (-1 for "other").
   const [contractsPop, setContractsPop] = useState<number | null | false>(false);
   const [pickingContract, setPickingContract] = useState(false);
-  const { prefs: rails, toggle: toggleRail, stretch } = useRailPrefs();
-  const [wide, setWide] = useState<'left' | 'right' | null>(null);
+  const { prefs: rails, toggle: toggleRail, setWidth } = useRailPrefs();
+  const leftRail = useRef<HTMLElement | null>(null);
+  const rightRail = useRef<HTMLElement | null>(null);
+  // The activity stream is the heaviest piece of the record and sits under
+  // the house, the composer and the summary: it mounts one frame after they
+  // paint, so the record opens on the house first.
+  const [streamReady, setStreamReady] = useState(false);
+  useEffect(() => { const id = requestAnimationFrame(() => setStreamReady(true)); return () => cancelAnimationFrame(id); }, []);
+  // Newest at the bottom like a chat, unless this user flipped it (localStorage).
+  const [order, setOrderState] = useState<StreamOrder>('asc');
+  useEffect(() => { const t = setTimeout(() => setOrderState(readOrder()), 0); return () => clearTimeout(t); }, []);
+  const setOrder = (o: StreamOrder) => { setOrderState(o); saveOrder(o); };
 
   // Pick a composer channel and put the cursor in it. Instant: used all day.
   const pick = useCallback((ch: 'Text' | 'Email' | 'Note') => {
@@ -183,7 +196,7 @@ export function SellerRecordClassic({ V }: { V: ClozrView }) {
   const subKey = sub ? `${sub.partner}|${sub.addr}` : null;
   // A small card at the top of the left rail (in the stack on mobile), not a band across the record.
   const subNote = sub && subKey !== subClosed ? (
-    <div role="status" style={{ position: 'relative', margin: '0 0 12px', padding: '8px 28px 8px 10px', borderRadius: '8px', background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: '12px', lineHeight: 1.35, color: '#1e3a8a' }}>
+    <div role="status" style={{ position: 'relative', margin: '0 0 12px', padding: '8px 28px 8px 10px', borderRadius: '8px', background: 'var(--tint-blue, #eff6ff)', border: '1px solid #bfdbfe', fontSize: '12px', lineHeight: 1.35, color: '#1e3a8a' }}>
       <button type="button" className="dc2" aria-label="Close submission note" title="Close" onClick={() => setSubClosed(subKey)}
         style={{ position: 'absolute', top: '2px', right: '2px', width: '24px', height: '24px', padding: 0, border: 0, borderRadius: '6px', background: 'transparent', color: '#1e3a8a', cursor: 'pointer', display: 'inline-grid', placeItems: 'center' }}>
         <Icon name="x" size={12} />
@@ -192,8 +205,8 @@ export function SellerRecordClassic({ V }: { V: ClozrView }) {
         <strong>{sub.partner}</strong> submission
       </div>
       <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
-        <button type="button" className="dc2" onClick={sub.openDealSheet} style={{ ...DEAL_SHEET_BTN, height: '26px', padding: '0 10px', fontSize: '12px' }}>Deal sheet</button>
-        <button type="button" className="dc2" onClick={sub.showAll} style={{ height: '26px', padding: '0 8px', borderRadius: '7px', border: '1px solid #bfdbfe', background: '#fff', fontSize: '12px', fontWeight: 600, color: '#1d4ed8', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        <button type="button" className={buttonClass('ghost', 28)} onClick={sub.openDealSheet}>Deal sheet</button>
+        <button type="button" className="dc2" onClick={sub.showAll} style={{ height: '26px', padding: '0 8px', borderRadius: '7px', border: '1px solid #bfdbfe', background: 'var(--surface, #fff)', fontSize: '12px', fontWeight: 600, color: 'var(--tx-blue, #1d4ed8)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
           All{sub.others ? ` (+${sub.others})` : ''}
         </button>
       </div>
@@ -240,7 +253,7 @@ export function SellerRecordClassic({ V }: { V: ClozrView }) {
     return (
       <section data-screen-label="Seller record" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
         {header}
-        <div data-record-scroll style={{ flex: 1, minHeight: 0, overflow: 'auto', background: '#fafafa' }}>
+        <div data-record-scroll style={{ flex: 1, minHeight: 0, overflow: 'auto', background: 'var(--canvas, #fafafa)' }}>
           <div style={{ display: 'grid', gap: '10px', padding: '12px' }}>
             {subNote}
             <NextActionCard V={V} />
@@ -248,7 +261,7 @@ export function SellerRecordClassic({ V }: { V: ClozrView }) {
             <FilesBlock V={V} compact />
             <AiRecommended V={V} />
             <StageCard V={V} selectRef={stageRef} />
-            <PropertyCard V={V} />
+            <PropertyHero V={V} />
             <Disclosure title="What we know">
               <Identity V={V} compact />
               <div style={{ marginTop: '8px' }}><WhatWeKnow V={V} bare /></div>
@@ -258,15 +271,16 @@ export function SellerRecordClassic({ V }: { V: ClozrView }) {
             <ContractsBlock V={V} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" className="dc2" data-testid="record-archive" title="Archive this record (Shift+Delete). Asks first; nothing is deleted." onClick={() => V.archiveOpenRecord('seller')}
-                style={{ height: 32, padding: '0 12px', borderRadius: 8, border: '1px solid #d4d4d8', background: '#fff', color: '#3f3f46', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                style={{ height: 32, padding: '0 12px', borderRadius: 8, border: '1px solid var(--line, #d4d4d8)', background: 'var(--surface, #fff)', color: 'var(--ink-3, #3f3f46)', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 Archive
               </button>
               <BlacklistButton count={1} names={[V.P.name]} onConfirm={V.blacklistPerson} />
             </div>
           </div>
-          <ActivityChips V={V} />
+          <div style={{ padding: '0 12px 12px' }}><SmartSummary key={V.P.id} V={V} /></div>
+          <ActivityChips V={V} order={order} onOrder={setOrder} />
           <div style={{ padding: '12px' }}>
-            <ActivityStream V={V} me={me} />
+            <ActivityStream V={V} me={me} order={order} />
           </div>
         </div>
         <Composer V={V} inputRef={inputRef} docked />
@@ -284,13 +298,15 @@ export function SellerRecordClassic({ V }: { V: ClozrView }) {
     'rec-frame',
     rails.left ? '' : 'rec-left-collapsed',
     rails.right ? '' : 'rec-right-collapsed',
-    wide === 'left' ? 'rec-left-wide' : '',
-    wide === 'right' ? 'rec-right-wide' : '',
   ].filter(Boolean).join(' ');
+  const frameVars = {
+    ...(rails.leftW ? { '--rec-left': `${rails.leftW}px` } : null),
+    ...(rails.rightW ? { '--rec-right': `${rails.rightW}px` } : null),
+  } as React.CSSProperties;
   return (
     <section data-screen-label="Seller record" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-      <div className={frameClass}>
-        <aside className={`rec-rail rec-rail-left${rails.left ? '' : ' rec-rail-collapsed'}`}>
+      <div className={frameClass} style={frameVars}>
+        <aside ref={leftRail} className={`rec-rail rec-rail-left${rails.left ? '' : ' rec-rail-collapsed'}`}>
           {rails.left ? (
             <>
               <span className="rec-head-back" data-testid="record-smart-list"><BackLink to={{ ...V.recordBack, label: listLabel }} /></span>
@@ -298,10 +314,9 @@ export function SellerRecordClassic({ V }: { V: ClozrView }) {
               <div className="rec-card"><Identity V={V} /></div>
               <div style={{ marginTop: '10px' }}><StageCard V={V} selectRef={stageRef} /></div>
               <div className="rec-card" style={{ marginTop: '10px' }}><WhatWeKnow V={V} /></div>
-              <div style={{ marginTop: '10px' }}><PropertyCard V={V} /></div>
               <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 <button type="button" className="dc2" data-testid="record-archive" title="Archive this record (Shift+Delete). Asks first; nothing is deleted." onClick={() => V.archiveOpenRecord('seller')}
-                  style={{ height: 32, padding: '0 12px', borderRadius: 8, border: '1px solid #d4d4d8', background: '#fff', color: '#3f3f46', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  style={{ height: 32, padding: '0 12px', borderRadius: 8, border: '1px solid var(--line, #d4d4d8)', background: 'var(--surface, #fff)', color: 'var(--ink-3, #3f3f46)', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                   Archive
                 </button>
                 <BlacklistButton count={1} names={[V.P.name]} onConfirm={V.blacklistPerson} />
@@ -309,23 +324,27 @@ export function SellerRecordClassic({ V }: { V: ClozrView }) {
             </>
           ) : null}
         </aside>
-        <RailToggle side="left" open={rails.left} onToggle={() => { setWide(null); toggleRail('left'); }} />
-        <button type="button" className="rec-split rec-split-left" aria-label="Resize left column. Double-click to stretch."
-          title="Double-click to stretch / expand"
-          onDoubleClick={() => { setWide((w) => (w === 'left' ? null : 'left')); stretch('left'); }} />
+        <RailToggle side="left" open={rails.left} onToggle={() => toggleRail('left')} />
+        <RailSplit side="left" open={rails.left} rail={leftRail} onWidth={(px, keep) => setWidth('left', px, keep)} />
         {header}
         <div className="rec-main">
           {/* The composer sits over the stream, the way Follow Up Boss's note box does: what you write goes first. */}
-          <div className="rec-composer-top"><Composer V={V} inputRef={inputRef} /></div>
-          <ActivityChips V={V} />
-          <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '16px 20px' }}>
-            <ActivityStream V={V} me={me} />
+          <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+            <div className="rec-center">
+              <PropertyHero V={V} />
+              <Composer V={V} inputRef={inputRef} />
+              <SmartSummary key={V.P.id} V={V} />
+              <div className="rec-stream">
+                <ActivityChips V={V} order={order} onOrder={setOrder} />
+                <div style={{ padding: '16px 16px 8px', minHeight: '240px' }}>
+                  {streamReady ? <ActivityStream V={V} me={me} order={order} /> : null}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-        <button type="button" className="rec-split rec-split-right" aria-label="Resize right column. Double-click to stretch."
-          title="Double-click to stretch / expand"
-          onDoubleClick={() => { setWide((w) => (w === 'right' ? null : 'right')); stretch('right'); }} />
-        <aside className={`rec-rail rec-rail-right${rails.right ? '' : ' rec-rail-collapsed'}`}>
+        <RailSplit side="right" open={rails.right} rail={rightRail} onWidth={(px, keep) => setWidth('right', px, keep)} />
+        <aside ref={rightRail} className={`rec-rail rec-rail-right${rails.right ? '' : ' rec-rail-collapsed'}`}>
           {rails.right ? (
             <>
               <NextActionCard V={V} />
@@ -338,7 +357,7 @@ export function SellerRecordClassic({ V }: { V: ClozrView }) {
             </>
           ) : null}
         </aside>
-        <RailToggle side="right" open={rails.right} onToggle={() => { setWide(null); toggleRail('right'); }} />
+        <RailToggle side="right" open={rails.right} onToggle={() => toggleRail('right')} />
       </div>
       {overlays}
     </section>

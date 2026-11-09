@@ -83,6 +83,8 @@ export function showDesktopNotification(notice: DesktopNotice): void {
       }
       n.close();
     };
+    // Gone after 5 s, so they never pile up in the corner (Sam 2026-11-05).
+    window.setTimeout(() => n.close(), 5000);
   } catch {
     /* quota, an origin that lost permission mid-session, a headless context */
   }

@@ -19,7 +19,7 @@ const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
 
 /** Built by the server today; the rest read "Coming soon" in the console. */
 export const DEMO_TOOL_AVAILABLE: Record<ToolKey, boolean> = {
-  lead_context: true, end_call: true, transfer: true, book_appointment: true, save_qualification: true, mark_do_not_contact: true, get_compr_offer: true, request_agreement: false,
+  lead_context: true, end_call: true, transfer: true, book_appointment: true, save_qualification: true, mark_do_not_contact: true, get_compr_offer: true, request_agreement: false, deal_lookup: true,
 };
 
 export const DEMO_TOOLS: ToolInfo[] = TOOL_KEYS.map((k) => ({ key: k, label: k, available: DEMO_TOOL_AVAILABLE[k] }));
@@ -163,7 +163,7 @@ export const DEMO_RECORDS = [
   { kind: 'seller' as const, id: 4, name: 'Derek Ross', sub: '81 Meadow Lane' },
   { kind: 'seller' as const, id: 12, name: 'Harold Kim', sub: '9021 Brookhollow' },
   { kind: 'buyer' as const, id: 3, name: 'Blue Mesa Investments', sub: 'Buyer · Blue Mesa' },
-  { kind: 'buyer' as const, id: 5, name: 'Fortune Acquisitions', sub: 'Buyer · Fortune' },
+  { kind: 'buyer' as const, id: 5, name: 'Summit Buyers', sub: 'Buyer · Fortune' },
 ];
 
 export const DEMO_CALLS: AgentCall[] = [
@@ -213,7 +213,7 @@ export function demoTestSession(settings: AgentSettings, live: { key: string; ve
       signed_url: 'wss://demo.invalid/no-live-session', agent_id: 'agent_demo_0000', agent_key: live.key, live_version: live.version,
       dynamic_variables: { ...DEMO_BUYER_VARS, first_name: first, company, agent_name: agent },
       resolution: 'Matched the sample buyer by phone number (demo).',
-      first_message: `Hey ${first}, thanks for calling back. This is ${agent} with ${company}.`,
+      first_message: `Hey ${first}, thanks for calling back. This is ${agent} with ${company}.`, draft: false, overrides: null,
     };
   }
   return {
@@ -419,13 +419,15 @@ export function createDemoApi(companyName = 'Acme Homes', latency = 1): Api {
     },
     async voices() { await wait(350); return { ok: true, data: DEMO_VOICES }; },
     async previewVoice() { return { ok: false, error: 'Demo voices have no audio; the browser reads the sample line instead.' }; },
-    async startTestSession(key, target) {
+    async startTestSession(key, target, version) {
       await wait(500);
       const s = get(key); if (!s) return missing(key);
       if (!s.live) return { ok: false, error: 'Publish the agent first.' };
       const rec = 'sample' in target ? undefined : DEMO_RECORDS.find((r) => r.kind === target.kind && r.id === target.id);
       const kind = 'sample' in target ? (target.sample === 'me' ? 'seller' : target.sample) : target.kind;
-      return { ok: true, data: demoTestSession(s.live, { key, version: s.liveVersion }, rec?.name, kind === 'buyer' ? undefined : rec?.sub, kind) };
+      const settings = version?.draft ? version.settings ?? s.settings : s.live;
+      const session = demoTestSession(settings, { key, version: s.liveVersion }, rec?.name, kind === 'buyer' ? undefined : rec?.sub, kind);
+      return { ok: true, data: version?.draft ? { ...session, draft: true, overrides: { prompt: demoPrompt(settings), llm: settings.voice.llm, voice_id: settings.voice.voice_id, stability: 0.5, similarity_boost: 0.8, speed: 1 } } : session };
     },
     async phoneTest() { await wait(400); return { ok: false, error: 'Demo: no phone calls. Sign in to a workspace to ring a real number.' }; },
     async scenarios() { await wait(250); return { ok: true, data: DEMO_SCENARIOS }; },

@@ -17,7 +17,7 @@ export type Status = 'pass' | 'warn' | 'fail' | 'unknown' | 'info';
 /**
  * A record to add, exactly as a DNS host's form wants it. `host` starts out
  * relative to the domain being checked; {@link placeDnsFixes} rewrites it
- * relative to the zone the DNS host manages (`deals` on thecompr.ai, never a
+ * relative to the zone the DNS host manages (`deals` on underwriting.example.com, never a
  * bare `@` for a subdomain) and fills in `fqdn`. `paste: false` means
  * `value` is an instruction, not something to copy into DNS.
  */
@@ -140,6 +140,23 @@ export function pickReplyTo(
   return own || camp || null;
 }
 
+/**
+ * The workspace's Gmail inboxes a Reply-To can point at, for pickReplyTo. A connection waiting on
+ * a reauth still counts: it is the rep's real mailbox, and its sync picks the reply up once
+ * reconnected, where a login email on another workspace never files it here. A failed read is no
+ * inboxes, so the send falls back to the rep's own email as before.
+ */
+export async function readReplyBoxes(
+  // deno-lint-ignore no-explicit-any
+  admin: { from(t: string): any },
+  workspaceId: number,
+): Promise<{ data: { email: string; user_id: string | null }[] }> {
+  const { data } = await admin.from('google_accounts').select('email, user_id')
+    .eq('workspace_id', workspaceId).eq('gmail_read', true).in('status', ['active', 'needs_reauth']);
+  return { data: ((data ?? []) as { email?: string | null; user_id?: string | null }[])
+    .map((a) => ({ email: String(a.email ?? ''), user_id: a.user_id ?? null })) };
+}
+
 export function repSenderPool<T extends { user_id?: string | null }>(senders: T[], userId: string | null): T[] {
   const owned = senders.filter((s) => s.user_id);
   if (!owned.length) return senders;
@@ -226,8 +243,8 @@ export function zoneOf(domain: string): string {
 /**
  * Fix hosts rewritten for the DNS host's form. A check's host is relative to
  * the domain checked, but the form is relative to the zone: `@` on
- * deals.thecompr.ai is `deals` in the thecompr.ai zone, and entering `@`
- * there lands the record on thecompr.ai.
+ * deals.yourcompany.com is `deals` in the underwriting.example.com zone, and entering `@`
+ * there lands the record on underwriting.example.com.
  */
 export function placeDnsFixes(checks: Check[], domain: string): Check[] {
   const d = domain.trim().toLowerCase().replace(/\.$/, '');

@@ -31,6 +31,7 @@ import Anthropic from 'npm:@anthropic-ai/sdk';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { UNTRUSTED_RULE, corsFor, fence, isTeammate, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
 
 /**
  * An organization-level Anthropic key (one not created inside a workspace)
@@ -151,6 +152,7 @@ Deno.serve(async (req) => {
       tool_choice: { type: 'auto' },
       messages: [{ role: 'user', content: 'Header row, then up to eight sample rows, as CSV:\n\n' + fence('csv_export', table, 40_000) }],
     });
+    await recordUsage(admin, { feature: 'map_columns', model: res.model, usage: res.usage });
 
     const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     if (!call) return json({ error: 'the model returned no mapping' }, 502);

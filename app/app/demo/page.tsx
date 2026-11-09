@@ -43,7 +43,7 @@ const AS = {
 export default function DemoPage() {
   const as = useSyncExternalStore(AS.subscribe, AS.getSnapshot, AS.getServerSnapshot);
   // The address is restored once the role is known, so ?as= lands where that role lands.
-  const V = useClozr({ role: (as || DEMO_ROLE) as Role, ready: as !== null });
+  const V = useClozr({ role: (as || DEMO_ROLE) as Role, ready: as !== null, base: '/demo' });
   return (
     <ClozrShell V={V}>
       {V.isLiveLists && (

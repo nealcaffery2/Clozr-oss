@@ -30,7 +30,7 @@ import { corsFor, jsonWith, rateLimit, tooMany } from '../_shared/security.ts';
 import { SCOPE, accessFor, has } from '../_shared/google.ts';
 import { type DriveItem, FOLDER_MIME, folderAddress, folderIdOf } from '../_shared/drive-tree.ts';
 import { partiesFromPdf, type ParsedContract } from '../_shared/contract-parties.ts';
-import { type ContractParties, entityDisplay, entityKey, familyOf, legOf, splitProperty } from '../_shared/genius-methods.ts';
+import { type ContractParties, entityDisplay, entityKey, familyOf, legOf, splitProperty } from '../_shared/entity-records.ts';
 
 // deno-lint-ignore no-explicit-any
 type Any = any;
@@ -38,8 +38,11 @@ const DRIVE = 'https://www.googleapis.com/drive/v3';
 const RUN_MS = 100_000;
 const OWNER_RUN_MS = 45_000;
 const CALLS = 300;
-const MAX_PDF = 15 * 1024 * 1024;
-/** Optional default Drive folder (DISPO_CONTRACTS_FOLDER_ID); each workspace normally picks its own in Settings. */
+// An edge worker gets about 2 s of CPU per request, and every PDF is base64'd for Claude:
+// a few small contracts per run, saved after each, so a killed run never loses the pass.
+const MAX_READS = 5;
+const MAX_PDF = 5 * 1024 * 1024;
+/** The Acme Homes folder every workspace 11 contract lives under; a workspace picks its own in Settings. */
 const DEFAULT_FOLDER = Deno.env.get('DISPO_CONTRACTS_FOLDER_ID') ?? '';
 const OURS = /acme holdings|acme homes/i;
 
@@ -180,11 +183,17 @@ async function harvestRun(admin: SupabaseClient, row: Any, deadline: number): Pr
   if (!folders[root] && !queue.length) { folders[root] = row.root_name ?? 'Dispositions'; queue = [root]; s.pass_started = now; s.done_at = null; }
   const c = { folders: 0, files: 0, read: 0, filed: 0, skipped: 0, errors: 0 };
   const notes: string[] = [];
-  const out = () => Date.now() > deadline || drive.calls >= CALLS - 5;
+  const out = () => Date.now() > deadline || drive.calls >= CALLS - 5 || c.read >= MAX_READS;
   const { data: known } = await admin.from('wholesaler_deals').select('source_id').eq('workspace_id', ws).eq('source', 'drive');
   const filed = new Set(((known ?? []) as Any[]).map((d) => String(d.source_id)));
   let error: string | null = null;
   const pending: { f: DriveItem; folder: string }[] = [];
+  // The state as it should be saved: anything listed but not yet read goes back on the queue by its folder.
+  const snapshot = () => {
+    const q = [...queue]; const sn = { ...seen };
+    for (const { f } of pending) if (f.parents?.[0] && !q.includes(f.parents[0])) { q.push(f.parents[0]); delete sn[f.parents[0]]; }
+    return { ...s, queue: q, folders, seen: sn, skipped };
+  };
   try {
     while (queue.length && !out()) {
       const id = queue[0];
@@ -220,6 +229,7 @@ async function harvestRun(admin: SupabaseClient, row: Any, deadline: number): Pr
           skipped[f.id] = `error: ${msg.slice(0, 120)}`;
           if (notes.length < 5) notes.push(`${f.name}: ${msg.slice(0, 120)}`);
         }
+        await admin.from('dispo_contract_sync').update({ state: snapshot() }).eq('workspace_id', ws);
       }
       if (error) break;
     }
@@ -300,7 +310,6 @@ Deno.serve(async (req) => {
   if (action === 'save') {
     if (!['owner', 'admin'].includes(role)) return json({ error: 'owners and admins only' }, 403);
     const folder = folderIdOf(String(body.folder ?? DEFAULT_FOLDER)) ?? DEFAULT_FOLDER;
-    if (!folder) return json({ error: 'Pick the Drive folder your contracts live in.' }, 422);
     const acct = await driveAccount();
     if (!acct) return json({ error: 'Connect Drive first: Settings → Google → Connect Drive (read-only).' }, 409);
     let rootName: string | null = null;
@@ -312,7 +321,6 @@ Deno.serve(async (req) => {
   if (action === 'run') {
     let cfg = row;
     if (!cfg) {
-      if (!DEFAULT_FOLDER) return json({ error: 'Pick the Drive folder your contracts live in first.' }, 409);
       const acct = await driveAccount();
       if (!acct) return json({ error: 'Connect Drive first: Settings → Google → Connect Drive (read-only).' }, 409);
       const { data } = await admin.from('dispo_contract_sync').upsert({ workspace_id: ws, account_id: acct.id, root_folder_id: DEFAULT_FOLDER, root_name: 'Dispositions', enabled: true }, { onConflict: 'workspace_id' }).select('*').maybeSingle();

@@ -16,7 +16,7 @@ export type TalkrEvent = { type: string; data: Record<string, unknown> | null };
 
 /** The events the stream carries that the CRM acts on. */
 export const TALKR_EVENT_TYPES = [
-  'message.received', 'message.updated', 'conversation.updated', 'call.updated', 'voicemail.left',
+  'message.received', 'message.updated', 'conversation.updated', 'call.updated', 'voicemail.left', 'session.updated',
 ] as const;
 
 const listeners = new Set<(e: TalkrEvent) => void>();

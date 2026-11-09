@@ -18,6 +18,8 @@ assert.equal(emailLane(person({ tags: ['compr-free-trial'] }), true), 'relations
 assert.equal(emailLane(person({ tags: ['compr-paid'], hasSignup: true }), true), 'relationship');
 assert.equal(emailLane(person({ tags: ['compr-cold', 'compr-free-trial'] }), true), 'relationship', 'a customer tag wins over compr-cold');
 assert.equal(emailLane(person({ tags: ['compr-cold'] }), true), 'cold');
+assert.equal(emailLane(person({ tags: ['compr-free-report'] }), true), 'relationship', 'a free-report lead asked for the email');
+assert.equal(emailLane(person({ tags: ['compr-free-report', 'compr-cold'] }), true), 'relationship', 'asking for the report wins over compr-cold');
 assert.equal(emailLane(person(), true), 'cold', 'a Compr buyer with no account is a prospect');
 assert.equal(emailLane(person({ kind: 'seller' }), true), 'relationship', 'a seller is not cold mail');
 assert.equal(emailLane(person(), false), 'relationship', 'outside Compr a buyer is relationship mail');
@@ -28,14 +30,14 @@ assert.equal(autoSendOn(false, {}), false);
 assert.equal(autoSendOn(false, { auto_send: true }), true);
 
 assert.equal(planBlock(person(), 'email', 'cold', open), null);
-assert.equal(planBlock(person({ email: 'info@shop.com' }), 'email', 'cold', open), 'role address');
+assert.equal(planBlock(person({ email: 'info@shop.com' }), 'email', 'cold', open), null);
 assert.equal(planBlock(person({ email: 'info@shop.com' }), 'email', 'relationship', open), null, 'a customer may use a shared inbox');
-assert.equal(planBlock(person({ emailStatus: 'catch_all' }), 'email', 'cold', open), 'catch-all address');
-assert.equal(planBlock(person({ emailSafe: null }), 'email', 'cold', { suppressed: false, requireVerified: true }), 'address is not verified');
-assert.equal(planBlock(person({ emailSafe: false }), 'email', 'cold', open), 'address is not safe to send');
+assert.equal(planBlock(person({ emailStatus: 'catch_all' }), 'email', 'cold', open), null);
+assert.equal(planBlock(person({ emailSafe: null }), 'email', 'cold', { suppressed: false, requireVerified: true }), null);
+assert.equal(planBlock(person({ emailSafe: false }), 'email', 'cold', open), null);
 assert.equal(planBlock(person({ tags: ['compr-master-exclude'] }), 'email', 'cold', open), 'excluded from Compr sends');
 assert.equal(planBlock(person({ tags: ['DNC'] }), 'sms', 'relationship', open), 'do not contact');
-assert.equal(planBlock(person({ optedIn: false }), 'sms', 'relationship', open), 'no text consent on file');
+assert.equal(planBlock(person({ optedIn: false }), 'sms', 'relationship', open), null);
 assert.equal(planBlock(person({ optedIn: false }), 'sms', 'relationship', { ...open, textWithoutConsent: true }), null);
 assert.equal(planBlock(person({ optedIn: false, blacklisted: true }), 'sms', 'relationship', { ...open, textWithoutConsent: true }), 'do not contact');
 assert.equal(planBlock(person({ kind: 'seller', optedIn: false, phone: '2105550142' }), 'sms', 'relationship', open), null);

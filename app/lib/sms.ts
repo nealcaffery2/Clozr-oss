@@ -107,14 +107,38 @@ export function renderMerge(body: string, fields: Record<string, string>): strin
   // whoever wrote it typed it. A line that held nothing but blank fields (a
   // "{{purchase_note}}" line for a buyer with no purchase on file) goes away
   // with its line break, so the text above and below simply meet.
-  return out
+  return closeSpecs(out)
     .replace(/^[ \t]*\u0000(?:[ \t]*\u0000)*[ \t]*\n/gm, '')
     .replace(/\u0000/g, '')
     .replace(/[ \t]{2,}/g, ' ').replace(/\s+([,.;:!?])/g, '$1')
-    .replace(/\n[ \t]+/g, '\n').replace(/\n{3,}/g, '\n\n')
+    .replace(/\n[ \t]+/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 const BLANK = '\u0000';
+
+// A spec line is the one place a blank leaves junk the sentence clean-up
+// cannot see: "{{beds}} bd / {{baths}} ba" with neither on file came out as
+// "bd / ba". A blank takes its unit ("bd", "sqft") or its label ("ARV",
+// "built") with it, and then the separator ( · / | ) beside it, so
+// "Asking $185,000 · ARV {{arv}} · {{beds}} bd / {{baths}} ba" with only the
+// price on file reads "Asking $185,000", and a line that is all blanks goes.
+const SEP = String.raw`(?:[ \t]*(?:&nbsp;)*[ \t]*(?:[·•|]|/(?!/))[ \t]*(?:&nbsp;)*[ \t]*)`;
+const UNIT_AFTER = /\u0000[ \t]*(?:bds?|beds?|bedrooms?|br|ba|baths?|bathrooms?|sq\.?[ \t]?ft\.?|sqft|sf|square feet|car garage)(?![A-Za-z])/gi;
+const LABEL_BEFORE = /(?<![A-Za-z])(?:year built|built|ARV|garage)[ \t]*:?[ \t]*\u0000/gi;
+const RUN = new RegExp(String.raw`\u0000(?:${SEP}\u0000)+`, 'g');
+const MIDDLE = new RegExp(String.raw`${SEP}\u0000(?=${SEP})`, 'g');
+const TRAILING = new RegExp(String.raw`${SEP}\u0000(?=[ \t]*(?:$|\n|<|\)|[.,;]))`, 'gm');
+const LEADING = new RegExp(String.raw`(^|\n|>|\()([ \t]*)\u0000${SEP}`, 'g');
+export function closeSpecs(s: string): string {
+  return s.replace(UNIT_AFTER, BLANK).replace(LABEL_BEFORE, BLANK)
+    .replace(RUN, BLANK).replace(MIDDLE, '').replace(TRAILING, '').replace(LEADING, '$1$2')
+    // "(3 bd / 2 ba)" with both empty leaves "()": the brackets go with them.
+    .replace(/[ \t]*\([ \t]*\u0000[ \t]*\)/g, BLANK)
+    // In a comma list a blank takes the comma before it: "1 Oak, {{sqft}} sf." reads "1 Oak.".
+    .replace(/[ \t]*,[ \t]*\u0000/g, BLANK)
+    // A list whose first items are blank starts at the next one: "on 12 Oak: {{beds}} bd, built 1955" reads "on 12 Oak: built 1955".
+    .replace(/([:(])[ \t]*\u0000+[ \t]*,[ \t]*/g, '$1 ').replace(/^([ \t]*)\u0000+[ \t]*,[ \t]*/gm, '$1');
+}
 
 export function fieldsFor(r: Recipient, ctx: SendContext, to: string): Record<string, string> {
   const rep = (ctx.repName ?? '').trim();

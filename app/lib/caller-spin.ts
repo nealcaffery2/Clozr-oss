@@ -25,6 +25,10 @@ export type OrgLine = {
    * Live dialing keeps only `telnyx`. Missing or any other carrier is out.
    */
   provider?: string | null;
+  /** Talkr `phone_numbers.label`. AI agents' lines are labelled `AI · <name>`. */
+  label?: string | null;
+  /** Talkr `phone_numbers.assigned_user_id`: the rep whose call flow rings on a callback. */
+  assigned_user_id?: string | null;
 };
 
 /** Shown when a pinned caller ID cannot place a live call and another line is used. */
@@ -167,10 +171,17 @@ export async function spinOrgCallerId(opts: {
   destState?: string | null;
   /** caller_lines pools; lib/line-pools.ts loads them. RVM-pool lines stay out of live dialing. */
   linePools?: () => Promise<LinePools>;
+  /**
+   * The rep running a dial session. A session rotates only across lines a
+   * callback brings back to that rep (sessionLines); a click-to-call leaves
+   * this unset and may show any live line.
+   */
+  sessionUserId?: string | null;
 }): Promise<SpinPick | null> {
   if (!opts.lines.length) return null;
   const linePools = opts.linePools ? await opts.linePools().catch(() => ({} as LinePools)) : null;
-  const lines = dialableLines(opts.lines, linePools);
+  const scoped = opts.sessionUserId ? sessionLines(opts.lines, opts.sessionUserId, linePools) : opts.lines;
+  const lines = dialableLines(scoped, linePools);
   if (!lines.length) throw new NoLiveCallerError();
   const rawPin = opts.pinId ? opts.lines.find((line) => line.id === opts.pinId) : undefined;
   // A dedicated pin only wins when that exact line can place a live call.
@@ -209,6 +220,27 @@ export function liveLines(lines: readonly OrgLine[], pools: LinePools | null | u
   if (!pools) return [...lines];
   const live = lines.filter((line) => pools[canonE164(line.phone_e164)]?.pool !== 'rvm');
   return live.length ? live : [...lines];
+}
+
+/** An AI agent's line: Talkr labels them `AI · <name>`. A callback there reaches the agent, not a rep. */
+export function isAiLine(line: { label?: string | null }): boolean {
+  return /^AI\s*·/i.test((line.label ?? '').trim());
+}
+
+/**
+ * Lines a dial session may show for `userId`: the rep's own lines, lines
+ * nobody is assigned, and lines in the shared `dialer` pool. Never an AI
+ * agent's line and never another rep's line, so a seller who calls back lands
+ * on the rep who dialled, not an agent or a teammate's call flow.
+ */
+export function sessionLines(lines: readonly OrgLine[], userId: string, pools: LinePools | null | undefined): OrgLine[] {
+  return lines.filter((line) => {
+    if (isAiLine(line)) return false;
+    const owner = line.assigned_user_id ?? null;
+    if (!owner || owner === userId) return true;
+    const row = pools?.[canonE164(line.phone_e164)] ?? pools?.[line.phone_e164];
+    return row?.pool === 'dialer';
+  });
 }
 
 /** RVM-pool skip, then Telnyx only. Unknown and non-Telnyx carriers are dropped. */

@@ -84,16 +84,19 @@ export async function signingResendEnv(admin: SupabaseClient, ws: number): Promi
   return workspaceResendEnv(Deno.env, { key, from });
 }
 
-/** Every webhook signing secret to try: the project's, then each workspace's own. */
-export async function resendWebhookSecrets(admin: SupabaseClient): Promise<string[]> {
-  const out: string[] = [];
+/**
+ * Every webhook signing secret to try: the project's (workspace_id null), then
+ * each workspace's own, so a verified event is known to be that workspace's.
+ */
+export async function resendWebhookSecrets(admin: SupabaseClient): Promise<{ secret: string; workspace_id: number | null }[]> {
+  const out: { secret: string; workspace_id: number | null }[] = [];
   const project = (Deno.env.get('RESEND_WEBHOOK_SECRET') ?? '').trim();
-  if (project) out.push(project);
-  const { data } = await admin.from('deliverability_secrets').select('resend_webhook_secret').not('resend_webhook_secret', 'is', null).limit(200);
+  if (project) out.push({ secret: project, workspace_id: null });
+  const { data } = await admin.from('deliverability_secrets').select('workspace_id, resend_webhook_secret').not('resend_webhook_secret', 'is', null).limit(200);
   for (const r of (data ?? []) as Any[]) {
     try {
       const s = (await unseal(String(r.resend_webhook_secret))).trim();
-      if (s && !out.includes(s)) out.push(s);
+      if (s && !out.some((o) => o.secret === s)) out.push({ secret: s, workspace_id: Number(r.workspace_id) });
     } catch { /* unreadable: skip */ }
   }
   return out;

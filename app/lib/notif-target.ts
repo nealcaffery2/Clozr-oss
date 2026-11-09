@@ -58,6 +58,9 @@ export function notifLink(n: NotifRowLike, dispoSeller: number | null = null): N
   if (cat === 'Number health') return { screen: 'settings', id: '', tab: 'numbers' };
   // A contract request opens its draft in Contracts ('k' + contracts.id), or Contracts when there is none yet.
   if (cat === 'Contract request') return { screen: 'contracts', id: n.contract_id ? 'k' + n.contract_id : '' };
+  // A send that stopped (_shared/send-alert.ts): a dispo blast opens Dispo, a pause or DNS fail Email deliverability;
+  // a scheduled text or email falls through to its record.
+  if (cat === 'send_failure' && !sid && !bid) return /dispo/i.test(n.title) ? { screen: 'dispo', id: '' } : { screen: 'settings', id: '', tab: 'email/deliverability' };
 
   if (sid) {
     if (cat === 'TC') return { screen: 'tc', id: sid, ...deal };

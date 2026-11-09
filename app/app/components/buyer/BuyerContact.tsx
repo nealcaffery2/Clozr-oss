@@ -23,8 +23,8 @@ const row = (mobile: boolean): React.CSSProperties => ({
   display: 'grid', gridTemplateColumns: mobile ? 'minmax(0,86px) minmax(0,1fr)' : '88px 1fr', gap: '10px',
   padding: '8px 0', borderBottom: '1px solid var(--divider-2, #f0f0f1)', fontSize: '12.5px', alignItems: 'baseline',
 });
-const badge = (color: string, bg: string): React.CSSProperties => ({ fontSize: '10px', fontWeight: 700, color, background: bg, borderRadius: '5px', padding: '1px 5px', letterSpacing: '0.02em' });
-const quiet: React.CSSProperties = { border: 0, background: 'none', color: 'var(--subtle, #a1a1aa)', cursor: 'pointer', fontSize: '12px', padding: 0 };
+const badge = (color: string, bg: string): React.CSSProperties => ({ fontSize: '11px', fontWeight: 700, color, background: bg, borderRadius: '5px', padding: '1px 5px', letterSpacing: '0.02em' });
+const quiet: React.CSSProperties = { border: 0, background: 'none', color: 'var(--meta, #71717a)', cursor: 'pointer', fontSize: '12px', padding: 0 };
 const line: React.CSSProperties = { marginTop: '3px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 };
 
 /** "+ Add …" that turns into a one-line input; Enter adds, Escape closes. */
@@ -110,7 +110,7 @@ export function BuyerContact({ V }: { V: ClozrView }) {
         <span style={{ color: 'var(--meta, #71717a)' }}>Phones</span>
         <div style={{ minWidth: 0 }}>
           <ContactField field="phone" sellerId={null} buyerId={buyerId} value={phone} canWrite={canWrite} onSaved={savedRow} onToast={toast}>
-            {phone ? <a href="#" className="clozr-contact" onClick={(e) => { e.preventDefault(); V.callBuyer(); }} style={{ fontWeight: 500 }}>{phone}</a> : <span style={{ color: 'var(--subtle, #a1a1aa)' }}>—</span>}
+            {phone ? <a href="#" className="clozr-contact" onClick={(e) => { e.preventDefault(); V.callBuyer(); }} style={{ fontWeight: 500 }}>{phone}</a> : <span style={{ color: 'var(--meta, #71717a)' }}>—</span>}
           </ContactField>
           {others.map((r) => {
             const label = formatPhone(r.phone);
@@ -141,7 +141,7 @@ export function BuyerContact({ V }: { V: ClozrView }) {
         <span style={{ color: 'var(--meta, #71717a)' }}>Emails</span>
         <div style={{ minWidth: 0, fontWeight: 500 }}>
           <ContactField field="email" sellerId={null} buyerId={buyerId} value={email} canWrite={canWrite} onSaved={savedRow} onToast={toast}>
-            {email ? <a href="#" className="clozr-contact" onClick={(e) => { e.preventDefault(); reachAt('email', { email }); }}>{email}</a> : <span style={{ color: 'var(--subtle, #a1a1aa)' }}>—</span>}
+            {email ? <a href="#" className="clozr-contact" onClick={(e) => { e.preventDefault(); reachAt('email', { email }); }}>{email}</a> : <span style={{ color: 'var(--meta, #71717a)' }}>—</span>}
           </ContactField>
           {moreEmails.map((r) => (
             <div key={r.id} style={{ ...line, fontWeight: 500 }}>

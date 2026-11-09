@@ -45,6 +45,8 @@ export type Profile = {
   notify_leaderboard: boolean;
   /** Floor-show badge popup, toast, sound, and catch-up. Default on (migration 173). */
   notify_badges: boolean;
+  /** Ringtone, wait music and alert choices minus device ids (migration 391), so they follow the rep across browsers. */
+  phone_audio: Json | null;
   created_at: string;
   updated_at: string;
 };
@@ -119,6 +121,9 @@ export type Buyer = {
   min_purchase_price: number | null; vetted_at: string | null; vip: boolean; blacklisted_at: string | null;
   preferred_channel: string; wants_calls: boolean; wants_follow_ups: boolean; wants_sold_alerts: boolean;
   pof_url: string | null; pof_verified_at: string | null; website: string | null; tags: string[];
+  mailing_address: string | null; property_address: string | null;
+  /** Migration 397: their job title at the company. */
+  title: string | null;
   last_activity_at: string | null;
   /** Migration 54: inactive until this date ("N days from active again" rule). */
   active_again_at: string | null;
@@ -134,7 +139,7 @@ export type WholesalerEntityRow = {
   id: number; workspace_id: number; name: string; name_key: string; parent_id: number | null;
   kind: 'wholesaler' | 'buyer' | 'both' | 'title' | 'unknown'; state: string | null; county: string | null;
   contact_name: string | null; email: string | null; phone: string | null; website: string | null;
-  source: 'drive' | 'deed' | 'manual' | 'genius' | 'contract'; first_seen: string | null; last_seen: string | null; deals: number;
+  source: 'drive' | 'deed' | 'manual' | 'genius' | 'contract' | 'vendor' | 'buyer' | 'investorlift'; first_seen: string | null; last_seen: string | null; deals: number;
   buyer_id: number | null; vendor_id: number | null; notes: string | null; meta: Json; created_at: string; updated_at: string;
 };
 export type WholesalerDealRow = {
@@ -189,7 +194,7 @@ export type DealBuyerMatch = {
 export type Contract = {
   id: number; workspace_id: number; deal_id: number | null; seller_id: number | null; buyer_id: number | null;
   kind: string; template_id: string | null; template_name: string | null; pandadoc_id: string | null;
-  name: string; status: string; recipients: Json; tokens: Json;
+  name: string; name_auto?: boolean; status: string; recipients: Json; tokens: Json;
   sent_at: string | null; viewed_at: string | null; completed_at: string | null; last_event: Json | null;
   created_by: string | null; created_at: string; updated_at: string;
   // CLOZR's own engine (migration 27): which engine, the filled body, the PDF in storage.
@@ -250,6 +255,12 @@ export type LeadMemoryRow = {
   source_count: number; last_source_at: string | null; model: string | null; updated_at: string;
 };
 
+/** Migration 399: one deal's Smart Summary (lib/deal-memory.ts cleans `body` and reads `sources`). */
+export type DealMemoryRow = {
+  workspace_id: number; deal_id: number; body: Json; sources: Json; input_hash: string | null;
+  source_count: number; last_source_at: string | null; model: string | null; updated_at: string;
+};
+
 /** Migration 111: one row per voice agent (workspace_id + agent_key). `settings` is the draft, `live_settings` what was last published. voice_agent_secrets has no client access and no type here. */
 export type VoiceAgentSettingsRow = {
   workspace_id: number; agent_key: string; role: string; name: string; status: 'draft' | 'live'; enabled: boolean;
@@ -306,7 +317,8 @@ export type Vendor = {
 export type DealParty = {
   id: number; workspace_id: number; deal_id: number;
   role: 'seller' | 'buyer' | 'title' | 'photographer' | 'wholesaler' | 'listing_agent' | 'buyers_agent' | 'realtor'
-    | 'tc' | 'acquisitions' | 'dispositions' | 'lender' | 'contractor' | 'inspector' | 'attorney' | 'other';
+    | 'tc' | 'acquisitions' | 'dispositions' | 'lender' | 'contractor' | 'inspector' | 'attorney' | 'other'
+    | 'second_title' | 'transactional_funder';
   vendor_id: number | null; buyer_id: number | null; seller_id: number | null; user_id: string | null;
   name: string | null; company: string | null; email: string | null; phone: string | null;
   source: string | null; source_id: string | null; created_at: string; updated_at: string;
@@ -355,6 +367,16 @@ export type CommunicationUserState = {
   workspace_id: number; user_id: string; communication_id: number;
   read_at: string | null; starred_at: string | null; archived_at: string | null;
   updated_at: string;
+};
+
+/** An emoji one user put on a note (migration 410): one row per note, user and emoji. */
+export type NoteReaction = {
+  id: number; workspace_id: number; communication_id: number; user_id: string; emoji: string; created_at: string;
+};
+
+/** A reply under a note (migration 410). */
+export type NoteReply = {
+  id: number; workspace_id: number; communication_id: number; user_id: string; body: string; created_at: string;
 };
 
 /** Which connected mailbox holds a stored message (migration 82): how an admin opens one rep's inbox. */
@@ -562,6 +584,8 @@ export type Deal = {
   compr_sweep_tries?: number;
   tracker_no: number | null; target_assignment: number | null; price_drop: number | null; marketed_price: number | null; marketed_fee: number | null;
   dispo_upsell: number | null; dispo_fee: number | null; transaction_type: string | null; contract_status: string | null;
+  /** Migration 406: assignment, split / passthrough / liquid double close. */
+  closing_structure?: 'assignment' | 'split_double_close' | 'passthrough_double_close' | 'liquid_double_close' | null;
   lead_source: string | null; acq_agent: string | null; dispo_agent: string | null; lead_manager: string | null; coordinator: string | null;
   /** Migration 239: the lead manager as a member; lead_manager is named from it. */
   lead_manager_id?: string | null;
@@ -791,6 +815,8 @@ export type EnrollmentRow = {
   buyer_id?: number | null;
   status: string; step_index: number;
   enrolled_at: string; completed_at: string | null; created_by: string | null;
+  /** Migration 377: when a capped plan (settings.daily_cap) queued this start for a later day. */
+  starts_at?: string | null;
   /** reply | call | stage | manual when a smart stop ended it; null when it ran out. */
   stopped_reason: string | null;
   /** Migration 142: where the lead went when this run ended, and why. Optional: older databases lack them. */
@@ -883,6 +909,8 @@ export type GoogleAccountRow = {
   status: 'active' | 'needs_reauth' | 'revoked';
   last_calendar_sync_at: string | null; last_gmail_sync_at: string | null; last_error: string | null;
   connected_at: string; updated_at: string;
+  /** Migration 441: a mailbox a member linked for the workspace (deals@), not their own. Absent before it. */
+  shared?: boolean;
 };
 
 /** Migration 38: a Brex account, owner/admin only. The token is in bank_connections, which the browser cannot read. */
@@ -917,6 +945,7 @@ export type DispoCampaignRow = {
   from_phone_number_id: string | null; from_phone: string | null; email_account_id: number | null; from_name: string | null;
   email_provider: 'resend' | 'gmail'; email_sender_id: number | null;
   starts_at: string; created_at: string; updated_at: string;
+  stopped_at?: string | null; stopped_by?: string | null; stop_reason?: string | null;
 };
 export type EmailSenderRow = {
   id: number; workspace_id: number; provider: 'resend'; from_email: string; from_name: string | null; reply_to: string | null; user_id: string | null; domain: string; active: boolean;
@@ -1075,6 +1104,8 @@ export type Database = {
       buyers: Table<Buyer, 'workspace_id' | 'name'>;
       vendors: Table<Vendor, 'workspace_id' | 'business_name'>;
       communications: Table<Communication, 'workspace_id' | 'channel' | 'source' | 'source_id'>;
+      note_reactions: Table<NoteReaction, 'workspace_id' | 'communication_id' | 'emoji'>;
+      note_replies: Table<NoteReply, 'workspace_id' | 'communication_id' | 'body'>;
 
       deals: {
         Row: Deal;
@@ -1134,6 +1165,7 @@ export type Database = {
       buyer_scores: { Row: BuyerScoreRow; Insert: never; Update: never; Relationships: [] };
       /** Migration 110: written only by the lead-memory function. */
       lead_memory: { Row: LeadMemoryRow; Insert: never; Update: never; Relationships: [] };
+      deal_memory: { Row: DealMemoryRow; Insert: never; Update: never; Relationships: [] };
       plan_agent_runs: { Row: PlanAgentRunRow; Insert: never; Update: never; Relationships: [] };
       compr_lifecycle_sends: { Row: ComprLifecycleSendRow; Insert: never; Update: never; Relationships: [] };
       cold_campaigns: { Row: ColdCampaignRow; Insert: never; Update: never; Relationships: [] };
@@ -1166,7 +1198,7 @@ export type Database = {
       };
       webhook_deliveries: { Row: WebhookDeliveryRow; Insert: never; Update: never; Relationships: [] };
       // Migration 53: created by dispo_campaign_launch(); the client pauses, marks and edits.
-      dispo_campaigns: { Row: DispoCampaignRow; Insert: never; Update: Partial<Pick<DispoCampaignRow, 'status'>>; Relationships: [] };
+      dispo_campaigns: { Row: DispoCampaignRow; Insert: never; Update: Partial<Pick<DispoCampaignRow, 'status' | 'stopped_at' | 'stopped_by'>>; Relationships: [] };
       dispo_campaign_recipients: { Row: DispoRecipientRow; Insert: never; Update: Partial<Pick<DispoRecipientRow, 'status'>>; Relationships: [] };
       dispo_campaign_messages: { Row: DispoMessageRow; Insert: never; Update: Partial<Pick<DispoMessageRow, 'status' | 'body' | 'subject' | 'send_at' | 'last_error' | 'attempts'>>; Relationships: [] };
       buyer_automation_rules: Table<BuyerAutomationRuleRow, 'workspace_id' | 'rule' | 'tag'>;
@@ -1308,7 +1340,11 @@ export type Database = {
       /** Latest communication per live seller, one jsonb array. */
       seller_last_touch: { Args: { p_workspace: number }; Returns: Json };
       /** Migration 276: the reporting read's communications (no subject or body), newest first, one jsonb array. */
-      report_comms: { Args: { p_ws: number; p_limit?: number }; Returns: Json };
+      report_comms: { Args: { p_ws: number; p_limit?: number; p_since?: string }; Returns: Json };
+      /** Migration 391: communications grouped per rep, line owner, seller rep, day, channel and direction, plus each seller's first outbound contact. */
+      leaderboard_comms: { Args: { p_ws: number; p_tz?: string; p_since?: string | null; p_until?: string | null; p_resets?: Json }; Returns: Json };
+      /** Migration 391: the RVM tab's blast results per send (lib/rvm-blasts BlastSummary without callbackRate and cost). */
+      rvm_blast_summary: { Args: { p_ws: number; p_since: string }; Returns: Json };
       /** Migration 125: one record's stage moves, newest first (a seller with its deals', or a buyer). */
       /** Migration 126: realtors in any of these markets, for the Buyers map lasso. */
       free_agents_in_markets: {
@@ -1323,9 +1359,17 @@ export type Database = {
         }[];
       };
       /** Migration 125: who has ever been at a stage, optionally inside a window. */
+      deal_memory_newest: {
+        Args: { p_deal_ids: number[] };
+        Returns: { deal_id: number; newest_at: string | null }[];
+      };
       stage_history_ids: {
         Args: { p_workspace_id: number; p_entity: string; p_stage: string; p_from?: string | null; p_to?: string | null };
         Returns: { kind: string; id: number }[];
+      };
+      compr_back_to_not_contacted: {
+        Args: { p_ids: number[] };
+        Returns: number;
       };
     };
     Enums: { [_ in never]: never };

@@ -4,12 +4,12 @@
 // keeps each one's unsaved edits; everything here reads it through `form`.
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Check, ChevronDown, Minus, RefreshCw } from 'lucide-react';
 import { READ_ONLY_TITLE } from '@/lib/read-only-context';
-import type { Api } from '@/lib/voice-agent-client';
+import type { Api, TestVersion } from '@/lib/voice-agent-client';
 import {
-  CHECK_ROWS, agentStatus, enabledNote, hasErrors, roleLabel, serverErrorsToFields, STATUS_LABEL, timeAgo, type AgentDetail, type AgentSummary,
+  CHECK_ROWS, agentStatus, enabledNote, hasErrors, isComprRole, roleLabel, serverErrorsToFields, STATUS_LABEL, timeAgo, type AgentDetail, type AgentSummary,
 } from '@/lib/voice-agent';
 import { agentTitle, dirtyTabs, errorsByTab, pathCandidates, pathTab, fieldId, type TabId } from '@/lib/voice-agent-console';
 import { Badge, Banner, CopyButton, GREEN, INK, LINE, MUTED, Skeleton, Switch, card, ghost, h2, linkBtn, mono, sub } from './kit';
@@ -18,6 +18,7 @@ import { PreviewDrawer } from './PreviewDrawer';
 import { PublishDialog } from './PublishDialog';
 import { SectionNav } from './SectionNav';
 import { SECTIONS } from './sections';
+import { TalkDock } from './TalkDock';
 import type { TabCtx } from './types';
 import type { FormView } from './useAgentForm';
 
@@ -48,6 +49,19 @@ export function AgentEditor({ api, workspaceId, summary, form, seeded, admin, ca
   const [checksOpen, setChecksOpen] = useState<boolean | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  // Talk to it: the call panel that stays open while you edit, folded to a bar on a phone.
+  const [talk, setTalk] = useState(false);
+  const [talkMin, setTalkMin] = useState(false);
+  const [barSlot, setBarSlot] = useState<HTMLDivElement | null>(null);
+  const root = useRef<HTMLDivElement | null>(null);
+  const [roomy, setRoomy] = useState(false);
+  useEffect(() => {
+    const el = root.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([e]) => setRoomy((e?.contentRect.width ?? 0) >= 860));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [load.at]);
 
   // Read the agent. A first read seeds the form; a draft the person is already editing is left alone.
   useEffect(() => {
@@ -133,6 +147,10 @@ export function AgentEditor({ api, workspaceId, summary, form, seeded, admin, ca
     if (r.ok) setDetail((d) => (d ? { ...d, checks: r.data.checks, live_check: r.data.live_check } : d));
   };
 
+  /** What a talk-panel call runs: the draft, and the unsaved form when it differs. Read on each Start. */
+  const talkVersion = useCallback((): TestVersion => ({ draft: true, ...(form.dirty ? { settings: form.draft } : {}) }), [form.dirty, form.draft]);
+  const openTalk = useCallback(() => { setTalk(true); setTalkMin(false); }, []);
+
   const dirty = useMemo(() => (detail ? dirtyTabs(form.saved, form.draft) : new Set<TabId>()), [detail, form.saved, form.draft]);
   const tabErrors = useMemo(() => errorsByTab(form.errors), [form.errors]);
 
@@ -160,12 +178,14 @@ export function AgentEditor({ api, workspaceId, summary, form, seeded, admin, ca
   const roTitle = canEdit ? undefined : admin ? READ_ONLY_TITLE : 'Only owners and admins can change this';
   const ctx: TabCtx = {
     agentKey: key, workspaceId, api, demo: api.demo, admin, canEdit, detail, form, published, epoch, goTo: go, jump, onOpenRecord,
-    onRolledBack: reload,
+    onRolledBack: reload, openTalk,
   };
   const unpublished = published && (detail.has_unpublished_changes || form.dirty);
+  const docked = talk && roomy && !isMobile;
+  const role = form.draft.identity.role || detail.role;
 
   return (
-    <div>
+    <div ref={root}>
       <section style={card} aria-labelledby="va-agent-head">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <span aria-hidden="true" style={{ width: 40, height: 40, borderRadius: 999, flex: 'none', display: 'grid', placeItems: 'center', background: published ? 'var(--chip-ok)' : 'var(--chip-warn)', boxShadow: `inset 0 0 0 1px ${published ? 'var(--ok-line)' : 'var(--warn-line)'}`, color: published ? 'var(--ok-ink)' : 'var(--warn-ink)' }}><Bot size={20} /></span>
@@ -192,7 +212,7 @@ export function AgentEditor({ api, workspaceId, summary, form, seeded, admin, ca
         <p style={{ ...sub, marginTop: 10 }}>{enabledNote({ enabled: summary.enabled, live_version: published ? detail.live_version : 0 })}{!canEdit && published ? ' Only owners and admins can change this.' : ''}</p>
         {switchError ? <div style={{ marginTop: 10 }}><Banner tone="error">{switchError}</Banner></div> : null}
 
-        {!admin ? <div style={{ marginTop: 14 }}><Banner tone="info">You can see how this agent is set up, preview its prompt and read its calls. Only owners and admins can change it, hear voices or start a test call.</Banner></div> : null}
+        {!admin ? <div style={{ marginTop: 14 }}><Banner tone="info">You can see how this agent is set up, preview its prompt and read its calls. Anyone can start a test call; only owners and admins can change it or hear voices.</Banner></div> : null}
         {admin && !canEdit ? <div style={{ marginTop: 14 }}><Banner tone="info">{roTitle}.</Banner></div> : null}
 
         <div style={{ marginTop: 14, borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
@@ -209,7 +229,7 @@ export function AgentEditor({ api, workspaceId, summary, form, seeded, admin, ca
                   const ok = detail.checks[c.key];
                   return (
                     <li key={c.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)' }}>
-                      <span aria-hidden="true" style={{ width: 20, height: 20, marginTop: 1, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 999, background: ok ? GREEN : 'var(--surface-2, #f4f4f5)', color: ok ? 'var(--surface, #fff)' : 'var(--subtle, #a1a1aa)', border: ok ? 0 : `1px solid ${LINE}` }}>
+                      <span aria-hidden="true" style={{ width: 20, height: 20, marginTop: 1, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 999, background: ok ? GREEN : 'var(--surface-2, #f4f4f5)', color: ok ? 'var(--surface, #fff)' : 'var(--meta, #71717a)', border: ok ? 0 : `1px solid ${LINE}` }}>
                         {ok ? <Check size={13} strokeWidth={3} /> : <Minus size={13} strokeWidth={3} />}
                       </span>
                       <span style={{ flex: 1, minWidth: 0 }}>
@@ -252,7 +272,7 @@ export function AgentEditor({ api, workspaceId, summary, form, seeded, admin, ca
         </div>
       ) : null}
 
-      <div style={{ display: isMobile ? 'block' : 'grid', gridTemplateColumns: '176px minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: isMobile ? 'block' : 'grid', gridTemplateColumns: docked ? '176px minmax(0, 1fr) minmax(300px, 340px)' : '176px minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
         <div style={isMobile ? { marginBottom: 12 } : { position: 'sticky', top: 12 }}>
           <SectionNav sections={SECTIONS} active={tab} onSelect={go} dirty={dirty} errors={tabErrors} vertical={!isMobile} />
         </div>
@@ -264,10 +284,16 @@ export function AgentEditor({ api, workspaceId, summary, form, seeded, admin, ca
             </div>
           ))}
         </div>
+        {talk ? (
+          <TalkDock api={api} workspaceId={workspaceId} agentKey={key} ready={published} agentName={form.draft.identity.name || detail.name}
+            defaultAs={role === 'jr_dispo' || role === 'buyer_assistant' ? 'buyer' : 'seller'} compr={isComprRole(role)} version={talkVersion}
+            sheet={!docked} minimized={talkMin} onMinimize={setTalkMin} onClose={() => setTalk(false)} barSlot={barSlot} />
+        ) : null}
       </div>
 
       <ConsoleBar canEdit={canEdit} dirty={form.dirty} invalid={form.invalid} saving={saving} published={published} unpublished={detail.has_unpublished_changes} liveVersion={detail.live_version} note={note}
-        onSave={() => void save()} onDiscard={() => { form.discard(); setNote(null); }} onPreview={() => setPreview(true)} onPublish={() => void startPublish()} onDismiss={() => setNote(null)} />
+        onSave={() => void save()} onDiscard={() => { form.discard(); setNote(null); }} onPreview={() => setPreview(true)} onPublish={() => void startPublish()} onDismiss={() => setNote(null)}
+        onTalk={!talk ? openTalk : undefined} slotRef={setBarSlot} />
 
       {preview ? <PreviewDrawer api={api} agentKey={key} settings={form.draft} sendDraft={form.dirty} onClose={() => setPreview(false)} onJump={jump} /> : null}
       {publishing ? (

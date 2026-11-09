@@ -100,7 +100,7 @@ function PdfThumb({ path, onPages }: { path: string; onPages?: (n: number) => vo
       {/* A data: URL rendered here; nothing for next/image to optimise. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       {cur?.thumb ? <img src={cur.thumb.src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }} />
-        : <span style={{ fontSize: '11px', color: 'var(--subtle, #a1a1aa)' }}>{cur?.err ? 'No preview' : 'Loading…'}</span>}
+        : <span style={{ fontSize: '11px', color: 'var(--meta, #71717a)' }}>{cur?.err ? 'No preview' : 'Loading…'}</span>}
     </div>
   );
 }
@@ -168,17 +168,17 @@ export function TextPaper({ body, title, head, signers, pageLimit }: { body: str
               case 'h1': return <div key={i} style={{ textAlign: 'center', fontWeight: 700, fontSize: '15px', margin: '10px 0 10px' }}><Inline text={b.text} /></div>;
               case 'h2': return <div key={i} style={{ fontWeight: 700, fontSize: '12.5px', margin: '10px 0 5px' }}><Inline text={b.text} /></div>;
               case 'h3': return <div key={i} style={{ fontWeight: 700, fontSize: '11.5px', color: '#333', margin: '10px 0 4px' }}><Inline text={b.text} /></div>;
-              case 'small': return <div key={i} style={{ fontSize: '8.5px', color: MUTED, margin: '0 0 3px' }}><Inline text={b.text} /></div>;
-              case 'li': return <div key={i} style={{ fontSize: '10px', lineHeight: 1.38, paddingLeft: '20px', position: 'relative', margin: '0 0 2px' }}><span style={{ position: 'absolute', left: '8px' }}>•</span><Inline text={b.text} /></div>;
-              case 'p': return <p key={i} style={{ fontSize: '10px', lineHeight: 1.38, margin: '0 0 6px' }}><Inline text={b.text} /></p>;
+              case 'small': return <div key={i} style={{ fontSize: '11px', color: MUTED, margin: '0 0 3px' }}><Inline text={b.text} /></div>;
+              case 'li': return <div key={i} style={{ fontSize: '11px', lineHeight: 1.38, paddingLeft: '20px', position: 'relative', margin: '0 0 2px' }}><span style={{ position: 'absolute', left: '8px' }}>•</span><Inline text={b.text} /></div>;
+              case 'p': return <p key={i} style={{ fontSize: '11px', lineHeight: 1.38, margin: '0 0 6px' }}><Inline text={b.text} /></p>;
               case 'sign': {
                 const s = signers.find((x) => x.role === b.role);
                 return (
                   <div key={i} style={{ margin: '14px 0 10px' }}>
-                    <div style={{ fontSize: '8.5px', fontWeight: 700, color: MUTED }}>{s?.label ?? b.role}</div>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: MUTED }}>{s?.label ?? b.role}</div>
                     <div style={{ display: 'flex', gap: '30px', marginTop: '40px' }}>
-                      <div style={{ flex: '0 0 260px', borderTop: `0.7px solid ${INK}`, fontSize: '7.5px', color: MUTED, paddingTop: '3px' }}>Signature</div>
-                      <div style={{ flex: 1, borderTop: `0.7px solid ${INK}`, fontSize: '7.5px', color: MUTED, paddingTop: '3px' }}>Date</div>
+                      <div style={{ flex: '0 0 260px', borderTop: `0.7px solid ${INK}`, fontSize: '11px', color: MUTED, paddingTop: '3px' }}>Signature</div>
+                      <div style={{ flex: 1, borderTop: `0.7px solid ${INK}`, fontSize: '11px', color: MUTED, paddingTop: '3px' }}>Date</div>
                     </div>
                   </div>
                 );
@@ -186,7 +186,7 @@ export function TextPaper({ body, title, head, signers, pageLimit }: { body: str
               default: return null;
             }
           })}
-          <div style={{ position: 'absolute', bottom: '22px', left: 0, right: 0, textAlign: 'center', fontSize: '8px', color: MUTED }}>Page {n + 1} of {pages.length}</div>
+          <div style={{ position: 'absolute', bottom: '22px', left: 0, right: 0, textAlign: 'center', fontSize: '11px', color: MUTED }}>Page {n + 1} of {pages.length}</div>
         </div>
       ))}
     </div>
@@ -202,7 +202,7 @@ function Letterhead({ head, title }: { head: Letterhead; title: string }) {
       {head.logo ? <img src={head.logo} alt="" style={{ maxHeight: '34px', maxWidth: '150px', objectFit: 'contain' }} />
         : <span style={{ fontWeight: 700, fontSize: '12px' }}>{head.name || 'Your company'}</span>}
       <span style={{ flex: 1 }} />
-      <span style={{ textAlign: 'right', fontSize: '7.5px', lineHeight: 1.35, color: MUTED }}>
+      <span style={{ textAlign: 'right', fontSize: '11px', lineHeight: 1.35, color: MUTED }}>
         {contact.length ? contact.map((c, i) => <span key={i} style={{ display: 'block' }}>{c}</span>) : <span>{title}</span>}
       </span>
     </div>
@@ -232,18 +232,18 @@ export function TemplateCard({ t, head, folder, selected, draggable, onOpen, onD
           )}
         </div>
         <span style={{ position: 'absolute', top: '8px', left: '8px', fontSize: '11px', fontWeight: 800, borderRadius: '5px', padding: '2px 6px',
-          background: pdf ? '#0A8560' : '#fff', color: pdf ? '#fff' : MUTED, border: pdf ? 0 : `1px solid ${LINE}` }}>{pdf ? 'Your document' : t.built_in ? 'Built-in text' : 'Text'}</span>
+          background: pdf ? '#0A8560' : 'var(--surface, #fff)', color: pdf ? '#fff' : MUTED, border: pdf ? 0 : `1px solid ${LINE}` }}>{pdf ? 'Your document' : t.built_in ? 'Built-in text' : 'Text'}</span>
         {t.archived_at ? <span style={{ position: 'absolute', top: '8px', right: '8px', fontSize: '11px', fontWeight: 800, borderRadius: '5px', padding: '2px 6px', background: 'var(--tint-orange-2, #ffedd5)', color: 'var(--tx-orange-deep, #9a3412)' }}>Archived</span> : null}
       </div>
       <div style={{ padding: '10px 12px 12px', minWidth: 0 }}>
-        <div style={{ fontSize: '13px', fontWeight: 650, color: t.archived_at ? 'var(--subtle, #a1a1aa)' : INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.name}>{t.name}</div>
+        <div style={{ fontSize: '13px', fontWeight: 650, color: t.archived_at ? 'var(--meta, #71717a)' : INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.name}>{t.name}</div>
         <div style={{ fontSize: '11.5px', color: MUTED, marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {KIND_LABELS[t.kind as keyof typeof KIND_LABELS] ?? t.kind}
           {pages ? ` · ${pages} page${pages === 1 ? '' : 's'}` : ''}
           {roles.length ? ` · ${roles.map((r) => r.label || r.role).join(', ')}` : ''}
         </div>
         {folder || t.used ? (
-          <div style={{ fontSize: '11px', color: 'var(--subtle, #a1a1aa)', marginTop: '3px' }}>{[folder, t.used ? `used ${t.used}×` : null].filter(Boolean).join(' · ')}</div>
+          <div style={{ fontSize: '11px', color: 'var(--meta, #71717a)', marginTop: '3px' }}>{[folder, t.used ? `used ${t.used}×` : null].filter(Boolean).join(' · ')}</div>
         ) : null}
       </div>
     </button>
@@ -292,7 +292,7 @@ export function TemplatePreview({ t, head, folder, onClose, children }: {
                   <PdfPageCanvas doc={doc} page={i + 1} width={pw} height={h} />
                   {showFields ? fs.filter((f) => f.page === i + 1).map((f, j) => (
                     <div key={j} title={`${f.label || FIELD_META[f.type].label} · ${roles.find((r) => r.role === f.role)?.label ?? f.role}`}
-                      style={{ position: 'absolute', left: `${f.x * 100}%`, top: `${f.y * 100}%`, width: `${f.w * 100}%`, height: `${f.h * 100}%`, border: `1.5px solid ${colorOf(f.role)}`, background: `${colorOf(f.role)}22`, borderRadius: '3px', boxSizing: 'border-box', overflow: 'hidden', fontSize: '9px', lineHeight: 1.1, color: colorOf(f.role), fontWeight: 700, padding: '1px 3px', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                      style={{ position: 'absolute', left: `${f.x * 100}%`, top: `${f.y * 100}%`, width: `${f.w * 100}%`, height: `${f.h * 100}%`, border: `1.5px solid ${colorOf(f.role)}`, background: `${colorOf(f.role)}22`, borderRadius: '3px', boxSizing: 'border-box', overflow: 'hidden', fontSize: '11px', lineHeight: 1.1, color: colorOf(f.role), fontWeight: 700, padding: '1px 3px', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
                       {f.label || FIELD_META[f.type].label}
                     </div>
                   )) : null}
@@ -347,7 +347,7 @@ export function TemplatePreview({ t, head, folder, onClose, children }: {
 
 const TP_CSS = `
 .tp-wrap { display: flex; gap: 16px; align-items: flex-start; margin: -18px; min-height: 70vh; }
-.tp-pages { flex: 1; min-width: 0; display: grid; gap: 30px; padding: 24px 20px 40px; background: #e9e9ec; max-height: 80vh; overflow: auto; }
+.tp-pages { flex: 1; min-width: 0; display: grid; gap: 30px; padding: 24px 20px 40px; background: var(--soft-page, #e9e9ec); max-height: 80vh; overflow: auto; }
 .tp-side { flex: 0 0 270px; display: grid; gap: 12px; padding: 18px 18px 18px 0; align-content: start; }
 @media (max-width: 860px) {
   .tp-wrap { flex-direction: column; }

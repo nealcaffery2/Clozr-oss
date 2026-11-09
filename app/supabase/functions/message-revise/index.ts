@@ -22,6 +22,7 @@ import Anthropic from 'npm:@anthropic-ai/sdk';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { UNTRUSTED_RULE, corsFor, fence, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
 import { carrierCheck } from '../../../lib/carrier-safe.ts';
 import { mergeTokens, reviseProblem } from '../../../lib/message-revise.ts';
 
@@ -109,6 +110,7 @@ Deno.serve(async (req) => {
       tool_choice: { type: 'auto' },
       messages: [{ role: 'user', content: parts }],
     });
+    await recordUsage(admin, { ws: workspaceId, feature: 'message_revise', model: res.model, usage: res.usage });
     const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     if (!call) return json({ error: 'the edit came back empty' }, 502);
     const out = call.input as { text?: unknown; subject?: unknown; html?: unknown };

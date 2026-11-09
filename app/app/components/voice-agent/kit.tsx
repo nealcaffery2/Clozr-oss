@@ -11,8 +11,8 @@ import { DAY_LABELS, DAY_NAMES, toggleDay, zoneLabel, zoneOptions } from '@/lib/
 import { DAYS, type Hours } from '@/lib/voice-agent';
 
 export { GREEN, INK, LINE, MUTED, card };
-export const RED = '#b91c1c';
-export const AMBER = '#92400e';
+export const RED = 'var(--tx-red, #b91c1c)';
+export const AMBER = 'var(--tx-amber-deep, #92400e)';
 
 export const h2: React.CSSProperties = { margin: 0, fontSize: 14, fontWeight: 600, color: INK, letterSpacing: '-0.005em' };
 export const sub: React.CSSProperties = { margin: '3px 0 0', fontSize: 12.5, color: MUTED, lineHeight: 1.5 };
@@ -27,7 +27,7 @@ export const ghost: React.CSSProperties = {
   fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, whiteSpace: 'nowrap', flex: 'none', fontFamily: 'inherit',
 };
 export const primary = (off?: boolean): React.CSSProperties => ({
-  ...ghost, border: `1px solid ${GREEN}`, background: off ? '#7fcbb2' : GREEN, color: '#fff', cursor: off ? 'not-allowed' : 'pointer',
+  ...ghost, border: `1px solid ${GREEN}`, background: GREEN, opacity: off ? 0.5 : 1, color: '#fff', cursor: off ? 'not-allowed' : 'pointer',
 });
 export const danger = (off?: boolean): React.CSSProperties => ({
   ...ghost, border: '1px solid #dc2626', background: off ? '#f0a3a3' : '#dc2626', color: '#fff', cursor: off ? 'not-allowed' : 'pointer',
@@ -273,7 +273,7 @@ export function Segmented<T extends string>({ value, options, onChange, label, d
               (e.currentTarget.parentElement?.querySelectorAll('button')[options.indexOf(next)] as HTMLElement | undefined)?.focus();
             }}
             style={{ flex: 1, minHeight: 30, padding: '0 11px', border: 0, borderRadius: 6, cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', font: '600 12.5px/1 var(--font-sans)',
-              background: on ? 'var(--surface, #fff)' : 'transparent', color: on ? INK : MUTED, boxShadow: on ? '0 1px 2px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.04)' : 'none', opacity: disabled && !on ? 0.6 : 1 }}>
+              background: on ? 'var(--surface, #fff)' : 'transparent', color: on ? INK : MUTED, boxShadow: on ? '0 1px 2px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.04)' : 'none', opacity: disabled && !on ? 0.5 : 1 }}>
             {o.label}
           </button>
         );
@@ -294,7 +294,7 @@ export function ChoiceCards<T extends string>({ value, options, onChange, label,
           <button key={t.id} type="button" role="radio" aria-checked={on} disabled={disabled} className="va-btn" onClick={() => onChange(t.id)}
             style={{
               textAlign: 'left', padding: '10px 12px', borderRadius: 10, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
-              border: `1px solid ${on ? GREEN : LINE}`, background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', boxShadow: on ? `0 0 0 1px ${GREEN}` : 'none', opacity: disabled && !on ? 0.6 : 1,
+              border: `1px solid ${on ? GREEN : LINE}`, background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', boxShadow: on ? `0 0 0 1px ${GREEN}` : 'none', opacity: disabled && !on ? 0.5 : 1,
             }}>
             <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: on ? GREEN : INK }}>{t.label}</span>
             <span style={{ display: 'block', marginTop: 2, fontSize: 12, color: MUTED, lineHeight: 1.4 }}>{t.hint}</span>
@@ -461,7 +461,7 @@ export function HoursEditor({ id, value, onChange, disabled, error, local, noDay
             return (
               <button key={d} type="button" aria-pressed={on} aria-label={DAY_NAMES[d]} disabled={disabled} className="va-btn" onClick={() => onChange({ ...value, days: toggleDay(value.days, d) })}
                 style={{ minWidth: 46, height: 34, padding: '0 8px', borderRadius: 9, border: `1px solid ${on ? GREEN : LINE}`, background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: on ? GREEN : MUTED,
-                  fontSize: 12.5, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: disabled && !on ? 0.6 : 1 }}>
+                  fontSize: 12.5, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: disabled && !on ? 0.5 : 1 }}>
                 {DAY_LABELS[d]}
               </button>
             );

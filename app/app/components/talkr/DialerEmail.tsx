@@ -27,13 +27,13 @@ import { EmailHtml } from '@/app/components/email/EmailHtml';
 import { TemplatePicker } from '@/app/components/templates/TemplatePicker';
 import { useTemplates } from '@/app/components/templates/useTemplates';
 import { useRep } from '@/app/components/record/QuickReach';
-import { requestSettingsTab } from '@/app/clozr/screens/settingsTab';
+import { openSettings } from '@/lib/settings-sections';
 import { type GoogleAccount, GOOGLE_SCOPE, googleStatus, granted } from '@/lib/google';
 import { fieldsFor, renderMerge } from '@/lib/sms';
 import { useSession } from '@/lib/session';
 import { Icon } from './Icon';
 import { Button } from './ui';
-import '@/app/clozr/talkr-inbox.css';
+// Styles: talkr-inbox.css, loaded once by ClozrShell (see the note there).
 import '@/app/clozr/gmail-inbox.css';
 
 type Info = NonNullable<ReturnType<ClozrView['dialerEmailFor']>>;
@@ -274,7 +274,7 @@ function Composer({ V, info, thread, ws, canSend, account, onManage, onDone, onC
               ? 'Gmail sending is off for your connection. Switch it on in Settings to send email from your own address.'
               : 'Connect Gmail in Settings to send email.'}</p>
           {account !== undefined ? (
-            <Button tone="ghost" onClick={() => { requestSettingsTab({ main: 'outbound', tab: 'google' }); V.goSettings(); }}>
+            <Button tone="ghost" onClick={() => openSettings('email/google')}>
               Open Gmail settings
             </Button>
           ) : null}

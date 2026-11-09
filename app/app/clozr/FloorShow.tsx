@@ -18,9 +18,14 @@ import {
   onFloorPreview, rememberSpin, saveSnap,
 } from '@/lib/floor-store';
 import { applyLeaderboardResets } from '@/lib/leaderboard';
+import { openSettings } from '@/lib/settings-sections';
 import type { ReportRaw } from '@/lib/reporting';
 
 type Show = FloorEvent & { big: boolean; preview?: boolean; quiet?: boolean };
+
+/** How long a toast (and the monthly-prize reminder) stays up. Sam 2026-11-05: gone after 5 s, or Clear all. */
+const NUDGE_MS = 5000;
+const TOAST_MS = 5000;
 
 const COLORS = ['#12946a', 'var(--ink-deep, #1c1d1f)', '#c4a35a', '#0e7a57', 'var(--ink-3, #3f3f46)', '#b45309', '#166534', '#44403c', '#0f766e', '#854d0e'];
 
@@ -85,7 +90,7 @@ function Wheel({ prizes, rotation }: { prizes: WheelPrize[]; rotation: number })
         width: '100%', height: '100%', borderRadius: '50%',
         background: `conic-gradient(${stops.join(',')})`,
         transform: `rotate(${rotation}deg)`,
-        boxShadow: 'inset 0 0 0 8px #fdfcfa, 0 16px 40px rgba(28,29,31,.2)',
+        boxShadow: 'inset 0 0 0 8px var(--warm-card, #fdfcfa), 0 16px 40px rgba(28,29,31,.2)',
       }} />
       <div style={{ position: 'absolute', inset: '38%', borderRadius: '50%', background: 'var(--ink-deep, #1c1d1f)', color: 'var(--surface, #fff)', display: 'grid', placeItems: 'center', fontSize: '12px', fontWeight: 800, letterSpacing: '.08em' }}>SPIN</div>
     </div>
@@ -258,7 +263,13 @@ export function FloorShow({ V }: { V: ClozrView }) {
   useEffect(() => {
     if (!settingsReady || !V.floorAdmin || !monthlyIsStale(prizeAt) || nudgeShownToday()) return;
     markNudgeShown();
-    push({ id: 'nudge:' + new Date().toISOString().slice(0, 10), kind: 'nudge', text: 'The monthly wheel prize is due for a refresh. Pick this month’s prize under Settings, Floor show.' }, false);
+    const id = 'nudge:' + new Date().toISOString().slice(0, 10);
+    push({ id, kind: 'nudge', text: 'The monthly wheel prize is due for a refresh. Pick this month’s prize under Settings, You, Notifications.' }, false);
+    // A reminder, not news: it goes after a few seconds instead of sitting on
+    // the composer and the More sheet until someone closes it.
+    // No cleanup on purpose: a re-run returns early (nudgeShownToday), so
+    // clearing the timer here would leave the toast up for good.
+    window.setTimeout(() => setToasts((all) => all.filter((x) => x.id !== id)), NUDGE_MS);
   }, [settingsReady, prizeAt, V.floorAdmin]);
 
   useEffect(() => {
@@ -290,6 +301,7 @@ export function FloorShow({ V }: { V: ClozrView }) {
     const show: Show = { ...event, big, preview, quiet };
     if (big) setQueue((q) => [...q, show]);
     setToasts((t) => [...t.filter((x) => x.id !== event.id), show].slice(-4));
+    window.setTimeout(() => setToasts((t) => t.filter((x) => x !== show)), TOAST_MS);
   }
 
   function playFor(show: Show) {
@@ -307,6 +319,12 @@ export function FloorShow({ V }: { V: ClozrView }) {
     if (id) setToasts((t) => t.filter((x) => x.id !== id));
     setCurrent(null);
     V.goLeaderboard();
+  }
+
+  /** The prize reminder says "under Settings, You, Notifications", so that is where it goes. */
+  function openPrize(id: string) {
+    setToasts((t) => t.filter((x) => x.id !== id));
+    openSettings('you/notifications');
   }
 
   function openWheel(event: Extract<FloorEvent, { kind: 'contract' }>, preview?: boolean) {
@@ -366,14 +384,14 @@ export function FloorShow({ V }: { V: ClozrView }) {
         @keyframes floorIn { from { transform: translateY(12px) scale(.98); opacity: 0 } to { transform: none; opacity: 1 } }
         @keyframes floorToast { from { transform: translateX(-16px); opacity: 0 } to { transform: none; opacity: 1 } }
       `}</style>
-      {confettiOn ? <canvas ref={canvasRef} style={{ position: 'fixed', inset: 0, zIndex: 118, pointerEvents: 'none' }} /> : null}
+      {confettiOn ? <canvas ref={canvasRef} style={{ position: 'fixed', inset: 0, zIndex: 'calc(var(--z-confirm) - 2)', pointerEvents: 'none' }} /> : null}
       {current?.big ? (
-        <div role="dialog" aria-label={current.kind === 'badge' ? current.badgeName : 'Contract signed'} onClick={dismiss} style={{ position: 'fixed', inset: 0, zIndex: 119, background: 'rgba(28,29,31,.55)', display: 'grid', placeItems: 'center', padding: '24px' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(440px, 100%)', background: '#fdfcfa', borderRadius: '22px', padding: '28px 24px 20px', textAlign: 'center', boxShadow: '0 30px 80px rgba(28,29,31,.35)', animation: 'floorIn .35s ease' }}>
+        <div role="dialog" aria-label={current.kind === 'badge' ? current.badgeName : 'Contract signed'} onClick={dismiss} style={{ position: 'fixed', inset: 0, zIndex: 'calc(var(--z-confirm) - 1)', background: 'rgba(28,29,31,.55)', display: 'grid', placeItems: 'center', padding: '24px' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(440px, 100%)', background: 'var(--warm-card, #fdfcfa)', borderRadius: '22px', padding: '28px 24px 20px', textAlign: 'center', boxShadow: '0 30px 80px rgba(28,29,31,.35)', animation: 'floorIn .35s ease' }}>
             {current.kind === 'badge' ? (
               <>
-                <div style={{ fontSize: '11px', fontWeight: 800, color: current.tier === 'shame' ? '#b91c1c' : '#0e7a57' }}>{current.tier === 'shame' ? 'Hall of shame' : 'Badge unlocked'}</div>
-                <img src={current.image} alt="" style={{ width: '148px', height: '148px', objectFit: 'cover', borderRadius: '50%', margin: '14px auto', display: 'block', border: `4px solid ${current.tier === 'shame' ? 'var(--tint-red-2, #fecaca)' : '#c4a35a'}`, background: '#eceae3' }} />
+                <div style={{ fontSize: '11px', fontWeight: 800, color: current.tier === 'shame' ? 'var(--tx-red, #b91c1c)' : 'var(--tx-green-2, #0e7a57)' }}>{current.tier === 'shame' ? 'Hall of shame' : 'Badge unlocked'}</div>
+                <img src={current.image} alt="" style={{ width: '148px', height: '148px', objectFit: 'cover', borderRadius: '50%', margin: '14px auto', display: 'block', border: `4px solid ${current.tier === 'shame' ? 'var(--tint-red-2, #fecaca)' : '#c4a35a'}`, background: 'var(--warm-track, #eceae3)' }} />
                 <div style={{ fontSize: '26px', fontWeight: 800, letterSpacing: '-0.03em' }}>{current.badgeName}</div>
                 <div style={{ marginTop: '6px', fontSize: '15px', color: 'var(--ink-3, #3f3f46)' }}>{current.person}</div>
                 <div style={{ marginTop: '4px', fontSize: '13px', color: 'var(--meta, #71717a)' }}>{current.hint}</div>
@@ -399,15 +417,21 @@ export function FloorShow({ V }: { V: ClozrView }) {
           </div>
         </div>
       ) : null}
-      {/* Above Today's action bar too (--clozr-todaybar): these stay until read, and sat on Call, Text and Log. */}
-      <div style={{ position: 'fixed', left: 'calc(16px + var(--clozr-side, 0px))', bottom: 'calc(16px + env(safe-area-inset-bottom, 0px) + var(--clozr-callbar, 0px) + var(--clozr-todaybar, 0px))', zIndex: 96, display: 'flex', flexDirection: 'column', gap: '8px', width: 'min(340px, calc(100vw - 32px))', pointerEvents: 'none' }}>
+      {/* Above Today's action bar too (--clozr-todaybar): each goes after TOAST_MS, and sat on Call, Text and Log. */}
+      {/* On a phone the stack sits above the bottom tabs (58px), never on them. */}
+      <div style={{ position: 'fixed', left: 'calc(16px + var(--clozr-side, 0px))', bottom: V.isMobile ? 'calc(70px + env(safe-area-inset-bottom, 0px) + var(--clozr-callbar, 0px) + var(--clozr-todaybar, 0px) + var(--clozr-dock, 0px))' : 'calc(16px + env(safe-area-inset-bottom, 0px) + var(--clozr-callbar, 0px) + var(--clozr-todaybar, 0px))', zIndex: 'var(--z-toast)', display: 'flex', flexDirection: 'column', gap: '8px', width: 'min(340px, calc(100vw - 32px))', pointerEvents: 'none' }}>
+        {toasts.length > 1 ? (
+          <button type="button" onClick={() => setToasts([])} style={{ alignSelf: 'flex-start', pointerEvents: 'auto', border: '1px solid var(--divider, #e6e3da)', background: 'var(--surface, #fdfcfa)', borderRadius: '999px', padding: '4px 12px', fontSize: '12px', fontWeight: 600, color: 'var(--ink-deep, #1c1d1f)', cursor: 'pointer', boxShadow: '0 6px 16px rgba(28,29,31,.12)' }}>
+            Clear all
+          </button>
+        ) : null}
         {toasts.map((t) => (
           <div key={t.id} style={{ position: 'relative', pointerEvents: 'auto' }}>
           <button type="button" aria-label="Dismiss" onClick={() => setToasts((all) => all.filter((x) => x.id !== t.id))} style={{ position: 'absolute', top: 4, right: 4, zIndex: 1, width: 28, height: 28, display: 'grid', placeItems: 'center', border: 0, borderRadius: 8, background: 'transparent', color: 'var(--meta, #71717a)', cursor: 'pointer' }}>
             <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
           </button>
-          <button type="button" onClick={() => openBoard(t.id)} style={{ width: '100%', textAlign: 'left', border: '1px solid #e6e3da', background: '#fdfcfa', borderRadius: '14px', padding: '10px 36px 10px 12px', boxShadow: '0 12px 30px rgba(28,29,31,.16)', cursor: 'pointer', animation: 'floorToast .28s ease', color: '#1c1d1f' }}>
-            <div style={{ fontSize: '11.5px', fontWeight: 800, color: t.kind === 'badge' && t.tier === 'shame' ? '#b91c1c' : '#0e7a57' }}>{toastKicker(t)}</div>
+          <button type="button" onClick={() => (t.kind === 'nudge' ? openPrize(t.id) : openBoard(t.id))} style={{ width: '100%', textAlign: 'left', border: '1px solid var(--divider, #e6e3da)', background: 'var(--surface, #fdfcfa)', borderRadius: '14px', padding: '10px 36px 10px 12px', boxShadow: '0 12px 30px rgba(28,29,31,.16)', cursor: 'pointer', animation: 'floorToast .28s ease', color: 'var(--ink-deep, #1c1d1f)' }}>
+            <div style={{ fontSize: '11.5px', fontWeight: 800, color: t.kind === 'badge' && t.tier === 'shame' ? 'var(--tx-red, #b91c1c)' : 'var(--tx-green-2, #0e7a57)' }}>{toastKicker(t)}</div>
             <div style={{ marginTop: '3px', fontSize: '13.5px', fontWeight: 700, lineHeight: 1.35 }}>{toastText(t)}</div>
             {t.kind === 'contract' && (t.preview || canSpin(t, V.floorMe, V.floorAdmin)) && (t.preview || !hasSpun(t.contractId)) ? (
               <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); if (t.kind === 'contract') openWheel(t, t.preview); }} style={{ display: 'inline-block', marginTop: '6px', fontSize: '12px', fontWeight: 700, color: 'var(--tx-green-2, #0e7a57)' }}>Spin the wheel</span>
@@ -426,8 +450,8 @@ export function FloorShow({ V }: { V: ClozrView }) {
         ))}
       </div>
       {wheelFor ? (
-        <div role="dialog" aria-label="Spin the wheel" style={{ position: 'fixed', inset: 0, zIndex: 130, background: 'rgba(28,29,31,.62)', display: 'grid', placeItems: 'center', padding: '20px' }}>
-          <div style={{ width: 'min(460px, 100%)', background: '#f4f2ec', borderRadius: '22px', padding: '22px 18px 18px', textAlign: 'center' }}>
+        <div role="dialog" aria-label="Spin the wheel" style={{ position: 'fixed', inset: 0, zIndex: 'calc(var(--z-confirm) + 10)', background: 'rgba(28,29,31,.62)', display: 'grid', placeItems: 'center', padding: '20px' }}>
+          <div style={{ width: 'min(460px, 100%)', background: 'var(--warm-page, #f4f2ec)', borderRadius: '22px', padding: '22px 18px 18px', textAlign: 'center' }}>
             <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--tx-green-2, #0e7a57)' }}>One spin</div>
             <div style={{ fontSize: '22px', fontWeight: 800, margin: '4px 0 14px' }}>{wheelFor.ownerName}</div>
             <Wheel prizes={prizes} rotation={rotation} />
@@ -474,4 +498,4 @@ function toastText(t: Show): string {
 }
 
 const primary: React.CSSProperties = { marginTop: '8px', height: '36px', padding: '0 14px', borderRadius: '10px', border: '1px solid var(--ink-deep, #1c1d1f)', background: 'var(--ink-deep, #1c1d1f)', color: 'var(--surface, #fff)', fontWeight: 700, cursor: 'pointer' };
-const ghost: React.CSSProperties = { marginTop: '8px', height: '36px', padding: '0 14px', borderRadius: '10px', border: '1px solid #ddd9ce', background: 'var(--surface, #fff)', fontWeight: 650, cursor: 'pointer' };
+const ghost: React.CSSProperties = { marginTop: '8px', height: '36px', padding: '0 14px', borderRadius: '10px', border: '1px solid var(--warm-line-2, #ddd9ce)', background: 'var(--surface, #fff)', fontWeight: 650, cursor: 'pointer' };

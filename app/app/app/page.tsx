@@ -79,6 +79,8 @@ export default function Page() {
     me: previewing ? viewAs!.userId : s.user?.id ?? null,
     readOnly: previewing,
     workspaceId: s.workspace?.id ?? null,
+    workspaces: s.workspaces,
+    switchWorkspace: s.switchWorkspace,
     crmOk: crm.ok,
     crmPartial: crm.partial,
     workspaceName: s.workspace?.name ?? null,
@@ -202,7 +204,7 @@ export default function Page() {
     googleReturnHandled = true;
     const ok = outcome === 'ok';
     const detail = q.get('m') ?? '';
-    // Drop Google's query, keep the hash: the screen and record CLOZR was on.
+    // Drop Google's query, keep the path (and an old link's hash): the screen and record CLOZR was on.
     window.history.replaceState(window.history.state, '', window.location.pathname + window.location.hash);
 
     // Opened as a popup, which is what a desktop does: hand the result to the

@@ -15,24 +15,24 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { isBrowserLegError, RELOAD_AND_TRY } from './browser-leg';
+import { BrowserLegError, isBrowserLegError, legEndedOnServer } from './browser-leg';
 import { everyWhileVisible } from './visible-timer';
 import { createEngine, engineKindOf, type EngineAudio, type EngineCall, type SoftphoneEngine } from './softphone-engine';
 import {
   callWhileLockedElsewhere, createSoftphoneLock, mayAutoAcquirePhone, PHONE_OTHER_TAB, USE_PHONE_HERE, type SoftphoneLock,
 } from './softphone-lock';
-import { VM_DROPPED_EVENT } from './dial-engine';
-import { playDropOnLeg, playUrlOnPeer } from './vm-playback';
+import { MACHINE_HANGUP_EVENT, VM_DROPPED_EVENT, machineFromEvent } from './power-dialer';
+import { onTalkrEvent } from './talkr-events';
+import { playUrlOnPeer } from './vm-playback';
 import { busyAnswer } from './busy-answer';
-import { readyDropUrl } from './busy-drop';
 import { TalkrError, talkr, type CallDto, type ParticipantDto } from './talkr';
 import { probeTracksToStop } from './mic-release';
 import {
-  getAudioPrefs, isBellCategoryMuted, isBenignHangupError, isTouchPhone, micConstraints, playEvent, primeRemoteCallAudio,
+  getAudioPrefs, isBellCategoryMuted, isBenignHangupError, isTouchPhone, micConstraints, micFailureText, openMic, playEvent, primeRemoteCallAudio,
   remoteHasLiveAudio, setCarrierHeard, startOutgoingRing, startRing, stopRing, subscribeAudioPrefs, yieldLocalRingToCarrier,
 } from './phone-audio';
 import { applyCallRoute, getCallRoute, releaseCallAudioSession, resetCallRoute } from './call-route';
-import { NEVER_DIALED_AFTER_MS, RING_GUARD_POLL_MS, RING_GUARD_WINDOW_MS, ringVerdict, type RingVerdict, type RosterRow } from './ring-guard';
+import { NEVER_DIALED_AFTER_MS, RING_GUARD_POLL_MS, RING_GUARD_WINDOW_MS, SELLER_CLAIM_GRACE_MS, SELLER_POLL_MS, ringVerdict, sellerState, type RingVerdict, type RosterRow } from './ring-guard';
 
 export type DeviceState = 'off' | 'connecting' | 'ready' | 'error';
 export type CallPhase = 'idle' | 'connecting' | 'ringing' | 'in_call' | 'wrapup';
@@ -82,12 +82,26 @@ export type Softphone = {
    * Talkr extension) takes the phone.
    */
   releaseDevice: () => boolean;
-  placeCall: (input: { to_number?: string; contact_id?: string; lead_id?: string; from_phone_number_id?: string }) => Promise<CallDto>;
+  /** `amd`: a session call, so Talkr runs machine detection on the seller. A hand-dialed call leaves it off: the rep hears the greeting and can leave a message. */
+  placeCall: (input: { to_number?: string; contact_id?: string; lead_id?: string; from_phone_number_id?: string; amd?: boolean }) => Promise<CallDto>;
   /**
    * Open the leg for a call the server already created — a dial session's
    * `next` (docs/dialers.md §3). Same path as `placeCall` without the create.
    */
   connectToCall: (record: CallDto, gesture?: Promise<MediaStream | null>) => Promise<CallDto>;
+  /**
+   * A Talkr-run batch (parallel lines): the server dialled the sellers itself
+   * and rings this browser only when one answers. Arm the softphone to take
+   * that invite the moment it lands, with local ringback until then. Resolves
+   * with the call once the leg is up; rejects with `code: 'no_answer'` when
+   * nobody answered inside `timeoutMs` or the wait was cancelled. `record` is
+   * the batch's first line until `retarget` names the one Talkr bridged.
+   */
+  awaitBridge: (record: CallDto, gesture?: Promise<MediaStream | null>, opts?: { timeoutMs?: number }) => Promise<CallDto>;
+  /** Stop an `awaitBridge` that is still waiting (every line rang out, Next again, End). */
+  cancelBridgeWait: () => void;
+  /** The leg on screen belongs to this call (Talkr's `bridged` names which line of a batch answered). */
+  retarget: (record: CallDto) => void;
   acceptIncoming: () => void;
   rejectIncoming: () => void;
   hangup: () => void;
@@ -114,6 +128,17 @@ export type Softphone = {
    * mode, dials the next number.
    */
   dropVoicemail: (url: string) => Promise<void>;
+  /**
+   * Talkr said an answering machine picked up the live call (its AMD verdict,
+   * `machine_end_beep` and the like; lib/power-dialer.ts says what Talkr has to
+   * send). Null until it does, and again once the line is down.
+   */
+  machine: string | null;
+  /**
+   * Hang up on a machine with nothing to drop: no wrap-up, the session hears
+   * `clozr-machine-hangup` and dials the next number.
+   */
+  hangupOnMachine: () => void;
 };
 
 const REFUSALS: Record<string, string> = {
@@ -130,6 +155,7 @@ const REFUSALS: Record<string, string> = {
   unlinked: 'Talkr does not recognise this sign-in yet.',
   already_bound: 'This call is already ringing your browser.',
   browser_leg_is_client: 'The carrier expects the browser to dial; reload and try again.',
+  call_in_flight: 'The last line is still closing out. Press Next again in a moment.',
 };
 
 export function refusalText(err: unknown): string {
@@ -188,6 +214,9 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
   const [calledBack, setCalledBack] = useState<string | null>(null);
   const [controlError, setControlError] = useState<string | null>(null);
   const [ringOut, setRingOut] = useState<RingVerdict | null>(null);
+  /** Outbound hand-dial whose seller has not picked up yet: the rep's leg is in the room, ringback keeps playing. */
+  const [awaitSeller, setAwaitSeller] = useState(false);
+  const [machine, setMachine] = useState<string | null>(null);
 
   const engineRef = useRef<SoftphoneEngine | null>(null);
   const callRef = useRef<EngineCall | null>(null);
@@ -208,8 +237,8 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Last ten digits of every org number — server legs and other softphones present these. */
   const ownNumbersRef = useRef<Set<string>>(new Set());
-  /** A voicemail drop is hanging up: skip wrap-up and tell the session. */
-  const vmDropGo = useRef(false);
+  /** A voicemail drop, or a machine with nothing to drop, is hanging up: skip wrap-up and tell the session. */
+  const endGo = useRef<null | 'dropped' | 'machine'>(null);
   const lockRef = useRef<SoftphoneLock | null>(null);
   const releaseRef = useRef<() => boolean>(() => false);
   const takeoverRef = useRef<() => void>(() => undefined);
@@ -229,18 +258,24 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
   }, []);
 
   /** Wire a media leg's lifecycle into state. Shared by outbound and accepted inbound. */
-  const attach = useCallback((leg: EngineCall, record: CallDto) => {
+  const attach = useCallback((leg: EngineCall, record: CallDto, opts?: { awaitSeller?: boolean }) => {
     callRef.current = leg;
+    setAwaitSeller(!!opts?.awaitSeller);
     callIdRef.current = record.id;
     setCall(record);
     setMuted(false);
     setParticipants([]);
     setControlError(null);
     setRingOut(null);
+    setMachine(null);
+    let ringCheck: number | null = null;
+    let up = false;
     leg.on('ringing', () => {
       setPhase((p) => (p === 'connecting' ? 'ringing' : p));
       engineRef.current?.primePlayback?.();
       const hearCarrier = () => {
+        // Answered since: the far end is what plays now, never the ringback's mute.
+        if (up) return;
         const prefs = getAudioPrefs();
         // The carrier's early media is the piano hold music. While this
         // browser is playing its own ringback (a built-in tone or an MP3),
@@ -257,10 +292,22 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
         })) stopRing();
       };
       hearCarrier();
-      window.setTimeout(hearCarrier, 400);
+      // The second look used to run even after a quick answer and mute the
+      // far end for the whole call (the rep heard nothing, the seller heard them).
+      if (ringCheck) window.clearTimeout(ringCheck);
+      ringCheck = window.setTimeout(hearCarrier, 400);
     });
     leg.on('accept', () => {
-      setCarrierHeard(true);
+      up = true;
+      if (ringCheck) {
+        window.clearTimeout(ringCheck);
+        ringCheck = null;
+      }
+      // On Telnyx this leg is answered on joining the room, before the seller
+      // picks up. While the browser plays its own ringback the carrier (whose
+      // early media is a second ringback) stays muted until they answer
+      // (the seller watch below); otherwise the far end plays now.
+      setCarrierHeard(!(opts?.awaitSeller && getAudioPrefs().outgoingRingback));
       stopRing();
       setStartedAt(Date.now());
       setEndedAt(null);
@@ -274,7 +321,15 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
     const onEnd = () => {
       if (ended) return;
       ended = true;
+      // A leg cancelled within 400 ms of ringing: the second look must not
+      // run after this and mute the shared far-end element for the next call.
+      up = true;
+      if (ringCheck) {
+        window.clearTimeout(ringCheck);
+        ringCheck = null;
+      }
       setCarrierHeard(true);
+      setAwaitSeller(false);
       stopRing();
       // The carrier keeps its own capture after the signaling ends. Stopping
       // the gesture probe and the leg, then dropping any input the audio
@@ -292,10 +347,12 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
       callRef.current = null;
       setEndedAt(Date.now());
       playEvent('ended');
-      if (vmDropGo.current) {
-        vmDropGo.current = false;
+      const go = endGo.current;
+      endGo.current = null;
+      setMachine(null);
+      if (go) {
         setPhase('idle');
-        window.dispatchEvent(new CustomEvent(VM_DROPPED_EVENT));
+        window.dispatchEvent(new CustomEvent(go === 'dropped' ? VM_DROPPED_EVENT : MACHINE_HANGUP_EVENT));
       } else {
         setPhase('wrapup');
       }
@@ -307,6 +364,12 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
       onEnd();
     });
   }, [refreshParticipants]);
+
+  // Talkr's stream names the machine; the leg itself cannot hear the beep.
+  useEffect(() => onTalkrEvent((e) => {
+    const verdict = machineFromEvent(e, callIdRef.current);
+    if (verdict && callRef.current) setMachine(verdict);
+  }), []);
 
   /** Keep the credential fresh for as long as the softphone is up. */
   const scheduleRefresh = useCallback((engine: SoftphoneEngine, ttlSeconds: number) => {
@@ -419,24 +482,9 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
             // outbound ring-back (or our own late leg) — hanging it up also
             // produces 486 and can cancel the fork the answering client holds.
             if (callRef.current) {
-              const own = isOwnNumberInvite(leg.from, ownNumbersRef.current);
-              const dropUrl = readyDropUrl();
-              const action = busyAnswer({ ownNumber: own, hasDrop: !!dropUrl });
               // Our own caller-ID ringing back is the outbound leg, not a second person.
-              if (action === 'ignore') return;
-              // Someone answered (or called) while this browser is already talking.
-              // Play the saved drop on THAT leg and hang it up. Rejecting here is
-              // the click the person hears. The call already on screen is a
-              // different peer and is not hung up. A line Talkr never offers
-              // here is still abandoned on the Talkr server.
-              if (action === 'drop' && dropUrl) {
-                void playDropOnLeg(leg, dropUrl).catch(() => {
-                  setCalledBack(leg.from ?? 'Unknown');
-                  if (!isBellCategoryMuted('Call')) playEvent('missed');
-                  try { leg.disconnect(); } catch { leg.reject(); }
-                });
-                return;
-              }
+              if (busyAnswer({ ownNumber: isOwnNumberInvite(leg.from, ownNumbersRef.current) }) === 'ignore') return;
+              // Never answer a second call over the live one (lib/busy-answer.ts).
               setCalledBack(leg.from ?? 'Unknown');
               if (!isBellCategoryMuted('Call')) playEvent('missed');
               leg.reject();
@@ -512,10 +560,43 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
     // An offered inbound call rings with startRing. Outbound ringback must
     // not start over it, or a call coming in sounds like one you placed.
     if (incoming) return;
-    if (phase !== 'connecting' && phase !== 'ringing') return;
+    // On Telnyx the rep's leg is answered the moment it joins the room, while
+    // the seller's phone is only starting to ring: keep ringing until they pick up.
+    if (phase !== 'connecting' && phase !== 'ringing' && !(phase === 'in_call' && awaitSeller)) return;
     startOutgoingRing();
     return stopRing;
-  }, [phase, incoming]);
+  }, [phase, incoming, awaitSeller]);
+
+  // Watch for the seller's pickup (lib/ring-guard.ts sellerState). Fast, so
+  // the ringback stops on their hello; the far end is already playing.
+  const sellerWatchId = phase === 'in_call' && awaitSeller && call?.direction === 'outbound' ? call.id : null;
+  useEffect(() => {
+    if (!sellerWatchId) return;
+    const since = Date.now();
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    // Answered (or given up on): the ringback stops and the far end is heard.
+    const done = () => { stop = true; setAwaitSeller(false); setCarrierHeard(true); };
+    const tick = async () => {
+      if (stop) return;
+      const upFor = Date.now() - since;
+      if (upFor > RING_GUARD_WINDOW_MS) return done();
+      try {
+        const r = await talkr.call(sellerWatchId);
+        if (stop || callIdRef.current !== sellerWatchId) return;
+        const s = sellerState(r.events);
+        if (s === 'answered' || (s === 'no_claim' && upFor >= SELLER_CLAIM_GRACE_MS) || legEndedOnServer(r.call.status)) return done();
+      } catch {
+        /* retried on the next tick */
+      }
+      if (!stop) timer = setTimeout(() => void tick(), SELLER_POLL_MS);
+    };
+    void tick();
+    return () => {
+      stop = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [sellerWatchId]);
 
   // A phone call plays in the receiver until Speaker is tapped. The incoming
   // ringtone stays on the loudspeaker; the route applies once this browser is
@@ -603,8 +684,11 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
    * cancelled-while-connecting guard — and keeping them one function is what
    * stops the power dialer drifting away from click-to-call.
    */
+  /** Set while `awaitBridge` is waiting for Talkr's invite, so End cancels the wait instead of opening a wrap-up. */
+  const bridgeWaitRef = useRef(false);
+
   const openLeg = useCallback(
-    async (obtain: () => Promise<CallDto>, existing = false, gesture?: Promise<MediaStream | null>): Promise<CallDto> => {
+    async (obtain: () => Promise<CallDto>, existing = false, gesture?: Promise<MediaStream | null>, bridge?: { timeoutMs: number }): Promise<CallDto> => {
       if (callRef.current || openingRef.current) throw new Error('A call is already active.');
       // Before the microphone, the ring, or any await. Another tab holding
       // the phone is not a mic problem and it is not "the softphone could
@@ -631,9 +715,7 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
       // a gesture, and everything after the first await below is not one.
       // A dial session opens this inside its own tap and passes it in, because
       // the leg itself starts only after the server answers.
-      const mic: Promise<MediaStream | null> = gesture ?? (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia
-        ? navigator.mediaDevices.getUserMedia({ audio: micConstraints() }).catch(() => null)
-        : Promise.resolve(null));
+      const mic: Promise<MediaStream | null> = gesture ?? openMic();
       // `code: 'device'`: this browser cannot carry the call at all (no WebRTC,
       // mic refused, carrier login failed), as opposed to Talkr refusing it.
       // Thrown before the call exists, so nothing was dialled.
@@ -641,7 +723,7 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
       // End pressed before anything was dialled. Not a failure to show anyone.
       const cancelled = () => Object.assign(new Error('The call was cancelled.'), { code: 'cancelled' as const });
       try {
-        if (!(await mic)) throw deviceFailure('Microphone is blocked or unavailable in this browser.');
+        if (!(await mic)) throw deviceFailure(await micFailureText());
         // The lock is free or already ours. Claim it so a press is not the
         // automatic path that backs off.
         const ok = await initDevice({ claim: true });
@@ -675,21 +757,69 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
         if (cancelledRef.current) {
           cancelledRef.current = false;
           callIdRef.current = null;
+          // A batch nobody was bridged on yet has nothing to wrap up.
+          if (bridge) { setCall(null); setPhase('idle'); throw cancelled(); }
           setPhase('wrapup');
           return record;
         }
         let leg: EngineCall;
         try {
+          if (bridge) {
+            // The sellers are already ringing on Talkr's side; asking it to
+            // ring a browser leg for this call would be refused (already
+            // bound). Wait for the bridge invite instead: it comes from the
+            // campaign's caller ID, which is this record's from_number.
+            bridgeWaitRef.current = true;
+            try {
+              leg = await engine.connect(record.id, {
+                ringServer: async () => undefined,
+                expectFrom: record.from_number,
+                timeoutMs: bridge.timeoutMs,
+              });
+            } finally {
+              bridgeWaitRef.current = false;
+            }
+          } else {
           // Twilio: the browser dials with the call id. Telnyx: the server rings
           // this browser for the call and the engine answers.
-          leg = await engine.connect(record.id, {
-            ringServer: () => talkr.ringBrowserLeg(record.id),
-            expectFrom: record.from_number,
+          // While the leg is on its way, watch the call: a leg the carrier
+          // could not deliver ends it on Talkr in a second, and the invite
+          // never comes. Fail into the same reconnect path as a lost invite.
+          let watching = true;
+          let watch: ReturnType<typeof setTimeout> | null = null;
+          const serverEnded = new Promise<never>((_, reject) => {
+            const tick = async () => {
+              if (!watching) return;
+              const fresh = await talkr.call(record.id).then((r) => r.call).catch(() => null);
+              if (!watching) return;
+              if (fresh && legEndedOnServer(fresh.status)) return reject(new BrowserLegError('timeout'));
+              watch = setTimeout(() => void tick(), RING_GUARD_POLL_MS);
+            };
+            watch = setTimeout(() => void tick(), RING_GUARD_POLL_MS);
           });
+          serverEnded.catch(() => undefined);
+          try {
+            leg = await Promise.race([
+              engine.connect(record.id, {
+                ringServer: () => talkr.ringBrowserLeg(record.id),
+                expectFrom: record.from_number,
+              }),
+              serverEnded,
+            ]);
+          } finally {
+            watching = false;
+            if (watch) clearTimeout(watch);
+          }
+          }
         } catch (err) {
           callIdRef.current = null;
           setCall(null);
           setPhase('idle');
+          // Nobody answered the batch, or the wait was called off: the phone
+          // is fine, so no Reconnect and nothing to hang up on Talkr.
+          if (bridge && (isBrowserLegError(err) || (err as { code?: string }).code === 'cancelled')) {
+            throw Object.assign(new Error('Nobody answered.'), { code: 'no_answer' as const });
+          }
           if (isBrowserLegError(err)) {
             void talkr.hangupCall(record.id).catch(() => undefined);
             const stuck = engineRef.current;
@@ -699,7 +829,7 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
             // other tab unable to register while this one waits on the rep.
             lockRef.current?.release();
             setDeviceState('error');
-            setErr(RELOAD_AND_TRY);
+            setErr(err.message);
             setDeviceAction({ label: 'Reconnect', run: () => reconnectRef.current() });
           }
           throw new Error(refusalText(err));
@@ -714,7 +844,9 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
           setCall(null);
           return record;
         }
-        attach(leg, record);
+        // A bridged batch leg arrives with the seller already on; a hand-dial
+        // joins the room before the seller's phone rings.
+        attach(leg, record, { awaitSeller: !bridge && record.direction === 'outbound' });
         return record;
       } finally {
         openingRef.current = false;
@@ -819,6 +951,22 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
     };
   }, [initDevice, showOtherTab]);
 
+  // On a phone, leaving the tab (or closing it) lets go of the phone and its
+  // mic. A live call is left alone; releaseDevice refuses while one is up.
+  // The wake above registers again when the tab comes back.
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined' || !isTouchPhone()) return;
+    const leave = (e: Event) => {
+      if (e.type === 'pagehide' || document.visibilityState === 'hidden') releaseRef.current();
+    };
+    document.addEventListener('visibilitychange', leave);
+    window.addEventListener('pagehide', leave);
+    return () => {
+      document.removeEventListener('visibilitychange', leave);
+      window.removeEventListener('pagehide', leave);
+    };
+  }, []);
+
   useEffect(() => {
     if (deviceError !== PHONE_OTHER_TAB) return;
     // A background tab must not pick the phone up. Visible and focused tabs
@@ -841,6 +989,23 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
     (record, gesture) => openLeg(async () => record, true, gesture),
     [openLeg],
   );
+
+  // Lines ring up to 30 s and the bridge adds its own 15 s; a little slack on top.
+  const BRIDGE_WAIT_MS = 60_000;
+  const awaitBridge = useCallback<Softphone['awaitBridge']>(
+    (record, gesture, opts) => openLeg(async () => record, true, gesture, { timeoutMs: opts?.timeoutMs ?? BRIDGE_WAIT_MS }),
+    [openLeg],
+  );
+  const cancelBridgeWait = useCallback(() => {
+    if (!bridgeWaitRef.current) return;
+    cancelledRef.current = true;
+    engineRef.current?.cancelConnect?.();
+  }, []);
+  const retarget = useCallback((record: CallDto) => {
+    if (!callRef.current && !bridgeWaitRef.current) return;
+    callIdRef.current = record.id;
+    setCall(record);
+  }, []);
 
   const acceptIncoming = useCallback(() => {
     const leg = incomingRef.current;
@@ -872,9 +1037,19 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
     setEndedAt(null);
     setPhase('in_call');
     leg.accept();
-    if (info.talkrCallId) {
-      void talkr.call(info.talkrCallId).then((r) => setCall(r.call)).catch(() => undefined);
-    }
+    // A Telnyx invite names the caller, not our call. Without the id, hold,
+    // add call and transfer have nothing to act on, so ask which call is
+    // ringing from that number (what Talkr's own softphone does).
+    const record = info.talkrCallId
+      ? talkr.call(info.talkrCallId)
+      : talkr.ringingCall(info.from);
+    void record
+      .then((r) => {
+        if (callRef.current !== leg) return; // hung up before the answer came back
+        callIdRef.current = r.call.id;
+        setCall(r.call);
+      })
+      .catch(() => undefined);
   }, [attach, incoming]);
 
   const clearCalledBack = useCallback(() => setCalledBack(null), []);
@@ -888,6 +1063,8 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
   const hangup = useCallback(() => {
     const c = callRef.current;
     if (c) c.disconnect();
+    // Waiting on a batch: nothing is on the line yet, so stop waiting and go idle.
+    else if (bridgeWaitRef.current) { cancelledRef.current = true; engineRef.current?.cancelConnect?.(); }
     else if (phase === 'connecting' || phase === 'ringing') { cancelledRef.current = true; setPhase('wrapup'); }
     // Still bringing up the mic or the softphone: nothing is dialled yet, so
     // there is no wrap-up to show — openLeg stops at its next check.
@@ -939,6 +1116,7 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
     setEndedAt(null);
     setParticipants([]);
     setMuted(false);
+    setMachine(null);
     setPhase('idle');
   }, []);
 
@@ -947,14 +1125,21 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
   const dropVoicemail = useCallback(async (url: string) => {
     const peer = callRef.current?.peerConnection() ?? null;
     if (!peer) throw new Error('The call is not up yet, so there is nowhere to play the recording.');
-    vmDropGo.current = true;
+    endGo.current = 'dropped';
     try {
       await playUrlOnPeer(peer, url);
       callRef.current?.disconnect();
     } catch (err) {
-      vmDropGo.current = false;
+      endGo.current = null;
       throw err;
     }
+  }, []);
+
+  const hangupOnMachine = useCallback(() => {
+    const leg = callRef.current;
+    if (!leg) return;
+    endGo.current = 'machine';
+    leg.disconnect();
   }, []);
 
   return useMemo<Softphone>(
@@ -979,6 +1164,9 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
       releaseDevice,
       placeCall,
       connectToCall,
+      awaitBridge,
+      cancelBridgeWait,
+      retarget,
       acceptIncoming,
       rejectIncoming,
       hangup,
@@ -993,11 +1181,13 @@ export function useSoftphone({ enabled }: { enabled: boolean }): Softphone {
       getAudio,
       deviceAction: enabled ? deviceAction : null,
       dropVoicemail,
+      machine,
+      hangupOnMachine,
     }),
     [
       enabled, deviceState, deviceError, deviceAction, carrier, phase, call, startedAt, endedAt, muted, onHold, participants, incoming, calledBack, clearCalledBack, controlError, ringOut,
-      initDevice, phoneInOtherTab, releaseDevice, placeCall, connectToCall, acceptIncoming, rejectIncoming, hangup, toggleMute, sendDigits, toggleHold, addParticipant,
-      transfer, completeTransfer, getStreams, finishWrapup, getAudio, dropVoicemail,
+      initDevice, phoneInOtherTab, releaseDevice, placeCall, connectToCall, awaitBridge, cancelBridgeWait, retarget, acceptIncoming, rejectIncoming, hangup, toggleMute, sendDigits, toggleHold, addParticipant,
+      transfer, completeTransfer, getStreams, finishWrapup, getAudio, dropVoicemail, machine, hangupOnMachine,
     ],
   );
 }

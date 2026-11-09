@@ -31,6 +31,7 @@ import { tcChecklists } from '../_shared/tc-checklists.ts';
 import { type CkFile, type CkTemplate, type FileState, type Verdict, cleanVerdicts, fallbackCheckin, fileState, fireKeys, fireNote, isLiveDeal, quietKeys, snapshotOf, winsSince } from '../_shared/lane-checkin.ts';
 import { WRITING_RULE } from '../_shared/no-ai-slop.ts';
 import { CLAUDE_MODEL } from '../_shared/models.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
 
 // deno-lint-ignore no-explicit-any
 type Any = any;
@@ -112,7 +113,7 @@ async function touchesFor(admin: SupabaseClient, ws: number, txs: Any[]): Promis
 }
 
 /** The 9am note and what it made of each late line, written by the model when it can be. */
-async function modelNote(tc: string, shown: FileState[], wins: { address: string; task: string }[], today: string, touches: Map<number, Touch[]>): Promise<{ note: string; verdicts: Verdict[] } | null> {
+async function modelNote(tc: string, shown: FileState[], wins: { address: string; task: string }[], today: string, touches: Map<number, Touch[]>, ws: number): Promise<{ note: string; verdicts: Verdict[] } | null> {
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
   if (!apiKey) return null;
   try {
@@ -149,6 +150,7 @@ Use only the facts given; never invent names, dates or numbers. If nothing needs
 Answer with one JSON object and nothing else: {"note": string, "verdicts": [{"key": string, "verdict": "waiting" | "looks_done" | "needs_tc", "why": string}]}`,
       messages: [{ role: 'user', content: `<data>${JSON.stringify(facts)}</data>` }],
     });
+    await recordUsage(null, { ws, feature: 'lane_checkin', model: res.model, usage: res.usage });
     const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('\n').trim();
     const json = text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1);
     const parsed = JSON.parse(json) as { note?: unknown; verdicts?: unknown };
@@ -183,7 +185,7 @@ async function runWorkspace(admin: SupabaseClient, ws: number, all: Any[], now: 
       const wins = winsSince(files, (last as Any)?.snapshot ?? null, (f) => templateFor(byId.get(f.id)?.deal_type ?? null));
       const tcName = people[0].name || 'partner';
       const shown = shownFiles(files);
-      const read = await modelNote(tcName, shown, wins, now.day, await touchesFor(admin, ws, shown.map((f) => byId.get(f.id))));
+      const read = await modelNote(tcName, shown, wins, now.day, await touchesFor(admin, ws, shown.map((f) => byId.get(f.id))), ws);
       const note = read?.note ?? fallbackCheckin(tcName, files, wins);
       // The model saw lateShown() of each shown file; the plain note names the first six files with late lines.
       covered = new Set(read
@@ -209,9 +211,14 @@ async function runWorkspace(admin: SupabaseClient, ws: number, all: Any[], now: 
   // The latest read (today's after 9am, else yesterday's) decides what is quiet.
   const { data: lastRead } = await admin.from('lane_checkins').select('verdicts').eq('workspace_id', ws).lte('day', now.day).order('day', { ascending: false }).limit(1).maybeSingle();
   const fires = fireKeys(files, quietKeys((lastRead as Any)?.verdicts as Verdict[] | null));
-  const { data: pinged } = await admin.from('lane_pings').select('item_key').eq('workspace_id', ws).limit(20000);
-  const seen = new Set(((pinged ?? []) as Any[]).map((r) => String(r.item_key)));
-  const firstRun = !(pinged ?? []).length;
+  // Only the keys that fired: past 1,000 pings the old read stopped short and pinged people again.
+  const seen = new Set<string>();
+  for (let i = 0; i < fires.length; i += 200) {
+    const { data: pinged } = await admin.from('lane_pings').select('item_key').eq('workspace_id', ws).in('item_key', fires.slice(i, i + 200).map((x) => x.key));
+    for (const r of (pinged ?? []) as Any[]) seen.add(String(r.item_key));
+  }
+  const { count: everPinged } = await admin.from('lane_pings').select('id', { count: 'exact', head: true }).eq('workspace_id', ws);
+  const firstRun = !everPinged;
   const fresh = fires.filter((x) => !seen.has(x.key));
   if (fresh.length) {
     await admin.from('lane_pings').upsert(fresh.map((x) => ({ workspace_id: ws, item_key: x.key })), { onConflict: 'workspace_id,item_key', ignoreDuplicates: true });

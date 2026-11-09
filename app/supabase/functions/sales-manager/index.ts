@@ -32,7 +32,8 @@ import Anthropic from 'npm:@anthropic-ai/sdk';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { corsFor, fence, jsonWith, rateLimit, serverError, tooMany, UNTRUSTED_RULE } from '../_shared/security.ts';
 import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
-import { coachTranscript } from '../_shared/coach-run.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
+import { coachTranscript, workspaceCallType } from '../_shared/coach-run.ts';
 import { loadScorecards, mailWeekly } from '../_shared/sales-manager.ts';
 import { ElevenError, SECRET_HEADER, elJson, getSignedUrl, webhookUrls, type ElConfig } from '../_shared/voice-agent-admin.ts';
 import { scoreSession } from '../_shared/roleplay-run.ts';
@@ -41,8 +42,8 @@ import { firstName, isConversation, measureTalkSplit } from '../../../lib/call-c
 import { parseSegments, segmentsForPrompt } from '../../../lib/call-media.ts';
 import { FLAG_IDS, FLAG_MIN_SECONDS, callTypeById } from '../../../lib/sales-framework.ts';
 import {
-  DIFFICULTIES, OBJECTIONS, difficultyById, linesFromElevenLabs, objectionById, parseLines, personaById, roleplayAgentBody, sellerPrompt,
-  type RoleplayLine, type RoleplayWiring,
+  DIFFICULTIES, OBJECTIONS, conversationIsOurs, difficultyById, linesFromElevenLabs, objectionById, parseLines, personaById, roleplayAgentBody, sellerPrompt,
+  type ObjectionId, type RoleplayLine, type RoleplayWiring,
 } from '../../../lib/roleplay.ts';
 import { cleanUploadedText, guessRepSpeaker, labelledTranscript, parseDeepgram, segmentsFromUtterances } from '../../../lib/call-upload.ts';
 
@@ -175,6 +176,7 @@ Deno.serve(async (req) => {
               talk: measureTalkSplit(transcript, names.rep, names.prospect),
               timeline: segs?.length ? segmentsForPrompt(segs, 24_000) : null,
               durationS: r.duration_s, sellerCall: r.buyer_id == null,
+              ...(await workspaceCallType(admin, ws)),
             });
             await admin.from('communications').update({ coaching_review: review, score_overall: review.overall }).eq('id', r.id);
             graded++;
@@ -267,6 +269,7 @@ Deno.serve(async (req) => {
           system: sellerPrompt({ persona, difficulty: s.difficulty, objection: s.objection, company: (w as Any)?.name ?? null }),
           messages,
         });
+        await recordUsage(admin, { ws, feature: 'roleplay_seller', model: res.model, usage: res.usage });
         const reply = res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join(' ')
           .replace(/^\s*(?:\w+:\s*)/, '').replace(/\s+/g, ' ').trim().slice(0, 1200) || '...';
         lines.push({ role: 'seller', text: reply, at_s: elapsed + 1 });
@@ -280,7 +283,7 @@ Deno.serve(async (req) => {
         if (s.status === 'scored') return json({ ok: true, feedback: s.feedback, score: s.score, cached: true });
         if (s.mode === 'phone') return json({ ok: false, error: 'A phone roleplay is scored automatically a minute after you hang up.' });
         let lines = parseLines(s.transcript);
-        const convId = typeof body.conversation_id === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(body.conversation_id) ? body.conversation_id : null;
+        let convId = typeof body.conversation_id === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(body.conversation_id) ? body.conversation_id : null;
         if (s.mode === 'voice') {
           // ElevenLabs' own transcript is the record when it is there; the browser's lines otherwise.
           const elKey = Deno.env.get('ELEVENLABS_API_KEY') ?? '';
@@ -289,8 +292,12 @@ Deno.serve(async (req) => {
               const conv = await elJson(
                 { apiKey: elKey, baseUrl: Deno.env.get('ELEVENLABS_API_BASE') || undefined }, 'GET', `/v1/convai/conversations/${encodeURIComponent(convId)}`,
               );
-              const fromEl = linesFromElevenLabs(conv);
-              if (fromEl.length) lines = fromEl;
+              // The id is the browser's word: only a conversation this workspace's own roleplay agent held counts.
+              const { data: coach } = await admin.from('sales_coach_settings').select('roleplay_agent_id').eq('workspace_id', ws).maybeSingle();
+              if (conversationIsOurs(conv, (coach as Any)?.roleplay_agent_id ?? null)) {
+                const fromEl = linesFromElevenLabs(conv);
+                if (fromEl.length) lines = fromEl;
+              } else convId = null;
             } catch { /* the browser's copy below */ }
           }
           if (!lines.length) lines = parseLines(body.lines);
@@ -390,7 +397,7 @@ Deno.serve(async (req) => {
 });
 
 type SessionRow = {
-  id: number; workspace_id: number; user_id: string; persona: string; difficulty: 'easy' | 'medium' | 'hard'; objection: (typeof OBJECTIONS)[number]['id'] | null;
+  id: number; workspace_id: number; user_id: string; persona: string; difficulty: 'easy' | 'medium' | 'hard'; objection: ObjectionId | null;
   mode: 'voice' | 'text' | 'phone'; status: string; transcript: unknown; feedback: unknown; score: number | null; started_at: string; conversation_id: string | null;
 };
 

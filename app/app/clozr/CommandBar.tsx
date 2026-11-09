@@ -27,12 +27,15 @@
 import React, { useLayoutEffect, useEffect, useMemo, useRef, useState } from 'react';
 import { toggleTheme } from '@/lib/theme';
 import type { ClozrView } from './view';
-import type { Mark } from '@/lib/command';
+import { type Mark, phoneQuery } from '@/lib/command';
+import { supabase } from '@/lib/supabase';
 import { Mark as Glyph } from '@/components/ds/mark';
 import { ComprIcon } from '@/components/ds/ComprIcon';
 import { buildCommandRows, rowText, type CmdRow } from './command-rows';
-import { hitTitle, searchConversations, searchable, snippetParts, type CommHit } from '@/lib/comm-search';
-import { BUYR, COMPR, DEAL_MACHINE, LANE, TALKR } from './brand';
+import { hitTitle, searchConversations, searchable, snippetParts, strangerHit, type CommHit } from '@/lib/comm-search';
+import { loadRealtorCorpus } from '@/lib/crm';
+import type { Buyer } from '@/lib/clozr-types';
+import { COMPR, DEAL_MACHINE, LANE, TALKR } from './brand';
 import './command-bar.css';
 
 /** The row's dot: whose product does the work. */
@@ -42,7 +45,6 @@ const MARK: Record<Mark, string> = {
   lane: LANE,
   genius: 'var(--c-genius)',
   dealMachine: DEAL_MACHINE,
-  buyr: BUYR,
   clozr: 'var(--c-accent)',
   neutral: 'var(--subtle, #a1a1aa)',
 };
@@ -88,6 +90,30 @@ export function CommandBar({ V }: { V: ClozrView }) {
     return () => { live = false; clearTimeout(t); };
   }, [convQ, ws]);
   const convState: 'off' | 'loading' | 'error' | 'done' = !convQ ? 'off' : conv?.q !== convQ || conv.ws !== ws ? 'loading' : conv.hits === null ? 'error' : 'done';
+
+  // The free-agent realtor corpus (six figures of buyers the shell never loads,
+  // lib/crm loadRealtorCorpus): searched on the server a beat after typing
+  // stops, so a realtor you are texting is found by name or number.
+  const realtorQ = !step && ws != null && data?.can.buyers !== false && q.trim().replace(/\W/g, '').length >= 3 ? q.trim() : '';
+  const [realtor, setRealtor] = useState<{ ws: number; q: string; rows: Buyer[] } | null>(null);
+  useEffect(() => {
+    if (!realtorQ || ws == null) return;
+    let live = true;
+    const t = setTimeout(() => {
+      void loadRealtorCorpus(ws, { q: realtorQ, limit: 5 }).then((r) => { if (live) setRealtor({ ws, q: realtorQ, rows: r.ok ? r.rows : [] }); });
+    }, 250);
+    return () => { live = false; clearTimeout(t); };
+  }, [realtorQ, ws]);
+  const realtorRows = useMemo<Buyer[]>(() => {
+    if (!realtorQ || realtor?.q !== realtorQ || realtor.ws !== ws || !data) return [];
+    // One already loaded in the shell is on its own row above.
+    return realtor.rows.filter((b) => !data.buyers.some((x) => x.id === b.id));
+  }, [realtor, realtorQ, ws, data]);
+  const realtorCmdRows = useMemo<CmdRow[]>(() => realtorRows.map((b) => ({
+    id: 'clozr-cmd-realtor-' + b.id, label: b.name, mark: 'genius' as const,
+    sub: ['Realtor', b.company, b.phone, b.markets.join(', ')].filter(Boolean).join(' · '),
+    action: { t: 'open' as const, rec: 'buyer' as const, id: b.id },
+  })), [realtorRows]);
   const convRows = useMemo<CmdRow[]>(() => {
     if (convState !== 'done' || !conv?.hits || !data) return [];
     const may = (screen: string) => data.can[screen] !== false;
@@ -97,8 +123,12 @@ export function CommandBar({ V }: { V: ClozrView }) {
         : h.buyerId != null && may('buyers') ? { t: 'open' as const, rec: 'buyer' as const, id: 'b' + h.buyerId }
           : null;
       if (!action) {
+        // On no record or deal: someone not in CLOZR yet, opened on their Inbox thread.
+        const stranger = strangerHit(h);
+        if (stranger) return may('inbox') ? [{ ...row, label: stranger.title, action: { t: 'inboxSms', phone: stranger.phone } }] : [];
+        if (h.dealId == null) return [];
         // Filed on a deal only: its seller's record pinned to the deal, or the deal sheet when it has no seller.
-        if (h.dealId == null || !may('dealSheet')) return [];
+        if (!may('dealSheet')) return [];
         const dealId = 'd' + h.dealId;
         const seller = data.deals.find((d) => d.dealId === dealId)?.id ?? '';
         return [{ ...row, action: { t: 'deal', id: seller && may('people') ? seller : '', where: 'person', dealId } }];
@@ -108,7 +138,22 @@ export function CommandBar({ V }: { V: ClozrView }) {
       return [{ ...row, action, ...(loaded ? { more: action.rec + ':' + action.id } : {}) }];
     });
   }, [conv, convState, data]);
-  const rows = useMemo(() => [...(result?.groups.flatMap((g) => g.rows) ?? []), ...convRows], [result, convRows]);
+  // A number typed on its own: the Inbox thread with it when nobody in CLOZR has it, so a conversation with a stranger is findable.
+  const phoneQ = !step && ws != null && data?.can.inbox !== false ? phoneQuery(q) : null;
+  const phoneKey = phoneQ ? '+1' + phoneQ.digits : '';
+  const [thread, setThread] = useState<{ ws: number; key: string; preview: string | null; found: boolean } | null>(null);
+  useEffect(() => {
+    if (!phoneKey || ws == null || !supabase) return;
+    let live = true;
+    void supabase.from('inbox_threads' as never).select('last_preview').eq('workspace_id' as never, ws as never).eq('phone_key' as never, phoneKey as never).is('seller_id' as never, null).is('buyer_id' as never, null).limit(1)
+      .then(({ data: got }) => { if (live) setThread({ ws, key: phoneKey, preview: (got?.[0] as { last_preview?: string | null } | undefined)?.last_preview ?? null, found: !!got?.length }); });
+    return () => { live = false; };
+  }, [phoneKey, ws]);
+  const threadRows = useMemo<CmdRow[]>(() => (phoneQ && thread?.found && thread.key === phoneKey && thread.ws === ws ? [{
+    id: 'clozr-cmd-thread-' + phoneKey, label: `Conversation with ${phoneQ.display}`, sub: thread.preview || 'Not in CLOZR yet', num: true,
+    mark: 'neutral' as const, glyph: 'Text', action: { t: 'inboxSms' as const, phone: phoneKey },
+  }] : []), [phoneQ, thread, phoneKey, ws]);
+  const rows = useMemo(() => [...threadRows, ...(result?.groups.flatMap((g) => g.rows) ?? []), ...realtorCmdRows, ...convRows], [threadRows, result, realtorCmdRows, convRows]);
   const at = Math.min(sel, Math.max(0, rows.length - 1));
   const current: CmdRow | undefined = rows[at];
 
@@ -152,6 +197,9 @@ export function CommandBar({ V }: { V: ClozrView }) {
     // The seller record reads these two: the composer on that channel, focused; the Make offer sheet.
     if (a.t === 'compose') { close(); V.openRecordComposer(a.pid, a.channel); return; }
     if (a.t === 'offer') { close(); V.openOfferSheet(a.pid); return; }
+    // A corpus realtor: the record needs the row itself, the shell has no copy.
+    const corpus = a.t === 'open' && a.rec === 'buyer' ? realtorRows.find((b) => b.id === a.id) : undefined;
+    if (corpus) { close(); V.openRealtor(corpus); return; }
     V.runCommand(a);
   };
 
@@ -287,6 +335,12 @@ export function CommandBar({ V }: { V: ClozrView }) {
           )}
         </div>
         <div id="clozr-cmd-list" ref={listRef} role="listbox" aria-label={title ? 'Actions' : 'Commands and records'} className="clozr-cmd-list">
+          {threadRows.length ? (
+            <div role="group" aria-labelledby="clozr-cmd-g-thread">
+              <div id="clozr-cmd-g-thread" role="presentation" className="clozr-cmd-group">Inbox</div>
+              {threadRows.map((r) => renderRow(r))}
+            </div>
+          ) : null}
           {result.groups.map((g) => {
             const gid = 'clozr-cmd-g' + gi++;
             return (
@@ -296,6 +350,12 @@ export function CommandBar({ V }: { V: ClozrView }) {
               </div>
             );
           })}
+          {realtorCmdRows.length ? (
+            <div role="group" aria-labelledby="clozr-cmd-g-realtor">
+              <div id="clozr-cmd-g-realtor" role="presentation" className="clozr-cmd-group">Realtors</div>
+              {realtorCmdRows.map((r) => renderRow(r))}
+            </div>
+          ) : null}
           {convState !== 'off' && !(convState === 'done' && !rows.length) ? (
             <div role="group" aria-labelledby="clozr-cmd-g-conv" aria-busy={convState === 'loading'}>
               <div id="clozr-cmd-g-conv" role="presentation" className="clozr-cmd-group">In calls and messages</div>

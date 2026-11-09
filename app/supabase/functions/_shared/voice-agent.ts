@@ -128,8 +128,10 @@ export type CallExtras = {
   call_goal: string;
   /** 'yes' when the rep a warm transfer rings has a number and nothing on their calendar right now; 'no' otherwise ('' unknown caller). */
   rep_available: string;
+  /** The rep the caller rang and did not reach, when the agent picked up for them (Talkr no-answer overflow). Empty on every other call. */
+  covering_for: string;
 };
-export const NO_EXTRAS: CallExtras = { rep_phone: '', lead_source: '', property_facts: '', mortgage_payoff_estimate: '', offer_low: '', offer_high: '', seller_asking_price: '', call_goal: '', rep_available: '' };
+export const NO_EXTRAS: CallExtras = { rep_phone: '', lead_source: '', property_facts: '', mortgage_payoff_estimate: '', offer_low: '', offer_high: '', seller_asking_price: '', call_goal: '', rep_available: '', covering_for: '' };
 
 export type MemoryForCall = { brief: string; facts: Pick<LeadFacts, 'first_name' | 'preferred_name' | 'property_address' | 'last_contact_summary' | 'next_step'> } | null;
 
@@ -138,7 +140,7 @@ export const DYNAMIC_VARIABLES = [
   'first_name', 'property_address', 'lead_brief', 'last_contact_summary', 'next_step', 'rep_name', 'company', 'agent_name',
   'caller_known', 'do_not_engage', 'record_kind',
   'rep_phone', 'lead_source', 'property_facts', 'mortgage_payoff_estimate', 'offer_low', 'offer_high', 'seller_asking_price',
-  'call_goal', 'rep_available',
+  'call_goal', 'rep_available', 'opening_line', 'covering_for',
   // For the lead_context tool, never a prompt: who a browser test is about (no caller ID there), and the proof it came from test_session.
   'record_id', 'record_token',
 ] as const;
@@ -236,12 +238,18 @@ export function buildInitiation(res: Resolution, leg: CallLeg | null, mem: Memor
     // A sample caller is id 0: no record behind it.
     record_id: known && res.match.id > 0 ? String(res.match.id) : '',
     record_token: '',
+    opening_line: '',
     // Nothing about the person, or an offer, for a caller we will not talk to.
     ...(res.status === 'blocked' ? NO_EXTRAS : extras),
   };
   const outbound = leg?.direction === 'outbound';
+  const covering = !outbound && res.status !== 'blocked' ? String(vars.covering_for ?? '') : '';
   let first_message: string;
-  if (res.status === 'blocked') {
+  if (covering) {
+    // Picked up for a rep who did not answer: say so first, then who this is.
+    const hello = known && first ? `Hey ${first}, ` : 'Thanks for calling, ';
+    first_message = `${hello}${covering} is on another call right now, ${intro(p)}. I can help, or take a message for ${covering}.${known && first ? '' : ' Who am I speaking with?'}`;
+  } else if (res.status === 'blocked') {
     first_message = outbound ? `Hi, ${intro(p)}. Sorry, I think I have the wrong number.` : `Thanks for calling ${p.company}. How can I help you today?`;
   } else if (known && first) {
     if (outbound) {
@@ -251,7 +259,8 @@ export function buildInitiation(res: Resolution, leg: CallLeg | null, mem: Memor
     }
     first_message = outbound
       ? outboundOpener(first, p, vars.record_kind === 'seller' ? String(vars.property_address ?? '') : '')
-      : p.casual ? `Hey ${first}! ${cap(intro(p))}, how can I help ya?` : `Hey ${first}, thanks for calling back, ${intro(p)}.`;
+      // No exclamation point: the voice reads "Hey Dana!" as a cheer and starts the call too excited.
+      : p.casual ? `Hey ${first}, ${intro(p)}. How can I help ya?` : `Hey ${first}, thanks for calling back, ${intro(p)}.`;
   } else {
     first_message = outbound
       ? `Hi, ${intro(p)}. Who do I have the pleasure of speaking with?`
@@ -259,6 +268,10 @@ export function buildInitiation(res: Resolution, leg: CallLeg | null, mem: Memor
         : `Thanks for calling ${p.company}${p.agentName ? `, this is ${p.agentName}` : ''}. Who am I speaking with?`;
   }
   if (p.recordingNotice) first_message = `${first_message} ${p.recordingNotice}`;
+  // On a call we placed the line connects before the person says hello; a first message spoken then talks over
+  // their "Hello?". So it goes empty (the agent waits for them, see initial_wait_time) and the prompt says the
+  // opener once they speak. A blocked caller keeps the canned line.
+  if (outbound && res.status !== 'blocked') { vars.opening_line = first_message; first_message = ''; }
   return { type: 'conversation_initiation_client_data', dynamic_variables: vars, conversation_config_override: { agent: { first_message } } };
 }
 
@@ -267,7 +280,6 @@ function firstWord(name: string | null | undefined): string {
   if (!w || /\d|@/.test(w) || /^(llc|inc|the|unknown|owner)$/i.test(w)) return '';
   return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
 }
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // ---- Post-call ------------------------------------------------------------
 
@@ -353,7 +365,7 @@ export function parsePostCall(event: unknown): PostCall | null {
     durationS, transcript: text, segments,
     summary: sum ? (title ? `${title}. ${sum}` : sum) : title || null,
     status: durationS === 0 || !text ? 'no-answer' : 'completed',
-    flags: classifyCall(d.transcript),
+    flags: classifyCall(d.transcript, meta.termination_reason),
     test: isTestCall(dyn.call_goal),
   };
 }

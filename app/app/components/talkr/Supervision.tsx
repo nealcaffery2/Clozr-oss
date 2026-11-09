@@ -70,7 +70,7 @@ function Row({ call }: { call: LiveCallDto }) {
         <span className="truncate" style={{ font: '600 12px/1 var(--sans)' }}>
           {call.rep.display_name}
         </span>
-        <span className="truncate" style={{ font: '500 10px/1 var(--sans)', color: 'var(--muted)' }}>
+        <span className="truncate" style={{ font: '500 11px/1 var(--sans)', color: 'var(--muted)' }}>
           {call.direction === 'inbound' ? 'from' : 'with'} {who(call)} · {duration(secs)}
         </span>
       </span>
@@ -82,7 +82,7 @@ function Row({ call }: { call: LiveCallDto }) {
             disabled={busy}
             title={busy ? 'Finish your current call first.' : MODE_HINT[m.value]}
             onClick={() => void startMonitor(call, m.value)}
-            className="disabled:opacity-40"
+            className="disabled:opacity-50"
             style={PILL}
           >
             {m.label}
@@ -151,5 +151,30 @@ export function LiveCalls() {
           <Row key={c.call_id} call={c} />
         ))}
     </div>
+  );
+}
+
+/**
+ * The dialer's bottom strip: teammates' live calls, folded by default, for
+ * anyone the server lets monitor. Null for everyone else and on the demo.
+ */
+export function LiveCallsStrip() {
+  const { liveCalls, monitor } = useSoftphone();
+  useWantLiveCalls();
+  if (liveCalls === null) return null;
+  const n = liveCalls.length;
+  return (
+    <details className="sv-strip" open={!!monitor || undefined}>
+      <summary className="sv-summary">
+        <Icon name="users" size={13} />
+        <span className="sv-label">Live calls</span>
+        <span className="sv-count">{monitor ? MODE_NOW[monitor.mode] : n === 0 ? 'Nobody is on a call' : `${n} on a call`}</span>
+      </summary>
+      <div className="sv-body">
+        {monitor && <MonitorCard />}
+        {liveCalls.filter((c) => c.call_id !== monitor?.call.call_id).map((c) => <Row key={c.call_id} call={c} />)}
+        {n === 0 && !monitor && <p className="sv-hint">Teammates&apos; live calls show here to listen in, whisper or barge.</p>}
+      </div>
+    </details>
   );
 }

@@ -115,7 +115,7 @@ export function AddRecipientDialog({ workspaceId, contract, recipients, userId, 
         {out && kind === 'signer' ? <div style={{ fontSize: '12px', color: 'var(--muted, #52525b)', background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', padding: '9px 11px' }}>Signatures already on the document stay valid. The new signer signs on the signature certificate.</div> : null}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
           <button type="button" onClick={onClose} style={{ height: '34px', padding: '0 14px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-          <button type="button" disabled={!valid || busy} onClick={() => void submit()} style={{ height: '34px', padding: '0 14px', borderRadius: '8px', border: '1px solid #0A8560', background: !valid || busy ? '#7fcbb2' : '#0A8560', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: !valid || busy ? 'not-allowed' : 'pointer' }}>{busy ? 'Adding…' : out ? 'Add and send' : 'Add recipient'}</button>
+          <button type="button" disabled={!valid || busy} onClick={() => void submit()} style={{ height: '34px', padding: '0 14px', borderRadius: '8px', border: '1px solid #0A8560', background: '#0A8560', opacity: !valid || busy ? 0.5 : 1, color: '#fff', fontSize: '13px', fontWeight: 600, cursor: !valid || busy ? 'not-allowed' : 'pointer' }}>{busy ? 'Adding…' : out ? 'Add and send' : 'Add recipient'}</button>
         </div>
       </div>
     </CenteredDialog>

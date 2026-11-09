@@ -20,6 +20,20 @@ export const VM_LIBRARY_CHANGED = 'clozr-vm-library-changed';
 
 const COLUMNS = 'id, name, script, audio_path, variant_group, seconds, created_by';
 
+/**
+ * A signed URL for one recording, to play into a call: the session's
+ * automatic drop (useClozr.ts) reads it on demand instead of holding the
+ * whole library. Null when the clip is gone or is a WebM, which no call plays.
+ */
+export async function clipDropUrl(clipId: number): Promise<string | null> {
+  if (!supabase) return null;
+  const { data } = await supabase.from('vm_library').select('audio_path').eq('id', clipId).eq('active', true).maybeSingle();
+  const path = (data as { audio_path: string | null } | null)?.audio_path;
+  if (!path || /\.webm$/i.test(path)) return null;
+  const signed = await supabase.storage.from('vm-library').createSignedUrl(path, 180);
+  return signed.data?.signedUrl ?? null;
+}
+
 /** The workspace's voicemail recordings. RLS keeps this to workspaces the rep belongs to. */
 export function useVmLibrary(workspaceId: number | null) {
   const [clips, setClips] = useState<VmClip[]>([]);

@@ -7,9 +7,9 @@ import React from 'react';
 import { DATE_RANGES } from '@/lib/date-window';
 import { GAP_BASIS, GAP_CHOICES } from '@/lib/attack-gap';
 
-const label: React.CSSProperties = { display: 'block', fontSize: 11.5, color: '#71717a', fontWeight: 500, marginBottom: 6 };
-const note: React.CSSProperties = { fontSize: 11.5, color: '#71717a', marginTop: 6, lineHeight: 1.45 };
-const field: React.CSSProperties = { width: '100%', height: 32, padding: '0 8px', border: '1px solid #e4e4e7', borderRadius: 8, fontSize: 12.5, background: '#fafafa', color: '#18181b', fontFamily: 'inherit', boxSizing: 'border-box' };
+const label: React.CSSProperties = { display: 'block', fontSize: 11.5, color: 'var(--meta, #71717a)', fontWeight: 500, marginBottom: 6 };
+const note: React.CSSProperties = { fontSize: 11.5, color: 'var(--meta, #71717a)', marginTop: 6, lineHeight: 1.45 };
+const field: React.CSSProperties = { width: '100%', height: 32, padding: '0 8px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: 8, fontSize: 12.5, background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)', fontFamily: 'inherit', boxSizing: 'border-box' };
 const shown = (v: string | undefined) => (v && v !== 'Any' ? v : '');
 
 function Chips({ name, value, options, onChange }: { name: string; value: string; options: readonly string[]; onChange: (v: string) => void }) {

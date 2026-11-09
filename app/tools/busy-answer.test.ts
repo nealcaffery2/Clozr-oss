@@ -1,12 +1,13 @@
 // Second-answer voicemail and the predictive machine script.
 // Run: npx tsx tools/busy-answer.test.ts
 import assert from 'node:assert/strict';
+
 import { busyAnswer, predictiveVoicemailText, DEFAULT_AMD_TEXT } from '../lib/busy-answer';
 
-assert.equal(busyAnswer({ ownNumber: true, hasDrop: true }), 'ignore');
-assert.equal(busyAnswer({ ownNumber: true, hasDrop: false }), 'ignore');
-assert.equal(busyAnswer({ ownNumber: false, hasDrop: true }), 'drop');
-assert.equal(busyAnswer({ ownNumber: false, hasDrop: false }), 'decline');
+assert.equal(busyAnswer({ ownNumber: true }), 'ignore');
+assert.equal(busyAnswer({ ownNumber: false }), 'decline'); // a team-line caller is never answered mid-call
+
+// A hand-dialed call is a normal phone: a second caller is declined, never played the rep's voicemail.
 
 assert.equal(predictiveVoicemailText('old line', '  Hi from me.  '), 'Hi from me.');
 assert.equal(predictiveVoicemailText('  Keep this.  ', '   '), 'Keep this.');

@@ -54,7 +54,8 @@ export async function playUrlOnPeer(peer: RTCPeerConnection, url: string): Promi
 
 /** A second answered line: accept it, play the drop, hang it up. The live call is a different peer and is left alone. */
 export type DropLeg = {
-  accept(): void;
+  /** `quiet`: no far-end element for this leg, so its audio never plays over the call the rep is on. */
+  accept(opts?: { quiet?: boolean }): void;
   disconnect(): void;
   peerConnection(): RTCPeerConnection | null;
   remoteStream(): MediaStream | null;
@@ -68,7 +69,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * Throws when the leg never gets an audio sender — the caller declines it.
  */
 export async function playDropOnLeg(leg: DropLeg, url: string): Promise<void> {
-  leg.accept();
+  leg.accept({ quiet: true });
   const quiet = () => leg.remoteStream()?.getAudioTracks().forEach((t) => { t.enabled = false; });
   const started = Date.now();
   let peer: RTCPeerConnection | null = null;

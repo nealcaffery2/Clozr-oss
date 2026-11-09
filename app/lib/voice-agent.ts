@@ -5,6 +5,8 @@
 // can be tested without either. Console-only helpers (diff text, hours, lists,
 // stats) live in voice-agent-console.ts.
 
+import { COMPR_PROSPECT_NAME, comprProspectMemory } from './compr-prospect-sample';
+
 // ---- Vocabulary ---------------------------------------------------------------------
 
 export type Tone = 'warm' | 'direct' | 'professional';
@@ -69,7 +71,7 @@ export const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
 export type Day = (typeof DAYS)[number];
 
 export const TOOL_KEYS = [
-  'lead_context', 'book_appointment', 'save_qualification', 'mark_do_not_contact', 'get_compr_offer', 'request_agreement', 'transfer', 'end_call',
+  'lead_context', 'book_appointment', 'save_qualification', 'mark_do_not_contact', 'get_compr_offer', 'request_agreement', 'deal_lookup', 'transfer', 'end_call',
 ] as const;
 export type ToolKey = (typeof TOOL_KEYS)[number];
 
@@ -80,6 +82,7 @@ export const TOOL_META: Record<ToolKey, { label: string; hint: string }> = {
   save_qualification: { label: 'Save what was learned', hint: 'Files motivation, timeline, condition and price expectations on the record.' },
   mark_do_not_contact: { label: 'Mark do not contact', hint: 'Puts the number on the do not contact list the moment someone asks.' },
   get_compr_offer: { label: 'Get the Compr offer range', hint: 'Pulls the current offer range from the underwrite before quoting a number.' },
+  deal_lookup: { label: 'Look up our deals for sale', hint: 'Reads the dispo list (address, asking price, ARV, beds, baths) so a buyer agent can answer and take an offer. Buyer-facing roles only.' },
   request_agreement: { label: 'Send the agreement', hint: 'Sends the purchase agreement, after a rep approves it.' },
   transfer: { label: 'Transfer to a person', hint: 'Hands the live call to a rep. Set the destinations under Live transfer.' },
   end_call: { label: 'End the call', hint: 'Hangs up politely when the conversation is done or the caller asks to stop.' },
@@ -116,6 +119,8 @@ export type AgentSettings = {
     max_call_seconds: number; silence_timeout_s: number; first_response_delay_ms: number; interruption_sensitivity: number; turn_eagerness: TurnEagerness;
     voicemail: { detect: boolean; action: 'leave_message' | 'hang_up'; message_template: string };
     call_hours: Hours; retry: { max_attempts: number; gap_hours: number };
+    /** Pick up for reps on no answer: Talkr sends a covered rep's unanswered calls to this agent after `ring_seconds`. */
+    overflow: { enabled: boolean; ring_seconds: number };
   };
   live_transfer: {
     enabled: boolean; mode: 'warm' | 'cold'; destinations: Destination[];
@@ -161,6 +166,7 @@ export function defaultSettings(): AgentSettings {
       voicemail: { detect: true, action: 'leave_message', message_template: 'Hi, this is {{agent_name}} with {{company}}. Please call us back when you can. Thank you.' },
       call_hours: { days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat'], start: '08:00', end: '21:00', tz: 'America/Chicago' },
       retry: { max_attempts: 0, gap_hours: 24 },
+      overflow: { enabled: false, ring_seconds: 20 },
     },
     live_transfer: {
       enabled: true, mode: 'warm', destinations: [{ id: 'rep', label: 'The rep working the lead', number: '', type: 'rep_assigned', ring_timeout_s: 25 }],
@@ -169,7 +175,7 @@ export function defaultSettings(): AgentSettings {
     },
     tools: {
       lead_context: tool(true), book_appointment: tool(true), save_qualification: tool(true), mark_do_not_contact: tool(true),
-      get_compr_offer: tool(false), request_agreement: tool(false), transfer: tool(true), end_call: tool(true),
+      get_compr_offer: tool(false), request_agreement: tool(false), deal_lookup: tool(false), transfer: tool(true), end_call: tool(true),
     },
     knowledge: { faqs: [], company_facts: [] },
     channels: { phone_number_id: null, inbound: true, outbound: false },
@@ -285,7 +291,7 @@ export function normalizeSettings(raw: unknown): AgentSettings {
   const trSeen = new Set<string>();
   const tr = obj(lt.triggers);
   const faqSeen = new Set<string>();
-  const qh = obj(co.quiet_hours); const rn = obj(co.recording_notice); const vm = obj(ch.voicemail); const rt = obj(ch.retry);
+  const qh = obj(co.quiet_hours); const rn = obj(co.recording_notice); const vm = obj(ch.voicemail); const rt = obj(ch.retry); const ov = obj(ch.overflow);
   const tools = {} as Record<ToolKey, ToolSetting>;
   for (const k of TOOL_KEYS) { const t = obj(tl[k]); tools[k] = { enabled: bool(t.enabled, d.tools[k].enabled), available: t.available === true }; }
   const qHours = hours({ ...qh, days: ALL_DAYS }, { days: ALL_DAYS, ...d.rules.compliance.quiet_hours });
@@ -339,6 +345,7 @@ export function normalizeSettings(raw: unknown): AgentSettings {
       },
       call_hours: hours(ch.call_hours, d.call_handling.call_hours),
       retry: { max_attempts: num(rt.max_attempts, 0, 0, 10), gap_hours: num(rt.gap_hours, 24, 1, 168) },
+      overflow: { enabled: bool(ov.enabled, false), ring_seconds: num(ov.ring_seconds, 20, 5, 60) },
     },
     live_transfer: {
       enabled: bool(lt.enabled, d.live_transfer.enabled), mode: oneOf(lt.mode, ['warm', 'cold'] as const, 'warm'), destinations,
@@ -601,12 +608,54 @@ export function normalizeVoices(raw: unknown): Voice[] {
 
 export type RecordKind = 'seller' | 'buyer';
 
+/** A COMPR agent (the demo setter) talks to investors on a COMPR trial, not to sellers or cash buyers. */
+export const isComprRole = (role: string | null | undefined) => String(role ?? '').startsWith('compr_');
+
+/**
+ * A sample-buyer session as a COMPR prospect: the brief, last contact, next step and opener
+ * name the prospect, and the hand-off is Alex. A function that already sends the prospect
+ * returns the same values, so applying it twice changes nothing. The browser passes these
+ * variables to ElevenLabs itself, so this is what the agent hears.
+ */
+export function asComprProspect(s: TestSession, sampleName = 'Marcus'): TestSession {
+  const v = s.dynamic_variables;
+  const was = String(v.first_name ?? '');
+  const first = !was || was === sampleName ? COMPR_PROSPECT_NAME.split(' ')[0]! : was;
+  const p = comprProspectMemory(first);
+  return {
+    ...s,
+    dynamic_variables: { ...v, first_name: first, lead_brief: p.brief, last_contact_summary: p.last_contact_summary, next_step: p.next_step, ...('rep_name' in v ? { rep_name: 'Alex' } : {}) },
+    first_message: was && was !== first ? s.first_message.replaceAll(was, first) : s.first_message,
+  };
+}
+
+/** A draft test's session overrides: the prompt, model and voice the draft would publish, as far as the agent allows them. */
+export type DraftOverrides = { prompt: string; llm?: string; voice_id?: string; stability?: number; similarity_boost?: number; speed?: number };
+
 export type TestSession = {
   signed_url: string; agent_id: string; agent_key: string; live_version: number;
   dynamic_variables: Record<string, string | number | boolean>; first_message: string;
   /** How the function matched the record, when it says. */
   resolution: string | null;
+  /** True when this session runs the draft (overrides set) rather than the published agent. */
+  draft?: boolean;
+  overrides?: DraftOverrides | null;
 };
+
+/**
+ * The overrides test_session returned, or null without a prompt (the session then runs live).
+ * A field the agent does not allow is absent, and must stay absent: ElevenLabs refuses a
+ * session that overrides a field its agent does not allow.
+ */
+export function normalizeOverrides(raw: unknown): DraftOverrides | null {
+  const o = (raw && typeof raw === 'object' ? raw : null) as Record<string, unknown> | null;
+  if (!o || typeof o.prompt !== 'string' || !o.prompt) return null;
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+  const out: DraftOverrides = { prompt: o.prompt, llm: str(o.llm), voice_id: str(o.voice_id), stability: num(o.stability), similarity_boost: num(o.similarity_boost), speed: num(o.speed) };
+  for (const k of Object.keys(out) as (keyof DraftOverrides)[]) if (out[k] === undefined) delete out[k];
+  return out;
+}
 
 export type AgentCall = {
   id: string; conversation_id: string | null; started_at: string; duration_s: number; record_kind: RecordKind | null; record_id: number | null;

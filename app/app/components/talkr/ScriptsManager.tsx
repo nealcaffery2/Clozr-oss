@@ -34,6 +34,8 @@ import { ScriptBody } from './CallContext';
 import { MergeFieldHelp, MergeTextArea } from './MergeField';
 import { SCRIPT_MERGE_FIELDS, fetchCallContext, invalidateCallContext, renderScriptMerge, sampleMergeFields } from '@/lib/talkr-web/callContext';
 import { formatPhone, toE164 } from '@/lib/talkr-web/time';
+import { COMPR_SCRIPTS } from '@/lib/compr-playbook';
+import { EXAMPLE_SCRIPTS } from '@/lib/example-playbook';
 
 const KIND_LABEL: Record<ScriptKind, string> = { script: 'Script', rebuttal: 'Rebuttal' };
 const COLS = '60px minmax(220px, 2fr) minmax(180px, 1.6fr) minmax(120px, 1fr) 64px 76px';
@@ -57,7 +59,9 @@ function roleCanManage(role: string | null | undefined): boolean {
 type Confirm = { kind: 'delete'; script: ScriptDto } | { kind: 'import' };
 type Editing = { script: ScriptDto } | { kind: ScriptKind };
 
-export function ScriptsManager({ authed, role, repName }: { authed: boolean; role: string | null | undefined; repName: string | null }) {
+/** The playbook Import loads: Acme Homes seller scripts, or the Compr SDR scripts (lib/compr-playbook) on a Compr workspace. */
+export function ScriptsManager({ authed, role, repName, playbook = 'acme-homes' }: { authed: boolean; role: string | null | undefined; repName: string | null; playbook?: 'acme-homes' | 'compr' }) {
+  const playbookName = playbook === 'compr' ? 'Compr' : 'Acme Homes';
   const [scripts, setScripts] = useState<ScriptDto[] | null>(null);
   // Null until the endpoint answers; stays null when it does not exist, and the campaign field is omitted.
   const [campaigns, setCampaigns] = useState<CampaignDto[] | null>(null);
@@ -154,10 +158,15 @@ export function ScriptsManager({ authed, role, repName }: { authed: boolean; rol
   };
 
   const importPlaybook = async () => {
-    const r = await write(() => api.importScripts({ preset: 'example' }));
+    const r = await write(() => api.importScripts(playbook === 'compr'
+      ? { scripts: COMPR_SCRIPTS.map((x, i) => ({ ...x, tags: [...x.tags], contact_types: [], sort_order: i })), mode: 'skip' }
+      // The four Acme Homes seller scripts, the buyer pitch and the objection
+      // library (lib/acme-homes-playbook.ts). `skip` keeps every edited script:
+      // a second import adds only what is missing.
+      : { scripts: EXAMPLE_SCRIPTS.map((x, i) => ({ ...x, tags: [...x.tags], contact_types: [...x.contact_types], sort_order: i })), mode: 'skip' }));
     setConfirm(null);
     if (r) {
-      setFlash(`Default playbook imported: ${r.created} created, ${r.updated} updated, ${r.skipped} skipped.`);
+      setFlash(`${playbookName} playbook imported: ${r.created} created, ${r.updated} updated, ${r.skipped} skipped.`);
       await load();
     }
   };
@@ -216,7 +225,7 @@ export function ScriptsManager({ authed, role, repName }: { authed: boolean; rol
                     Write one
                   </Button>
                   <Button tone="ghost" onClick={() => setConfirm({ kind: 'import' })}>
-                    Import default playbook
+                    Import {playbookName} playbook
                   </Button>
                 </div>
               ) : undefined
@@ -257,7 +266,7 @@ export function ScriptsManager({ authed, role, repName }: { authed: boolean; rol
                 s.contact_types.map((t) => (
                   <span
                     key={t}
-                    style={{ padding: '2.5px 6px', borderRadius: 5, background: 'var(--accent-soft)', color: 'var(--accent)', font: '700 8.5px/1 var(--sans)' }}
+                    style={{ padding: '2.5px 6px', borderRadius: 5, background: 'var(--accent-soft)', color: 'var(--accent)', font: '700 11px/1 var(--sans)' }}
                   >
                     {TYPE_LABEL[t as keyof typeof TYPE_LABEL] ?? t}
                   </span>
@@ -300,7 +309,7 @@ export function ScriptsManager({ authed, role, repName }: { authed: boolean; rol
             <>
               <Button tone="ghost" onClick={() => setConfirm({ kind: 'import' })} disabled={busy}>
                 <Icon name="forward" size={13} />
-                Import default playbook
+                Import {playbookName} playbook
               </Button>
               <Button tone="accent" onClick={() => setEditing({ kind: 'script' })} disabled={busy}>
                 <Icon name="plus" size={13} />
@@ -391,10 +400,10 @@ export function ScriptsManager({ authed, role, repName }: { authed: boolean; rol
       )}
 
       {confirm?.kind === 'import' && (
-        <Modal title="Import the default playbook" onClose={() => setConfirm(null)} width={480}>
+        <Modal title={`Import the ${playbookName} playbook`} onClose={() => setConfirm(null)} width={480}>
           <div className="flex flex-col gap-3">
             <p style={{ font: '400 12.5px/1.5 var(--sans)', color: 'var(--muted)' }}>
-              Adds the standard seller scripts and objection rebuttals. Anything you already have with the same title is kept as
+              {playbook === 'compr' ? 'Adds the Compr SDR call scripts (free signup, cold call, voicemail) and the objection answers for wholesalers, flippers, lenders, agents and property managers.' : 'Adds the standard seller scripts and objection rebuttals.'} Anything you already have with the same title is kept as
               it is (skipped), so it is safe to run again.
             </p>
             <div className="flex flex-wrap items-center gap-1.5">
@@ -421,7 +430,7 @@ function ArrowButton({ label, disabled, onClick, children }: { label: string; di
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex h-7 w-7 shrink-0 items-center justify-center disabled:cursor-not-allowed disabled:opacity-35"
+      className="inline-flex h-7 w-7 shrink-0 items-center justify-center disabled:cursor-not-allowed disabled:opacity-50"
       style={{ borderRadius: 8, border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--muted)', cursor: 'pointer', font: '600 12px/1 var(--sans)' }}
     >
       {children}

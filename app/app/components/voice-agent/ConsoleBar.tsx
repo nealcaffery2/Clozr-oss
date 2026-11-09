@@ -4,25 +4,30 @@
 'use client';
 
 import React from 'react';
-import { Eye, Rocket } from 'lucide-react';
+import { AudioLines, Eye, Rocket } from 'lucide-react';
 import { Spinner, ghost, primary } from './kit';
 
 export type Note = { tone: 'ok' | 'warn' | 'error'; text: string } | null;
 
-export function ConsoleBar({ canEdit, dirty, invalid, saving, published, unpublished, liveVersion, note, onSave, onDiscard, onPreview, onPublish, onDismiss }: {
+export function ConsoleBar({ canEdit, dirty, invalid, saving, published, unpublished, liveVersion, note, onSave, onDiscard, onPreview, onPublish, onDismiss, onTalk, slotRef }: {
   canEdit: boolean; dirty: boolean; invalid: boolean; saving: boolean; published: boolean; unpublished: boolean; liveVersion: number; note: Note;
   onSave: () => void; onDiscard: () => void; onPreview: () => void; onPublish: () => void; onDismiss: () => void;
+  /** Open the talk panel; absent when it is already open or the viewer may not test. */
+  onTalk?: () => void;
+  /** Receives the element a folded talk panel draws its call bar into. */
+  slotRef?: (el: HTMLDivElement | null) => void;
 }) {
   const state = dirty ? { dot: '#f59e0b', text: invalid ? 'Fix the highlighted fields to save.' : 'Unsaved edits' }
     : !published ? { dot: 'var(--subtle, #a1a1aa)', text: 'Draft, not published yet' }
       : unpublished ? { dot: '#f59e0b', text: `Draft saved, not published. Live is v${liveVersion}` }
         : { dot: '#34d399', text: `Live v${liveVersion}, no unpublished changes` };
-  const tone = note ? (note.tone === 'ok' ? '#86efac' : note.tone === 'warn' ? '#fcd34d' : '#fca5a5') : 'var(--surface, #fff)';
+  const tone = note ? (note.tone === 'ok' ? '#86efac' : note.tone === 'warn' ? '#fcd34d' : '#fca5a5') : 'var(--on-dark, #fff)';
   const btn: React.CSSProperties = { ...ghost, height: 34, background: 'transparent', border: '1px solid rgba(255,255,255,.25)', color: 'var(--on-dark, #fff)' };
   const publishOff = !canEdit || saving || invalid || (published && !dirty && !unpublished);
   return (
     <div role="region" aria-label="Save and publish" className="va-bar" style={{ position: 'sticky', bottom: 12, zIndex: 5, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 12px 10px 14px', borderRadius: 12,
-      background: 'var(--ink, #18181b)', color: 'var(--surface, #fff)', boxShadow: 'var(--elev-3), 0 0 0 1px rgba(255,255,255,.06)' }}>
+      background: 'var(--ink-fill, var(--ink, #18181b))', color: 'var(--on-dark, #fff)', boxShadow: 'var(--elev-3), 0 0 0 1px rgba(255,255,255,.06)' }}>
+      {slotRef ? <div ref={slotRef} style={{ display: 'contents' }} /> : null}
       <span role="status" className="va-bar-status" style={{ flex: '1 1 200px', minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, lineHeight: 1.4 }}>
         <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 999, background: state.dot, flex: 'none' }} />
         <span style={{ minWidth: 0 }}>
@@ -31,6 +36,7 @@ export function ConsoleBar({ canEdit, dirty, invalid, saving, published, unpubli
         </span>
       </span>
       {canEdit && dirty ? <button type="button" className="va-btn va-bar-btn" style={btn} disabled={saving} onClick={onDiscard}>Discard</button> : null}
+      {onTalk ? <button type="button" className="va-btn va-bar-btn" style={btn} onClick={onTalk}><AudioLines size={15} aria-hidden="true" /> Talk<span className="va-long"> to it</span></button> : null}
       <button type="button" className="va-btn va-bar-btn" style={btn} onClick={onPreview}><Eye size={15} aria-hidden="true" /> Preview<span className="va-long"> prompt</span></button>
       {canEdit ? (
         <>

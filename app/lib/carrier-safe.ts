@@ -6,9 +6,11 @@
 // Three outcomes per finding:
 //   fix    the wording is swapped for one that says the same thing without
 //          the trigger ("free demo" → "quick demo", "JAMES" → "James").
-//   block  nothing safe can be swapped in (a link shortener, a prize, a
-//          SHAFT topic), so the text is refused with the reason.
-//   warn   allowed, but the reason rides along (two links, a lending word).
+//   block  nothing safe can be swapped in (a prize, a SHAFT topic), so the
+//          text is refused with the reason.
+//   warn   allowed, but the reason rides along (two links, a shortened link,
+//          a lending word). Links are never refused: reps text maps, forms
+//          and signing pages all day.
 //
 // The lists follow CTIA's messaging principles (SHAFT content, no shortened
 // links, identify the business) and the words carrier filters (T-Mobile,
@@ -59,10 +61,10 @@ const SWAPS: { re: RegExp; to: string; why: string }[] = [
   { re: /\bonce\s+in\s+a\s+lifetime\b/gi, to: 'rare', why: 'hype phrases are scored as spam' },
 ];
 
+const LINK = /\bhttps?:\/\/\S+|\b(?:www\.)?[a-z0-9-]+\.(?:com|net|org|ai|io|co|app|us|me|link|page|site|gl|ly)(?:\/\S*)?/gi;
+
 /** Words that are always refused: nothing safe can be swapped in. */
 const BLOCKS: { re: RegExp; why: string }[] = [
-  { re: /\b(?:bit\.ly|tinyurl\.com|goo\.gl|t\.co|ow\.ly|is\.gd|buff\.ly|rebrand\.ly|cutt\.ly|shorturl\.at|tiny\.cc|rb\.gy)\/\S*/gi, why: 'carriers block shortened links outright; use the full link' },
-  { re: /\b(?:you(?:'ve| have)?\s+won|winner|prize|congratulations)\b/gi, why: 'prize language is a top carrier block' },
   { re: /\b(?:verify|confirm)\s+your\s+(?:account|identity|bank)\b|\baccount\s+(?:has\s+been\s+)?(?:suspended|locked)\b/gi, why: 'reads as phishing to carrier filters' },
   { re: /\b(?:sex|sexy|xxx|porn|nude|escort)\b/gi, why: 'SHAFT content (sex) is not allowed on business lines' },
   { re: /\b(?:beer|wine|liquor|vodka|whiskey|alcohol)\b/gi, why: 'SHAFT content (alcohol) is not allowed on business lines' },
@@ -72,6 +74,7 @@ const BLOCKS: { re: RegExp; why: string }[] = [
 
 /** Allowed, with the reason attached. */
 const WARNS: { re: RegExp; why: string }[] = [
+  { re: /\b(?:you(?:'ve| have)?\s+won|winner|prize|congratulations)\b/gi, why: 'prize language is a top carrier block; reps say congratulations at closing, so it goes through' },
   { re: /\b(?:loan|loans|pre-?approved|credit\s+(?:score|repair)|debt\s+relief|refinanc\w*)\b/gi, why: 'lending words put a text in the high-risk financial category; fine in a reply, risky in a blast' },
   { re: /\bclick\s+(?:here|below|the\s+link)\b/gi, why: '"click here" is scored as spam; say what the link is instead' },
   { re: /\b100\s?%/g, why: '"100%" is scored as spam' },
@@ -125,7 +128,11 @@ const GREETING = /^(\s*(?:hey|hi|hello|morning|good\s+(?:morning|afternoon|eveni
 export function carrierCheck(raw: string, opts: { mode?: 'outreach' | 'reply' } = {}): CarrierCheck {
   const rewrite = (opts.mode ?? 'outreach') === 'outreach';
   const findings: CarrierFinding[] = [];
-  let t = String(raw ?? '');
+  // Links are set aside first: a word inside a URL (/congratulations,
+  // /free-offer) is never a carrier trigger and must never be rewritten.
+  const links = String(raw ?? '').match(LINK) ?? [];
+  let t = String(raw ?? '').replace(LINK, () => '\u0000');
+  const restore = (x: string) => { let i = 0; return x.replace(/\u0000/g, () => links[i++] ?? ''); };
 
   // Blocks first, on the text as written.
   for (const b of BLOCKS) {
@@ -176,10 +183,48 @@ export function carrierCheck(raw: string, opts: { mode?: 'outreach' | 'reply' } 
   for (const w of WARNS) {
     for (const m of t.matchAll(w.re)) findings.push({ severity: 'warn', found: m[0], why: w.why });
   }
-  const links = t.match(/\bhttps?:\/\/\S+|\b(?:www\.)?[a-z0-9-]+\.(?:com|net|org|ai|io|co|app|us|me|link|page|site)(?:\/\S*)?/gi) ?? [];
+  for (const u of links) if (/\b(?:bit\.ly|tinyurl\.com|goo\.gl|t\.co|ow\.ly|is\.gd|buff\.ly|rebrand\.ly|cutt\.ly|shorturl\.at|tiny\.cc|rb\.gy)\/\S*/i.test(u)) findings.push({ severity: 'warn', found: u, why: 'carriers often filter shortened links; the full link is safer' });
   if (links.length > 1) findings.push({ severity: 'warn', found: `${links.length} links`, why: 'more than one link in a text raises its spam score; send one' });
 
-  return { text: rewrite ? t.replace(/[ \t]{2,}/g, ' ') : t, findings, blocked: findings.some((f) => f.severity === 'block') };
+  // Last, the characters that make a text bill as 70-character segments. A
+  // reply is left as typed like everything else here.
+  if (rewrite) {
+    const plain = plainForSms(t);
+    if (plain.swapped.length) {
+      t = plain.text;
+      findings.push({ severity: 'fix', found: plain.swapped.join(' '), to: PLAIN_TO, why: 'they make the whole text bill at 70 characters a segment instead of 160' });
+    }
+  }
+
+  return { text: restore(rewrite ? t.replace(/[ \t]{2,}/g, ' ') : t), findings, blocked: findings.some((f) => f.severity === 'block') };
+}
+
+// Characters outside the GSM-7 set switch the whole text to UCS-2, where a
+// segment holds 70 characters instead of 160, so one curly apostrophe can
+// double or triple what a text costs. In 30 days to 2026-11-03 these took
+// 14,428 outbound texts from 29,717 segments to 44,056: the dispo blasts'
+// ✔️ bullets and "·" separators, and the "I’m" in the Compr intro.
+const PLAIN: [RegExp, string][] = [
+  [/[‘’‚‛ʼ′´]/g, "'"],
+  [/[“”„‟″]/g, '"'],
+  [/[‒–—―−]/g, '-'],
+  [/…/g, '...'],
+  [/[    ]/g, ' '],
+  [/[​⁠﻿]/g, ''],
+  // Separators and check-mark bullets read the same as a hyphen.
+  [/[·•∙]/g, '-'],
+  [/(?:✔|✅|☑|✓)️?/g, '-'],
+];
+
+/** The `to` of the finding plainForSms makes inside carrierCheck (send-check reports these its own way). */
+export const PLAIN_TO = 'plain characters';
+
+/** The text with the look-alike characters that force UCS-2 swapped for plain ones: ’ → ', “ ” → ", – — → -, · • ✔️ → -, … → ... */
+export function plainForSms(raw: string): { text: string; swapped: string[] } {
+  let t = String(raw ?? '');
+  const swapped = new Set<string>();
+  for (const [re, to] of PLAIN) t = t.replace(re, (m) => { swapped.add(m.replace('️', '')); return to; });
+  return { text: t, swapped: [...swapped] };
 }
 
 /** One line for a refusal or a log: what was blocked and why, or what was changed. */

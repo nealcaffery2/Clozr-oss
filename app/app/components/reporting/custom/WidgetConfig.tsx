@@ -3,7 +3,8 @@
 // One block's settings: chart type, title, the metric (object + aggregation +
 // field), group-by, the advanced date settings, and the filter conditions.
 
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
+import { EMBED_SERVICES, checkEmbedUrl, embedProblem } from '@/lib/embed-hosts';
 import { CHART_LABEL } from '@/lib/report-catalog';
 import { FIELDS, SOURCE_LABEL, fieldOf, type Agg, type Chart, type Comparison, type Cond, type Op, type Source, type Spec } from '@/lib/report-engine';
 import type { Block } from '@/lib/report-store';
@@ -55,6 +56,7 @@ export function WidgetConfig({ block, members, onChange, onClose, onDelete, onEd
 }) {
   const [tab, setTab] = useState<'configure' | 'conditions'>('configure');
   const [advanced, setAdvanced] = useState(false);
+  const embedNoteId = useId();
 
   const head = (
     <div style={{ display: 'flex', alignItems: 'center', gap: '2px', padding: '8px 10px 0', borderBottom: `1px solid ${SOFT}` }}>
@@ -77,15 +79,23 @@ export function WidgetConfig({ block, members, onChange, onClose, onDelete, onEd
   const footer = <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '6px', borderTop: `1px solid ${SOFT}`, marginTop: '4px' }}><button type="button" onClick={onDelete} style={btn.danger}>Remove</button><button type="button" onClick={onClose} style={btn.primary}>Done</button></div>;
 
   if (block.kind === 'element') {
+    // The site's CSP frames only the hosts in lib/embed-hosts; say so before
+    // the report draws a blank box.
+    const embedError = block.element === 'embed' ? embedProblem(checkEmbedUrl(block.text)) : null;
     return (
-      <aside aria-label="Element settings" style={{ width: '340px', flex: 'none', borderLeft: `1px solid ${LINE}`, background: '#fff', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <aside aria-label="Element settings" style={{ width: '340px', flex: 'none', borderLeft: `1px solid ${LINE}`, background: 'var(--surface, #fff)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {head}
         <div style={{ flex: 1, overflow: 'auto', padding: '12px' }}>
           <Row>
             <span style={eyebrow}>{block.element === 'title' ? 'Heading' : block.element === 'text' ? 'Text' : 'URL'}</span>
             {block.element === 'text' ? <textarea value={block.text} onChange={(e) => onChange({ ...block, text: e.target.value })} rows={6} style={{ ...field, height: 'auto', padding: '8px 9px', resize: 'vertical' }} />
-              : <input value={block.text} onChange={(e) => onChange({ ...block, text: e.target.value })} placeholder={block.element === 'title' ? 'Section title' : 'https://…'} style={field} />}
-            {block.element === 'embed' ? <p style={{ fontSize: '11.5px', color: MUTED, margin: '6px 0 0', lineHeight: 1.45 }}>The page must allow framing; most dashboards and docs with a share link do.</p> : null}
+              : <input value={block.text} onChange={(e) => onChange({ ...block, text: e.target.value })} placeholder={block.element === 'title' ? 'Section title' : 'https://…'} style={embedError ? { ...field, boxShadow: '0 0 0 1px var(--tx-red, #b91c1c)' } : field}
+                {...(block.element === 'embed' ? { type: 'url', inputMode: 'url' as const, 'aria-invalid': embedError ? true : undefined, 'aria-describedby': embedNoteId } : {})} />}
+            {block.element === 'embed' ? (
+              <p id={embedNoteId} style={{ fontSize: '11.5px', color: embedError ? 'var(--tx-red, #b91c1c)' : MUTED, margin: '6px 0 0', lineHeight: 1.45 }}>
+                {embedError ?? `Use the page’s share, embed or publish-to-web link. Embeds work with ${EMBED_SERVICES}.`}
+              </p>
+            ) : null}
           </Row>
           {widthRow}
           {footer}
@@ -96,13 +106,13 @@ export function WidgetConfig({ block, members, onChange, onClose, onDelete, onEd
 
   if (block.kind === 'metric') {
     return (
-      <aside aria-label="Metric settings" style={{ width: '340px', flex: 'none', borderLeft: `1px solid ${LINE}`, background: '#fff', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <aside aria-label="Metric settings" style={{ width: '340px', flex: 'none', borderLeft: `1px solid ${LINE}`, background: 'var(--surface, #fff)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {head}
         <div style={{ flex: 1, overflow: 'auto', padding: '12px' }}>
           <Row><span style={eyebrow}>Title</span><input value={block.title} onChange={(e) => onChange({ ...block, title: e.target.value })} style={field} /></Row>
           <Row>
             <span style={eyebrow}>Formula</span>
-            <div style={{ fontSize: '12.5px', color: INK, lineHeight: 1.5, padding: '8px 9px', border: `1px solid ${LINE}`, borderRadius: '8px', background: '#fafafa' }}>{block.formula.map((t) => (t.kind === 'metric' ? `[${t.label}]` : String(t.v))).join(' ')}</div>
+            <div style={{ fontSize: '12.5px', color: INK, lineHeight: 1.5, padding: '8px 9px', border: `1px solid ${LINE}`, borderRadius: '8px', background: 'var(--canvas, #fafafa)' }}>{block.formula.map((t) => (t.kind === 'metric' ? `[${t.label}]` : String(t.v))).join(' ')}</div>
             {onEditFormula ? <button type="button" onClick={onEditFormula} style={{ ...btn.plain, padding: 0, marginTop: '6px' }}>Edit the formula in the metric builder</button> : null}
           </Row>
           <Row>
@@ -127,7 +137,7 @@ export function WidgetConfig({ block, members, onChange, onClose, onDelete, onEd
   const charts = spec.funnel?.length ? [...CHARTS, 'funnel' as Chart] : CHARTS;
 
   return (
-    <aside aria-label="Widget settings" style={{ width: '340px', flex: 'none', borderLeft: `1px solid ${LINE}`, background: '#fff', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+    <aside aria-label="Widget settings" style={{ width: '340px', flex: 'none', borderLeft: `1px solid ${LINE}`, background: 'var(--surface, #fff)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       {head}
       <div style={{ flex: 1, overflow: 'auto', padding: '12px' }}>
         {tab === 'configure' ? (

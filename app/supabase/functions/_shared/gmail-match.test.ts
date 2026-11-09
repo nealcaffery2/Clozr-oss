@@ -1,5 +1,5 @@
 // Which record and which deal an email files under.  Run:  deno run supabase/functions/_shared/gmail-match.test.ts
-import { type Book, type DealRef, addressesOf, conversationKey, emptyLink, fillable, linkFor, mergeLink, pickFromAi, refsOf, reroute, repFor, routeFor, streetKey, subjectNames, threadLink } from './gmail-match.ts';
+import { type Book, type DealRef, addressesOf, conversationKey, emptyLink, fillable, linkFor, mergeLink, namesStreet, oneHouse, pickFromAi, refsOf, reroute, repFor, routeFor, streetKey, subjectNames, threadLink } from './gmail-match.ts';
 
 let failed = 0;
 function eq(name: string, got: unknown, want: unknown) {
@@ -43,12 +43,14 @@ const book: Book = {
   ours: new Set(['rep@clozr.com', 'tc@clozr.com']),
 };
 
-eq('seller in To (a sent email): seller and their latest deal',
+eq('seller on two houses, no street: the seller, no guessed deal',
   linkFor(book, ['rep@clozr.com', 'sam@seller.com'], 'Our offer'),
-  { seller_id: 100, buyer_id: null, vendor_id: null, deal_id: 1, property_id: 10 });
-eq('seller only in Cc, mixed case',
-  linkFor(book, ['rep@clozr.com', 'someone@else.com', 'SAM@Seller.com'], 'fyi'),
-  { seller_id: 100, buyer_id: null, vendor_id: null, deal_id: 1, property_id: 10 });
+  { seller_id: 100, buyer_id: null, vendor_id: null, deal_id: null, property_id: null });
+eq('seller on two houses, no street: both go to the AI',
+  routeFor(book, ['rep@clozr.com', 'sam@seller.com'], 'Our offer').candidates.map((d) => d.id), [1, 2]);
+eq('seller on one house, only in Cc, mixed case',
+  linkFor(book, ['rep@clozr.com', 'someone@else.com', 'KIM@Seller.com'], 'fyi'),
+  { seller_id: 300, buyer_id: null, vendor_id: null, deal_id: 3, property_id: 30 });
 eq('seller with two deals: the subject picks the older one',
   linkFor(book, ['sam@seller.com'], 'Re: 9 Oak Avenue walkthrough'),
   { seller_id: 100, buyer_id: null, vendor_id: null, deal_id: 2, property_id: 20 });
@@ -142,7 +144,9 @@ eq('reroute: an AI-filed row moves the same way', reroute(book, { deal_id: 1, ro
 eq('reroute: a hand-filed row never moves', reroute(book, { deal_id: 1, routed_by: 'manual' }, streetTo4), false);
 eq('reroute: a row filed before routing was recorded never moves', reroute(book, { deal_id: 1, routed_by: null }, streetTo4), false);
 eq('reroute: a person match does not move a filed row', reroute(book, { deal_id: 4, routed_by: 'rule' }, routeFor(book, ['bo@buyer.com'], 'EMD sent')), false);
-eq('reroute: a row on a deal that is gone is unfiled', reroute(book, { deal_id: 99, routed_by: 'rule' }, routeFor(book, ['bo@buyer.com'], 'EMD sent')), true);
+eq('reroute: off an archived deal onto a live one on the same house', reroute(book, { deal_id: 99, property_id: 30, routed_by: 'rule' }, routeFor(book, ['bo@buyer.com'], 'EMD sent')), true);
+eq('reroute: off an archived deal where a street names', reroute(book, { deal_id: 99, property_id: 990, routed_by: 'rule' }, streetTo4), true);
+eq('reroute: never off an archived deal onto another house of the same person', reroute(book, { deal_id: 99, property_id: 990, routed_by: 'rule' }, routeFor(book, ['bo@buyer.com'], 'EMD sent')), false);
 eq('reroute: already there', reroute(book, { deal_id: 4, routed_by: 'rule' }, streetTo4), false);
 
 // ------------------------------------------------------------------ attachments and duplicate deals
@@ -157,6 +161,36 @@ eq('reroute: already there', reroute(book, { deal_id: 4, routed_by: 'rule' }, st
   eq('duplicates: two different streets named is still no guess',
     linkFor(dup, ['escrow@unknown.com'], '1206 Harbor Blvd and 77 Pine Rd').deal_id, null);
 }
+
+// ------------------------------------------------------------------ the 2026-10-22 misfiles
+{
+  // A wholesaler partner on many houses; the house the thread is about was archived that morning.
+  const apache = deal(21, 17, '2919 apache ave');
+  const dunn = deal(22, 17, '2666 Quail Run rd');
+  const depot = deal(23, 2360, '311 depot st');
+  const partner: Book = {
+    ...book,
+    sellers: new Map([['buyerhomes@gmail.com', 17]]),
+    dealsBySeller: new Map([[17, [apache, dunn]], [2360, [depot]]]),
+    deals: new Map([[21, apache], [22, dunn], [23, depot]]),
+    ours: new Set(['casey@yourcompany.com', 'chris@yourcompany.com', 'sam@yourcompany.com', 'morgan@yourcompany.com']),
+  };
+  const reply = routeFor(partner, ['casey@yourcompany.com', 'admin@titleco.example', 'buyerhomes@gmail.com', 'chris@yourcompany.com'], 'Re: 1317 E 3RD Street, Jacksonville, FL 32206');
+  eq('partner reply about an archived house: not their newest house', reply.link.deal_id, null);
+  eq('partner reply about an archived house: no AI pick either', reply.candidates, []);
+  eq('partner reply about an archived house: the thread lends the old deal',
+    mergeLink(reply.link, { ...emptyLink(), seller_id: 17, deal_id: 5170, property_id: 3882 }).property_id, 3882);
+  eq('team-only note listing houses: no deal from the body',
+    linkFor(partner, ['casey@yourcompany.com', 'chris@yourcompany.com', 'sam@yourcompany.com', 'morgan@yourcompany.com'], 'Properties from Connor', false, 'New ones: 311 Depot Street, 40 Elm Way, 9 Lake Rd'),
+    emptyLink());
+  eq('team-only note with the street in the subject still files', linkFor(partner, ['casey@yourcompany.com', 'chris@yourcompany.com'], 'Comps for 311 Depot St').deal_id, 23);
+  eq('partner email naming one of their houses files there', linkFor(partner, ['buyerhomes@gmail.com'], 'Re: 2666 Quail Run Rd photos').deal_id, 22);
+}
+eq('names a street: suffix after the number', namesStreet('Re: 1317 E 3RD Street, Jacksonville'), true);
+eq('names a street: no suffix is not one', namesStreet('Re: 3 bed 2 bath, offer'), false);
+eq('names a street: a bare number is not one', namesStreet('Invoice 4521'), false);
+eq('one house: duplicates of one property count once', oneHouse([deal(1, 1, 'a', 50), deal(2, 1, 'a', 50)])?.property_id, 50);
+eq('one house: two properties is none', oneHouse([deal(1, 1, 'a'), deal(2, 1, 'b')]), null);
 
 // ------------------------------------------------------------------ AI answer
 eq('ai: a candidate id is kept', pickFromAi('{"deal_id": 3}', [d1, d3]), 3);

@@ -23,7 +23,8 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { ALLOW_HEADERS } from '../_shared/security.ts';
-import { PdError, pd, status } from '../_shared/pandadoc.ts';
+import { PdError, filedWorkspaces, pd, status } from '../_shared/pandadoc.ts';
+import { belongsElsewhere } from '../_shared/pandadoc-match.ts';
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': ALLOW_HEADERS, 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
@@ -69,7 +70,7 @@ Deno.serve(async (req) => {
   if (!Number.isFinite(ws)) return json({ error: 'workspace_id is required' }, 422);
   const { data: member } = await asCaller.from('workspace_members').select('role').eq('workspace_id', ws).eq('user_id', who.user.id).maybeSingle();
   if (!member) return json({ error: 'not a member of that workspace' }, 403);
-  if (!['owner', 'admin', 'acquisitions', 'dispositions', 'tc'].includes(member.role)) return json({ error: 'your role cannot send contracts' }, 403);
+  if (!['owner', 'admin', 'acquisitions', 'dispositions', 'tc', 'partnerships'].includes(member.role)) return json({ error: 'your role cannot send contracts' }, 403);
 
   const loadContract = async (id: number) => {
     const { data } = await asCaller.from('contracts').select('*').eq('id', id).eq('workspace_id', ws).maybeSingle();
@@ -220,7 +221,10 @@ Deno.serve(async (req) => {
         // Pull documents created in PandaDoc (or status-changed there) into CLOZR.
         const r = await pd<{ results: { id: string; name: string; status: string; date_created?: string; metadata?: Record<string, string> }[] }>('GET', '/documents?count=100');
         let upserted = 0;
+        // The PandaDoc key is shared by every workspace: leave documents filed elsewhere alone.
+        const filed = await filedWorkspaces(admin, (r.results ?? []).map((d) => d.id));
         for (const d of r.results ?? []) {
+          if (belongsElsewhere(d, ws, filed.get(d.id) ?? [])) continue;
           const st = status(d.status);
           let { data: existing } = await admin.from('contracts').select('*').eq('workspace_id', ws).eq('pandadoc_id', d.id).maybeSingle();
           if (!existing && d.metadata?.clozr_contract_id) {

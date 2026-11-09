@@ -23,7 +23,7 @@ const field: React.CSSProperties = {
 };
 const btn = (primary = false): React.CSSProperties => ({
   height: 32, padding: '0 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-  border: `1px solid ${primary ? '#0A8560' : 'var(--divider, #e4e4e7)'}`, background: primary ? '#0A8560' : '#fff', color: primary ? '#fff' : '#18181b',
+  border: `1px solid ${primary ? '#0A8560' : 'var(--divider, #e4e4e7)'}`, background: primary ? '#0A8560' : 'var(--surface, #fff)', color: primary ? '#fff' : '#18181b',
 });
 const money = (n: number) => '$' + Math.round(n).toLocaleString('en-US');
 
@@ -117,7 +117,7 @@ function Activity({ V }: { V: ClozrView }) {
               </span>
             )}
             {t.rep ? (
-              <span title={t.rep.name} style={{ maxWidth: 52, marginTop: 3, fontSize: 9.5, lineHeight: 1.2, color: 'var(--meta, #71717a)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span title={t.rep.name} style={{ maxWidth: 52, marginTop: 3, fontSize: 11, lineHeight: 1.2, color: 'var(--meta, #71717a)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {t.rep.name.split(' ')[0]}
               </span>
             ) : null}
@@ -133,7 +133,7 @@ function Activity({ V }: { V: ClozrView }) {
               {t.email ? null : <span style={{ fontSize: 12, color: 'var(--meta, #71717a)' }}>· {t.who}{t.line ? ` · ${t.line}` : ''}</span>}
               {t.agentTag ? <AgentBadge /> : null}
               <span style={{ flex: 1 }} />
-              <span style={{ fontSize: 11.5, color: 'var(--subtle, #a1a1aa)', whiteSpace: 'nowrap' }}>{t.time}</span>
+              <span style={{ fontSize: 11.5, color: 'var(--meta, #71717a)', whiteSpace: 'nowrap' }}>{t.time}</span>
             </div>
             {t.email ? (
               <EmailThread
@@ -185,7 +185,7 @@ function Offers({ V }: { V: ClozrView }) {
           <span style={{ fontWeight: 700, minWidth: 88 }}>{o.amount}</span>
           <span style={{ flex: 1, minWidth: 0, color: 'var(--ink-2, #27272a)' }}>{o.addr}</span>
           <span style={{ fontSize: 12, fontWeight: 600, color: o.color }}>{o.status}</span>
-          <span style={{ fontSize: 11.5, color: 'var(--subtle, #a1a1aa)' }}>{o.when}</span>
+          <span style={{ fontSize: 11.5, color: 'var(--meta, #71717a)' }}>{o.when}</span>
         </button>
       ))}
     </>
@@ -201,7 +201,7 @@ function Purchases({ V }: { V: ClozrView }) {
           <span style={{ fontWeight: 700, flex: 1, minWidth: 0 }}>{p.addr}</span>
           <span style={{ color: 'var(--ink-2, #27272a)' }}>{p.price}</span>
           <span style={{ fontSize: 12, fontWeight: 600, color: p.color }}>{p.stage}</span>
-          <span style={{ fontSize: 11.5, color: 'var(--subtle, #a1a1aa)' }}>{p.when}</span>
+          <span style={{ fontSize: 11.5, color: 'var(--meta, #71717a)' }}>{p.when}</span>
         </button>
       ))}
     </>
@@ -215,7 +215,7 @@ function Notes({ V }: { V: ClozrView }) {
       {V.buyerNoteRows.map((n) => (
         <div key={n.id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--divider-2, #f0f0f1)' }}>
           <div style={{ fontSize: 12.5, color: 'var(--ink-2, #27272a)', whiteSpace: 'pre-wrap' }}>{n.text}</div>
-          <div style={{ fontSize: 11.5, color: 'var(--subtle, #a1a1aa)', marginTop: 4 }}>{n.when}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--meta, #71717a)', marginTop: 4 }}>{n.when}</div>
         </div>
       ))}
     </>
@@ -231,7 +231,7 @@ function Campaigns({ V, buyerId, workspaceId }: { V: ClozrView; buyerId: number 
     return () => { on = false; };
   }, [workspaceId, buyerId, V.B.dbId]);
   if (!workspaceId || !buyerId) return <Empty label="campaigns" hint="Add this buyer to a deal's dispo blast from here or from Matches." />;
-  if (rows === null) return <p style={{ padding: 16, fontSize: 12.5, color: 'var(--subtle, #a1a1aa)' }}>Loading campaigns…</p>;
+  if (rows === null) return <p style={{ padding: 16, fontSize: 12.5, color: 'var(--meta, #71717a)' }}>Loading campaigns…</p>;
   if (!rows.length) return <Empty label="campaigns" hint="Add this buyer to a deal's dispo blast from here or from Matches." />;
   return (
     <>
@@ -248,7 +248,7 @@ function Campaigns({ V, buyerId, workspaceId }: { V: ClozrView; buyerId: number 
 
 function Empty({ label, hint }: { label: string; hint?: string }) {
   return (
-    <div style={{ padding: '26px 16px', textAlign: 'center', fontSize: 12.5, color: 'var(--subtle, #a1a1aa)' }}>
+    <div style={{ padding: '26px 16px', textAlign: 'center', fontSize: 12.5, color: 'var(--meta, #71717a)' }}>
       No {label} recorded for this buyer yet.
       {hint ? <div style={{ marginTop: 6 }}>{hint}</div> : null}
     </div>

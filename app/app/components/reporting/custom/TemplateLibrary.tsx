@@ -44,7 +44,7 @@ export function TemplateLibrary({ mine, onChoose, onClose }: { mine: ReportRow[]
 
   const cards: Card[] = useMemo(() => [
     ...TEMPLATES.map((t): Card => ({ id: 'stock:' + t.id, name: t.name, description: t.description, categories: t.categories, color: t.color, icon: t.icon, pages: t.pages.map((p) => ({ title: p.title, blocks: p.blocks.length })), stock: t })),
-    ...mine.map((r): Card => ({ id: 'mine:' + r.id, name: r.name, description: `Saved from a report on ${new Date(r.updated_at).toLocaleDateString('en-US')}`, categories: ['My templates'], color: '#52525b', icon: r.name.slice(0, 1).toUpperCase(), pages: r.definition.pages.map((p) => ({ title: p.title, blocks: p.blocks.length })), mine: r })),
+    ...mine.map((r): Card => ({ id: 'mine:' + r.id, name: r.name, description: `Saved from a report on ${new Date(r.updated_at).toLocaleDateString('en-US')}`, categories: ['My templates'], color: 'var(--muted, #52525b)', icon: r.name.slice(0, 1).toUpperCase(), pages: r.definition.pages.map((p) => ({ title: p.title, blocks: p.blocks.length })), mine: r })),
   ], [mine]);
 
   const shown = cards
@@ -65,10 +65,10 @@ export function TemplateLibrary({ mine, onChoose, onClose }: { mine: ReportRow[]
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Template library" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(24,24,27,.45)', display: 'grid', placeItems: 'center', padding: '16px' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: '14px', width: '100%', maxWidth: '1040px', height: 'min(92vh, 720px)', display: 'flex', overflow: 'hidden' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '14px', width: '100%', maxWidth: '1040px', height: 'min(92vh, 720px)', display: 'flex', overflow: 'hidden' }}>
         <aside style={{ width: '220px', flex: 'none', borderRight: `1px solid ${LINE}`, padding: '14px 12px', overflow: 'auto' }}>
           {([['all', 'All templates'], ['mine', 'My templates'], ['favs', 'Favorites']] as const).map(([k, l]) => (
-            <button key={k} type="button" onClick={() => setNav(k)} style={{ display: 'block', width: '100%', textAlign: 'left', height: '32px', padding: '0 10px', border: 0, borderRadius: '8px', background: nav === k ? '#E7F8F1' : 'transparent', color: nav === k ? ACCENT : INK, fontSize: '13px', fontWeight: nav === k ? 600 : 500, cursor: 'pointer' }}>{l}</button>
+            <button key={k} type="button" onClick={() => setNav(k)} style={{ display: 'block', width: '100%', textAlign: 'left', height: '32px', padding: '0 10px', border: 0, borderRadius: '8px', background: nav === k ? 'var(--mint-dim, #e7f8f1)' : 'transparent', color: nav === k ? ACCENT : INK, fontSize: '13px', fontWeight: nav === k ? 600 : 500, cursor: 'pointer' }}>{l}</button>
           ))}
           <div style={{ fontSize: '11px', color: MUTED, fontWeight: 600, padding: '14px 10px 6px' }}>Browse categories</div>
           {TEMPLATE_CATEGORIES.map((c) => {
@@ -95,13 +95,13 @@ export function TemplateLibrary({ mine, onChoose, onClose }: { mine: ReportRow[]
             <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
               <button type="button" onClick={() => setPreview(null)} style={btn.ghost}>← All templates</button>
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 260px', gap: '16px', marginTop: '14px' }}>
-                <div style={{ border: `1px solid ${LINE}`, borderRadius: '12px', padding: '20px', background: '#fafafa' }}>
-                  <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: '10px', padding: '18px' }}>
+                <div style={{ border: `1px solid ${LINE}`, borderRadius: '12px', padding: '20px', background: 'var(--canvas, #fafafa)' }}>
+                  <div style={{ background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '10px', padding: '18px' }}>
                     <div style={{ fontSize: '18px', fontWeight: 700 }}>{preview.name}</div>
                     <div style={{ fontSize: '12px', color: MUTED, marginTop: '4px' }}>Cover page · report date range</div>
                   </div>
                   {preview.pages.map((p) => (
-                    <div key={p.title} style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: '10px', padding: '14px 18px', marginTop: '10px' }}>
+                    <div key={p.title} style={{ background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '10px', padding: '14px 18px', marginTop: '10px' }}>
                       <div style={{ fontSize: '13px', fontWeight: 600 }}>{p.title}</div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginTop: '10px' }}>
                         {Array.from({ length: p.blocks }).map((_, i) => <div key={i} style={{ height: '34px', borderRadius: '6px', background: SOFT }} />)}
@@ -111,9 +111,9 @@ export function TemplateLibrary({ mine, onChoose, onClose }: { mine: ReportRow[]
                 </div>
                 <div>
                   <div style={{ fontSize: '16px', fontWeight: 700 }}>{preview.name}</div>
-                  <p style={{ fontSize: '12.5px', color: '#52525b', lineHeight: 1.55, margin: '6px 0 10px' }}>{preview.description}</p>
+                  <p style={{ fontSize: '12.5px', color: 'var(--muted, #52525b)', lineHeight: 1.55, margin: '6px 0 10px' }}>{preview.description}</p>
                   <div style={{ fontSize: '12px', color: MUTED }}>{preview.pages.length} page{preview.pages.length === 1 ? '' : 's'} · {preview.pages.reduce((n, p) => n + p.blocks, 0)} widgets</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', margin: '10px 0 14px' }}>{preview.categories.map((c) => <span key={c} style={{ fontSize: '11px', background: SOFT, borderRadius: '999px', padding: '2px 8px', color: '#52525b' }}>{c}</span>)}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', margin: '10px 0 14px' }}>{preview.categories.map((c) => <span key={c} style={{ fontSize: '11px', background: SOFT, borderRadius: '999px', padding: '2px 8px', color: 'var(--muted, #52525b)' }}>{c}</span>)}</div>
                   <button type="button" onClick={() => choose(preview)} style={{ ...btn.accent, width: '100%' }}>Choose template</button>
                 </div>
               </div>
@@ -124,11 +124,11 @@ export function TemplateLibrary({ mine, onChoose, onClose }: { mine: ReportRow[]
               <div style={{ display: grid ? 'grid' : 'flex', flexDirection: 'column', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
                 {shown.map((c) => (
                   <div key={c.id} style={{ border: `1px solid ${LINE}`, borderRadius: '12px', overflow: 'hidden', display: grid ? 'block' : 'grid', gridTemplateColumns: grid ? undefined : '120px 1fr auto', alignItems: 'center' }}>
-                    <div style={{ height: grid ? '84px' : '100%', minHeight: '64px', background: c.color, display: 'grid', placeItems: 'center', color: '#fff', font: '700 26px system-ui, sans-serif' }}>{c.icon}</div>
+                    <div style={{ height: grid ? '84px' : '100%', minHeight: '64px', background: c.color, display: 'grid', placeItems: 'center', color: 'var(--on-dark, #fff)', font: '700 26px system-ui, sans-serif' }}>{c.icon}</div>
                     <div style={{ padding: '10px 12px' }}>
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
                         <div style={{ fontSize: '13px', fontWeight: 600, color: INK, flex: 1 }}>{c.name}</div>
-                        <button type="button" onClick={() => toggleFav(c.id)} aria-label="Favorite" aria-pressed={favs.includes(c.id)} style={{ border: 0, background: 'none', cursor: 'pointer', color: favs.includes(c.id) ? '#e34948' : '#a1a1aa', fontSize: '14px' }}>{favs.includes(c.id) ? '♥' : '♡'}</button>
+                        <button type="button" onClick={() => toggleFav(c.id)} aria-label="Favorite" aria-pressed={favs.includes(c.id)} style={{ border: 0, background: 'none', cursor: 'pointer', color: favs.includes(c.id) ? '#e34948' : 'var(--meta, #71717a)', fontSize: '14px' }}>{favs.includes(c.id) ? '♥' : '♡'}</button>
                       </div>
                       <p style={{ margin: '4px 0 8px', fontSize: '11.5px', color: MUTED, lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{c.description}</p>
                       <div style={{ fontSize: '11px', color: MUTED }}>{c.pages.length} page{c.pages.length === 1 ? '' : 's'} · {c.pages.reduce((n, p) => n + p.blocks, 0)} widgets</div>

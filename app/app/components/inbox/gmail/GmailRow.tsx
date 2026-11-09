@@ -16,6 +16,8 @@ import type { DealRef, EmailThread } from '../data';
 import type { ClozrRecord } from '@/app/components/talkr/MessagesScreen';
 import { GmailCheck, GmailIcon } from './GmailIcon';
 import { fullStamp, gmailDate, snippetOf } from './format';
+import type { BlastTag } from '@/lib/inbox-blast-tags';
+import { BlastChip, ProspectChip } from '../BlastChips';
 
 /** Keeps a control's click off the row underneath it. */
 const stop = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); };
@@ -31,6 +33,8 @@ export type GmailRowProps = {
   record?: ClozrRecord | null;
   /** The deal the sync filed this thread under, when there is one. */
   deal?: DealRef | null;
+  /** The deal blasts that reached them (lib/inbox-blast-tags): the green deal label. */
+  blast?: BlastTag | null;
   /** Something in the thread has a file on it. */
   hasFiles?: boolean;
   /** A tracked send in the thread: true once it has been opened, false while not yet. Undefined when nothing was tracked. */
@@ -43,7 +47,7 @@ export type GmailRowProps = {
 };
 
 export const GmailRow = React.memo(function GmailRow({
-  thread, senders, unread, starred, checked, cursor, record, deal, hasFiles, opened,
+  thread, senders, unread, starred, checked, cursor, record, deal, blast, hasFiles, opened,
   onOpen, onCheck, onStar, onArchive, onToggleRead,
 }: GmailRowProps) {
   const count = thread.rows.length;
@@ -91,7 +95,9 @@ export const GmailRow = React.memo(function GmailRow({
       <span className="em-cell-main">
         <span className="em-subject-line">
           {/* Which CRM record this is, when there is one. */}
-          {record ? <span className={record.kind === 'seller' ? 'em-tag em-tag--seller' : 'em-tag em-tag--buyer'}>{record.kind === 'seller' ? 'Seller' : 'Buyer'}</span> : null}
+          {record && !(blast?.prospect && record.kind === 'buyer') ? <span className={record.kind === 'seller' ? 'em-tag em-tag--seller' : 'em-tag em-tag--buyer'}>{record.kind === 'seller' ? 'Seller' : 'Buyer'}</span> : null}
+          <ProspectChip tag={blast} />
+          <BlastChip tag={blast} />
           {/* The deal, even when the other party is a buyer or the title
               company — which record the email is about, not who sent it. */}
           {deal ? (

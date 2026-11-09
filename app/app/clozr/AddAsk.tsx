@@ -53,12 +53,15 @@ export function AddAsk({ V }: { V: ClozrView }) {
   const first = d.name.split(' ')[0] || d.name;
   const seller = d.kind === 'seller';
   const typedAddr = !!(V.addFields.find((f) => f.key === 'addr')?.value ?? '').trim();
+  const typedName = (V.addFields.find((f) => f.key === 'name')?.value ?? '').trim();
+  const typedFirst = typedName.split(' ')[0] || 'them';
+  const typedTitle = (V.addFields.find((f) => f.key === 'title')?.value ?? '').trim();
   return (
     <div role="group" aria-label="Already in CLOZR" style={{ display: 'grid', gap: '8px' }}>
       <div style={{ padding: '10px 12px', borderRadius: '10px', background: 'var(--tint-amber, #fffbeb)', border: '1px solid var(--tint-amber-2, #fde68a)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--tx-amber-deep, #92400e)' }}>
-            Already in CLOZR · same {d.by}
+            {d.by === 'company' ? `Same company: ${d.company ?? ''}` : `Already in CLOZR · same ${d.by}`}
           </span>
           <span style={{ flex: 1 }} />
           <button type="button" onClick={V.openAddAskRecord} style={{ border: 0, background: 'none', padding: 0, color: 'var(--tx-mint, #0a8560)', fontSize: '12px', fontWeight: 650, cursor: 'pointer' }}>
@@ -74,7 +77,12 @@ export function AddAsk({ V }: { V: ClozrView }) {
           <div style={{ fontSize: '12px', color: 'var(--tx-amber-deep, #92400e)', marginTop: '6px' }}>A different name at this address — a co-owner or an heir, most likely. Create new adds them as another seller on the property.</div>
         ) : null}
       </div>
-      <Choice primary testId="ask-dupe-fill" label={`Add to ${first}`}
+      {d.colleague && d.company ? (
+        <Choice primary testId="ask-dupe-colleague" label={`Add ${typedFirst} at ${d.company}`}
+          note={`A new contact at ${d.company}${typedTitle ? ` (${typedTitle})` : ''}, alongside ${first}. Keeps ${typedFirst}’s own email; the company’s buy box carries over${d.by === 'phone' ? ', and the shared phone stays on ' + first : ''}.`}
+          onClick={() => V.resolveAddAsk('colleague')} />
+      ) : null}
+      <Choice primary={!d.colleague} testId="ask-dupe-fill" label={`Add to ${first}`}
         note={`Fills only ${first}’s empty fields with what you typed${seller ? (typedAddr ? ', and the address if they have none' : '') : '; new markets join the buy box'}. Nothing is blanked or replaced.`}
         onClick={() => V.resolveAddAsk('fill')} />
       <Choice testId="ask-dupe-overwrite" label={`Override ${first}`}

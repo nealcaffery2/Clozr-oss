@@ -63,7 +63,7 @@ export function PropertyRecords({ sellerId, dealId, reloadKey }: { sellerId?: nu
           <span style={{ fontWeight: 500, overflowWrap: 'anywhere' }}>{v}</span>
         </div>
       ))}
-      <div style={{ fontSize: '11px', color: 'var(--subtle, #a1a1aa)', marginTop: '6px' }}>from COMPR · {day(r.fetched_at)}</div>
+      <div style={{ fontSize: '11px', color: 'var(--meta, #71717a)', marginTop: '6px' }}>from COMPR · {day(r.fetched_at)}</div>
     </div>
   );
 }

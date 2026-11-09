@@ -3,7 +3,7 @@
 // with their grading. Run:  npx tsx supabase/functions/_shared/voice-agent-calls.test.ts
 //   or: deno run supabase/functions/_shared/voice-agent-calls.test.ts
 import { classifyCall } from './voice-agent-classify.ts';
-import { DIAL_FAILURE_LIMIT, agentSwitchedOff, aggregateStats, dialFailure, dialFailureStreak, dialedTag, enabledAfterPublish, leadSourceLabel, money, offerRange, outboundAllowedNow, parseSetEnabled, pickAgent, withinHours } from './voice-agent-calls.ts';
+import { DIAL_FAILURE_LIMIT, agentSwitchedOff, callNotice, aggregateStats, dialFailure, dialFailureStreak, dialedTag, enabledAfterPublish, leadSourceLabel, money, offerRange, outboundAllowedNow, parseSetEnabled, pickAgent, withinHours } from './voice-agent-calls.ts';
 import { defaultSettings, normalizeSettings } from './voice-agent-settings.ts';
 import { SCENARIOS, SCORING_SYSTEM, SCORING_TOOL, parseGrades, scenarioById, scoringUserMessage } from './voice-agent-scenarios.ts';
 import { parsePostCall } from './voice-agent.ts';
@@ -77,6 +77,8 @@ eq('an ordinary call has no flags', classifyCall([t('agent', 'Hi'), t('user', 'H
 eq('junk input', [classifyCall(null), classifyCall('x'), classifyCall([null, 5])], [base0, base0, base0]);
 eq('book_appointment is a booking', classifyCall([tc('book_appointment'), t('user', 'great')]), { ...base0, booked: true, tools: ['book_appointment'], outcome: 'booked' });
 eq('transfer_to_number is a transfer', classifyCall([tc('transfer_to_number')]), { ...base0, transferred: true, tools: ['transfer_to_number'], outcome: 'transferred' });
+eq('a call that ended in a transfer is a transfer, even without the tool call', classifyCall([tc('save_qualification', { outcome: 'transferred' })], 'Call was transferred to number').transferred, true);
+eq('...and an ordinary end is not', classifyCall([t('user', 'bye')], 'Client disconnected: 1000').transferred, false);
 eq('a failed tool call does not count', classifyCall([tc('book_appointment'), { role: 'agent', tool_results: [{ tool_name: 'book_appointment', is_error: true }] }]), base0);
 eq('mark_do_not_contact is a DNC request', classifyCall([tc('mark_do_not_contact')]).dnc_requested, true);
 eq('asking book_appointment for open times is not a booking', classifyCall([tc('book_appointment', { day: '2026-10-06' }), t('user', 'hmm, maybe later')]).booked, false);
@@ -179,6 +181,12 @@ eq('a later publish keeps an agent the owner switched off, off', enabledAfterPub
 eq('a later publish keeps an enabled agent on', enabledAfterPublish({ enabled: true, live_version: 2 }), true);
 eq('set_enabled accepts true and false', [parseSetEnabled({ enabled: true }), parseSetEnabled({ enabled: false })], [{ enabled: true }, { enabled: false }]);
 eq('set_enabled rejects strings, numbers and missing', ['false', 0, 1, null, undefined].map((v) => 'error' in parseSetEnabled({ enabled: v })).concat('error' in parseSetEnabled({})), [true, true, true, true, true, true]);
+
+// ---- the bell line for a demo-setter call with nothing booked or transferred ----
+const f = (o: Partial<{ booked: boolean; transferred: boolean; tools: string[] }>) => ({ booked: false, transferred: false, tools: [], ...o });
+eq('voicemail: notified as a voicemail', callNotice({ agentName: 'Cody', recordName: 'Clay Morgan', summary: 'Left a message.', flags: f({ tools: ['voicemail_detection'] }) }), { title: 'Cody left a voicemail for Clay Morgan', body: 'Left a message.' });
+eq('a talk with no outcome: notified as a call', callNotice({ agentName: 'Cody', recordName: '', summary: null, flags: f({}) }), { title: 'Cody called a contact', body: '' });
+eq('booked or transferred: already notified', [callNotice({ agentName: 'Cody', recordName: 'X', summary: '', flags: f({ booked: true }) }), callNotice({ agentName: 'Cody', recordName: 'X', summary: '', flags: f({ transferred: true }) })], [null, null]);
 
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
 console.log('\nall passed');

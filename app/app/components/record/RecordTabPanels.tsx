@@ -12,7 +12,7 @@ import { Identity } from './PropertyCard';
 import { RecordActionPlans } from './RailCards';
 import { KnowRows, WhatWeKnow } from './WhatWeKnow';
 import { label } from './ui';
-import { DEAL_SHEET_BTN } from './deal-sheet-style';
+import { buttonClass } from '@/components/ds/Button';
 import { PriceAmendments } from '@/components/PriceAmendments';
 import { Mark } from '@/components/ds/mark';
 
@@ -22,7 +22,7 @@ function Row({ k, children }: { k: string; children: React.ReactNode }) {
   return (
     <div className="rec2-row">
       <dt style={label}>{k}</dt>
-      <dd style={{ margin: 0, minWidth: 0, fontSize: '13px', fontWeight: 500, color: '#18181b', overflowWrap: 'anywhere' }}>{children}</dd>
+      <dd style={{ margin: 0, minWidth: 0, fontSize: '13px', fontWeight: 500, color: 'var(--ink, #18181b)', overflowWrap: 'anywhere' }}>{children}</dd>
     </div>
   );
 }
@@ -133,7 +133,7 @@ export function SubmissionPanel({ V }: { V: ClozrView }) {
               </button>
             ) : null}
             {openSheet ? (
-              <button type="button" className="dc2 rec-press" onClick={openSheet} style={{ ...DEAL_SHEET_BTN, height: '28px', padding: '0 12px', fontSize: '12.5px' }}>Deal sheet</button>
+              <button type="button" className={buttonClass('ghost', 28)} onClick={openSheet}>Deal sheet</button>
             ) : null}
           </div>
         </div>
@@ -157,7 +157,7 @@ export function SubmissionPanel({ V }: { V: ClozrView }) {
         {sub.notes ? (
           <div style={{ marginTop: '12px' }}>
             <div style={label}>Submission notes</div>
-            <p style={{ margin: '4px 0 0', fontSize: '13px', lineHeight: 1.5, color: '#27272a', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{sub.notes}</p>
+            <p style={{ margin: '4px 0 0', fontSize: '13px', lineHeight: 1.5, color: 'var(--ink-2, #27272a)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{sub.notes}</p>
           </div>
         ) : null}
       </section>

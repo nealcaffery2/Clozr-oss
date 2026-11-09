@@ -9,7 +9,7 @@ import type { ClozrView } from './view';
 
 const KICKER: Record<string, { label: string; color: string }> = {
   Acquisitions: { label: 'Acquisitions', color: 'var(--tx-mint, #0a8560)' },
-  Dispositions: { label: 'Dispositions', color: '#ff7a45' },
+  Dispositions: { label: 'Dispositions', color: 'var(--tx-orange, #c2410c)' },
   Coordination: { label: 'Transaction coordination', color: 'var(--tx-green-deep, #1f7a4d)' },
 };
 
@@ -17,7 +17,7 @@ export function SectionGapPops({ V }: { V: ClozrView }) {
   const pops = V.sectionGapPops;
   if (!pops.length || V.isMobile) return null;
   return (
-    <div role="region" aria-label="Deal sheet reminders" style={{ position: 'fixed', right: '16px', bottom: 'calc(16px + env(safe-area-inset-bottom, 0px) + var(--clozr-callbar, 0px) + var(--clozr-todaybar, 0px))', zIndex: 95, display: 'flex', flexDirection: 'column', gap: '8px', width: 'min(340px, calc(100vw - 32px))' }}>
+    <div role="region" aria-label="Deal sheet reminders" style={{ position: 'fixed', right: '16px', bottom: 'calc(16px + env(safe-area-inset-bottom, 0px) + var(--clozr-callbar, 0px) + var(--clozr-todaybar, 0px))', zIndex: 'var(--z-toast)', display: 'flex', flexDirection: 'column', gap: '8px', width: 'min(340px, calc(100vw - 32px))' }}>
       {pops.map((p) => {
         const k = KICKER[p.cat] ?? { label: p.cat, color: 'var(--meta, #71717a)' };
         return (

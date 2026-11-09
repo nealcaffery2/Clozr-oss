@@ -6,11 +6,11 @@ import { ContractsButton } from '@/components/ContractsHub';
 import React from 'react';
 import { keepInView } from '@/components/ds/keepInView';
 import { Empty, EmptyRow } from '@/components/ds/Empty';
-import { GeniusPicker } from '@/components/AiButton';
 import { Chevron, CZ } from '@/components/ds/chrome';
 import type { ClozrView } from '@/app/clozr/view';
 import { Mark } from '@/components/ds/mark';
 import { OptionTimers } from '@/components/OptionTimers';
+import { ScreenHeader } from '@/components/ds/Screen';
 
 /** One label-over-value cell in the phone card's fact grid. */
 function DispoFact({ label, value, strong }: { label: string; value: React.ReactNode; strong?: boolean }) {
@@ -70,16 +70,8 @@ export function Dispo({ V }: { V: ClozrView }) {
         </div>
       </aside>
       <div style={{flex: "1", minWidth: "0", display: "flex", flexDirection: "column"}}>
-        <div data-head style={{display: "flex", alignItems: "center", gap: "10px", padding: "12px 16px", background: "var(--surface, #fff)", borderBottom: "1px solid var(--divider, #e4e4e7)"}}>
-          <h1 style={{margin: "0", fontSize: "16px", fontWeight: "700", letterSpacing: "-0.02em"}}>
-            {V.dispoFilter}
-          </h1>
-          <span style={{fontSize: "12px", color: "var(--meta, #71717a)"}}>
-            {V.dispoSubtitle}
-          </span>
-          <div style={{flex: "1"}}></div>
+        <ScreenHeader title={V.dispoFilter} meta={V.dispoSubtitle} actions={<>
           <ContractsButton V={V} />
-          <GeniusPicker items={V.inventory || []} label="Genius Mode" />
                     {(V.dispoMenus || []).map((f, f__i) => (
             <React.Fragment key={f__i}>
             <div style={{position: "relative"}}>
@@ -111,7 +103,7 @@ export function Dispo({ V }: { V: ClozrView }) {
             </div>
             </React.Fragment>
           ))}
-        </div>
+        </>} />
         {(V.isMobile) ? (
           <>
           {/* Twelve columns at 1100px: on a phone everything from SPREAD
@@ -120,10 +112,10 @@ export function Dispo({ V }: { V: ClozrView }) {
           <div style={{flex: "1", overflow: "auto", background: "var(--canvas, #fafafa)", padding: "10px 12px calc(96px + env(safe-area-inset-bottom, 0px))", display: "flex", flexDirection: "column", gap: "8px"}}>
             {(V.inventory || []).map((i, i__i) => (
               <React.Fragment key={i__i}>
-              <div onClick={i.open} style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", padding: "11px 12px", display: "flex", flexDirection: "column", gap: "9px", cursor: "pointer", minWidth: "0"}}>
+              <div onClick={i.open} style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", padding: "11px 12px", display: "flex", flexDirection: "column", gap: "9px", cursor: "pointer", minWidth: "0", flexShrink: 0, contentVisibility: "auto", containIntrinsicHeight: "auto 266px"}}>
                 <div style={{display: "flex", alignItems: "flex-start", gap: "10px", minWidth: "0"}}>
                   <div style={{flex: "1", minWidth: "0"}}>
-                    <div style={{fontWeight: "600", fontSize: "14px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
+                    <div className="t-name" style={{overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
                       {i.addr}
                     </div>
                     <div style={{fontSize: "12px", color: "var(--meta, #71717a)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
@@ -138,9 +130,6 @@ export function Dispo({ V }: { V: ClozrView }) {
                 <div style={{display: "flex", alignItems: "baseline", gap: "8px", flexWrap: "wrap", minWidth: "0", padding: "8px 10px", borderRadius: "9px", background: "var(--canvas, #fafafa)"}}>
                   <span style={{fontSize: "16px", fontWeight: "700", color: "var(--tx-mint, #0a8560)", whiteSpace: "nowrap"}}>
                     {i.spread}
-                  </span>
-                  <span style={{fontSize: "12px", color: "var(--meta, #71717a)", whiteSpace: "nowrap"}}>
-                    {i.spreadPct} spread
                   </span>
                   <span style={{flex: "1"}}></span>
                   <span style={{fontSize: "12px", color: "var(--muted, #52525b)", whiteSpace: "nowrap"}}>
@@ -188,7 +177,7 @@ export function Dispo({ V }: { V: ClozrView }) {
                 <React.Fragment key={i__i}>
                 <tr className="dc2" onClick={i.open} style={{cursor: "pointer"}}>
                   <td style={{padding: "0 12px", height: "46px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap"}}>
-                    <div style={{fontWeight: "600"}}>
+                    <div className="t-name">
                       {i.addr}
                     </div>
                     <div style={{fontSize: "11px", color: "var(--meta, #71717a)"}}>
@@ -206,9 +195,6 @@ export function Dispo({ V }: { V: ClozrView }) {
                   </td>
                   <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", fontWeight: "600", color: "var(--tx-mint, #0a8560)"}}>
                     {i.spread}
-                    <span style={{fontWeight: "400", color: "var(--meta, #71717a)", marginLeft: "6px"}}>
-                      {i.spreadPct}
-                    </span>
                   </td>
                   <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap"}}>
                     <DomCell dom={i.dom} mls={i.mlsDue} />

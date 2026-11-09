@@ -79,7 +79,9 @@ test('...but chatting, switching, bulk and avatars are writes', () => {
 // ---- reporting ----
 test('the AI Agents tab is on the report, before the builder', () => {
   assert.ok(REPORT_TABS.includes(AI_AGENTS_TAB));
-  assert.equal(REPORT_TABS.indexOf(AI_AGENTS_TAB), REPORT_TABS.indexOf('Custom reports') - 1);
+  // The builder stays last; the AI Sales Manager and Flows tabs were added between the two.
+  assert.ok(REPORT_TABS.indexOf(AI_AGENTS_TAB) < REPORT_TABS.indexOf('Custom reports'));
+  assert.equal(REPORT_TABS.indexOf('Custom reports'), REPORT_TABS.length - 1);
 });
 
 console.log(`ai-agent: ${passed} passed`);

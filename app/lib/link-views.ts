@@ -105,17 +105,44 @@ export function viewLabel(links: readonly TrackedLink[], views: ReadonlyMap<stri
   return `Viewed ${viewStamp(v.firstAt, now)}${v.views && v.views > 1 ? ` · ${v.views} times` : ''}`;
 }
 
+type EmailTrack = { opens: number; clicks: number; first_opened_at: string | null; last_clicked_at?: string | null };
+
+export type EmailReceiptView = {
+  /** clicked: someone followed a link, the signal to trust. opened: the pixel loaded, which a mail app can do by itself. */
+  level: 'clicked' | 'opened' | 'sent';
+  label: string;
+  /** The tooltip, honest about what an open does and does not mean. */
+  title: string;
+};
+
+const longStamp = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
 /**
- * An email's receipt (email_tracking, migration 82): "Opened 2:14 PM · 4 opens
- * · 1 click", "Not opened yet", or null when the send was not tracked.
+ * An email's receipt (email_tracking, migration 82), or null when the send
+ * was not tracked. A click leads: "Clicked 2:14 PM · 2 clicks". An open alone
+ * is the weaker "Opened 2:14 PM", because Apple Mail Privacy Protection and
+ * Gmail's image proxy fetch the pixel with nobody reading.
  */
-export function emailOpenLabel(r: { opens: number; clicks: number; first_opened_at: string | null } | undefined, now = Date.now()): string | null {
+export function emailReceiptView(r: EmailTrack | undefined, now = Date.now()): EmailReceiptView | null {
   if (!r) return null;
-  if (!r.opens || !r.first_opened_at) return 'Not opened yet';
-  const opens = r.opens > 1 ? ` · ${r.opens} opens` : '';
-  const clicks = r.clicks ? ` · ${r.clicks} click${r.clicks === 1 ? '' : 's'}` : '';
-  return `Opened ${viewStamp(r.first_opened_at, now)}${opens}${clicks}`;
+  if (r.clicks > 0) {
+    const at = r.last_clicked_at ? ` ${viewStamp(r.last_clicked_at, now)}` : '';
+    return {
+      level: 'clicked',
+      label: `Clicked${at}${r.clicks > 1 ? ` · ${r.clicks} clicks` : ''}`,
+      title: `They clicked a link in it${r.last_clicked_at ? `, last on ${longStamp(r.last_clicked_at)}` : ''}.`,
+    };
+  }
+  if (!r.opens || !r.first_opened_at) return { level: 'sent', label: 'Not opened yet', title: 'Read receipt on. No open or click yet.' };
+  return {
+    level: 'opened',
+    label: `Opened ${viewStamp(r.first_opened_at, now)}${r.opens > 1 ? ` · ${r.opens} opens` : ''}`,
+    title: `First opened ${longStamp(r.first_opened_at)}. Apple Mail and Gmail can load images on their own, so an open may not mean they read it. A click does.`,
+  };
 }
+
+/** Just the words of emailReceiptView: "Clicked 2:14 PM", "Opened 2:14 PM · 4 opens", "Not opened yet", or null. */
+export const emailOpenLabel = (r: EmailTrack | undefined, now = Date.now()): string | null => emailReceiptView(r, now)?.label ?? null;
 
 /** The longer line for a tooltip: when it was first opened and how often. */
 export function viewTitle(links: readonly TrackedLink[], views: ReadonlyMap<string, LinkView>): string {

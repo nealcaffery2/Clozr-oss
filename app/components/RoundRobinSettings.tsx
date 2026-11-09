@@ -121,8 +121,8 @@ export function RoundRobinSettings({ workspaceId, admin, demo, isMobile }: {
             <div style={sub}>Lead sources</div>
             {keys.length ? keys.map((k) => (
               <div key={k.id} style={row}>
-                <span style={{ flex: '1 1 200px', fontSize: '12.5px', fontWeight: 600, color: k.active ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)' }}>
-                  {sourceLabel(k)} <span style={{ fontWeight: 400, color: 'var(--subtle, #a1a1aa)', fontFamily: 'ui-monospace, monospace' }}>{k.key_prefix}…</span>
+                <span style={{ flex: '1 1 200px', fontSize: '12.5px', fontWeight: 600, color: k.active ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)' }}>
+                  {sourceLabel(k)} <span style={{ fontWeight: 400, color: 'var(--meta, #71717a)', fontFamily: 'ui-monospace, monospace' }}>{k.key_prefix}…</span>
                 </span>
                 <label style={{ fontSize: '12px', color: 'var(--muted, #52525b)' }}>
                   New leads go to{' '}
@@ -211,9 +211,9 @@ function Rotation({ r, team, nameOf, admin, busy, run, isMobile, workspaceId }: 
       <div style={{ marginTop: '8px' }}>
         {r.members.map((m) => (
           <div key={m.user_id} style={{ ...row, padding: '6px 0' }}>
-            <span style={{ flex: '1 1 160px', fontSize: '12.5px', fontWeight: 600, color: m.active ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)' }}>
+            <span style={{ flex: '1 1 160px', fontSize: '12.5px', fontWeight: 600, color: m.active ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)' }}>
               {nameOf(m.user_id)}
-              <span style={{ fontWeight: 400, color: 'var(--subtle, #a1a1aa)' }}>
+              <span style={{ fontWeight: 400, color: 'var(--meta, #71717a)' }}>
                 {' '}· {ROLE_LABEL[team.find((t) => t.user_id === m.user_id)?.role ?? 'member'] ?? ''}
               </span>
             </span>

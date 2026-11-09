@@ -21,6 +21,7 @@ import { createPdfClozr, isPdfContract, isPdfTemplate, uploadDocSource } from '@
 import { reachClick } from '@/app/components/record/reach';
 import { buyerContactProblem } from '@/lib/buyer-contact';
 import { FileDrop } from '@/components/FileDrop';
+import { InlineField } from '@/components/ds/InlineField';
 import { ContractTermsPanel } from '@/components/ContractTerms';
 import { RecipientPicker } from '@/components/RecipientPicker';
 import { RecipientsPanel } from '@/components/RecipientsPanel';
@@ -48,7 +49,7 @@ const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color
 const field: React.CSSProperties = { width: '100%', height: '34px', padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', fontSize: '13px', outline: 0, background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)' };
 const btn = (primary = false, disabled = false): React.CSSProperties => ({
   height: '30px', padding: '0 11px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
-  border: `1px solid ${primary ? '#0A8560' : 'var(--divider, #e4e4e7)'}`, background: primary ? (disabled ? '#7fcbb2' : '#0A8560') : '#fff', color: primary ? '#fff' : '#18181b', opacity: !primary && disabled ? 0.6 : 1,
+  border: `1px solid ${primary ? '#0A8560' : 'var(--divider, #e4e4e7)'}`, background: primary ? '#0A8560' : 'var(--surface, #fff)', color: primary ? '#fff' : 'var(--ink, #18181b)', opacity: !primary && disabled ? 0.5 : 1,
 });
 const SIGN_SUBJECT = 'Please review and sign';
 const link: React.CSSProperties = { fontSize: '12px', color: 'var(--tx-mint, #0a8560)', background: 'none', border: 0, cursor: 'pointer', padding: 0, fontWeight: 500 };
@@ -103,6 +104,14 @@ export function ContractsCard({ workspaceId, sellerId, dealId, buyerId, seller, 
 
   const refresh = () => { setTick((t) => t + 1); onChanged?.(); };
   const upd = (c: ContractRow) => setLoaded((l) => (l && l.key === key ? { ...l, rows: l.rows.map((x) => (x.id === c.id ? { ...x, ...c } : x)) } : l));
+
+  // A name typed here is the person's own: CLOZR never renames it after (docs-plus rename sets name_auto false).
+  async function saveName(c: ContractRow, next: string) {
+    if (!workspaceId) return { ok: false, message: 'No workspace.' };
+    const r = await docsPlus<{ contract: ContractRow }>(workspaceId, 'rename', { contract_id: c.id, name: next });
+    if (r.ok) { upd(r.data.contract); onChanged?.(); }
+    return r;
+  }
 
   async function act(kind: string, c: ContractRow) {
     if (!workspaceId) return;
@@ -192,8 +201,8 @@ export function ContractsCard({ workspaceId, sellerId, dealId, buyerId, seller, 
       ) : null}
 
       <div style={{ marginTop: '12px' }}>
-        {rows === null ? <div style={{ fontSize: '12.5px', color: 'var(--subtle, #a1a1aa)' }}>Loading…</div>
-          : rows.length === 0 ? <div style={{ fontSize: '12.5px', color: 'var(--subtle, #a1a1aa)' }}>No contracts yet.</div>
+        {rows === null ? <div style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>Loading…</div>
+          : rows.length === 0 ? <div style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>No contracts yet.</div>
           : rows.map((c) => {
             const partly = ['sent', 'viewed'].includes(c.status) && signers.some((s) => s.contract_id === c.id && (s.status === 'signed' || s.status === 'filled'));
             const st = partly ? { ...statusLabel(c.status), text: 'Partially signed' } : statusLabel(c.status);
@@ -213,7 +222,11 @@ export function ContractsCard({ workspaceId, sellerId, dealId, buyerId, seller, 
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: '180px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '13px', fontWeight: 600 }}>{c.name}</span>
+                      <span className="cz-contract-name" title={c.name} style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ink, #18181b)' }}>
+                        <InlineField recordId={`contract${c.id}`} field="name" label="Contract name" type="text" value={c.name}
+                          readOnly={canWrite ? false : 'Only people who can send contracts can rename one'}
+                          onSave={(v) => saveName(c, String(v ?? ''))} />
+                      </span>
                       <span style={{ fontSize: '11px', fontWeight: 700, color: st.color, background: st.bg, padding: '2px 7px', borderRadius: '6px' }}>{st.text}</span>
                       {c.provider === 'pandadoc' ? <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>PandaDoc</span> : null}
                     </div>
@@ -244,7 +257,8 @@ export function ContractsCard({ workspaceId, sellerId, dealId, buyerId, seller, 
                         {canWrite && draft && isPdfContract(c) ? <button type="button" style={link} disabled={!!busy} onClick={() => setFieldsFor(c)} title="The filled-in contract: change anything on the page, then send">Review &amp; send</button> : null}
                         {canWrite && draft ? <button type="button" style={link} disabled={!!busy} onClick={() => act('send', c)}>{busy === `send:${c.id}` ? 'Sending…' : 'Send'}</button> : null}
                         {canWrite && !draft && !done ? <button type="button" style={{ ...link, color: 'var(--muted, #52525b)' }} disabled={!!busy} onClick={() => act('remind', c)}>Remind</button> : null}
-                        <button type="button" style={{ ...link, color: 'var(--muted, #52525b)' }} disabled={!!busy} onClick={() => act('pdf', c)}>{busy === `pdf:${c.id}` ? 'Fetching…' : 'PDF'}</button>
+                        {/* An uploaded PDF has no signed copy until everyone signs; before that the file is the blank form. */}
+                        {c.status === 'completed' || !isPdfContract(c) ? <button type="button" style={{ ...link, color: 'var(--muted, #52525b)' }} disabled={!!busy} onClick={() => act('pdf', c)}>{busy === `pdf:${c.id}` ? 'Fetching…' : c.status === 'completed' ? 'Signed PDF' : 'PDF'}</button> : null}
                         {canWrite && ['sent', 'viewed', 'expired'].includes(c.status) ? <button type="button" style={{ ...link, color: 'var(--muted, #52525b)' }} disabled={!!busy} onClick={() => act('extend', c)}>{c.status === 'expired' ? 'Revive' : 'Extend'}</button> : null}
                         {canWrite && ['sent', 'viewed', 'declined', 'expired', 'awaiting_approval'].includes(c.status) ? <button type="button" style={{ ...link, color: 'var(--muted, #52525b)' }} disabled={!!busy} onClick={() => act('correct', c)} title="Back to a draft: fix it and send it again">Edit &amp; resend</button> : null}
                         {canWrite ? <button type="button" style={{ ...link, color: 'var(--muted, #52525b)' }} disabled={!!busy} onClick={() => act('duplicate', c)}>Duplicate</button> : null}
@@ -737,9 +751,9 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
         <>
           <div>
             <StepHead n={1} title="Recipients" hint="Who signs, and who gets a copy" />
-            {!rendered ? <div style={{ fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>Filling the template from the record…</div> : signerRows.map((s) => (
-              <div key={s.role} style={{ display: 'grid', gridTemplateColumns: '90px minmax(0, 1.3fr) minmax(0, 1.4fr) minmax(0, 1fr) 104px', gap: '8px', marginBottom: '6px', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', fontWeight: 600, color: s.optional ? 'var(--subtle, #a1a1aa)' : 'var(--ink, #18181b)' }}>{s.label}{s.optional ? ' (opt.)' : ''}</span>
+            {!rendered ? <div style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>Filling the template from the record…</div> : signerRows.map((s) => (
+              <div key={s.role} data-signer-row style={{ display: 'grid', gridTemplateColumns: '90px minmax(0, 1.3fr) minmax(0, 1.4fr) minmax(0, 1fr) 104px', gap: '8px', marginBottom: '6px', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: s.optional ? 'var(--meta, #71717a)' : 'var(--ink, #18181b)' }}>{s.label}{s.optional ? ' (opt.)' : ''}</span>
                 <RecipientPicker workspaceId={workspaceId} value={s.name ?? ''} onChange={(v) => typeSigner(s.role, v)} onPick={(c) => pickSigner(s.role, c)} linked={linkLabel(s)} onUnlink={() => setSignerEdits((x) => ({ ...x, [s.role]: { ...x[s.role], ...NO_LINK, unlinked: true } }))} placeholder="Full name — or search" />
                 <input value={s.email ?? ''} onChange={(e) => setSignerEdits((x) => ({ ...x, [s.role]: { ...x[s.role], email: e.target.value } }))} placeholder={buyerRole(s.role) ? 'Email *' : 'email@example.com'} type="email" style={field} />
                 <input value={s.phone ?? ''} onChange={(e) => setSignerEdits((x) => ({ ...x, [s.role]: { ...x[s.role], phone: e.target.value } }))} placeholder={buyerRole(s.role) ? 'Phone *' : 'Phone (for texting)'} style={field} />
@@ -784,7 +798,7 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
               </div>
             ) : null}
             {extras.map((e, i) => (
-              <div key={i} style={{ display: 'grid', gridTemplateColumns: '90px minmax(0, 1.3fr) minmax(0, 1.4fr) minmax(0, 1fr) 104px auto', gap: '8px', marginTop: '6px', alignItems: 'center' }}>
+              <div key={i} data-signer-row style={{ display: 'grid', gridTemplateColumns: '90px minmax(0, 1.3fr) minmax(0, 1.4fr) minmax(0, 1fr) 104px auto', gap: '8px', marginTop: '6px', alignItems: 'center' }}>
                 <select value={e.type} onChange={(ev) => setExtras((x) => x.map((y, j) => (j === i ? { ...y, type: ev.target.value as Extra['type'] } : y)))} style={{ ...field, height: '34px' }} title="CC gets the signed copy; a viewer can read it while it is out; an approver signs off before anyone else gets it">
                   <option value="cc">CC (gets a copy)</option>
                   <option value="viewer">Viewer</option>
@@ -864,7 +878,7 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
           {upList.map((r, i) => {
             const set = (patch: Partial<UploadRecip>) => setUpRecips(upList.map((x, j) => (j === i ? { ...x, ...patch } : x)));
             return (
-              <div key={i} style={{ display: 'grid', gridTemplateColumns: '110px minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 1fr) 130px auto', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
+              <div key={i} data-signer-row style={{ display: 'grid', gridTemplateColumns: '110px minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 1fr) 130px auto', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
                 <input value={r.label} onChange={(e) => set({ label: e.target.value })} placeholder="Role (Seller)" style={field} />
                 <input value={r.name} onChange={(e) => set({ name: e.target.value })} placeholder="Full name" style={field} />
                 <input value={r.email} onChange={(e) => set({ email: e.target.value })} placeholder="email@example.com" type="email" style={field} />
@@ -893,7 +907,7 @@ function NewContract({ workspaceId, sellerId, dealId, buyerId, seller, buyer, on
         <div style={{ marginTop: '10px' }}>
           <label style={label}>Signer{pdRecips.length > 1 ? 's' : ''}</label>
           {pdRecips.map((r, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto', gap: '8px', marginBottom: '6px' }}>
+            <div key={i} data-signer-row style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto', gap: '8px', marginBottom: '6px' }}>
               <input value={r.email} onChange={(e) => setRecips(pdRecips.map((x, j) => (j === i ? { ...x, email: e.target.value } : x)))} placeholder="email@example.com" style={field} type="email" />
               <input value={r.first_name ?? ''} onChange={(e) => setRecips(pdRecips.map((x, j) => (j === i ? { ...x, first_name: e.target.value } : x)))} placeholder="First" style={field} />
               <input value={r.last_name ?? ''} onChange={(e) => setRecips(pdRecips.map((x, j) => (j === i ? { ...x, last_name: e.target.value } : x)))} placeholder="Last" style={field} />

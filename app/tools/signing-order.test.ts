@@ -1,6 +1,6 @@
 // Signing order, recipient types and reminders.  Run:  npx tsx tools/signing-order.test.ts
 import assert from 'node:assert/strict';
-import { allSigned, appendTcCc, canSignNow, ccAddresses, fills, inSendingHours, isDone, needsApproval, pending, pendingApprovals, reminderDue, sendTo, signs, turn } from '../supabase/functions/_shared/signing-order';
+import { allSigned, appendTcCc, canSignNow, ccAddresses, fills, inSendingHours, isDone, needsApproval, pending, pendingApprovals, recipientType, reminderDue, sendTo, signs, turn } from '../supabase/functions/_shared/signing-order';
 
 const seller = { id: 1, sort: 1, status: 'pending', recipient_type: 'signer' };
 const company = { id: 2, sort: 2, status: 'pending', recipient_type: 'signer' };
@@ -91,5 +91,13 @@ assert.equal(copied.length, 2);
 assert.equal((copied[1] as { email?: string }).email, 'casey@home.com');
 assert.equal((copied[1] as { recipient_type?: string }).recipient_type, 'cc');
 assert.equal(appendTcCc(copied, [{ email: 'casey@home.com', name: 'Casey' }]).length, 2, 'already on the contract is not added twice');
+
+// A recipient_type from the client (createContract, addRecipient): every type a row may hold,
+// a form filler included (migration 113); anything else is a signer.
+assert.equal(recipientType('filler'), 'filler', 'a form filler added to a contract is not saved as a signer');
+for (const t of ['signer', 'approver', 'cc', 'viewer']) assert.equal(recipientType(t), t);
+assert.equal(recipientType('bogus'), 'signer');
+assert.equal(recipientType(undefined), 'signer');
+assert.equal(recipientType(null), 'signer');
 
 console.log('signing-order ok');

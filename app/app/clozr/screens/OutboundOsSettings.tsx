@@ -9,7 +9,7 @@ import { DeliverabilitySettings } from '@/app/components/deliverability/Delivera
 import { GoogleConnect, GoogleDriveCard } from '@/components/GoogleConnect';
 import { resendWebhookUrl } from '@/lib/deliverability';
 import { useSession } from '@/lib/session';
-import type { OutboundSettingsTab } from './settingsTab';
+import type { EmailSettingsTab as OutboundSettingsTab } from '@/lib/settings-sections';
 
 const card: React.CSSProperties = {
   background: 'var(--surface, #fff)',

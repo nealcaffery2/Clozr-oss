@@ -8,7 +8,9 @@ import { usePlans } from './usePlans';
 import { PlansList } from './PlansList';
 import { PlanEditor } from './PlanEditor';
 import { AiPanel } from './AiPanel';
+import { useBuyerListProfile } from '@/lib/buyer-list-profile';
 import { Btn, FAINT, INK, LINE, MUTED, PlayPause, Toast } from './ui';
+import { ScreenHeader } from '@/components/ds/Screen';
 
 export function PlanBuilder({
   isMobile, headerLeft, headerRight, onOpenPerson, onOpenBuyer, notify, onChanged,
@@ -26,14 +28,13 @@ export function PlanBuilder({
 }) {
   const api = usePlans({ notify, onSaved: onChanged });
   const d = api.draft;
+  const compr = useBuyerListProfile(api.workspaceId) === 'compr';
 
   return (
     <section data-screen-label="Action plans" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-      <div data-head style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', background: 'var(--surface, #fff)', borderBottom: `1px solid ${LINE}`, flex: 'none', flexWrap: 'wrap' }}>
-        {headerLeft}
-        <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em' }}>Action plans</h1>
-        {!isMobile ? <span style={{ fontSize: '12.5px', color: MUTED }}>follow-up sequences for sellers, buyers, TC, and sources</span> : null}
-        <div style={{ flex: 1 }} />
+      <ScreenHeader before={headerLeft} title="Action plans"
+        meta={!isMobile ? (compr ? 'campaigns for Compr prospects, signups and customers' : 'follow-up sequences for sellers, buyers, TC, and sources') : undefined}
+        actions={<>
         {headerRight}
         {d?.id ? (
           <PlayPause playing={d.active} disabled={!api.canWrite && !api.preview} onClick={() => void api.toggleActive(d.id!, !d.active)} />
@@ -47,8 +48,11 @@ export function PlanBuilder({
             </Btn>
           </>
         ) : null}
-        <Btn kind="dark" onClick={api.newPlan}>+ New plan</Btn>
-      </div>
+        <Btn kind="dark" onClick={api.newPlan}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          New plan
+        </Btn>
+      </>} />
       <div style={{ flex: 1, minHeight: 0, display: isMobile ? 'block' : 'grid', overflow: isMobile ? 'auto' : 'visible', gridTemplateColumns: isMobile ? '1fr' : '300px minmax(0,1fr)' }}>
         <aside style={{ borderRight: isMobile ? 0 : `1px solid ${LINE}`, borderBottom: isMobile ? `1px solid ${LINE}` : 0, background: 'var(--surface, #fff)', overflow: 'auto', maxHeight: isMobile ? '34vh' : 'none' }}>
           <PlansList
@@ -61,7 +65,7 @@ export function PlanBuilder({
         </aside>
         <div style={{ overflow: 'auto', padding: '16px 20px 40px', background: 'var(--canvas, #fafafa)' }}>
           <AiPanel
-            hasPlan={!!d} busy={api.aiBusy} review={api.aiReview} tone={d?.settings.tone ?? ''}
+            hasPlan={!!d} compr={compr} busy={api.aiBusy} review={api.aiReview} tone={d?.settings.tone ?? ''}
             onGenerate={(g, t, n) => void api.aiGenerate(g, t, n)} onEdit={(i, t) => void api.aiEdit(i, t)}
             onUndo={api.aiUndo} onDismiss={api.dismissReview}
           />
@@ -72,7 +76,7 @@ export function PlanBuilder({
             <div style={{ background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '12px', padding: '28px 20px', textAlign: 'center' }}>
               <div style={{ fontSize: '14px', fontWeight: 600, color: INK }}>{api.plans.length ? 'Pick a plan on the left, or start a new one' : 'Your first action plan'}</div>
               <div style={{ fontSize: '12.5px', color: MUTED, marginTop: '6px', lineHeight: 1.55, maxWidth: '460px', margin: '6px auto 0' }}>
-                A plan is a sequence of texts, calls, emails and tasks with a wait between each. Enrol a seller and every step is queued as dated work for whoever owns the lead; a reply stops it so a person takes over.
+                A plan is a sequence of texts, calls, emails and tasks with a wait between each. Enrol a {compr ? 'Compr contact' : 'seller'} and every step is queued as dated work for whoever owns the lead; a reply stops it so a person takes over.
               </div>
               <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '14px' }}>
                 <Btn kind="dark" onClick={api.newPlan}>+ New plan</Btn>

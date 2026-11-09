@@ -15,8 +15,8 @@
  *   GET  /listing/market            redirects to the marketplace in the app
  *   GET  /listing/market.json       marketplace inventory; ?access= unlocks full cards
  *   GET  /listing/market/{slug}     redirects to that deal in the app marketplace
- *   POST /listing/join              opt in to the buyers list, returns marketplace access
- *   POST /listing/access            log back in with the email or phone you joined with
+ *   POST /listing/join              opt in to the buyers list; a new buyer gets marketplace access
+ *   POST /listing/access            sends a sign-in link to the email or phone you joined with
  *   POST /listing/inquiry           inquiry, save or view from a signed-up buyer
  *
  * Nothing is written from here directly. dispo_public_view and
@@ -33,6 +33,10 @@
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { fillOnly } from '../_shared/flat.ts';
+import { marketSigninUrl, signinEmail, signinText } from '../_shared/market-signin.ts';
+import { sendResend, transactionalFrom } from '../_shared/resend.ts';
+import { signingResendEnv } from '../_shared/workspace-email.ts';
 import { hideStreet, isBuyerPhoto, lockCard, mentionsStreet, toMarketCard } from '../_shared/marketplace-public.ts';
 import { ALLOW_HEADERS, HARDENING, clientIp, corsFor, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 
@@ -74,8 +78,8 @@ export async function readListingToken(token: string | null): Promise<LinkClaim 
 }
 
 /**
- * Marketplace access: minted when someone joins the buyers list (or logs back
- * in with the email or phone they joined with) and kept by their browser. It
+ * Marketplace access: minted when someone joins the buyers list (or opens the
+ * sign-in link /access sent them) and kept by their browser. It
  * names the workspace and the buyer, never a deal, and is signed under its own
  * prefix so a campaign link token can never be replayed as one.
  */
@@ -695,8 +699,18 @@ Deno.serve(async (req) => {
       if (b.company) box.company = String(b.company).slice(0, 120);
       if (b.buy_box) box.buy_box = String(b.buy_box).slice(0, 1000);
       if (Object.keys(box).length) {
-        await admin.from('buyers').update(box).eq('id', buyerId).eq('workspace_id', workspaceId);
+        // A buyer already on the list keeps what is on file: the form fills blanks only, so
+        // knowing someone's email or phone never rewrites their record.
+        let patch = box;
+        if (!row?.created) {
+          const { data: cur } = await admin.from('buyers').select(Object.keys(box).join(', ')).eq('id', buyerId).eq('workspace_id', workspaceId).maybeSingle();
+          patch = fillOnly((cur ?? {}) as Record<string, unknown>, box);
+        }
+        if (Object.keys(patch).length) await admin.from('buyers').update(patch).eq('id', buyerId).eq('workspace_id', workspaceId);
       }
+      // Someone already on the list signs in through the link /access sends
+      // them; re-joining with their email must not hand out their access.
+      if (!row?.created) return json({ ok: true, created: false });
       return json({
         ok: true,
         created: !!row?.created,
@@ -707,9 +721,10 @@ Deno.serve(async (req) => {
     }
 
     // -------------------------------------------------- marketplace log-in
-    // A buyer who already joined gets their access back with the email or
-    // phone they joined with. The gate is lead capture, not an account: the
-    // feed it unlocks is what a rep would text that buyer anyway.
+    // A buyer who already joined types the email or phone they joined with,
+    // and the access link goes to that email or phone. The token is never
+    // returned here: an access token lets its holder send offers and
+    // inquiries as that buyer, so knowing someone's email is not enough.
     if (path === 'access' && req.method === 'POST') {
       const limit = await rateLimit(admin, `listing:access:${ip}`, 20, 3600);
       if (!limit.allowed) return tooMany(cors, limit);
@@ -719,17 +734,22 @@ Deno.serve(async (req) => {
       const email = String(b.email ?? '').trim().toLowerCase().slice(0, 200);
       const key = phoneKey(b.phone);
       if (!email && !key) return json({ error: 'Enter the email or phone you joined with.' }, 400);
-      let q = admin.from('buyers').select('id, name').eq('workspace_id', workspaceId).is('blacklisted_at', null).limit(1);
+      let q = admin.from('buyers').select('id, name, email, phone').eq('workspace_id', workspaceId).is('blacklisted_at', null).limit(1);
       q = email ? q.ilike('email', email) : q.eq('phone_key', key);
       const { data: found } = await q;
       const buyer = (found ?? [])[0];
       if (!buyer) return json({ error: 'We could not find you on the list yet. Join the buyers list to unlock deals.', join: true }, 404);
-      return json({
-        ok: true,
-        buyer_id: buyer.id,
-        access: await accessToken(Number(workspaceId), Number(buyer.id)),
-        name: String(buyer.name ?? '').split(/\s+/)[0] || null,
-      });
+      // A cap per buyer as well as per IP, so nobody can flood one inbox or phone with links.
+      const perBuyer = await rateLimit(admin, `listing:access-send:${buyer.id}`, 5, 3600);
+      if (!perBuyer.allowed) return tooMany(cors, perBuyer);
+      const link = marketSigninUrl(appUrl(), await accessToken(Number(workspaceId), Number(buyer.id)), buyer.name);
+      // The channel they typed first; the other one on file if that cannot go.
+      const order: ('email' | 'text')[] = email ? ['email', 'text'] : ['text', 'email'];
+      for (const via of order) {
+        if (via === 'email' && buyer.email && await emailSignin(admin, Number(workspaceId), buyer, link)) return json({ ok: true, sent: 'email' });
+        if (via === 'text' && buyer.phone && await textSignin(admin, Number(workspaceId), buyer, link)) return json({ ok: true, sent: 'text' });
+      }
+      return json({ error: 'We could not send your link right now. Try again in a few minutes.' }, 503);
     }
 
     // -------------------------------------------------- marketplace actions
@@ -901,6 +921,26 @@ Deno.serve(async (req) => {
 });
 
 const appUrl = () => String(Deno.env.get('APP_URL') || 'https://your-clozr-site.example.com').replace(/\/$/, '');
+
+/** The marketplace sign-in link by email, from the workspace's transactional sender. */
+async function emailSignin(admin: Any, ws: number, buyer: { id: number; name?: string | null; email: string }, link: string): Promise<boolean> {
+  const env = await signingResendEnv(admin, ws);
+  const from = transactionalFrom(env);
+  if (!from) { console.error('listing access: Resend is not configured'); return false; }
+  const m = signinEmail({ name: buyer.name, url: link });
+  const sent = await sendResend({ to: buyer.email, from: from.from, subject: m.subject, html: m.html, text: m.text, tags: { kind: 'marketplace_signin' } }, env)
+    .catch((e) => { console.error('listing access email', (e as Error).message); return null; });
+  return !!sent;
+}
+
+/** The link by text, through the same Talkr path contract links use (blacklist and STOP respected). */
+async function textSignin(admin: Any, ws: number, buyer: { id: number; phone: string }, link: string): Promise<boolean> {
+  const { textRecipient } = await import('../_shared/docs-flow.ts');
+  const r = await textRecipient(admin, { workspace_id: ws }, { phone: buyer.phone, buyer_id: buyer.id }, signinText(link), null, { contractsLine: false })
+    .catch((e) => ({ ok: false as const, reason: (e as Error).message }));
+  if (!r.ok) console.error('listing access text', r.reason);
+  return r.ok;
+}
 
 /** The marketplace link for a deal, when that deal is on the market right now. */
 async function marketLinkForDeal(admin: Any, dealId: number) {

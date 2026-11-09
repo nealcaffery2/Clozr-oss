@@ -1,8 +1,7 @@
 // Deal Machine — the scraper as a CLOZR program.
 //
 // Modelled on the extension's popup (Deal Machine · Log · Buyers Lists ·
-// Results · Masterlist · Settings). Facebook groups and the deal-post
-// commenter live on Buyr. Rebuilt at desktop size in
+// Results · Masterlist · Settings). Rebuilt at desktop size in
 // CLOZR's own chrome. The extension is the runtime; this is the program. A rep
 // presses RUN here, the extension in the office Chrome picks the command up on
 // its next sync, and everything it does comes back through the same channel:
@@ -32,6 +31,9 @@ import {
 import { DEAL_MACHINE, DEAL_MACHINE_TINT } from '@/app/clozr/brand';
 import { Mark } from '@/components/ds/mark';
 import { parseDollars } from '@/lib/money';
+import { ScreenHeader } from '@/components/ds/Screen';
+import { buttonClass } from '@/components/ds/Button';
+import { Pause, Play, Square } from 'lucide-react';
 
 // ---- chrome ------------------------------------------------------------------
 
@@ -49,25 +51,15 @@ const muted: React.CSSProperties = { fontSize: '12.5px', color: 'var(--meta, #71
 const thStyle: React.CSSProperties = { textAlign: 'left', fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600, padding: '8px 10px', background: 'var(--c-thead)', borderBottom: '1px solid var(--c-thead-line)', whiteSpace: 'nowrap' };
 const tdStyle: React.CSSProperties = { padding: '9px 10px', fontSize: '12.5px', borderBottom: '1px solid var(--divider-2, #f0f0f1)', color: 'var(--ink, #18181b)', verticalAlign: 'middle' };
 
+// Deal Machine's orange is its mark, not an action colour: "machine" (the
+// screen's main action) is the one CLOZR-green primary (DESIGN.md §2).
 type BtnKind = 'primary' | 'machine' | 'ghost' | 'danger' | 'dark';
+const BTN_KIND: Record<BtnKind, 'primary' | 'ghost' | 'danger'> = { primary: 'primary', machine: 'primary', ghost: 'ghost', danger: 'danger', dark: 'ghost' };
 function Btn({ kind = 'ghost', small, disabled, onClick, children, title, style }: {
   kind?: BtnKind; small?: boolean; disabled?: boolean; onClick?: () => void; children: React.ReactNode; title?: string; style?: React.CSSProperties;
 }) {
-  const base: React.CSSProperties = {
-    height: small ? '28px' : '34px', padding: small ? '0 10px' : '0 14px', borderRadius: '9px', fontSize: small ? '12px' : '12.5px', fontWeight: 600,
-    cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1, display: 'inline-flex', alignItems: 'center', gap: '7px', whiteSpace: 'nowrap',
-    border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', color: 'var(--ink, #18181b)', transition: 'background .12s, border-color .12s',
-  };
-  const kinds: Record<BtnKind, [string, React.CSSProperties]> = {
-    ghost: ['dc2', {}],
-    primary: ['dc10', { background: 'var(--c-primary)', borderColor: 'var(--c-primary)', color: '#fff' }],
-    machine: ['clozr-dm-btn', { background: DEAL_MACHINE, borderColor: DEAL_MACHINE, color: 'var(--on-dark, #fff)' }],
-    danger: ['dc36', { background: '#dc2626', borderColor: '#dc2626', color: '#fff' }],
-    dark: ['dc6', { background: 'var(--surface, #fff)', borderColor: 'var(--line, #d4d4d8)', color: 'var(--ink, #18181b)' }],
-  };
-  const [cls, extra] = kinds[kind];
   return (
-    <button type="button" className={cls} disabled={disabled} onClick={onClick} title={title} style={{ ...base, ...extra, ...style }}>
+    <button type="button" className={buttonClass(BTN_KIND[kind], small ? 28 : 32)} disabled={disabled} onClick={onClick} title={title} style={style}>
       {children}
     </button>
   );
@@ -79,7 +71,7 @@ function Toggle({ on, onChange, disabled, children, warn }: { on: boolean; onCha
       <span
         role="switch" aria-checked={on}
         onClick={(e) => { e.preventDefault(); if (!disabled) onChange(!on); }}
-        style={{ flex: 'none', marginTop: '1px', width: '34px', height: '20px', borderRadius: '999px', background: on ? (warn ? '#d97706' : 'var(--c-primary)') : '#d4d4d8', position: 'relative', transition: 'background .15s', opacity: disabled ? 0.6 : 1 }}
+        style={{ flex: 'none', marginTop: '1px', width: '34px', height: '20px', borderRadius: '999px', background: on ? (warn ? '#d97706' : 'var(--c-primary)') : '#d4d4d8', position: 'relative', transition: 'background .15s', opacity: disabled ? 0.5 : 1 }}
       >
         <span style={{ position: 'absolute', top: '2px', left: on ? '16px' : '2px', width: '16px', height: '16px', borderRadius: '50%', background: 'var(--surface, #fff)', boxShadow: '0 1px 2px rgba(0,0,0,.2)', transition: 'left .15s' }} />
       </span>
@@ -88,10 +80,11 @@ function Toggle({ on, onChange, disabled, children, warn }: { on: boolean; onCha
   );
 }
 
+/** A count. Ink, unless the colour says something (a warning). */
 function Stat({ n, k, color }: { n: number | string; k: string; color?: string }) {
   return (
     <div style={{ flex: '1 1 0', minWidth: '90px', padding: '12px 14px', borderRadius: '12px', background: 'var(--canvas, #fafafa)', border: '1px solid var(--divider-2, #f0f0f1)' }}>
-      <div style={{ fontSize: '24px', fontWeight: 800, letterSpacing: '-0.03em', color: color ?? 'var(--ink, #18181b)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{n}</div>
+      <div style={{ fontSize: 'var(--fs-figure)', fontWeight: 650, letterSpacing: '-0.02em', color: color ?? 'var(--ink, #18181b)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{n}</div>
       <div style={{ ...label, marginBottom: 0, marginTop: '6px' }}>{k}</div>
     </div>
   );
@@ -185,32 +178,32 @@ export function DealMachine({ V }: { V: ClozrView }) {
 
   return (
     <section data-screen-label="Deal Machine" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      <style>{`.clozr-dm-btn:hover{background:#c2410c !important;border-color:#c2410c !important}.clozr-dm-tab:hover{color:var(--ink, #18181b) !important}.clozr-dm-row:hover{background:var(--canvas, #fafafa)}`}</style>
-      <div style={{ background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)', padding: V.isMobile ? '10px 12px 0' : '12px 20px 0' }}>
-        <div data-head style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', rowGap: '8px' }}>
-          <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: DEAL_MACHINE, flex: 'none' }} />
-          <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em' }}>Deal Machine</h1>
-          <span style={{ fontSize: '12px', color: 'var(--meta, #71717a)' }}>{cloudOn ? 'Running in CLOZR · InvestorLift · Facebook groups' : 'InvestorLift · Facebook groups · RealEstateBees · buyers lists'}</span>
-          <div style={{ flex: 1 }} />
+      <style>{`.clozr-dm-tab:hover{color:var(--ink, #18181b) !important}.clozr-dm-row:hover{background:var(--canvas, #fafafa)}`}</style>
+      <ScreenHeader
+        before={<span aria-hidden style={{ width: '8px', height: '8px', borderRadius: '2px', background: DEAL_MACHINE, flex: 'none' }} />}
+        title="Deal Machine"
+        meta={cloudOn ? 'Running in CLOZR · InvestorLift · Facebook groups' : 'InvestorLift · Facebook groups · RealEstateBees · buyers lists'}
+        actions={<>
           {headStatus}
-          {device ? <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>{device.label ?? device.deviceId.slice(0, 8)}{device.version ? ` · v${device.version}` : ''}</span> : null}
-        </div>
-        <div data-tabs style={{ display: 'flex', gap: '2px', marginTop: '10px', overflow: 'auto' }}>
+          {device ? <span style={{ fontSize: '11.5px', color: 'var(--muted, #52525b)' }}>{device.label ?? device.deviceId.slice(0, 8)}{device.version ? ` · v${device.version}` : ''}</span> : null}
+        </>}>
+        <div data-tabs style={{ display: 'flex', gap: '2px', overflow: 'auto' }}>
           {TABS.map((t) => {
             const on = t === tab;
-            const badge = t === 'Log' && activeRun ? '●' : t === 'Buyers lists' && state ? state.totals.optedIn : t === 'Results' && state ? state.totals.deals : null;
+            const badge = t === 'Log' && activeRun ? 'live' : t === 'Buyers lists' && state ? state.totals.optedIn : t === 'Results' && state ? state.totals.deals : null;
             return (
-              <button key={t} type="button" className="clozr-dm-tab" onClick={() => setTab(t)} style={{ height: '36px', padding: '0 11px', border: 0, borderBottom: `2px solid ${on ? DEAL_MACHINE : 'transparent'}`, background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 500, color: on ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <button key={t} type="button" className="clozr-dm-tab" onClick={() => setTab(t)} style={{ height: '36px', padding: '0 11px', border: 0, borderBottom: `2px solid ${on ? 'var(--c-action, #0a8560)' : 'transparent'}`, background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 500, color: on ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                 {t}
-                {badge !== null && badge !== 0 ? <span style={{ fontSize: '10.5px', fontWeight: 700, color: on ? DEAL_MACHINE : 'var(--subtle, #a1a1aa)', ...(badge === '●' ? { color: '#16a34a' } : {}) }}>{badge}</span> : null}
+                {badge === 'live' ? <span aria-label="running" style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#16a34a' }} /> : badge !== null && badge !== 0 ? <span style={{ fontSize: '11px', fontWeight: 600, color: on ? 'var(--ink-2, #27272a)' : 'var(--meta, #71717a)', fontVariantNumeric: 'tabular-nums' }}>{badge}</span> : null}
               </button>
             );
           })}
         </div>
-      </div>
+      </ScreenHeader>
 
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: V.isMobile ? '12px 12px 40px' : '16px 20px 40px' }}>
-        <div style={{ maxWidth: tab === 'Log' || tab === 'Results' ? '1100px' : '860px' }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 'var(--gutter) var(--gutter) 40px' }}>
+        {/* The log and results are lists (fluid); the rest are forms at the one form width. */}
+        <div style={{ maxWidth: tab === 'Log' || tab === 'Results' ? 'none' : 'var(--form-width)' }}>
           {note ? (
             <div role="status" style={{ ...card, padding: '11px 13px', background: note.ok ? 'var(--positive-soft, #dcfce7)' : 'var(--negative-soft, #fee2e2)', borderColor: note.ok ? 'var(--tint-green-3, #bbf7d0)' : 'var(--tint-red-2, #fecaca)', color: note.ok ? 'var(--tx-green, #15803d)' : '#b91c1c', fontSize: '12.5px' }}>{note.text}</div>
           ) : null}
@@ -267,13 +260,13 @@ function Overview({ V, state, cloudOn, device, online, runState, activeRun, pend
     <>
       <div style={{ ...card, padding: '18px 20px' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px' }}>
-          <Btn kind="machine" disabled={runDisabled || isRunning || queued('run')} onClick={() => cmd('run')} style={{ height: '44px', padding: '0 22px', fontSize: '14px', letterSpacing: '.04em', boxShadow: '0 4px 14px rgba(234,88,12,.28)' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-            {queued('run') ? 'QUEUED' : isRunning ? 'RUNNING' : 'RUN DEAL MACHINE'}
+          <Btn kind="machine" disabled={runDisabled || isRunning || queued('run')} onClick={() => cmd('run')}>
+            <Play size={14} fill="currentColor" aria-hidden />
+            {queued('run') ? 'Queued' : isRunning ? 'Running…' : 'Run Deal Machine'}
           </Btn>
-          <Btn disabled={disabled || runState !== 'running' || queued('pause')} onClick={() => cmd('pause')}>⏸ Pause</Btn>
-          <Btn disabled={disabled || runState !== 'paused' || queued('resume')} onClick={() => cmd('resume')}>▶ Resume</Btn>
-          <Btn kind="dark" disabled={disabled || !isRunning || queued('stop')} onClick={() => cmd('stop')}>⏹ Stop</Btn>
+          <Btn disabled={disabled || runState !== 'running' || queued('pause')} onClick={() => cmd('pause')}><Pause size={14} aria-hidden />Pause</Btn>
+          <Btn disabled={disabled || runState !== 'paused' || queued('resume')} onClick={() => cmd('resume')}><Play size={14} aria-hidden />Resume</Btn>
+          <Btn kind="dark" disabled={disabled || !isRunning || queued('stop')} onClick={() => cmd('stop')}><Square size={13} aria-hidden />Stop</Btn>
           <div style={{ flex: 1 }} />
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: 'var(--ink, #18181b)', cursor: canOperate ? 'pointer' : 'default' }}>
             <input type="checkbox" checked={state.settings.dryRun} disabled={!canOperate} onChange={(e) => void onDryRun(e.target.checked)} style={{ width: '15px', height: '15px', accentColor: DEAL_MACHINE }} />
@@ -285,14 +278,14 @@ function Overview({ V, state, cloudOn, device, online, runState, activeRun, pend
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', marginTop: '8px', fontSize: '12px', color: 'var(--meta, #71717a)', flexWrap: 'wrap' }}>
           <span>
-            {!state.key ? 'Issue the key under Settings → Integrations to enable the controls.'
-              : cloudOn && state.apifyConnected === false ? 'Cloud is on but has no Apify token. An owner or admin pastes it under Settings → Cloud.'
-              : cloudOn && !online ? 'CLOZR Cloud checks in every two minutes; RUN starts it at once.'
+            {!state.key ? 'Issue the key under Settings, Integrations to enable the controls.'
+              : cloudOn && state.apifyConnected === false ? 'Cloud is on but has no Apify token. An owner or admin pastes it under Settings, Cloud.'
+              : cloudOn && !online ? 'CLOZR Cloud checks in every two minutes; Run starts it at once.'
               : !online ? `Extension is off — commands queue and run when it checks in. ${device ? `Last seen ${since(device.lastSeenAt)}.` : 'No extension has connected yet.'}`
               : activeRun ? (device?.step ?? activeRun.step ?? `${KIND_LABELS[activeRun.kind] ?? activeRun.kind} running…`)
               : `Idle · ${KIND_LABELS[lastDone?.kind ?? ''] ?? 'last run'} ${lastDone ? since(lastDone.endedAt ?? lastDone.startedAt) : 'never'}`}
           </span>
-          <span style={{ fontWeight: 700, fontSize: '11.5px', color: runState === 'running' ? '#15803d' : runState === 'paused' || runState === 'stopping' ? '#b45309' : 'var(--subtle, #a1a1aa)' }}>{runState}</span>
+          <span style={{ fontWeight: 700, fontSize: '11.5px', color: runState === 'running' ? '#15803d' : runState === 'paused' || runState === 'stopping' ? '#b45309' : 'var(--meta, #71717a)' }}>{runState}</span>
         </div>
         {pending.length ? (
           <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--divider-2, #f0f0f1)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -315,11 +308,11 @@ function Overview({ V, state, cloudOn, device, online, runState, activeRun, pend
           {shown ? <span style={muted}>{KIND_LABELS[shown.kind] ?? shown.kind} · {shown.trigger} · started {since(shown.startedAt)} · {duration(shown.startedAt, shown.endedAt)}{shown.dryRun ? ' · dry run' : ''}</span> : <span style={muted}>Nothing has run yet.</span>}
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <Stat n={counts.scraped ?? 0} k="Scraped" color="#2d5bff" />
+          <Stat n={counts.scraped ?? 0} k="Scraped" />
           <Stat n={counts.valid ?? 0} k="Valid" />
-          <Stat n={counts.qualified ?? 0} k="Qualified" color="var(--tx-green, #15803d)" />
-          <Stat n={counts.clozr ?? counts.submitted ?? 0} k="To CLOZR" color={DEAL_MACHINE} />
-          <Stat n={counts.optedIn ?? 0} k="Opted in" color="var(--tx-mint, #0a8560)" />
+          <Stat n={counts.qualified ?? 0} k="Qualified" />
+          <Stat n={counts.clozr ?? counts.submitted ?? 0} k="To CLOZR" />
+          <Stat n={counts.optedIn ?? 0} k="Opted in" />
         </div>
         {shown?.error ? <p style={{ ...muted, color: 'var(--tx-red, #b91c1c)', marginTop: '10px', marginBottom: 0 }}>{shown.error}</p> : null}
         {diag ? (
@@ -338,7 +331,7 @@ function Overview({ V, state, cloudOn, device, online, runState, activeRun, pend
 
       <div style={card}>
         <h2 style={h2}>More jobs</h2>
-        <p style={sub}>{cloudOn ? 'Scrape only runs in the cloud like RUN. The buyers-list bot, InvestorLift ETL and Blitz still need the Chrome extension (they fill forms in a logged-in browser) and queue for it.' : 'Each one is the same pipeline with parts left out. They queue like RUN and never overlap: the extension refuses a second job while one is on.'}</p>
+        <p style={sub}>{cloudOn ? 'Scrape only runs in the cloud like Run. The buyers-list bot, InvestorLift ETL and Blitz still need the Chrome extension (they fill forms in a logged-in browser) and queue for it.' : 'Each one is the same pipeline with parts left out. They queue like RUN and never overlap: the extension refuses a second job while one is on.'}</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
           <Btn disabled={runDisabled || isRunning || queued('scrape')} onClick={() => cmd('scrape')}>Scrape only</Btn>
           <Btn disabled={disabled || isRunning || queued('buyers_list')} onClick={() => cmd('buyers_list')} style={{ borderColor: 'var(--c-action-line, #a7dcc5)', color: 'var(--tx-mint-deep, #08694c)', background: 'var(--c-genius-soft, #f0faf5)' }}>Buyers list only</Btn>
@@ -352,7 +345,7 @@ function Overview({ V, state, cloudOn, device, online, runState, activeRun, pend
       <div style={card}>
         <h2 style={h2}>Recent runs</h2>
         <p style={sub}>What the cloud and the extension reported, newest first. Open the Log tab for the line-by-line.</p>
-        {state.runs.length === 0 ? <Empty>No runs yet. Press RUN, or switch on scheduled runs under Settings → General.</Empty> : (
+        {state.runs.length === 0 ? <Empty>No runs yet. Press Run, or switch on scheduled runs under Settings → General.</Empty> : (
           <div style={{ overflowX: 'auto', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>{['Started', 'Job', 'Trigger', 'Status', 'Scraped', 'Valid', 'Qualified', 'To CLOZR', 'Took'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
@@ -462,7 +455,7 @@ function LogTab({ workspaceId, runs, activeRun, toast }: { workspaceId: number |
         {shown.length === 0 ? <span style={{ color: 'var(--meta, #71717a)' }}>{lines.length ? 'Nothing matches the filter.' : 'No log lines yet. The extension ships its log every few seconds while it runs.'}</span> : shown.map((l) => (
           <div key={l.id} style={{ display: 'flex', gap: '10px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
             <span style={{ color: 'var(--meta, #71717a)', flex: 'none' }}>{l.ts.slice(11, 19)}</span>
-            <span style={{ color: l.level === 'error' ? '#f87171' : l.level === 'warn' ? '#fbbf24' : l.level === 'debug' ? 'var(--meta, #71717a)' : 'var(--subtle, #a1a1aa)', flex: 'none', width: '38px', fontSize: '11px', paddingTop: '2px' }}>{l.level}</span>
+            <span style={{ color: l.level === 'error' ? '#f87171' : l.level === 'warn' ? '#fbbf24' : l.level === 'debug' ? 'var(--meta, #71717a)' : 'var(--meta, #71717a)', flex: 'none', width: '38px', fontSize: '11px', paddingTop: '2px' }}>{l.level}</span>
             <span style={{ color: '#fdba74', flex: 'none' }}>[{l.tag ?? 'bg'}]</span>
             <span style={{ color: l.level === 'error' ? '#fca5a5' : 'var(--divider, #e4e4e7)' }}>{l.msg}</span>
           </div>
@@ -497,17 +490,17 @@ function BuyersLists({ state, canOperate, busy, cmd }: { state: DealMachineState
       <div style={card}>
         <h2 style={h2}>Stats</h2>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '10px' }}>
-          <Stat n={state.totals.optedIn} k="Opted in" color="#0A8560" />
+          <Stat n={state.totals.optedIn} k="Opted in" />
           <Stat n={state.optins.length} k="Visited" />
           <Stat n={runs} k="Runs" />
           <Stat n={failed.length} k="No form" color={failed.length ? 'var(--tx-amber, #b45309)' : undefined} />
-          <Stat n={state.totals.wholesalers} k="Wholesalers captured" color="#15803d" />
+          <Stat n={state.totals.wholesalers} k="Wholesalers captured" />
         </div>
       </div>
       <div style={card}>
         <h2 style={h2}>Where it has been</h2>
         <p style={sub}>One row per domain, latest outcome. A domain that once opted in stays opted in.</p>
-        {state.optins.length === 0 ? <Empty>No opt-ins yet. Run the bot, or press RUN — it is step 4 of the full pipeline.</Empty> : (
+        {state.optins.length === 0 ? <Empty>No opt-ins yet. Run the bot, or press Run — it is step 4 of the full pipeline.</Empty> : (
           <div style={{ overflowX: 'auto', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>{['Domain', 'Status', 'Method', 'Detail', 'Tries', 'Last'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
@@ -564,14 +557,14 @@ function Results({ V, state }: { V: ClozrView; state: DealMachineState }) {
         <div style={{ display: 'grid', gridTemplateColumns: V.isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))', gap: '10px' }}>
           {rows.map(({ d, mao, clears }) => (
             <button key={d.id} type="button" className="dc37" onClick={() => V.openLandedDeal(d.id, d.sellerId)} style={{ textAlign: 'left', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', background: 'var(--surface, #fff)', padding: 0, cursor: 'pointer', overflow: 'hidden', display: 'flex', flexDirection: 'column', transition: 'box-shadow .15s, border-color .15s' }}>
-              <div style={{ height: '110px', background: d.heroImageUrl ? `#e4e4e7 url(${d.heroImageUrl}) center/cover no-repeat` : `linear-gradient(135deg, ${DEAL_MACHINE_TINT}, #fde8d3)`, position: 'relative' }}>
+              <div style={{ height: '110px', background: d.heroImageUrl ? `#e4e4e7 url(${d.heroImageUrl}) center/cover no-repeat` : DEAL_MACHINE_TINT, position: 'relative' }}>
                 <span style={{ position: 'absolute', top: '8px', left: '8px' }}><Pill tone="orange">{srcLabel(d.leadSource)}</Pill></span>
                 {clears !== null ? <span style={{ position: 'absolute', top: '8px', right: '8px' }}><Pill tone={clears ? 'green' : 'amber'}>{clears ? 'clears' : 'misses'}</Pill></span> : null}
               </div>
               <div style={{ padding: '10px 12px 12px' }}>
                 <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--ink, #18181b)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.address ?? d.sourceId ?? `Deal ${d.id}`}</div>
                 <div style={{ ...muted, marginTop: '2px' }}>{[d.city, d.state].filter(Boolean).join(', ') || '—'} · {d.stage} · {since(d.createdAt)}</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px', marginTop: '10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: V.isMobile ? '1fr 1fr' : '1fr 1fr 1fr 1fr', gap: '6px', marginTop: '10px' }}>
                   {([['Asking', d.asking], ['ARV', d.arv], ['Rehab', d.rehab], ['MAO', mao]] as [string, number | null][]).map(([k, v]) => (
                     <span key={k}><span style={{ ...label, marginBottom: '2px' }}>{k}</span><span style={{ fontSize: '12.5px', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: k === 'MAO' ? DEAL_MACHINE : 'var(--ink, #18181b)' }}>{money(v)}</span></span>
                   ))}
@@ -594,17 +587,16 @@ function Masterlist({ V, state, setTab }: { V: ClozrView; state: DealMachineStat
         <h2 style={h2}>Masterlist</h2>
         <p style={sub}>Everything the extension has ever put into this workspace. Unlike the popup’s masterlist these are records, not a local cache: they survive a reinstall and every rep sees the same list.</p>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <Stat n={state.totals.deals} k="Deals" color="#2d5bff" />
-          <Stat n={state.totals.buyers} k="Buyers captured" color="var(--tx-green, #15803d)" />
-          <Stat n={state.totals.wholesalers} k="Wholesalers" color="var(--tx-mint, #0a8560)" />
-          <Stat n={state.totals.optedIn} k="Buyers lists" color={DEAL_MACHINE} />
-          <Stat n={state.totals.groups} k="FB groups in Buyr" />
+          <Stat n={state.totals.deals} k="Deals" />
+          <Stat n={state.totals.buyers} k="Buyers captured" />
+          <Stat n={state.totals.wholesalers} k="Wholesalers" />
+          <Stat n={state.totals.optedIn} k="Buyers lists" />
+          <Stat n={state.totals.groups} k="FB groups" />
         </div>
         <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
           <Btn small onClick={() => setTab('Results')}>Open deals</Btn>
           <Btn small onClick={V.goBuyers}>Open Buyers</Btn>
           <Btn small onClick={() => setTab('Buyers lists')}>Open buyers lists</Btn>
-          <Btn small onClick={V.goBuyr}>Facebook groups in Buyr</Btn>
         </div>
       </div>
       <div style={card}>
@@ -770,7 +762,7 @@ function SettingsTab({ V, state, workspaceId, admin, canOperate, reload, setNote
           <div style={card}>
             <h2 style={h2}>Sources</h2>
             <Toggle on={draft.cloud.investorlift} disabled={ro} onChange={(v) => patch('cloud', { investorlift: v })}><strong>InvestorLift</strong> — every active listing in the buy-box states. Most listings hide the street until you ask, so those land as “Undisclosed (InvestorLift …)” with the city, numbers, dispo contact and link; fill the street in when you get it.</Toggle>
-            <Toggle on={draft.cloud.facebook} disabled={ro} onChange={(v) => patch('cloud', { facebook: v })}><strong>Facebook groups</strong> — the active groups in Buyr → Facebook groups, least recently read first. Apify reads public groups; a private group needs the extension.</Toggle>
+            <Toggle on={draft.cloud.facebook} disabled={ro} onChange={(v) => patch('cloud', { facebook: v })}><strong>Facebook groups</strong>. Reads the active groups, least recently read first. Apify reads public groups; a private group needs the extension.</Toggle>
             <div style={{ display: 'grid', gridTemplateColumns: V.isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '10px 14px', marginTop: '8px' }}>
               <div><span style={label}>InvestorLift max listings</span><input type="number" min={20} max={5000} value={draft.cloud.ilMaxItems} disabled={ro} onChange={(e) => patch('cloud', { ilMaxItems: Number(e.target.value) || 500 })} style={input} /></div>
               <div><span style={label}>Posts per group</span><input type="number" min={5} max={200} value={draft.cloud.fbPostsPerGroup} disabled={ro} onChange={(e) => patch('cloud', { fbPostsPerGroup: Number(e.target.value) || 40 })} style={input} /></div>
@@ -807,7 +799,7 @@ function SettingsTab({ V, state, workspaceId, admin, canOperate, reload, setNote
           <h2 style={h2}>Contact identity</h2>
           <p style={sub}>What the buyers-list bot types into opt-in forms, and the number InvestorLift texts a code to.</p>
           <div style={{ display: 'grid', gridTemplateColumns: V.isMobile ? '1fr' : '1fr 1fr', gap: '10px 14px' }}>
-            {([['firstName', 'First name', 'Drew'], ['lastName', 'Last name', 'Park'], ['email', 'Email', 'drew@yourcompany.com'], ['phone', 'Phone', '2105550160'], ['company', 'Company', 'Acme Homes'], ['ilVerificationPhone', 'InvestorLift verify phone', '2105550160']] as const).map(([k, l, ph]) => (
+            {([['firstName', 'First name', 'Dean'], ['lastName', 'Last name', 'Specter'], ['email', 'Email', 'dean@yourcompany.com'], ['phone', 'Phone', '2105559321'], ['company', 'Company', 'Acme Homes'], ['ilVerificationPhone', 'InvestorLift verify phone', '2105559321']] as const).map(([k, l, ph]) => (
               <div key={k}><span style={label}>{l}</span><input value={draft.contact[k]} placeholder={ph} disabled={ro} onChange={(e) => patch('contact', { [k]: e.target.value } as Partial<DmSettings['contact']>)} style={input} /></div>
             ))}
             <div><span style={label}>Max purchase price</span><input value={draft.contact.maxPrice ?? ''} placeholder="500000" disabled={ro} inputMode="numeric" onChange={(e) => patch('contact', { maxPrice: numIn(e.target.value) })} style={input} /></div>
@@ -921,7 +913,7 @@ function SettingsTab({ V, state, workspaceId, admin, canOperate, reload, setNote
       ) : null}
 
       {dirty ? (
-        <div style={{ position: 'sticky', bottom: '8px', display: 'flex', justifyContent: 'flex-end', gap: '8px', padding: '10px', background: 'rgba(255,255,255,.92)', backdropFilter: 'blur(6px)', border: '1px solid #e4e4e7', borderRadius: '12px', boxShadow: 'var(--shadow-md)' }}>
+        <div style={{ position: 'sticky', bottom: '8px', display: 'flex', justifyContent: 'flex-end', gap: '8px', padding: '10px', background: 'var(--glass-strong, rgba(255,255,255,.92))', backdropFilter: 'blur(6px)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', boxShadow: 'var(--shadow-md)' }}>
           <span style={{ ...muted, alignSelf: 'center', marginRight: 'auto' }}>Unsaved changes</span>
           <Btn onClick={() => { setDirty(false); setDraft(state.settings); setStatesText(state.settings.markets.enabledStates.join(', ')); setCitiesText(state.settings.markets.enabledCities.join(', ')); setAllowText(state.settings.buyersList.allowlistDomains.join('\n')); }}>Discard</Btn>
           <Btn kind="machine" disabled={saving || ro} onClick={() => void save()}>{saving ? 'Saving…' : 'Save settings'}</Btn>

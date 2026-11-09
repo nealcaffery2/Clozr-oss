@@ -65,7 +65,7 @@ const all = { sms: true, email: true, rvm: true, ai_call: true };
 {
   const plan = buildQuickPlan({ ...base, rows: [row(1), row(2), row(3)], preset: machine, channels: all });
   const firsts = plan.recipients.map((r) => Date.parse(r.messages[0].send_at));
-  check('buyers are staggered, not blasted in the same second', new Set(firsts).size === 3, firsts);
+  check('a blast goes to every buyer at launch, not dripped', new Set(firsts).size === 1, firsts);
   const email = BUILTIN_PRESETS.find((p) => p.key === 'email')!;
   const e = buildQuickPlan({ ...base, rows: [row(1), row(2)], preset: email, channels: all });
   check('an email-only recipe goes out together', e.recipients[0].messages[0].send_at === e.recipients[1].messages[0].send_at);

@@ -24,9 +24,12 @@ export function TopBar({
   extra,
   children,
   titleSlot,
+  level = 1,
 }: {
   title: string;
   subtitle: string;
+  /** 2 when the bar sits inside another screen (the Inbox inside the Dialer), so the page keeps one h1. */
+  level?: 1 | 2;
   /** CLOZR seam: beside the title, the Inbox's "whose inbox" picker. */
   titleSlot?: ReactNode;
   /** CLOZR seam: Talkr pushes to /dialer; CLOZR opens its floating dialer. */
@@ -36,6 +39,11 @@ export function TopBar({
   /** CLOZR seam: the inbox's channel tabs, between the title and the controls (a second row on a phone). */
   children?: ReactNode;
 }) {
+  const Heading = level === 2 ? 'h2' : 'h1';
+  // The screen title (16/700); inside another screen it steps down to a card title.
+  const headingStyle = level === 2
+    ? { font: '650 13.5px/1.2 var(--sans)', color: 'var(--ink, #18181b)' }
+    : { font: '700 16px/1.2 var(--sans)', letterSpacing: '-0.015em', color: 'var(--ink, #18181b)' };
   const [now, setNow] = useState<number | null>(null);
 
   // Rendered only after mount: the server has no idea what zone the rep is in,
@@ -55,11 +63,11 @@ export function TopBar({
       <div className="flex min-w-0 flex-col gap-0.5 md:min-w-[190px]">
         {titleSlot ? (
           <div className="flex min-w-0 items-center gap-2">
-            <h1 className="truncate" style={{ font: '700 15px/1 var(--sans)', letterSpacing: '-0.015em' }}>{title}</h1>
+            <Heading className="truncate" style={headingStyle}>{title}</Heading>
             {titleSlot}
           </div>
         ) : (
-          <h1 className="truncate" style={{ font: '700 15px/1 var(--sans)', letterSpacing: '-0.015em' }}>{title}</h1>
+          <Heading className="truncate" style={headingStyle}>{title}</Heading>
         )}
         <p className="truncate" style={{ font: '500 11px/1 var(--sans)', color: 'var(--muted)' }}>{subtitle}</p>
       </div>
@@ -68,7 +76,7 @@ export function TopBar({
         <div className="order-last flex min-w-0 basis-full flex-wrap items-center gap-2 md:order-none md:flex-1 md:basis-auto md:justify-center">{children}</div>
       ) : null}
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="topbar-tools ml-auto flex items-center gap-2">
         {extra}
         <PresenceMenu />
 

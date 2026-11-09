@@ -105,7 +105,7 @@ function controlSentence(code: string | null, raw: string | null): string | null
   const mapped = code ? REFUSAL_SENTENCES[code] : undefined;
   if (mapped) return mapped;
   // `invalid_target` is the one refusal whose message the server already wrote
-  // for a person ("Dana Reyes has not enabled their softphone yet").
+  // for a person ("Dana Ortega has not enabled their softphone yet").
   if (code === 'invalid_target' && raw) return asSentence(raw);
   return 'That did not go through. Try again in a moment.';
 }
@@ -253,7 +253,7 @@ function TeammateRow({
         <span className="truncate" style={{ font: '600 12px/1 var(--sans)', color: 'var(--text)' }}>
           {member.display_name}
         </span>
-        <span className="truncate" style={{ font: '500 10px/1 var(--sans)', color: 'var(--muted)' }}>
+        <span className="truncate" style={{ font: '500 11px/1 var(--sans)', color: 'var(--muted)' }}>
           {member.role}
           {member.city ? ` · ${member.city}` : ''}
         </span>
@@ -662,7 +662,7 @@ export function ActiveCall({
               type="submit"
               disabled={!targetValid || dialing || alreadyOnCall}
               title={addReason}
-              className="inline-flex items-center gap-2 disabled:opacity-40"
+              className="inline-flex items-center gap-2 disabled:opacity-50"
               style={{ ...PILL, ...(targetValid && !alreadyOnCall ? ON : {}) }}
             >
               {dialing ? <RingingSpinner /> : <Icon name="plus" size={14} />}
@@ -720,7 +720,7 @@ export function ActiveCall({
                       onClick={() => void addParticipant({ user_id: m.id, consult: true })}
                       disabled={on}
                       title={on ? 'They are already on this call.' : undefined}
-                      className="disabled:opacity-40"
+                      className="disabled:opacity-50"
                       style={{ ...PILL, ...(on ? {} : ON), padding: '7px 12px', font: '600 10.5px/1 var(--sans)' }}
                     >
                       {on ? 'On the call' : 'Add'}
@@ -785,7 +785,7 @@ export function ActiveCall({
               type="submit"
               disabled={!targetValid || alreadyOnCall}
               title={addReason}
-              className="inline-flex items-center gap-2 disabled:opacity-40"
+              className="inline-flex items-center gap-2 disabled:opacity-50"
               style={{ ...PILL, ...(targetValid && !alreadyOnCall ? ON : {}) }}
             >
               <Icon name="transfer" size={14} />
@@ -870,7 +870,7 @@ export function ActiveCall({
                   <span className="truncate" style={{ font: '600 12px/1 var(--sans)', color: 'var(--text)' }}>
                     {partyName(p)}
                   </span>
-                  <span style={{ font: '500 10px/1 var(--sans)', color: 'var(--muted)' }}>{ROLE_LABELS[p.role]}</span>
+                  <span style={{ font: '500 11px/1 var(--sans)', color: 'var(--muted)' }}>{ROLE_LABELS[p.role]}</span>
                 </span>
                 <span
                   className="inline-flex items-center gap-1.5"
@@ -1247,7 +1247,7 @@ export function ActiveCall({
                 borderRadius: 6,
                 background: record?.kind === 'buyer' ? '#1d4ed8' : '#15803d',
                 color: '#fff',
-                font: '700 9px/1 var(--sans)',
+                font: '700 11px/1 var(--sans)',
               }}
             >
               {record?.kind === 'buyer' ? 'Buyer' : 'Seller lead'}
@@ -1367,7 +1367,7 @@ export function ActiveCall({
           onClick={() => void merge()}
           disabled={Boolean(mergeReason)}
           title={mergeReason}
-          className="mt-4 inline-flex items-center gap-2 disabled:opacity-40"
+          className="mt-4 inline-flex items-center gap-2 disabled:opacity-50"
           style={{ ...PILL, ...(merged ? ON : {}) }}
         >
           <Icon name="users" size={14} />
@@ -1415,7 +1415,7 @@ export function ActiveCall({
                 }}
               >
                 <span style={{ font: '400 30px/1 var(--sans)' }}>{d}</span>
-                <span style={{ font: '600 9px/1 var(--sans)', letterSpacing: '0.14em', color: 'var(--muted)', minHeight: 9 }}>{letters}</span>
+                <span style={{ font: '600 11px/1 var(--sans)', letterSpacing: '0.14em', color: 'var(--muted)', minHeight: 9 }}>{letters}</span>
               </button>
             ))}
           </div>

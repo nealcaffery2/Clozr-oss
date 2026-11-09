@@ -15,6 +15,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { talkr, talkrToken, type MeDto } from './talkr';
+import { isAiLine } from './caller-spin';
 
 const KEY = 'clozr.smsFrom';
 export type SmsLine = MeDto['org_numbers'][number];
@@ -57,7 +58,8 @@ export function loadSmsLines(force = false): Promise<Lines> {
   // Nobody signed in (the /demo sample) has no lines to read: no request, no 401 in the console.
   loading = talkrToken()
     .then((token) => (token ? talkr.me() : null))
-    .then((me) => ({ lines: me?.org_numbers ?? [], defaultId: me?.default_phone_number_id ?? null, error: null }))
+    // Never an AI agent's line: a reply there reaches the agent, not the rep.
+    .then((me) => ({ lines: (me?.org_numbers ?? []).filter((n) => !isAiLine(n)), defaultId: me?.default_phone_number_id ?? null, error: null }))
     .catch((e: unknown) => ({ lines: [], defaultId: null, error: e instanceof Error ? e.message : 'Could not read your lines from Talkr.' }))
     .then((r) => {
       loaded = r;

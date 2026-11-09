@@ -1,4 +1,6 @@
 /** PandaDoc's REST API with the project key (PANDADOC_API_KEY). Shared by the pandadoc and offers functions. */
+import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+
 export const BASE = 'https://api.pandadoc.com/public/v1';
 export class PdError extends Error { constructor(msg: string, public status: number) { super(msg); } }
 
@@ -22,6 +24,16 @@ export async function pd<T>(method: string, path: string, body?: unknown, raw = 
 }
 
 export const status = (s: string | undefined) => (s ?? '').replace(/^document\./, '') || 'draft';
+
+/** pandadoc_id -> the workspaces that already hold a contract for that document. */
+export async function filedWorkspaces(admin: SupabaseClient, ids: string[]): Promise<Map<string, number[]>> {
+  const out = new Map<string, number[]>();
+  if (!ids.length) return out;
+  const { data, error } = await admin.from('contracts').select('pandadoc_id, workspace_id').in('pandadoc_id', ids);
+  if (error) throw new PdError(`Could not check existing PandaDoc documents: ${error.message}`, 500);
+  for (const r of data ?? []) out.set(String(r.pandadoc_id), [...(out.get(String(r.pandadoc_id)) ?? []), Number(r.workspace_id)]);
+  return out;
+}
 
 /** Prefer an offer/LOI template, then a PSA, then the first one PandaDoc lists. */
 export function pickPandaDocTemplate<T extends { id: string; name: string }>(

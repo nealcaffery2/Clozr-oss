@@ -7,41 +7,48 @@
 // has replied. "Advanced builder" opens the full composer for anything else.
 'use client';
 
+import { MergeGapNotice } from '@/components/MergeGapNotice';
+import { MERGE_SOURCES, blankFields, bulkGapSummary, dealGaps, labelOf } from '@/lib/merge-gaps';
+import type { FactFix } from './logic';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { talkr, type MeDto } from '@/lib/talkr';
 import type { SendContext } from '@/lib/sms';
 import { type AiText, type BuyerRow, buyerRow } from '@/lib/dispo-plan';
-import { type CampaignBuyer, type CampaignData, launchCampaign, forgetCampaignData, loadCampaignBuyersByIds, loadCampaignData, writeWithAi } from '@/lib/dispo-campaign';
+import { type CampaignBuyer, type CampaignData, launchCampaign, forgetCampaignData, loadCampaignBuyersByIds, loadCampaignData, rotationLines, writeWithAi } from '@/lib/dispo-campaign';
 import { type Channel, type Preset, type QuickCopy, BUILTIN_PRESETS, CHANNELS, CHANNEL_LABEL, buildQuickPlan, defaultCopy, loadPresets, recipeWords } from '@/lib/quick-campaign';
-import { METHOD_LABEL, METHOD_TAG, type Method } from '@/supabase/functions/_shared/genius-methods';
+import { METHOD_LABEL, METHOD_TAG, type Method } from '@/supabase/functions/_shared/entity-records';
 import { mintBuyerLinks } from '@/lib/dispo';
 import { type ResendStatus, deliverability } from '@/lib/deliverability';
 import { useVmLibrary } from '@/app/components/talkr/useVmLibrary';
 import { droppable, pinnedGroup } from '@/lib/rvm-pick';
 import { Btn, C, Eyebrow, Note, Switch } from './ui';
 import { whenLabel } from './logic';
+import { PriorBlastsNote, usePriorBlasts } from './PriorBlasts';
+import { blastDupes } from '@/lib/blast-dupes';
 
 type Props = {
   workspaceId: number; dealId: number; canWrite: boolean; isMobile: boolean;
   dealFields: Record<string, string>; textCtx: { repName: string; company: string };
+  /** Where a blank {{beds}} is fixed: the deal's property facts, or a save on its house. */
+  factFix?: FactFix;
   /** Buyers handed over from Genius, the Buyers list or the Matches tab: they start ticked. */
   prefill: number[];
   onToast: (m: string) => void; onLaunched: () => void; onAdvanced: () => void; onClose: (() => void) | null;
 };
 
 type Who = 'matched' | 'vip' | 'picked' | 'all' | Method;
-const METHODS: Method[] = ['homefull', 'wholesale_snipe', 'wholesaler_buyers', 'reverse_llc', 'landlord', 'contract', 'genius'];
+const METHODS: Method[] = ['contract', 'dealmachine', 'facebook'];
 const tagToMethod = new Map(Object.entries(METHOD_TAG).map(([m, t]) => [t, m as Method]));
 const methodsOf = (b: CampaignBuyer): Method[] => Array.from(new Set(b.tags.map((t) => tagToMethod.get(t.toLowerCase())).filter((m): m is Method => !!m)));
 
 const chip = (on: boolean, disabled = false): React.CSSProperties => ({
   border: `1px solid ${on ? C.ink : C.line}`, background: on ? C.ink : 'var(--surface, #fff)', color: on ? 'var(--surface, #fff)' : C.ink, borderRadius: '999px', padding: '5px 11px',
-  fontSize: '12px', fontWeight: 600, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.45 : 1, whiteSpace: 'nowrap', lineHeight: '16px',
+  fontSize: '12px', fontWeight: 600, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap', lineHeight: '16px',
 });
 const area: React.CSSProperties = { width: '100%', border: `1px solid ${C.line}`, borderRadius: '9px', padding: '8px 10px', fontSize: '12.5px', lineHeight: 1.5, fontFamily: 'inherit', color: C.ink, background: 'var(--surface, #fff)', resize: 'vertical', minHeight: '64px', boxSizing: 'border-box' };
 
-export function QuickCampaign({ workspaceId, dealId, canWrite, isMobile, dealFields, textCtx, prefill, onToast, onLaunched, onAdvanced, onClose }: Props) {
+export function QuickCampaign({ workspaceId, dealId, canWrite, isMobile, dealFields, textCtx, prefill, onToast, onLaunched, onAdvanced, onClose, factFix }: Props) {
   const session = useSession();
   const me = session.user?.id ?? null;
   const role = (session as unknown as { workspace?: { role?: string } | null }).workspace?.role ?? '';
@@ -125,12 +132,20 @@ export function QuickCampaign({ workspaceId, dealId, canWrite, isMobile, dealFie
   }, [rows, who, picked]);
   // Buyers found by a method are prospects until vetted; picking their chip is picking them by hand.
   const handPicked = useMemo(() => Array.from(new Set([...prefill, ...audience.filter((r) => methodsOf(r.b).some((m) => who.has(m))).map((r) => r.b.id)])), [prefill, audience, who]);
-  const fields = useMemo(() => (dealFields.photo_url || !data?.photos.length ? dealFields : { ...dealFields, photo_url: data.photos[0].url }), [dealFields, data]);
+  // Values typed into the blank-field notice for this campaign (saved ones also land on the deal and come back in dealFields).
+  const [fill, setFill] = useState<Record<string, string>>({});
+  const fields = useMemo(() => {
+    const base = { ...dealFields, ...Object.fromEntries(Object.entries(fill).filter(([k]) => !String(dealFields[k] ?? '').trim())) };
+    return base.photo_url || !data?.photos.length ? base : { ...base, photo_url: data.photos[0].url };
+  }, [dealFields, data, fill]);
 
   const plan = useMemo(() => (data && copy ? buildQuickPlan({ rows: audience, preset, channels, copy, dealFields: fields, ctx, data, links: {}, ai: {}, aiIntro, tz, now, handPicked }) : null),
     // ctx is rebuilt per render; its parts are the dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data, copy, audience, preset, channels, fields, aiIntro, tz, now, handPicked, textCtx.repName, textCtx.company, session.profile?.phone, session.user?.email]);
+  // Buyers a blast for this property already reached: left out unless the rep ticks "Send again".
+  const prior = usePriorBlasts(workspaceId, dealId, me, confirm);
+  const dupes = useMemo(() => blastDupes(plan?.recipients.map((r) => r.buyer_id) ?? [], prior.prior ?? [], tz), [plan, prior.prior, tz]);
   const perChannel = (ch: Channel) => plan?.recipients.filter((r) => r.messages.some((m) => m.channel === ch)).length ?? 0;
   const firstSend = plan?.recipients.length ? Math.min(...plan.recipients.flatMap((r) => r.messages.map((m) => Date.parse(m.send_at)))) : null;
   const usesIntro = preset.steps.some((s) => s.channel === 'sms' && s.kind === 'intro') && channels.sms;
@@ -145,23 +160,26 @@ export function QuickCampaign({ workspaceId, dealId, canWrite, isMobile, dealFie
     if (!data || !copy || !plan || !canWrite) return;
     if (!plan.recipients.length) return onToast('Nobody is in this campaign yet: pick a chip above.');
     if (channels.email && perChannel('email') && !emailReady) return onToast('Email needs Resend configured or your Gmail connected (Settings → Google). Switch Email off to send without it.');
+    const leaveOut = prior.resend ? new Set<number>() : dupes.ids;
+    if (plan.recipients.every((r) => leaveOut.has(r.buyer_id))) return onToast('Every buyer here already got a blast for this property. Switch on "Send again" to send anyway.');
     setLaunching('Building the buyer links…');
     const ids = plan.recipients.map((r) => r.buyer_id);
     const linksRes = await mintBuyerLinks(dealId, ids);
     if (!linksRes.ok) { setLaunching(null); return onToast(`Could not build the tracked buyer links: ${linksRes.message}`); }
     let ai: Record<number, AiText> = {};
     if (usesIntro && aiIntro) {
-      const targets = plan.recipients.filter((r) => r.messages.some((m) => m.channel === 'sms' && m.kind === 'intro')).map((r) => r.buyer_id).slice(0, 400);
+      const targets = plan.recipients.filter((r) => !leaveOut.has(r.buyer_id) && r.messages.some((m) => m.channel === 'sms' && m.kind === 'intro')).map((r) => r.buyer_id).slice(0, 400);
       setLaunching(`Writing ${targets.length} intros…`);
       const w = await writeWithAi(workspaceId, dealId, targets, 'intro', { tone: 'friendly', emoji: 'never', instructions: '', avoid: [] }, {}, (n) => setLaunching(`Writing intros… ${n} of ${targets.length}`));
       if (w.ok) ai = Object.fromEntries(w.data.map((x) => [x.buyer_id, { intro: x.text }]));
       else onToast(`AI intros unavailable (${w.message}); the template intro is used.`);
     }
     setLaunching('Launching…');
-    const fresh = buildQuickPlan({ rows: audience, preset, channels, copy, dealFields: fields, ctx, data, links: linksRes.data.links, ai, aiIntro, tz, now: new Date(), handPicked });
+    const built = buildQuickPlan({ rows: audience, preset, channels, copy, dealFields: fields, ctx, data, links: linksRes.data.links, ai, aiIntro, tz, now: new Date(), handPicked });
+    const fresh = { ...built, recipients: built.recipients.filter((r) => !leaveOut.has(r.buyer_id)) };
     const clip = clips.find((c) => String(c.id) === clipId) ?? null;
     const settings = {
-      quick: true, preset: preset.key, channels, steps: preset.steps,
+      quick: true, preset: preset.key, sendRepeats: prior.resend && dupes.ids.size > 0, channels, steps: preset.steps,
       intro: { mode: usesIntro && aiIntro ? 'ai' : usesIntro ? 'own' : 'none', tone: 'friendly' },
       brief: { sms: channels.sms, email: channels.email, rvm: channels.rvm, rvmBody: channels.rvm ? copy.rvm : undefined, rvmRecording: channels.rvm && clip?.audio_path ? { libraryId: clip.id, path: clip.audio_path, variantGroup: pinnedGroup(clip.id), seconds: clip.seconds ?? 0 } : null, ai_call: channels.ai_call, callGoal: channels.ai_call ? copy.call : undefined },
       followups: { sms: channels.sms, email: channels.email },
@@ -195,6 +213,15 @@ export function QuickCampaign({ workspaceId, dealId, canWrite, isMobile, dealFie
     { key: 'followSms', label: 'Follow-up text', on: channels.sms && preset.steps.some((s) => s.channel === 'sms' && s.kind === 'followup') },
     { key: 'followEmail', label: 'Follow-up email', on: channels.email && preset.steps.some((s) => s.channel === 'email' && s.kind === 'followup') },
   ];
+  // Deal fields the copy that is on would send blank. Buyer fields
+  // ({{purchase_note}}) are blank by design for a buyer with no purchase.
+  const onCopy = copyRows.filter((r) => r.on);
+  const gapsOf = (keys: (keyof QuickCopy)[]) => dealGaps(blankFields(keys.flatMap((k) => [copy[k] ?? '', k === 'email' ? copy.emailSubject : k === 'followEmail' ? copy.followEmailSubject : '', k === 'email' ? copy.emailHtml ?? '' : '']), fields));
+  const blank = gapsOf(onCopy.map((r) => r.key));
+  const emailBlank = gapsOf(onCopy.filter((r) => r.key === 'email' || r.key === 'followEmail').map((r) => r.key));
+  const emailTo = perChannel('email');
+  const bulkLine = emailBlank.length && emailTo ? bulkGapSummary(Object.fromEntries(emailBlank.map((b) => [b, emailTo])), emailTo).join(' ') : '';
+  const where = dealFields.address || dealFields.full_address || 'this deal';
   const excerpt = (t: string) => { const f = t.replace(/\s+/g, ' ').trim(); return f.length > 150 ? `${f.slice(0, 147)}…` : f; };
 
   return (
@@ -216,7 +243,7 @@ export function QuickCampaign({ workspaceId, dealId, canWrite, isMobile, dealFie
         </div>
         <div style={{ fontSize: '12px', color: C.muted2, marginTop: '6px' }}>
           {plan.recipients.length} buyer{plan.recipients.length === 1 ? '' : 's'} get it{plan.skipped.length ? ` · ${plan.skipped.length} skipped (${Array.from(new Set(plan.skipped.map((s) => s.why))).slice(0, 3).join(', ')})` : ''}.
-          {METHODS.some((m) => counts[m]) ? ' Buyers Genius found are labelled by the method that found them.' : ''}
+          {METHODS.some((m) => counts[m]) ? ' Buyers are labelled by where they came from.' : ''}
         </div>
       </section>
 
@@ -228,7 +255,7 @@ export function QuickCampaign({ workspaceId, dealId, canWrite, isMobile, dealFie
               {CHANNEL_LABEL[ch]}{channels[ch] ? ` · ${perChannel(ch)}` : ''}
             </button>
           ))}
-          <span style={{ fontSize: '11.5px', color: C.muted2 }}>{channels.email && perChannel('email') && !emailReady ? 'Email needs Resend or your Gmail connected.' : useResend ? `Email from ${resend?.sender?.from_email ?? 'the blast pool'}` : account ? `Email from ${account.email}` : ''}{defaultNumber ? ` · Texts from ${defaultNumber}` : ''}</span>
+          <span style={{ fontSize: '11.5px', color: C.muted2 }}>{channels.email && perChannel('email') && !emailReady ? 'Email needs Resend or your Gmail connected.' : useResend ? `Email from ${resend?.sender?.from_email ?? 'the blast pool'}` : account ? `Email from ${account.email}` : ''}{talkrMe && rotationLines(talkrMe).length > 1 ? ` · Texts rotate across your ${rotationLines(talkrMe).length} lines` : defaultNumber ? ` · Texts from ${defaultNumber}` : ''}</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(190px, 1fr))', gap: '8px', marginTop: '10px' }}>
           {presets.map((p) => (
@@ -262,7 +289,7 @@ export function QuickCampaign({ workspaceId, dealId, canWrite, isMobile, dealFie
                 <>
                   {r.key === 'email' || r.key === 'followEmail' ? <input value={r.key === 'email' ? copy.emailSubject : copy.followEmailSubject} onChange={(e) => setCopy({ ...copy, [r.key === 'email' ? 'emailSubject' : 'followEmailSubject']: e.target.value })} placeholder="Subject" style={{ ...area, minHeight: 0, marginTop: '6px' }} /> : null}
                   <textarea value={copy[r.key] ?? ''} onChange={(e) => setCopy({ ...copy, [r.key]: e.target.value })} style={{ ...area, marginTop: '6px' }} />
-                  <div style={{ fontSize: '11px', color: C.muted2, marginTop: '4px' }}>Merge fields: {'{{first_name}} {{address}} {{city}} {{price}} {{beds}} {{baths}} {{deal_link}} {{purchase_note}} {{rep_first_name}} {{company}}'}</div>
+                  <div style={{ fontSize: '11px', color: C.muted2, marginTop: '4px' }}>Merge fields: {'{{first_name}} {{address}} {{city}} {{price}} {{beds}} {{baths}} {{sqft}} {{specs}} {{deal_link}} {{purchase_note}} {{rep_first_name}} {{company}}'}. Beds, baths and sq ft come from the property&apos;s facts on the deal.</div>
                 </>
               ) : <div style={{ fontSize: '12px', color: C.muted, marginTop: '3px', lineHeight: 1.45 }}>{excerpt(copy[r.key] ?? '')}</div>}
               {r.key === 'rvm' && clips.length ? (
@@ -276,9 +303,15 @@ export function QuickCampaign({ workspaceId, dealId, canWrite, isMobile, dealFie
             </div>
           ))}
           {!copyRows.some((r) => r.on) ? <Note level="warn">Switch a channel on, or pick a recipe with a step on one.</Note> : null}
+          <MergeGapNotice blank={blank} where={where} extra={bulkLine || undefined}
+            onOpen={factFix?.openFacts && blank.some((b) => MERGE_SOURCES[b]?.fix === 'property') ? factFix.openFacts : undefined}
+            onSave={factFix?.saveFact ? (field, _name, value) => factFix.saveFact!(field, value) : undefined}
+            onUse={(name, value) => { setFill((x) => ({ ...x, [name]: name === 'sqft' && /^\d+$/.test(value) ? Number(value).toLocaleString('en-US') : value })); onToast(`${labelOf(name)} filled in for this campaign`); }}
+            testId="quick-merge-gaps" />
         </div>
       </section>
 
+      {confirm ? <PriorBlastsNote dupes={dupes} address={where} err={prior.err} resend={prior.resend} setResend={prior.setResend} disabled={!!launching} /> : null}
       <section style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', paddingTop: '4px', borderTop: `1px solid ${C.line}` }}>
         <div style={{ fontSize: '12.5px', color: C.ink }}>
           <b>{plan.recipients.length}</b> buyer{plan.recipients.length === 1 ? '' : 's'} · {recipeWords(plan.steps)}{firstSend ? ` · first send ${whenLabel(firstSend, tz, now)}` : ''}
@@ -287,9 +320,9 @@ export function QuickCampaign({ workspaceId, dealId, canWrite, isMobile, dealFie
         <span style={{ flex: 1 }} />
         {confirm ? (
           <>
-            <span style={{ fontSize: '12px', color: C.muted2 }}>Send to {plan.recipients.length} now?</span>
+            <span style={{ fontSize: '12px', color: C.muted2 }}>Send to {plan.recipients.length - (prior.resend ? 0 : dupes.ids.size)} now?{bulkLine ? <span style={{ display: 'block', color: 'var(--tx-amber, #b45309)' }} data-testid="quick-merge-summary">{bulkLine}</span> : null}</span>
             <Btn size="sm" onClick={() => setConfirm(false)} disabled={!!launching}>Not yet</Btn>
-            <Btn kind="primary" size="sm" onClick={() => void launch()} disabled={!!launching}>{launching ?? 'Yes, launch'}</Btn>
+            <Btn kind="primary" size="sm" onClick={() => void launch()} disabled={!!launching || prior.prior === null}>{launching ?? (prior.prior === null ? 'Checking earlier blasts…' : 'Yes, launch')}</Btn>
           </>
         ) : (
           <Btn kind="primary" size="lg" onClick={() => setConfirm(true)} disabled={!canWrite || !plan.recipients.length}>Launch</Btn>

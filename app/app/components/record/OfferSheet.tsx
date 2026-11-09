@@ -63,37 +63,37 @@ export function OfferSheet({ V }: { V: ClozrView }) {
       style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(12,13,16,.32)', display: 'grid', placeItems: 'center', padding: '16px' }}>
       <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="rec-offer-title" className="rec-modal" data-closing={closing || undefined}
         onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); void submit(); } }}
-        style={{ width: 'min(440px, 100%)', maxHeight: 'calc(100dvh - 32px)', overflow: 'auto', background: '#fff', borderRadius: '14px', border: '1px solid #e4e4e7', boxShadow: '0 2px 6px rgba(18,20,28,0.06),0 28px 60px -24px rgba(18,22,45,0.26)', padding: '18px' }}>
+        style={{ width: 'min(440px, 100%)', maxHeight: 'calc(100dvh - 32px)', overflow: 'auto', background: 'var(--surface, #fff)', borderRadius: '14px', border: '1px solid var(--divider, #e4e4e7)', boxShadow: '0 2px 6px rgba(18,20,28,0.06),0 28px 60px -24px rgba(18,22,45,0.26)', padding: '18px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
           <div>
             <div style={eyebrow}>Offer</div>
             <h2 id="rec-offer-title" style={{ margin: '4px 0 0', fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em' }}>Make an offer</h2>
-            <div style={{ fontSize: '12px', color: '#71717a', marginTop: '2px' }}>To {V.P.name} · {V.P.addr}</div>
+            <div style={{ fontSize: '12px', color: 'var(--meta, #71717a)', marginTop: '2px' }}>To {V.P.name} · {V.P.addr}</div>
           </div>
           <button type="button" aria-label="Close" className="dc2 rec-press" onClick={close} style={{ ...ghostBtn, width: '30px', padding: 0, flex: 'none' }}>×</button>
         </div>
 
         <label style={{ display: 'block', marginTop: '14px' }}>
-          <span style={{ ...eyebrow, fontSize: '10px' }}>Amount</span>
-          <span style={{ display: 'flex', alignItems: 'center', marginTop: '5px', border: '1px solid #e4e4e7', borderRadius: '10px', padding: '0 12px', background: '#fafafa' }} className="dc21">
-            <span style={{ fontSize: '22px', fontWeight: 700, color: '#71717a' }}>$</span>
+          <span style={{ ...eyebrow, fontSize: '11px' }}>Amount</span>
+          <span style={{ display: 'flex', alignItems: 'center', marginTop: '5px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px', padding: '0 12px', background: 'var(--canvas, #fafafa)' }} className="dc21">
+            <span style={{ fontSize: '22px', fontWeight: 700, color: 'var(--meta, #71717a)' }}>$</span>
             <input name="amount" inputMode="numeric" autoComplete="off" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Offer amount"
-              className="rec-money" style={{ flex: 1, minWidth: 0, height: '46px', border: 0, background: 'transparent', outline: 0, fontSize: '24px', fontWeight: 700, letterSpacing: '-0.02em', color: '#18181b', paddingLeft: '4px' }} />
+              className="rec-money" style={{ flex: 1, minWidth: 0, height: '46px', border: 0, background: 'transparent', outline: 0, fontSize: '24px', fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink, #18181b)', paddingLeft: '4px' }} />
           </span>
         </label>
-        <div style={{ fontSize: '11.5px', color: '#71717a', marginTop: '5px' }}>
+        <div style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', marginTop: '5px' }}>
           {basis ? 'Prefilled from the ' + basis + '. ' : 'No MAO on this record yet. '}Change it if you need to.
         </div>
 
         <div style={{ marginTop: '12px' }}>
-          <div style={{ ...eyebrow, fontSize: '10px' }}>When you log it</div>
-          <ul style={{ margin: '6px 0 0', padding: '0 0 0 18px', listStyle: 'disc', fontSize: '12.5px', color: '#27272a', lineHeight: 1.55 }}>
+          <div style={{ ...eyebrow, fontSize: '11px' }}>When you log it</div>
+          <ul style={{ margin: '6px 0 0', padding: '0 0 0 18px', listStyle: 'disc', fontSize: '12.5px', color: 'var(--ink-2, #27272a)', lineHeight: 1.55 }}>
             {copy.when.map((w) => <li key={w}>{w}</li>)}
           </ul>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '16px' }}>
-          <span style={{ flex: 1, fontSize: '11.5px', color: why ? '#b45309' : '#a1a1aa' }}>{why || (V.isMobile ? '' : '⌘↵ to log')}</span>
+          <span style={{ flex: 1, fontSize: '11.5px', color: why ? 'var(--tx-amber, #b45309)' : 'var(--meta, #71717a)' }}>{why || (V.isMobile ? '' : '⌘↵ to log')}</span>
           <button type="button" className="dc2 rec-press" onClick={close} style={ghostBtn}>Cancel</button>
           <button type="button" className="dc3 rec-press" disabled={!n || busy} title={why || undefined} onClick={() => void submit()}
             style={{ ...primaryBtn, opacity: !n || busy ? 0.5 : 1 }}>

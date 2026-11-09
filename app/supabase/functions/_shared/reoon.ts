@@ -108,11 +108,8 @@ function listed(results: unknown): Any[] {
   return [];
 }
 
-/** Many addresses. Reoon verifies a bulk task in power mode; this only polls it. */
-export async function verifyBulk(emails: string[], key: string, deps: ReoonDeps = {}): Promise<VerifyOutcome> {
-  const fetchImpl = deps.fetch ?? fetch;
-  const pause = deps.sleep ?? sleep;
-  const polls = deps.polls ?? 12;
+/** Start a bulk task: the task id, or why Reoon would not start one. */
+export async function startBulk(emails: string[], key: string, fetchImpl: FetchLike = fetch): Promise<{ ok: true; task_id: number | string } | { ok: false; error: string }> {
   let created: Response;
   try {
     created = await fetchImpl(`${BASE}/create-bulk-verification-task/`, {
@@ -127,7 +124,18 @@ export async function verifyBulk(emails: string[], key: string, deps: ReoonDeps 
   if (!(created.status === 201 || created.ok) || createdBody?.status === 'error' || createdBody?.task_id == null) {
     return { ok: false, error: `Reoon did not start a verification${createdBody?.reason ? `: ${createdBody.reason}` : ` (${created.status})`}.` };
   }
-  const taskId = createdBody.task_id as number | string;
+  return { ok: true, task_id: createdBody.task_id as number | string };
+}
+
+/**
+ * Read a bulk task up to `polls` times, two seconds apart. Still running is
+ * `pending` with the task id, so a caller can come back for it instead of
+ * paying for the same addresses twice.
+ */
+export async function readBulk(taskId: number | string, emails: string[], key: string, deps: ReoonDeps = {}): Promise<VerifyOutcome> {
+  const fetchImpl = deps.fetch ?? fetch;
+  const pause = deps.sleep ?? sleep;
+  const polls = deps.polls ?? 12;
   for (let i = 0; i < polls; i++) {
     if (i) await pause(2_000);
     let res: Response;
@@ -153,6 +161,13 @@ export async function verifyBulk(emails: string[], key: string, deps: ReoonDeps 
     return { ok: true, results, missing: emails.filter((e) => !have.has(e)) };
   }
   return { ok: false, error: 'Reoon is still verifying that list.', pending: true, task_id: taskId };
+}
+
+/** Many addresses. Reoon verifies a bulk task in power mode; this only polls it. */
+export async function verifyBulk(emails: string[], key: string, deps: ReoonDeps = {}): Promise<VerifyOutcome> {
+  const started = await startBulk(emails, key, deps.fetch ?? fetch);
+  if (!started.ok) return started;
+  return readBulk(started.task_id, emails, key, deps);
 }
 
 /**

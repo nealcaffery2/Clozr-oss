@@ -353,7 +353,7 @@ Deno.serve(async (req) => {
       if (!Number.isFinite(ws)) return json({ error: 'workspace_id is required' }, 422);
       const userId = await adminOf(url, authHeader, admin, ws);
       if (!userId) return json({ error: 'only an owner or admin can set up the Drive folder' }, 403);
-      const { data: account } = await admin.from('google_accounts').select('*').eq('workspace_id', ws).eq('user_id', userId).maybeSingle();
+      const { data: account } = await admin.from('google_accounts').select('*').eq('workspace_id', ws).eq('user_id', userId).eq('shared', false).maybeSingle();
       const { data: cfg } = await admin.from('drive_sync').select('*').eq('workspace_id', ws).maybeSingle();
 
       if (body.action === 'tree_status') {

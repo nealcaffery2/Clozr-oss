@@ -21,6 +21,7 @@ import { suggestLineOwner } from '@/lib/comm-rep';
 import { forgetLineLabels } from '@/lib/crm';
 import { forgetLineNames } from '@/lib/line-names';
 import { useSession } from '@/lib/session';
+import { openSettings } from '@/lib/settings-sections';
 import { supabase } from '@/lib/supabase';
 import { type Role, type Teammate, ROLE_LABEL, isAdmin, listTeam } from '@/lib/team';
 import { UserAvatar } from '@/components/UserAvatar';
@@ -298,6 +299,11 @@ export function NumbersPage({ isMobile }: { isMobile: boolean }) {
         <RvmPool numbers={phone.numbers.filter((n) => n.status === 'active' || !n.status).map((n) => ({ phone_e164: n.phone_e164, label: n.label, assigned_user_id: n.assigned_user_id }))} admin={talkrAdmin} onBuy={admin ? () => setOpen({ kind: 'add' }) : undefined} />
       </Collapsed>
       {talkrAdmin ? <Collapsed title="Caller reputation" meta="Registrations, spam checks, 10DLC"><CallerReputation enabled /></Collapsed> : null}
+      <Card className="flex items-center gap-3" style={{ padding: '10px 16px' }}>
+        <span style={{ font: '600 13px/1.3 var(--sans)' }}>Caller ID health</span>
+        <span className="mr-auto min-w-0 truncate" style={META}>Calls per line this week, daily caps, spam flags and resting lines</span>
+        <Button tone="quiet" onClick={() => openSettings('dialer/caller-id-health')}>Open</Button>
+      </Card>
       {book.agentLines ? <Collapsed title="AI agent lines" meta={`${book.agentLines} · managed under AI agents`} /> : null}
 
       {open?.kind === 'calls' && open.line.talkr ? <CallFlowModal line={open.line} people={talkrPeople} ownerTalkrId={personOf(open.line.ownerId)?.talkr?.id ?? null} isMobile={isMobile} onClose={() => setOpen(null)} /> : null}

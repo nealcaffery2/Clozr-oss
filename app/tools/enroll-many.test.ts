@@ -35,6 +35,8 @@ function fakeDb(opts: {
   let reads = 0;
   let lost = !!opts.lostInsert;
   const run = (c: Call): { data: unknown; error: { message: string } | null } => {
+    // The plan's settings (dripSlots reads daily_cap): no cap, so everyone starts now.
+    if (c.table === 'action_plans') return { data: { settings: {} }, error: null };
     if (c.table === 'action_plan_steps') return opts.stepsError ? { data: null, error: { message: 'steps read timed out' } } : { data: opts.steps ?? [], error: null };
     if (c.table === 'sellers') return opts.sellersError ? { data: null, error: { message: 'sellers read timed out' } } : { data: opts.sellers ?? [], error: null };
     if (c.table === 'enrollments' && c.op === 'select') {
@@ -68,6 +70,7 @@ function fakeDb(opts: {
       in: (k: string, v: unknown) => { c.filters.push(['in', k, v]); return q; },
       order: () => q,
       single: () => { c.single = true; return q; },
+      maybeSingle: () => { c.single = true; return q; },
       then: (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) => { calls.push(c); return Promise.resolve().then(() => run(c)).then(res, rej); },
     };
     return q;
@@ -148,8 +151,10 @@ await test('450 records: three batches of reads and writes, not 450 of each', as
   const f = fakeDb();
   const out = await enrollMany(11, 5, 'seller_id', Array.from({ length: 450 }, (_, i) => job(i + 1)), 'u1', false, f.db);
   assert.equal(out.filter((o) => o.queued === 2).length, 450);
-  assert.equal(f.calls.length, 12);
-  const firstIn = f.calls.find((c) => c.op === 'select')!.filters.find((x) => x[0] === 'in')![2] as number[];
+  // One read of the plan's settings, then three batches of a read and three writes.
+  assert.equal(count(f.calls, 'action_plans', 'select'), 1);
+  assert.equal(f.calls.length, 13);
+  const firstIn = f.calls.find((c) => c.table === 'enrollments' && c.op === 'select')!.filters.find((x) => x[0] === 'in')![2] as number[];
   assert.equal(firstIn.length, 200);
 });
 
@@ -166,7 +171,7 @@ await test('an unusable id fails alone and is never sent', async () => {
   const out = await enrollMany(11, 5, 'seller_id', [job(Number.NaN), job(3)], 'u1', false, f.db);
   assert.equal(out[0]!.error?.message, 'Unknown record.');
   assert.equal(out[1]!.queued, 2);
-  assert.deepEqual(f.calls.find((c) => c.op === 'select')!.filters.find((x) => x[0] === 'in')![2], [3]);
+  assert.deepEqual(f.calls.find((c) => c.table === 'enrollments' && c.op === 'select')!.filters.find((x) => x[0] === 'in')![2], [3]);
 });
 
 await test('a failed already-on read fails its batch and writes nothing for it', async () => {

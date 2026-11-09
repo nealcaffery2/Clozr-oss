@@ -21,7 +21,7 @@ const S: JudgeSettings = {
 const base = (patch: Partial<Candidate> = {}): Candidate => ({
   source: 'investorlift', sourceId: 'investorlift:abc', line1: '123 Oak St', city: 'Houston', state: 'TX', zip: '77002', county: null,
   place: [patch.line1 === undefined ? '123 Oak St' : patch.line1, patch.city ?? 'Houston', patch.state ?? 'TX'].filter(Boolean).join(', '), beds: 3, baths: 2, sqft: 1400, yearBuilt: 1985, propertyType: 'Single Family',
-  asking: 120_000, arv: 240_000, rehab: 30_000, contactName: 'Jane Wholesaler', phone: '7135550100', email: null,
+  asking: 120_000, arv: 240_000, rehab: 30_000, contactName: 'Jane Wholesaler', company: null, phone: '7135550100', email: null,
   url: 'https://investorlift.com/marketplace/deal/abc', photos: [], text: 'Great flip in a strong area.', postedAt: null, group: null, raw: {},
   ...patch,
 });
@@ -126,6 +126,13 @@ test('an InvestorLift row maps price, ARV, specs, contact and photos', () => {
   assert.equal(c.baths, 2);
   assert.equal(c.email, 'dispo@example.com');
   assert.deepEqual(c.photos, ['https://img.example.com/1.jpg']);
+  assert.equal(c.company, null);
+});
+
+test('an InvestorLift row carries the selling wholesaler from its account', () => {
+  const row = { property_url: 'https://investorlift.com/marketplace/deal/q1', status: 'available' };
+  assert.equal(fromInvestorLift({ ...row, account: { title: 'One Roof, LLC' } })?.company, 'One Roof, LLC');
+  assert.equal(fromInvestorLift({ ...row, company_name: 'KeyGlee Phoenix' })?.company, 'KeyGlee Phoenix');
 });
 
 test('an off-market InvestorLift row is dropped', () => {

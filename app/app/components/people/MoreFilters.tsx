@@ -4,21 +4,19 @@
 //   Stage history  everyone who was ever at a stage, wherever they are now,
 //                  optionally only when they reached it inside a window.
 //   Money          offer and ARV ranges (any of a contact's deals in range).
-//   Market         where the house is.
 //   List stacking  deals sent, properties held, lists they are on.
 // One panel rather than seven more chips on a toolbar that already wraps.
 
 import React from 'react';
 import type { ClozrView } from '@/app/clozr/view';
-import { picksOf, togglePick } from '@/lib/multi-filter';
 import { AttackGapFields, DateRangeFields } from '@/app/components/filters/RangeFilters';
 
-const label: React.CSSProperties = { display: 'block', fontSize: 11.5, color: '#71717a', fontWeight: 500, marginBottom: 4 };
-const field: React.CSSProperties = { width: '100%', height: 32, padding: '0 8px', border: '1px solid #e4e4e7', borderRadius: 8, fontSize: 12.5, background: '#fafafa', color: '#18181b', fontFamily: 'inherit', boxSizing: 'border-box' };
-const head: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: '#18181b', margin: '0 0 8px' };
+const label: React.CSSProperties = { display: 'block', fontSize: 11.5, color: 'var(--meta, #71717a)', fontWeight: 500, marginBottom: 4 };
+const field: React.CSSProperties = { width: '100%', height: 32, padding: '0 8px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: 8, fontSize: 12.5, background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)', fontFamily: 'inherit', boxSizing: 'border-box' };
+const head: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: 'var(--ink, #18181b)', margin: '0 0 8px' };
 const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 };
 const grid3: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 };
-const note: React.CSSProperties = { fontSize: 11.5, color: '#71717a', marginTop: 6, lineHeight: 1.45 };
+const note: React.CSSProperties = { fontSize: 11.5, color: 'var(--meta, #71717a)', marginTop: 6, lineHeight: 1.45 };
 
 /** 'Any' is how an unset value is stored; an input shows it as empty. */
 const shown = (v: string | undefined) => (v && v !== 'Any' ? v : '');
@@ -32,31 +30,6 @@ function Pick({ name, value, options, onChange }: { name: string; value: string 
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
     </label>
-  );
-}
-
-/** Several picks (lib/multi-filter): the picked ones as chips, the rest in an "Add" list. */
-function MultiPick({ name, value, options, onChange }: { name: string; value: string | undefined; options: string[]; onChange: (v: string) => void }) {
-  const picks = picksOf(value);
-  const rest = options.filter((o) => o !== 'Any' && !picks.includes(o));
-  return (
-    <div style={{ minWidth: 0 }}>
-      <span style={label}>{name}</span>
-      {picks.length ? (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
-          {picks.map((p) => (
-            <button key={p} type="button" onClick={() => onChange(togglePick(value, p))} aria-label={`Remove ${p}`}
-              style={{ height: 24, padding: '0 6px 0 9px', borderRadius: 999, border: '1px solid rgba(10,133,96,.35)', background: '#E7F8F1', color: '#0A8560', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}>
-              {p} <span aria-hidden style={{ fontSize: 13, lineHeight: 1 }}>×</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-      <select aria-label={`Add a ${name.toLowerCase()}`} value="" onChange={(e) => { if (e.target.value) onChange(togglePick(value, e.target.value)); }} style={field}>
-        <option value="">{picks.length ? `Add another ${name.toLowerCase()}…` : `Any ${name.toLowerCase()}`}</option>
-        {rest.map((o) => <option key={o} value={o}>{o}</option>)}
-      </select>
-    </div>
   );
 }
 
@@ -77,7 +50,7 @@ function MoneyRange({ name, bucket, min, max, options, set, keys }: {
   );
 }
 
-/** Stage history, money, market and list stacking: the fields alone, for the popover below and the side filter panel. */
+/** Stage history, money and list stacking: the fields alone, for the popover below and the side filter panel. */
 export function MoreFiltersFields({ V }: { V: ClozrView }) {
   const m = V.peopleMore;
   const f = m.values;
@@ -112,10 +85,6 @@ export function MoreFiltersFields({ V }: { V: ClozrView }) {
         <div style={note}>A partner matches when any of their deals is in range.</div>
       </section>
       <section>
-        <h3 style={head}>Market</h3>
-        <MultiPick name="Market" value={f.market} options={m.markets} onChange={(v) => set({ market: v })} />
-      </section>
-      <section>
         <h3 style={head}>List stacking</h3>
         <div style={grid3}>
           <Pick name="Submissions" value={f.subs} options={m.subs} onChange={(v) => set({ subs: v })} />
@@ -135,7 +104,7 @@ export function MoreFilters({ V, sheet = false }: { V: ClozrView; sheet?: boolea
   return (
     <div style={{ position: 'relative', flex: 'none' }}>
       <button type="button" className="dc9 cz-menu-trigger" onClick={m.toggle} aria-expanded={m.open}
-        style={{ height: 32, padding: '0 10px', borderRadius: 10, border: `1px solid ${on ? '#0A8560' : 'var(--c-btn-line)'}`, background: on ? '#E7F8F1' : 'var(--c-btn-bg)', fontSize: 12.5, color: on ? '#0A8560' : '#27272a', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: on ? 600 : 500, fontFamily: 'var(--font-sans)' }}>
+        style={{ height: 32, padding: '0 10px', borderRadius: 10, border: `1px solid ${on ? '#0A8560' : 'var(--c-btn-line)'}`, background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--c-btn-bg)', fontSize: 12.5, color: on ? 'var(--tx-mint, #0a8560)' : 'var(--ink-2, #27272a)', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: on ? 600 : 500, fontFamily: 'var(--font-sans)' }}>
         More filters{on ? ` · ${m.active}` : ''}
       </button>
       {m.open ? (
@@ -147,7 +116,7 @@ export function MoreFilters({ V, sheet = false }: { V: ClozrView; sheet?: boolea
               : { top: 38, left: 0, width: 'min(420px, calc(100vw - 32px))', maxHeight: 'min(560px, 70vh)', overflow: 'auto', padding: 14, display: 'grid', gap: 16 }}>
             <MoreFiltersFields V={V} />
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-              <button type="button" onClick={m.clear} style={{ height: 30, padding: '0 10px', border: 0, background: 'none', color: '#0A8560', fontSize: 12.5, cursor: 'pointer' }}>Clear these</button>
+              <button type="button" onClick={m.clear} style={{ height: 30, padding: '0 10px', border: 0, background: 'none', color: 'var(--tx-mint, #0a8560)', fontSize: 12.5, cursor: 'pointer' }}>Clear these</button>
               <button type="button" onClick={m.close} style={{ height: 30, padding: '0 14px', borderRadius: 8, border: '1px solid #0A8560', background: '#0A8560', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Done</button>
             </div>
           </div>

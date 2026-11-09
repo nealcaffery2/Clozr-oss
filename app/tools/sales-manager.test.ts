@@ -10,7 +10,7 @@ import { UPLOAD_MAX_BYTES, checkUpload, cleanUploadedText, guessRepSpeaker, labe
 import { COACHING_SYSTEM, COACHING_TOOL, buildReview } from '../lib/call-coaching';
 import { activeScorecards, buildScorecards, ruleInsights, teamTotals } from '../lib/sales-scorecard';
 import {
-  ARM_TTL_MINUTES, OBJECTIONS, PERSONAS, ROLEPLAY_TOOL, lineNotice, phoneInitiation, pickArmedSession, buildRoleplayFeedback, gradable, linesFromElevenLabs, parseLines, roleplayAgentBody,
+  ARM_TTL_MINUTES, OBJECTIONS, PERSONAS, ROLEPLAY_TOOL, conversationIsOurs, lineNotice, phoneInitiation, pickArmedSession, buildRoleplayFeedback, gradable, linesFromElevenLabs, parseLines, roleplayAgentBody,
   scoreTrend, sellerPrompt, talkRatio, transcriptText,
 } from '../lib/roleplay';
 
@@ -267,8 +267,13 @@ test('ruleInsights for a rep with calls but nothing graded', () => {
 // ---- roleplay ----------------------------------------------------------------------------
 
 test('personas and objections cover the brief', () => {
-  assert.equal(PERSONAS.length, 8);
-  for (const id of ['inheritor', 'tired_landlord', 'pre_foreclosure', 'just_a_number', 'wants_retail', 'divorce', 'hostile', 'engineer']) assert.ok(PERSONAS.some((p) => p.id === id), id);
+  const sellers = PERSONAS.filter((p) => p.audience !== 'compr');
+  assert.equal(sellers.length, 8);
+  for (const id of ['inheritor', 'tired_landlord', 'pre_foreclosure', 'just_a_number', 'wants_retail', 'divorce', 'hostile', 'engineer']) assert.ok(sellers.some((p) => p.id === id), id);
+  // The Compr desk plays its own prospects (Roleplay.tsx picks by audience).
+  const compr = PERSONAS.filter((p) => p.audience === 'compr');
+  assert.equal(compr.length, 5);
+  for (const id of ['compr_free_signup', 'compr_wholesaler', 'compr_flipper', 'compr_agent', 'compr_lender']) assert.ok(compr.some((p) => p.id === id), id);
   for (const id of ['too_low', 'spouse', 'other_investor', 'realtor']) assert.ok(OBJECTIONS.some((o) => o.id === id), id);
 });
 
@@ -286,6 +291,14 @@ test('parseLines maps ElevenLabs roles and drops junk', () => {
   const lines = parseLines([{ role: 'user', message: 'Hi Donna' }, { role: 'agent', text: 'Hello?', time_in_call_secs: 3.4 }, { role: 'x', text: 'no' }, { role: 'rep', text: '   ' }]);
   assert.deepEqual(lines, [{ role: 'rep', text: 'Hi Donna', at_s: null }, { role: 'seller', text: 'Hello?', at_s: 3 }]);
   assert.equal(linesFromElevenLabs({ transcript: [{ role: 'agent', message: 'Hello?', time_in_call_secs: 0 }, { role: 'user', message: null }] }).length, 1);
+});
+
+test('a stored conversation counts only when this workspace\'s roleplay agent held it', () => {
+  assert.equal(conversationIsOurs({ agent_id: 'agent_a', transcript: [] }, 'agent_a'), true);
+  assert.equal(conversationIsOurs({ agent_id: 'agent_b', transcript: [] }, 'agent_a'), false);
+  assert.equal(conversationIsOurs({ transcript: [] }, 'agent_a'), false);
+  assert.equal(conversationIsOurs({ agent_id: 'agent_a' }, null), false);
+  assert.equal(conversationIsOurs(null, 'agent_a'), false);
 });
 
 const LINES = parseLines([
@@ -371,8 +384,9 @@ test('the scorecard asks for and stores the four sections, by their names', () =
 });
 
 test('call scoring types: seller types flag, buyer type does not', () => {
-  assert.deepEqual(CALL_TYPES.map((c) => c.id), ['seller_acquisitions', 'seller_follow_up', 'buyer_dispositions']);
+  assert.deepEqual(CALL_TYPES.map((c) => c.id), ['seller_acquisitions', 'seller_follow_up', 'buyer_dispositions', 'compr_sale']);
   assert.equal(callTypeById('buyer_dispositions')?.seller, false);
+  assert.equal(callTypeById('compr_sale')?.seller, false);
   assert.equal(callTypeById('nope'), null);
 });
 

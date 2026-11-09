@@ -149,8 +149,7 @@ export function AiAgentDialog({ api, kind, recordId, recordName, canWrite, initi
         style={{ width: 'min(100%, 940px)', height: 'min(100%, 760px)', background: 'var(--surface, #fff)', borderRadius: 20, boxShadow: '0 30px 80px -20px rgba(15,23,42,.45), 0 0 0 1px rgba(15,23,42,.06)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
         {/* Header */}
-        <div style={{ position: 'relative', padding: '16px 18px', background: on ? 'linear-gradient(120deg, #065f46 0%, #0A8560 45%, #08694C 120%)' : 'linear-gradient(120deg, #1f2937 0%, #334155 55%, #08694C 140%)', color: '#fff', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-          <div aria-hidden className="aia-glow" />
+        <div style={{ position: 'relative', padding: '16px 18px', background: on ? '#08694C' : '#27272a', color: '#fff', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           <AgentAvatar name={agentName} src={agent?.avatar_url} size={54} live={on} ring="rgba(255,255,255,.85)" />
           <div style={{ minWidth: 0, flex: '1 1 220px', position: 'relative' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -183,7 +182,7 @@ export function AiAgentDialog({ api, kind, recordId, recordName, canWrite, initi
         {/* Body */}
         <div className="aia-body" style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px' }}>
           {/* Chat */}
-          <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, background: 'linear-gradient(180deg, #fafbfc 0%, #f4f6f9 100%)', borderRight: `1px solid ${LINE}` }}>
+          <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--canvas, #fafafa)', borderRight: `1px solid ${LINE}` }}>
             {blocked ? (
               <Notice tone="red" icon={<Ban size={16} aria-hidden />}>{blocked.reason}.{blocked.code === 'protected' ? ' VIPs and funds stay with the team.' : ''}</Notice>
             ) : noAgent ? (
@@ -244,17 +243,17 @@ export function AiAgentDialog({ api, kind, recordId, recordName, canWrite, initi
                       <button key={c} type="button" aria-pressed={sel} disabled={locked || !!busy || (!can && !sel)} onClick={() => toggleChannel(c)}
                         title={can ? (c === 'rvm' ? RVM_HELP : `${sel ? 'Stop using' : 'Use'} ${CHANNEL_LABEL[c].toLowerCase()}`) : c === 'call' ? 'Calls need a published agent with an ElevenLabs number and a phone on the record' : `No ${c === 'email' ? 'email' : 'phone'} on this record`}
                         style={{ height: 28, padding: '0 10px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, cursor: can ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
-                          border: `1px solid ${sel ? 'rgba(10,133,96,.35)' : LINE}`, background: sel ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: sel ? GREEN : can ? 'var(--muted, #52525b)' : 'var(--subtle, #a1a1aa)', textDecoration: !can ? 'line-through' : 'none' }}>
+                          border: `1px solid ${sel ? 'rgba(10,133,96,.35)' : LINE}`, background: sel ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', color: sel ? GREEN : can ? 'var(--muted, #52525b)' : 'var(--meta, #71717a)', textDecoration: !can ? 'line-through' : 'none' }}>
                         {CH_ICON[c]}{CHANNEL_LABEL[c]}
                       </button>
                     );
                   })}
                   <span style={{ flex: 1 }} />
-                  <span className="aia-hint" style={{ fontSize: 11, color: 'var(--subtle, #a1a1aa)' }}>Enter to send · Shift+Enter for a new line</span>
+                  <span className="aia-hint" style={{ fontSize: 11, color: 'var(--meta, #71717a)' }}>Enter to send · Shift+Enter for a new line</span>
                   {channels.includes('rvm') ? <span style={{ flexBasis: '100%', fontSize: 11.5, fontWeight: 500, color: 'var(--meta, #71717a)', lineHeight: 1.4 }}>{RVM_HELP}</span> : null}
                   <button type="button" aria-label="Send" disabled={locked || !!busy || !draft.trim()} onClick={send}
                     style={{ width: 36, height: 36, borderRadius: 12, border: 0, display: 'grid', placeItems: 'center', cursor: draft.trim() && !locked ? 'pointer' : 'not-allowed',
-                      background: draft.trim() && !locked ? `linear-gradient(135deg, ${GREEN}, #10b981)` : '#e4e4e7', color: '#fff', transition: 'background .15s' }}>
+                      background: draft.trim() && !locked ? GREEN : '#e4e4e7', color: '#fff', transition: 'background .15s' }}>
                     <ArrowUp size={18} aria-hidden />
                   </button>
                 </div>
@@ -293,7 +292,7 @@ export function AiAgentDialog({ api, kind, recordId, recordName, canWrite, initi
                 <ol style={{ listStyle: 'none', margin: 0, padding: 0, position: 'relative' }}>
                   {plan.steps.map((s, i) => (
                     <li key={i} style={{ display: 'grid', gridTemplateColumns: '28px 1fr', gap: 8, paddingBottom: 10, position: 'relative' }}>
-                      {i < plan.steps.length - 1 ? <span aria-hidden style={{ position: 'absolute', left: 13, top: 26, bottom: 0, width: 2, background: '#eef0f3' }} /> : null}
+                      {i < plan.steps.length - 1 ? <span aria-hidden style={{ position: 'absolute', left: 13, top: 26, bottom: 0, width: 2, background: 'var(--hairline, #eef0f3)' }} /> : null}
                       <span style={{ width: 28, height: 28, borderRadius: 9, display: 'grid', placeItems: 'center', background: i < (e?.touches ?? 0) ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface-2, #f4f4f5)', color: i < (e?.touches ?? 0) ? GREEN : 'var(--muted, #52525b)', border: `1px solid ${i < (e?.touches ?? 0) ? 'rgba(10,133,96,.25)' : LINE}` }}>{CH_ICON[s.channel]}</span>
                       <span style={{ minWidth: 0 }}>
                         <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--meta, #71717a)' }}>{s.day === 0 ? 'Today' : `Day ${s.day}`} · {CHANNEL_LABEL[s.channel]}</span>
@@ -312,7 +311,7 @@ export function AiAgentDialog({ api, kind, recordId, recordName, canWrite, initi
 
             {on && others.length ? (
               <>
-                <div style={{ height: 1, background: '#f0f1f3', margin: '16px 0' }} />
+                <div style={{ height: 1, background: 'var(--hairline, #f0f1f3)', margin: '16px 0' }} />
                 <SideTitle>Next stage</SideTitle>
                 {nextAgent ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -342,7 +341,7 @@ export function AiAgentDialog({ api, kind, recordId, recordName, canWrite, initi
               </>
             ) : null}
 
-            <div style={{ height: 1, background: '#f0f1f3', margin: '16px 0' }} />
+            <div style={{ height: 1, background: 'var(--hairline, #f0f1f3)', margin: '16px 0' }} />
             <SideTitle>What it has done</SideTitle>
             {actions.length ? (
               <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -385,10 +384,10 @@ function BigSwitch({ on, busy, disabled, onTurnOn, onTurnOff }: { on: boolean; b
     <button type="button" role="switch" aria-checked={on} aria-label={on ? 'Agent is on. Turn it off' : 'Agent is off. Turn it on'} disabled={busy || (disabled && !on)}
       onClick={() => (on ? onTurnOff() : onTurnOn())}
       style={{ position: 'relative', height: 34, minWidth: 92, padding: '0 6px 0 12px', borderRadius: 999, border: '1px solid rgba(255,255,255,.35)', display: 'inline-flex', alignItems: 'center', gap: 8,
-        background: on ? 'rgba(34,197,94,.95)' : 'rgba(220,38,38,.92)', color: '#fff', fontWeight: 800, fontSize: 12, letterSpacing: '.06em', cursor: busy || (disabled && !on) ? 'not-allowed' : 'pointer', opacity: disabled && !on ? 0.6 : 1, fontFamily: 'inherit',
+        background: on ? 'rgba(34,197,94,.95)' : 'rgba(220,38,38,.92)', color: '#fff', fontWeight: 800, fontSize: 12, letterSpacing: '.06em', cursor: busy || (disabled && !on) ? 'not-allowed' : 'pointer', opacity: disabled && !on ? 0.5 : 1, fontFamily: 'inherit',
         boxShadow: on ? '0 0 0 4px rgba(34,197,94,.25)' : '0 0 0 4px rgba(220,38,38,.2)', transition: 'background .2s, box-shadow .2s' }}>
       <span style={{ order: on ? 0 : 1 }}>{busy ? '…' : on ? 'ON' : 'OFF'}</span>
-      <span aria-hidden style={{ order: on ? 1 : 0, width: 24, height: 24, borderRadius: '50%', background: 'var(--surface, #fff)', display: 'grid', placeItems: 'center', color: on ? '#16a34a' : RED, boxShadow: '0 1px 3px rgba(0,0,0,.25)' }}>
+      <span aria-hidden style={{ order: on ? 1 : 0, width: 24, height: 24, borderRadius: '50%', background: 'var(--surface, #fff)', display: 'grid', placeItems: 'center', color: on ? 'var(--tx-green, #15803d)' : RED, boxShadow: '0 1px 3px rgba(0,0,0,.25)' }}>
         <Power size={13} />
       </span>
     </button>
@@ -440,7 +439,7 @@ function Bubble({ t, name, src }: { t: ChatTurn; name: string; src?: string | nu
     const auto = t.text === AUTO_TEXT;
     return (
       <div className="aia-rise" style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <div style={{ maxWidth: '78%', padding: '10px 13px', borderRadius: '16px 16px 4px 16px', background: auto ? 'linear-gradient(135deg, #065f46, #08694C)' : `linear-gradient(135deg, ${GREEN}, #0f9b70)`, color: '#fff', fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', boxShadow: '0 6px 16px -10px rgba(10,133,96,.6)' }}>
+        <div style={{ maxWidth: '78%', padding: '10px 13px', borderRadius: '16px 16px 4px 16px', background: auto ? '#08694C' : GREEN, color: '#fff', fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', boxShadow: '0 6px 16px -10px rgba(10,133,96,.6)' }}>
           {auto ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Sparkles size={14} aria-hidden /> Let AI decide from the history</span> : t.text}
         </div>
       </div>
@@ -480,7 +479,7 @@ function ActionRow({ a }: { a: AgentAction }) {
         <summary style={{ listStyle: 'none', cursor: 'pointer', display: 'grid', gridTemplateColumns: '22px 1fr auto', gap: 8, alignItems: 'center' }}>
           <span style={{ width: 22, height: 22, borderRadius: 7, display: 'grid', placeItems: 'center', background: 'var(--surface-2, #f4f4f5)', color: tone }}>{icon}</span>
           <span style={{ fontSize: 12.5, color: INK, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{actionText(a)}</span>
-          <span style={{ fontSize: 11, color: 'var(--subtle, #a1a1aa)' }}>{agoLabel(a.created_at)}</span>
+          <span style={{ fontSize: 11, color: 'var(--meta, #71717a)' }}>{agoLabel(a.created_at)}</span>
         </summary>
         {a.summary ? <div style={{ margin: '6px 0 2px 30px', fontSize: 12, color: 'var(--muted, #52525b)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{a.summary}</div> : null}
       </details>

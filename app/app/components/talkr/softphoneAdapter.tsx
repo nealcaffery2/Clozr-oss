@@ -37,7 +37,8 @@ import type { ClozrRecord } from './CallContext';
 import { useSession } from '@/lib/session';
 import { setAudioPrefs, useAudioPrefs } from '@/lib/phone-audio';
 import { applyCallRoute, getCallRoute, subscribeCallRoute, type CallRoute } from '@/lib/call-route';
-import { requestSettingsTab, type TalkrSettingsTab } from '@/app/clozr/screens/settingsTab';
+import { legacySettingsSection, openSettings } from '@/lib/settings-sections';
+import type { TalkrSettingsTab } from '@/app/clozr/screens/TalkrSettings';
 import { useCrmSounds } from './useCrmSounds';
 
 /** How often teammates' live calls are read while the tab is visible. */
@@ -267,7 +268,10 @@ export function TalkrSoftphoneProvider({ V, children }: { V: ClozrView; children
 
   const control = useCallback(
     async (fn: (id: string) => Promise<unknown>) => {
-      if (!callId) return;
+      if (!callId) {
+        setControlError('This call is still connecting to the phone system. Try again in a second.');
+        return;
+      }
       setControlError(null);
       setControlErrorCode(null);
       try {
@@ -550,8 +554,7 @@ export function TalkrSoftphoneProvider({ V, children }: { V: ClozrView; children
       // On a phone the full-screen phone would cover Settings: tuck it away
       // first (a call carries on behind its pill).
       if (V.isMobile) V.minimisePhone();
-      requestSettingsTab({ main: 'talkr', tab });
-      V.goSettings();
+      openSettings(legacySettingsSection({ main: 'talkr', tab }) ?? 'dialer/connection');
     },
     leaveMonitor: async () => {
       if (!monitor) return;

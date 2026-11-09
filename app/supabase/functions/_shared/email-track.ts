@@ -32,11 +32,13 @@ const skip = (url: string) => /\/deliverability\/unsubscribe|[?&]unsubscribe|\/u
 
 /**
  * The HTML with its links rewritten and the pixel appended, and the original
- * URLs in link order. `base` is trackBase().
+ * URLs in link order. `base` is trackBase(). With `{ links: false }` only the
+ * pixel goes in: the fallback when the link rows could not be saved, since a
+ * rewritten link with no row behind it is a dead link in someone's inbox.
  */
-export function instrument(html: string, token: string, base: string): { html: string; links: string[] } {
+export function instrument(html: string, token: string, base: string, opts: { links?: boolean } = {}): { html: string; links: string[] } {
   const links: string[] = [];
-  const out = html.replace(/(<a\b[^>]*?\bhref\s*=\s*)(["'])(https?:\/\/[^"']+)\2/gi, (whole, pre: string, q: string, url: string) => {
+  const out = opts.links === false ? html : html.replace(/(<a\b[^>]*?\bhref\s*=\s*)(["'])(https?:\/\/[^"']+)\2/gi, (whole, pre: string, q: string, url: string) => {
     const decoded = url.replace(/&amp;/g, '&');
     if (skip(decoded) || links.length >= 100) return whole;
     links.push(decoded);

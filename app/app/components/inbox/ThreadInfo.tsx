@@ -14,6 +14,7 @@ import { logActivity } from '@/lib/crm-write';
 import { formatPhone } from '@/lib/talkr-web/time';
 import { heat } from '@/lib/heat';
 import { Chip, type HeatChip } from './LabelChips';
+import { NotHereLink } from './Elsewhere';
 
 export type RelatedRow = { key: string; kind: 'sms' | 'email' | 'call'; label: string; preview: string; at: string; title?: string };
 
@@ -64,7 +65,7 @@ export function InfoTab({ rec, name, phone, email, lastAt, heat: h, related, onO
             {rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
           </dl>
         ) : (
-          <p className="ax-info-none">Not in CLOZR. Add them from the record search, or from the dialer when they call.</p>
+          <p className="ax-info-none"><NotHereLink phone={phone} fallback="Not in CLOZR. Add them from the record search, or from the dialer when they call." /></p>
         )}
         {rec ? <button type="button" className="ax-link ax-info-open" onClick={rec.open}>Open record</button> : null}
       </section>

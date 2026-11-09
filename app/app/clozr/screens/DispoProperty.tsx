@@ -3,9 +3,10 @@
 'use client';
 
 import React from 'react';
-import { BackLink } from '@/components/ds/BackLink';
+import { textTone } from '@/lib/text-tone';
+import { Badge, SectionLabel } from '@/components/ds/Text';
+import { ScreenHeader } from '@/components/ds/Screen';
 import type { ClozrView } from '@/app/clozr/view';
-import { GeniusMode, GeniusTopFive } from '@/components/GeniusMode';
 import { DealFiles } from '@/components/DealFiles';
 import { DispoCampaign } from '@/components/DispoCampaign';
 import { BuyerPagePanel } from '@/components/BuyerPagePanel';
@@ -80,22 +81,8 @@ export function DispoProperty({ V }: { V: ClozrView }) {
   const [rvmIds, setRvmIds] = React.useState<string[] | null>(null);
   return (
     <section data-screen-label="Dispo property" style={{flex: "1", minWidth: "0", display: "flex", flexDirection: "column"}}>
-      <div style={{background: "var(--surface, #fff)", borderBottom: "1px solid var(--divider, #e4e4e7)", padding: "12px 20px 0"}}>
-        <div style={{display: "flex", alignItems: "center", flexWrap: V.isMobile ? "wrap" : "nowrap", rowGap: "4px", gap: "8px", fontSize: "12.5px", color: "var(--meta, #71717a)", minWidth: "0"}}>
-          <BackLink to={V.backFor('dispo')} />
-          <span style={{color: "var(--line, #d4d4d8)", flex: "none"}}>
-            /
-          </span>
-          <span style={{color: "var(--ink, #18181b)", fontWeight: "600", display: V.isMobile ? "none" : "inline", minWidth: "0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
-            {V.DP.addr}
-          </span>
-          <span style={{color: "var(--line, #d4d4d8)", display: V.isMobile ? "none" : "inline", flex: "none"}}>
-            ·
-          </span>
-          <button onClick={V.DP.open} style={{background: "none", border: "0", padding: "0", cursor: "pointer", color: "var(--tx-mint, #0a8560)", fontSize: "12.5px", minWidth: "0", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left"}}>
-            Seller: {V.DP.seller}
-          </button>
-          <div style={{flex: "1"}}></div>
+      {/* The address is the screen's title; the seller link, the facts and the money sit under it. */}
+      <ScreenHeader back={V.backFor('dispo')} title={V.DP.addr} actions={<>
           {V.DP.dealDbId ? (
             <button type="button" data-testid="dispo-archive" onClick={() => V.archiveDealDb(V.DP.dealDbId, !V.dealArchivedDb(V.DP.dealDbId))}
               title={V.dealArchivedDb(V.DP.dealDbId) ? 'Put this deal back on Dispo and the Deals board' : 'Archive this deal: it leaves Dispo, the Deals board and the deal list'}
@@ -103,27 +90,30 @@ export function DispoProperty({ V }: { V: ClozrView }) {
               {V.dealArchivedDb(V.DP.dealDbId) ? 'Restore' : 'Archive'}
             </button>
           ) : null}
-          <AiButton kind="genius" onClick={V.geniusHere} />
-        </div>
-        <div style={{display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: "16px", marginTop: "8px"}}>
+      </>} />
+      <div style={{background: "var(--surface, #fff)", borderBottom: "1px solid var(--divider, #e4e4e7)", padding: "12px var(--gutter) 0"}}>
+        <div style={{display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: "16px"}}>
           {(V.ready) ? (
             <>
-            <button type="button" data-testid="dispo-photo" onClick={() => { if (V.DP.photos.length) V.openPhotoShow(V.DP.addr, V.DP.photos, V.DP.dealDbId); }} title={V.DP.photos.length ? 'View photos' : 'Property photo'} style={{width: "88px", height: "62px", borderRadius: "8px", flex: "none", padding: 0, border: 0, overflow: "hidden", background: "#e9ebf0", cursor: V.DP.photos.length ? "pointer" : "default"}}>
+            <button type="button" data-testid="dispo-photo" onClick={() => { if (V.DP.photos.length) V.openPhotoShow(V.DP.addr, V.DP.photos, V.DP.dealDbId); }} title={V.DP.photos.length ? 'View photos' : 'Property photo'} style={{width: "88px", height: "62px", borderRadius: "8px", flex: "none", padding: 0, border: 0, overflow: "hidden", background: "var(--photo-bg, #e9ebf0)", cursor: V.DP.photos.length ? "pointer" : "default"}}>
               <PropertyPhoto photo={V.DP.photos?.[0] || ''} street={V.DP.streetSafe || V.DP.imgSafe} alt={'Photo of ' + V.DP.addr} eager />
             </button>
             </>
           ) : null}
           <div style={{minWidth: "0"}}>
-            <h1 style={{margin: "0", fontSize: "22px", fontWeight: "700", letterSpacing: "-0.03em"}}>
-              {V.DP.addr}
-            </h1>
+            <div style={{fontSize: "12.5px"}}>
+          <button onClick={V.DP.open} style={{background: "none", border: "0", padding: "0", cursor: "pointer", color: "var(--tx-mint, #0a8560)", fontSize: "12.5px", minWidth: "0", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left"}}>
+            Seller: {V.DP.seller}
+          </button>
+            </div>
             <div style={{fontSize: "12.5px", color: "var(--meta, #71717a)", marginTop: "2px"}}>
               {V.DP.cityLine} · {V.DP.facts} · dispo rep {V.DP.rep}
             </div>
-            <div style={{display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "6px", fontSize: "11.5px", fontWeight: "700", color: V.DP.statusColor}}>
-              <Mark label={V.DP.status} />
-              {V.DP.status}
-            </div>
+            {/* The status is stored in capitals ("MARKETING"); it reads in sentence case as a badge (DESIGN.md §1). */}
+            <Badge style={{marginTop: "6px"}}>
+              <span style={{display: "inline-flex", color: V.DP.statusColor}}><Mark label={V.DP.status} size={12} /></span>
+              {V.DP.status === V.DP.status.toUpperCase() ? V.DP.status.charAt(0) + V.DP.status.slice(1).toLowerCase() : V.DP.status}
+            </Badge>
           </div>
           <div style={{flex: "1"}}></div>
           <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "repeat(2,minmax(0,1fr))" : "repeat(6,auto)", gap: V.isMobile ? "12px 16px" : "22px", width: V.isMobile ? "100%" : "auto", minWidth: "0"}}>
@@ -133,7 +123,7 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                 <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600", whiteSpace: V.isMobile ? "normal" : "nowrap", minWidth: "0", overflowWrap: "anywhere"}}>
                   {h.k}
                 </div>
-                <div style={{fontSize: "18px", fontWeight: "700", letterSpacing: "-0.03em", marginTop: "3px", whiteSpace: "nowrap"}}>
+                <div style={{fontSize: "var(--fs-figure)", fontWeight: 650, letterSpacing: "-0.02em", lineHeight: 1.15, marginTop: "3px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums"}}>
                   {h.v}
                 </div>
               </div>
@@ -141,7 +131,7 @@ export function DispoProperty({ V }: { V: ClozrView }) {
             ))}
           </div>
         </div>
-        <div data-tabs style={{display: "flex", gap: "2px", marginTop: "10px"}}>
+        <div data-tabs style={{display: "flex", gap: "2px", marginTop: "10px", overflowX: "auto", scrollbarWidth: "none"}}>
           {(V.dispoTabs || []).map((t, t__i) => (
             <React.Fragment key={t__i}>
             <button className="dc12" onClick={t.go} style={{height: "36px", padding: "0 11px", border: "0", borderBottom: `2px solid ${t.border}`, background: "none", cursor: "pointer", fontSize: "13px", fontWeight: "500", color: t.color}}>
@@ -165,7 +155,7 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                 <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600"}}>
                   {m.k}
                 </div>
-                <div style={{fontSize: "20px", fontWeight: "700", letterSpacing: "-0.03em", marginTop: "4px"}}>
+                <div style={{fontSize: "20px", fontWeight: "650", letterSpacing: "-0.02em", marginTop: "4px", fontVariantNumeric: "tabular-nums"}}>
                   {m.v}
                 </div>
                 <div style={{fontSize: "11px", color: "var(--meta, #71717a)"}}>
@@ -288,19 +278,14 @@ export function DispoProperty({ V }: { V: ClozrView }) {
               </div>
               {(V.showAi && !V.isLiveData) ? (
                 <>
-                <div style={{borderRadius: "12px", padding: "14px", background: "var(--ink-hero, #141419)", color: "var(--on-dark, #fff)", position: "relative", overflow: "hidden"}}>
-                  <div style={{position: "absolute", inset: "0", pointerEvents: "none", background: "radial-gradient(120% 90% at 90% -10%, rgba(10, 133, 96,0.34), transparent 58%)"}}></div>
-                  <div style={{position: "relative"}}>
-                    <div style={{fontSize: "11.5px", color: "rgba(255,255,255,.6)", fontWeight: "600"}}>
-                      CLOZR AI · dispo
-                    </div>
-                    <div style={{fontSize: "13px", lineHeight: "1.5", marginTop: "8px", color: "rgba(255,255,255,.92)"}}>
-                      {"Harbor Capital's offer nets $2,500 less than Northline's but closes 7 days sooner with no contingencies. Given the Sept 22 close, accept Harbor."}
-                    </div>
-                    <button className="dc3" onClick={V.goOffersTab} style={{marginTop: "10px", height: "28px", padding: "0 12px", borderRadius: "7px", border: "0", background: "#0A8560", color: "#fff", fontSize: "12px", fontWeight: "600", cursor: "pointer"}}>
-                      Compare offers
-                    </button>
+                <div style={{borderRadius: "12px", padding: "14px 16px", background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)"}}>
+                  <SectionLabel>What CLOZR AI sees</SectionLabel>
+                  <div style={{fontSize: "13px", lineHeight: "1.5", marginTop: "6px", color: "var(--ink-2, #27272a)"}}>
+                    {"Harbor Capital's offer nets $2,500 less than Northline's but closes 7 days sooner with no contingencies. Given the Sept 22 close, accept Harbor."}
                   </div>
+                  <button type="button" className="ds-btn ds-btn--solid ds-btn--sm" onClick={V.goOffersTab} style={{marginTop: "10px"}}>
+                    Compare offers
+                  </button>
                 </div>
                 </>
               ) : null}
@@ -420,15 +405,9 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                   </div>
                   ) : null}
                   <div style={{display: "flex", gap: "5px", marginTop: "10px"}}>
-                    <button className="clozr-talkr-ghost" onClick={m.call} style={{color: "var(--c-talkr)", height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--tint-rose, #fecdd3)", background: "var(--c-btn-bg)", fontSize: "12px", fontWeight: "500", cursor: "pointer"}}>
-                      Call
-                    </button>
-                    <button className="clozr-talkr-ghost" onClick={m.text} style={{color: "var(--c-talkr)", height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--tint-rose, #fecdd3)", background: "var(--c-btn-bg)", fontSize: "12px", fontWeight: "500", cursor: "pointer"}}>
-                      Text
-                    </button>
-                    <button className="dc6" onClick={m.email} style={{height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12px", fontWeight: "500", cursor: "pointer"}}>
-                      Email
-                    </button>
+                    <button type="button" className="ds-btn ds-btn--ghost ds-btn--sm" onClick={m.call}>Call</button>
+                    <button type="button" className="ds-btn ds-btn--ghost ds-btn--sm" onClick={m.text}>Text</button>
+                    <button type="button" className="ds-btn ds-btn--ghost ds-btn--sm" onClick={m.email}>Email</button>
                     <button className="dc6" onClick={() => setRvmIds([m.id])} style={{height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12px", fontWeight: "500", cursor: "pointer"}}>
                       RVM
                     </button>
@@ -481,15 +460,7 @@ export function DispoProperty({ V }: { V: ClozrView }) {
             ))}
           </div>
           {V.matches.length ? null : none("No buyers matched to this deal yet. Run matching to score every buy box against it.", "6px 0 16px")}
-          <GeniusTopFive workspaceId={V.liveIds?.workspaceId ?? null} dealId={V.liveIds?.dispoDealId ?? null} onViewAll={V.genius.tab} />
           </>
-        ) : null}
-        {(V.isDispoTab.Genius) ? (
-          <div id="genius-mode">
-            <GeniusMode workspaceId={V.liveIds?.workspaceId ?? null} dealId={V.liveIds?.dispoDealId ?? null} userId={session.user?.id ?? null}
-              canWrite={!!V.liveIds?.canWrite} isMobile={V.isMobile} onToast={V.showToast} onAdded={V.reloadCrm}
-              onCall={V.genius.call} onQueue={V.genius.queue} onOpenBuyer={V.genius.openBuyer} onCampaign={V.genius.campaign} onAddToMarketing={V.genius.addToMarketing} onShowProspects={V.goBuyerProspects} />
-          </div>
         ) : null}
         {(V.isDispoTab.Marketing) ? (
           <>
@@ -504,7 +475,8 @@ export function DispoProperty({ V }: { V: ClozrView }) {
             demo={V.dispoCampaign?.demo ?? null}
             viewed={V.isLiveData ? (V.campaignMetrics.find((m) => m.k === "Viewed")?.v ?? null) : null}
             buyer={V.dispoCampaign?.buyer} onCall={V.genius.call} onOpenBuyer={V.dispoCampaign?.openBuyer ?? V.genius.openBuyer}
-            onQueue={V.genius.queue} onAgent={V.genius.startAgent} />
+            onQueue={V.genius.queue} onAgent={V.genius.startAgent}
+            factFix={V.dispoCampaign ? { openFacts: V.dispoCampaign.openFacts, saveFact: V.dispoCampaign.saveFact } : undefined} />
           </>
         ) : null}
         {(V.isDispoTab.Activity) ? (
@@ -551,18 +523,18 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                 <React.Fragment key={c__i}>
                 <div style={{display: "grid", gridTemplateColumns: "30px minmax(0,1fr)", gap: "12px", paddingBottom: "12px"}}>
                   <div style={{display: "flex", flexDirection: "column", alignItems: "center"}}>
-                    <span style={{width: "30px", height: "30px", borderRadius: "8px", background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", display: "grid", placeItems: "center", fontSize: "10px", fontWeight: "700", color: "var(--muted, #52525b)", flex: "none"}}>
+                    <span style={{width: "30px", height: "30px", borderRadius: "8px", background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", display: "grid", placeItems: "center", fontSize: "11px", fontWeight: "700", color: "var(--muted, #52525b)", flex: "none"}}>
                       {c.initials}
                     </span>
                     <span style={{flex: "1", width: "1px", background: "var(--divider, #e4e4e7)", marginTop: "6px"}}></span>
                   </div>
                   <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "10px", padding: "11px 14px", minWidth: "0"}}>
                     <div style={{display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap"}}>
-                      <span style={{display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11px", fontWeight: "700", color: c.color}}>
+                      <span style={{display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11.5px", fontWeight: "650", color: textTone(c.color)}}>
                         <Mark label={c.channel} />
                         {c.channel}
                       </span>
-                      <span style={{fontSize: "11px", fontWeight: "700", color: c.dirColor}}>
+                      <span style={{fontSize: "11.5px", fontWeight: "650", color: textTone(c.dirColor)}}>
                         {c.dirLabel}
                       </span>
                       <span style={{fontSize: "12.5px", fontWeight: "600", color: "var(--ink, #18181b)"}}>
@@ -570,7 +542,7 @@ export function DispoProperty({ V }: { V: ClozrView }) {
                       </span>
                       {(c.isBuyer) ? (
                         <>
-                        <span style={{fontSize: "11px", fontWeight: "700", color: "#ff7a45"}}>
+                        <span style={{fontSize: "11.5px", fontWeight: "650", color: "var(--tx-orange, #c2410c)"}}>
                           Buyer
                         </span>
                         </>

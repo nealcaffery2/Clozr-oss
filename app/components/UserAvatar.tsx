@@ -17,7 +17,7 @@ export function UserAvatar({ name, src, size = 30, radius = '50%', bg = 'var(--m
   const showImg = !!src && broken !== src;
   return (
     <span title={title ?? name} aria-label={name} role="img"
-      style={{ width: size, height: size, borderRadius: radius, background: showImg ? 'var(--divider, #e4e4e7)' : bg, color, border, display: 'inline-grid', placeItems: 'center', flex: 'none', overflow: 'hidden', fontSize: Math.max(9, Math.round(size * 0.36)), fontWeight: 700, ...style }}>
+      style={{ width: size, height: size, borderRadius: radius, background: showImg ? 'var(--divider, #e4e4e7)' : bg, color, border, display: 'inline-grid', placeItems: 'center', flex: 'none', overflow: 'hidden', fontSize: Math.max(11, Math.round(size * 0.36)), fontWeight: 700, ...style }}>
       {showImg ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src!} alt="" referrerPolicy="no-referrer" onError={() => setBroken(src!)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />

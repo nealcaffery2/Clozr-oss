@@ -105,13 +105,13 @@ export default function ResetPasswordPage() {
                   {note.text}
                 </div>
               ) : null}
-              <button type="submit" disabled={busy} className="dc3" style={{ width: '100%', height: '40px', borderRadius: '10px', border: '1px solid #0A8560', background: busy ? '#7fcbb2' : '#0A8560', color: '#fff', fontSize: '13.5px', fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer' }}>
+              <button type="submit" disabled={busy} className="dc3" style={{ width: '100%', height: '40px', borderRadius: '10px', border: '1px solid #0A8560', background: '#0A8560', opacity: busy ? 0.5 : 1, color: '#fff', fontSize: '13.5px', fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer' }}>
                 {busy ? 'Saving…' : 'Save password and continue'}
               </button>
             </form>
           )}
         </div>
-        <p style={{ margin: '16px 2px 0', fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>
+        <p style={{ margin: '16px 2px 0', fontSize: '12px', color: 'var(--meta, #71717a)' }}>
           <a href="/login" style={{ color: 'var(--meta, #71717a)' }}>← Back to sign in</a>
         </p>
       </div>

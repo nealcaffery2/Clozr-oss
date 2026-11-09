@@ -2,30 +2,34 @@
 
 // Filter threads (SmarterContact's Filter contacts modal): include or exclude
 // labels, when they last responded, their area code, a Talkr tag (campaigns
-// tag the contacts they reach), the rep, the channel. Reset, Save filter
+// tag the contacts they reach), the rep, the channel, the deal a blast about
+// which reached them (Deal blasted, lib/inbox-blast-tags). Reset, Save filter
 // (named, it lands in the rail), Apply. A native dialog: Escape closes it,
 // focus stays inside, the page behind is inert.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import { EMPTY_FILTER, type InboxFilter, filterCount } from '@/lib/inbox-folders';
+import { EMPTY_FILTER, type InboxFilter, filterCount, withDefaults } from '@/lib/inbox-folders';
+import type { DealOption } from '@/lib/inbox-blast-tags';
 
 function Toggle({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
   return <button type="button" className="ax-fchip" aria-pressed={on} onClick={onClick}>{children}</button>;
 }
 
-export function FilterDialog({ value, labels, tags, owners, onApply, onSave, onClose }: {
+export function FilterDialog({ value, labels, tags, owners, deals = [], onApply, onSave, onClose }: {
   value: InboxFilter;
   /** Every label the list carries right now: dispositions, stages, heat words. */
   labels: string[];
   tags: string[];
   owners: string[];
+  /** Deals the threads here were blasted about, with how many threads each. */
+  deals?: DealOption[];
   onApply: (f: InboxFilter) => void;
   onSave: (name: string, f: InboxFilter) => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  const [f, setF] = useState<InboxFilter>(value);
+  const [f, setF] = useState<InboxFilter>(() => withDefaults(value));
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState('');
   useEffect(() => {
@@ -89,6 +93,12 @@ export function FilterDialog({ value, labels, tags, owners, onApply, onSave, onC
               </select>
             </label>
           </div>
+          <label className="ax-flabel">Deal blasted
+            <select value={f.deal} onChange={(e) => set({ deal: e.target.value })} data-testid="inbox-filter-deal">
+              <option value="">Any thread</option>
+              {deals.map((d) => <option key={d.dealId} value={String(d.dealId)}>{d.line1}{d.count ? ` (${d.count} ${d.count === 1 ? 'thread' : 'threads'})` : ''}</option>)}
+            </select>
+          </label>
           <fieldset className="ax-fset">
             <legend>Channel</legend>
             <div className="ax-fchips">

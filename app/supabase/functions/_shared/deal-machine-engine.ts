@@ -44,6 +44,8 @@ export type Candidate = {
   arv: number | null;
   rehab: number | null;
   contactName: string | null;
+  /** The wholesaler selling it (InvestorLift's account), for the LLC list. Facebook has none. */
+  company: string | null;
   phone: string | null;
   email: string | null;
   url: string | null;
@@ -488,6 +490,7 @@ export function fromInvestorLift(item: Record<string, unknown>): Candidate | nul
     propertyType: text(item.property_type, 80),
     asking: money(item.price), arv: money(item.arv_estimate), rehab: money(firstOf(item, ['rehab', 'rehab_estimate', 'repairs'])),
     contactName: text(firstOf(item, ['contact_name', 'dispo_manager', 'agent_name', 'company_name']), 120),
+    company: text(firstOf(item, ['account.title', 'account.name', 'company_name', 'seller_company', 'wholesaler', 'company']), 160),
     phone: text(item.phone_number, 40), email: text(item.email, 200)?.toLowerCase() ?? null,
     url, photos, text: `${text(item.title) ?? ''}\n${description}`.trim(),
     postedAt: text(item.created_at, 40), group: null, raw: item,
@@ -515,6 +518,7 @@ export function fromFacebookPost(item: Record<string, unknown>, now = Date.now()
     beds: f.beds, baths: f.baths, sqft: f.sqft, yearBuilt: f.yearBuilt, propertyType: null,
     asking: f.asking, arv: f.arv, rehab: f.rehab,
     contactName: text(firstOf(item, ['user.name', 'authorName', 'author.name']), 120),
+    company: null,
     phone: f.phone, email: f.email,
     url, photos, text: body.slice(0, 5000), postedAt: posted,
     group: text(firstOf(item, ['groupTitle', 'groupName', 'facebookUrl']), 200), raw: item,

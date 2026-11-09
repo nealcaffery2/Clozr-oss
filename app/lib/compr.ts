@@ -264,3 +264,11 @@ export async function pullCompr(workspaceId: number, dealId: number, check = fal
     ownPhotos: Number(r.own_photos ?? 0) || 0, reportPhotos: r.report_photos ?? null, photosMissing: !!r.photos_missing,
   };
 }
+
+// Outcome reporting back to the underwriting service is a hosted-only feature;
+// these keep the Deal Sheet's outcome card inert in the open-source build.
+export type ComprOutcomeStatus = { outcome: string; status: 'sent' | 'failed'; error: string | null; at: string };
+export async function loadComprOutcomes(_dealId: number): Promise<ComprOutcomeStatus[]> { return []; }
+export async function sendComprOutcome(_workspaceId: number, _dealId: number): Promise<{ ok: true; stages: string[] } | { ok: false; message: string }> {
+  return { ok: false, message: 'Outcome reporting is not available in this build.' };
+}

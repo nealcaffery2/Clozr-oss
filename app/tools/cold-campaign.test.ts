@@ -5,9 +5,9 @@ import assert from 'node:assert/strict';
 import { blockUnverified, dailyAllowance, type MailboxSettings } from '../supabase/functions/_shared/deliverability-rules';
 import {
   COLD_DAILY_CAP, COLD_GAP_MAX_SECONDS, COLD_GAP_MIN_SECONDS, COLD_RAMP_DAYS, COLD_RAMP_INCREASE_PCT, COLD_RAMP_START, COLD_RAMP_TARGET, DEFAULT_BLOCKED_SENDING_DOMAINS,
-  DEFAULT_COLD_DELIVERABILITY, GOOGLE_WORKSPACE_IMAP, assignOnReply, GOOGLE_WORKSPACE_SMTP, applyMerge, applySpintax, blockedSendingDomains, bodyFingerprint, bodyTooCommon, businessWindowOpen, buyerInAudience,
-  classifyReply, coldAudienceBlocked, coldDailyAllowance, coldMessageId, coldSendRoom, composeColdText, countsAsComplaint, createWarmupProvider, domainBlocked, healthRates, inRecipientWindow,
-  isCatchAllStatus, isInstantlyWarmup, isRoleAddress, isThreadedFollowUp, lintColdCopy, mailboxGapSeconds, matchReply, oooResumeAt, parseMailboxCsv, pickPoolMailbox, pickVariant, placementPausesRamp, plainHtml, planColdSend, poolPauseReason,
+  DEFAULT_COLD_DELIVERABILITY, GMAIL_POLL_OVERLAP_MS, GOOGLE_WORKSPACE_IMAP, assignOnReply, gmailPollQuery, GOOGLE_WORKSPACE_SMTP, applyMerge, applySpintax, blockedSendingDomains, bodyFingerprint, bodyTooCommon, businessWindowOpen, buyerInAudience, companyDomainRefusal, isCompanyDomain,
+  COLD_EXCLUDED_REASON, classifyReply, coldAudienceBlocked, coldEnrollBlock, coldDailyAllowance, coldMessageId, coldSendRoom, composeColdText, countsAsComplaint, createWarmupProvider, domainBlocked, healthRates, inRecipientWindow,
+  isCatchAllStatus, isInstantlyWarmup, isRoleAddress, isThreadedFollowUp, lintColdCopy, mailboxGapSeconds, mailboxSkip, matchReply, oooResumeAt, parseMailboxCsv, pickPoolMailbox, pickVariant, placementPausesRamp, plainHtml, planColdSend, poolPauseReason,
   prospectReply, recipientCompanyDomain, recipientProvider, renderStep, replyOwner, replySubject, rewriteTrackedLinks, seeded, sendGapSeconds, sequenceStop, stateOf, withOpenPixel, zoneForState,
   type ColdDeliverability, type ColdDomain, type ColdMailbox, type ColdStep, type ColdWindow,
 } from '../supabase/functions/_shared/cold-campaign';
@@ -188,6 +188,52 @@ async function main() {
     blockedDomains: blocked,
   });
   assert.equal(bannedPlan.action, 'wait');
+
+  // ---- the per-workspace override (441): off keeps the three; on lets them through, health-checked; blocked_extra still wins
+  {
+    const allow = { allowCompanyDomains: true };
+    assert.deepEqual(blockedSendingDomains([], { allowCompanyDomains: false }).sort(), [...DEFAULT_BLOCKED_SENDING_DOMAINS].sort(), 'an explicit false is the default');
+    assert.deepEqual(blockedSendingDomains([], allow), [], 'on: nothing is locked by default');
+    assert.deepEqual(blockedSendingDomains(['yourcompany.com', 'extra.test'], allow).sort(), ['extra.test', 'yourcompany.com'], 'blocked_extra still wins');
+    const open = blockedSendingDomains([], allow);
+    for (const d of ['yourcompany.com', 'deals.yourcompany.com', 'underwriting.example.com', 'underwriting.example.com']) assert.equal(domainBlocked(d, open), false, d);
+    assert.equal(domainBlocked('mail.underwriting.example.com', blockedSendingDomains(['underwriting.example.com'], allow)), true, 'a re-blocked parent covers its subdomains');
+    assert.equal(isCompanyDomain('a@go.yourcompany.com'), true);
+    assert.equal(isCompanyDomain('a@outreach.example.com'), false);
+
+    // The same mailbox, now allowed: it sends only when its domain is checked, clean, fresh and scores the gate.
+    const companyBox = box({ domain: 'yourcompany.com', email: 'a@yourcompany.com', domainId: 9, restWeekday: 0 });
+    const fresh = { id: 9, domain: 'yourcompany.com', checkedAt: '2026-10-06T12:00:00.000Z' };
+    assert.equal(mailboxSkip(companyBox, domain({ ...fresh, score: 95 }), open, NOW), null, 'healthy company domain sends');
+    assert.equal(mailboxSkip(companyBox, domain({ ...fresh, score: 90 }), open, NOW), null, 'the gate score itself passes');
+    assert.equal(mailboxSkip(companyBox, domain({ ...fresh, score: 89 }), open, NOW), 'company_domain_score');
+    assert.equal(mailboxSkip(companyBox, domain({ ...fresh, score: null }), open, NOW), 'company_domain_score', 'no score is no pass');
+    assert.equal(mailboxSkip(companyBox, domain({ ...fresh }), open, NOW), 'company_domain_score', 'a row without a score field is no pass');
+    assert.equal(mailboxSkip(companyBox, domain({ ...fresh, score: 95, checkedAt: '2026-09-01T00:00:00.000Z' }), open, NOW), 'domain_stale', 'the 7-day rule applies before the score');
+    assert.equal(mailboxSkip(companyBox, domain({ ...fresh, score: 95, checkedAt: null }), open, NOW), 'domain_unchecked');
+    assert.equal(mailboxSkip(companyBox, domain({ ...fresh, score: 95, blocking: ['SPF is missing'] }), open, NOW), 'domain_blocking');
+    assert.equal(mailboxSkip(companyBox, domain({ ...fresh, score: 95, paused: true }), open, NOW), 'domain_paused');
+    assert.equal(mailboxSkip({ ...companyBox, status: 'warming', warmupGated: true }, domain({ ...fresh, score: 95 }), open, NOW), 'warming', 'the warm-up gate still holds a company inbox');
+    assert.equal(mailboxSkip({ ...companyBox, sentToday: 150 }, domain({ ...fresh, score: 95 }), open, NOW), 'daily_cap', 'the ramp allowance holds a company inbox too');
+    assert.equal(mailboxSkip(companyBox, domain({ ...fresh, score: 95 }), blocked, NOW), 'blocked_domain', 'with the lock on the score never gets a look');
+    assert.equal(mailboxSkip(box({ restWeekday: 0 }), domain({ score: 10 }), open, NOW), null, 'an outreach domain is not held to the score');
+    assert.match(companyDomainRefusal({ domain: 'yourcompany.com', score: 40, checkedAt: fresh.checkedAt }, NOW) ?? '', /scores 40.*needs 90/);
+    assert.match(companyDomainRefusal({ domain: 'yourcompany.com', score: 95, checkedAt: null }, NOW) ?? '', /has not been checked yet/);
+    assert.match(companyDomainRefusal({ domain: 'yourcompany.com', score: 95, checkedAt: '2026-09-01T00:00:00.000Z' }, NOW) ?? '', /over a week ago/);
+    assert.equal(companyDomainRefusal({ domain: 'yourcompany.com', score: 95, checkedAt: fresh.checkedAt }, NOW), null);
+    const allowedPlan = plan({
+      mailboxes: [companyBox],
+      domains: [domain({ ...fresh, score: 95 })],
+      blockedDomains: open,
+    });
+    assert.equal(allowedPlan.action, 'send', 'allowed and healthy: the planner sends');
+    const lowPlan = plan({
+      mailboxes: [companyBox],
+      domains: [domain({ ...fresh, score: 60 })],
+      blockedDomains: open,
+    });
+    assert.equal(lowPlan.action, 'wait', 'allowed but under the score: the planner waits');
+  }
 
   // ---- sequence stop conditions
   assert.equal(sequenceStop({ status: 'replied', suppressed: false, safety: 'safe', requireVerified: false, stepsLeft: true })?.status, 'replied');
@@ -463,8 +509,8 @@ async function main() {
   assert.equal(buyerInAudience({ ...buyer, ownerName: '' }, { kind: 'saved_view', config: { filters: { buyerOwner: 'Unassigned' } } }), true);
   assert.equal(buyerInAudience({ ...buyer, ownerName: 'Ada' }, { kind: 'saved_view', config: { filters: { buyerOwner: 'Unassigned' } } }), false);
   assert.equal(buyerInAudience(buyer, { kind: 'saved_view', config: { filters: { buyerTag: 'Compr' } } }), true);
-  assert.equal(buyerInAudience(buyer, { kind: 'saved_view', config: { filters: { buyerTag: 'hp-dispogenius\u001fcompr' } } }), true);
-  assert.equal(buyerInAudience(buyer, { kind: 'saved_view', config: { filters: { buyerTag: 'hp-dispogenius' } } }), false);
+  assert.equal(buyerInAudience(buyer, { kind: 'saved_view', config: { filters: { buyerTag: 'mk-dispogenius\u001fcompr' } } }), true);
+  assert.equal(buyerInAudience(buyer, { kind: 'saved_view', config: { filters: { buyerTag: 'mk-dispogenius' } } }), false);
 
   // ---- Primary inbox: links, spam, plain text, tracking, roles, providers, OOO, variants
   const address = '100 Congress Ave, Austin, TX 78701';
@@ -473,6 +519,17 @@ async function main() {
   assert.equal(isRoleAddress('admin@buyer.test'), true);
   assert.equal(isRoleAddress('pat@buyer.test'), false);
   assert.equal(isCatchAllStatus('catch_all'), true);
+
+  // ---- Warm contacts: kept out of cold mail by cold_exclusions, never by email_suppressions
+  // (the 2026-10-06 import suppressed 647 warm contacts workspace-wide, so reps could not email them).
+  const warm = { suppressed: false, excluded: true, elsewhere: false, role: false, catchAll: false };
+  assert.equal(coldEnrollBlock(warm), COLD_EXCLUDED_REASON, 'Launch leaves a warm contact out');
+  assert.equal(coldEnrollBlock({ ...warm, excluded: false }), null, 'a cold prospect is enrolled');
+  assert.equal(coldEnrollBlock({ ...warm, suppressed: true }), 'On the suppression list.');
+  const warmStop = sequenceStop({ status: 'active', suppressed: false, excluded: true, safety: 'safe', requireVerified: false, stepsLeft: true });
+  assert.deepEqual(warmStop, { status: 'suppressed', reason: COLD_EXCLUDED_REASON }, 'an excluded enrollment stops at send');
+  const warmPlan = plan({ enrollment: { excluded: true }, policy: readyPolicy });
+  assert.equal(warmPlan.action === 'stop' && warmPlan.reason, COLD_EXCLUDED_REASON, 'the tick stops a warm enrollment');
   const role = plan({ enrollment: { email: 'info@buyer.test' }, policy: readyPolicy });
   assert.equal(role.action, 'stop');
   if (role.action === 'stop') assert.match(role.reason, /Role addresses/);
@@ -503,6 +560,13 @@ async function main() {
   });
   assert.equal(spammy.ok, false);
   assert.ok(spammy.score >= 60);
+  // The action-plan first touch that went out in October with a demo and a booking link: plan-tick now lints it and holds it.
+  const planFirst = lintColdCopy({
+    stepPosition: 1, subject: 'Making Your Job Easier', fields: {}, policy: readyPolicy,
+    body: 'Check out a sample report here:\n\nhttps://underwriting.example.com/demo\n\nGrab a time here:\nhttps://cal.com/alex/30min',
+  });
+  assert.equal(planFirst.ok, false);
+  assert.ok(planFirst.blocks.includes('Step 1 cannot contain a link.'));
   const missing = plan({ fields: { first_name: '' }, policy: readyPolicy });
   assert.equal(missing.action, 'wait');
   if (missing.action === 'wait') assert.match(missing.reason, /Missing merge/);
@@ -561,6 +625,15 @@ async function main() {
   assert.equal(back.toISOString().slice(0, 10), '2026-10-20');
   const held = oooResumeAt('I am out of the office', new Date('2026-10-09T15:00:00.000Z'), 4, 'America/Chicago');
   assert.equal(held.toISOString().slice(0, 10) >= '2026-10-15', true);
+
+  // ---- Gmail reply check: since the last poll less the overlap, not the 15 newest of the week
+  const epoch = (ms: number) => `in:inbox after:${Math.floor(ms / 1000)}`;
+  const lastPoll = '2026-10-06T14:55:00.000Z';
+  assert.equal(gmailPollQuery(lastPoll, NOW.getTime()), epoch(Date.parse(lastPoll) - GMAIL_POLL_OVERLAP_MS));
+  assert.equal(gmailPollQuery(null, NOW.getTime()), epoch(NOW.getTime() - 7 * 86_400_000), 'never polled: the last seven days');
+  assert.equal(gmailPollQuery('2026-09-01T00:00:00.000Z', NOW.getTime()), epoch(NOW.getTime() - 7 * 86_400_000), 'a stale stamp still stops at seven days');
+  assert.equal(gmailPollQuery('2026-10-07T00:00:00.000Z', NOW.getTime()), epoch(NOW.getTime() - GMAIL_POLL_OVERLAP_MS), 'a stamp ahead of the clock reads from now');
+  assert.equal(gmailPollQuery('not a date', NOW.getTime()), epoch(NOW.getTime() - 7 * 86_400_000));
 
   console.log('cold-campaign: ok');
 }

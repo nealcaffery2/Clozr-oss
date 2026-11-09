@@ -13,7 +13,7 @@
   /* Grouped background: the shared cool page, so white panels read as raised. */
   --bg: var(--page, #f2f4f8);
   --panel: var(--surface, #ffffff);
-  --panel-2: #e8ecf3;
+  --panel-2: var(--tint-cool, #e8ecf3);
   --line: var(--edge, #dde2ea);
   --line-soft: var(--band-line, #e3e8ef);
   --line-hover: var(--edge-hover, #c9d1dd);
@@ -22,13 +22,13 @@
   /* Both muted steps hold 4.5:1 on white and on the rail, band and inset tints. */
   --muted: var(--text-muted, #52525b);
   --muted-2: var(--text-subtle, #62626c);
-  --ink: #111111;
+  --ink: var(--ink-strong, #111111);
 
   /* CLOZR green, the one accent (DESIGN.md §2). Red is only for hanging up. */
   --accent: #0a8560;
   --accent-hover: #08694c;
-  --accent-soft: #e7f8f1;
-  --accent-light: #a7dcc5;
+  --accent-soft: var(--mint-dim, #e7f8f1);
+  --accent-light: var(--c-action-line, #a7dcc5);
   --orange: #ff7a45;
 
   /* Status colours stepped down to 4.5:1 as text on white (#16a34a and
@@ -142,7 +142,7 @@
 /* ── iPhone Phone app (iOS 26 "Liquid Glass") ────────────────────────────
    Same glass as the inbox's iMessage bars (talkr-inbox.css). */
 .talkr-dialer .glass-bar {
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--glass, rgba(255, 255, 255, 0.72));
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   backdrop-filter: saturate(180%) blur(20px);
 }
@@ -175,7 +175,7 @@
 @media (hover: hover) and (pointer: fine) {
   .talkr-dialer .ios-key:hover {
     border-color: var(--edge-hover);
-    box-shadow: var(--elev-key), 0 6px 14px -6px rgba(20, 30, 55, 0.22);
+    box-shadow: var(--elev-key), 0 6px 14px -6px rgb(var(--shadow-rgb, 20 30 55) / 0.22);
   }
 }
 /* Pressed: the key sinks into the rail and darkens, it does not just shrink. */
@@ -197,7 +197,7 @@
   justify-content: center;
   cursor: pointer;
   touch-action: manipulation;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 2px 4px rgba(20, 30, 55, 0.22), 0 8px 18px -6px rgba(20, 30, 55, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 2px 4px rgb(var(--shadow-rgb, 20 30 55) / 0.22), 0 8px 18px -6px rgb(var(--shadow-rgb, 20 30 55) / 0.4);
   transition: transform 0.12s ease, opacity 0.12s ease, box-shadow 0.12s ease;
 }
 .talkr-dialer .ios-round:active {
@@ -205,7 +205,7 @@
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 .talkr-dialer .ios-round:disabled {
-  opacity: 0.4;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
@@ -299,10 +299,10 @@
   /* Mint, not Talkr red, for every accent inside the phone (toggles, Save). */
   --accent: #0a8560;
   --accent-hover: #08694c;
-  --accent-soft: #e7f8f1;
+  --accent-soft: var(--mint-dim, #e7f8f1);
   position: fixed;
   inset: 0;
-  z-index: 65;
+  z-index: var(--z-phone);
   display: flex;
   flex-direction: column;
   /* clip, not just hidden: nothing (a focus, a scroll-into-view) can nudge the phone itself. */
@@ -334,6 +334,15 @@
   --red: #ff453a;
   --amber: #ffb340;
   --accent-soft: rgba(10, 133, 96, 0.28);
+  /* The page's light surfaces, darkened too: zebra rows (--band) and cards
+     that paint --surface would otherwise come out near-white under white text. */
+  --band: #141416;
+  --band-line: rgba(255, 255, 255, 0.08);
+  --surface: #1c1c1e;
+  --surface-2: #2c2c2e;
+  --inset: #141416;
+  --inset-line: rgba(255, 255, 255, 0.14);
+  --edge: rgba(255, 255, 255, 0.14);
   color: var(--text);
 }
 /* Light tokens again, for forms that read better on white (wrap-up, context). */
@@ -347,11 +356,11 @@
   --text: var(--ink, #18181b);
   --muted: var(--text-muted, #52525b);
   --muted-2: var(--text-subtle, #62626c);
-  --ink: #111111;
+  --ink: var(--ink-strong, #111111);
   --green: #15803d;
   --red: #dc2626;
   --amber: #b45309;
-  --accent-soft: #e7f8f1;
+  --accent-soft: var(--mint-dim, #e7f8f1);
   color: var(--text);
 }
 
@@ -417,6 +426,102 @@
   background: rgba(255, 255, 255, 0.14);
 }
 
+/* The keypad's search: an iOS search bar at the top that opens the search sheet. */
+.clozr-phone .phone-search-row {
+  flex: none;
+  padding: 4px 16px 0;
+}
+.clozr-phone .phone-search {
+  width: 100%;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(118, 118, 128, 0.24);
+  color: rgba(235, 235, 245, 0.6);
+  font: 400 17px/1 var(--sans);
+  text-align: left;
+}
+.clozr-phone .phone-search:active {
+  background: rgba(118, 118, 128, 0.36);
+}
+.clozr-phone .phone-search:focus-visible,
+.clozr-phone .phone-search-clear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.clozr-phone .phone-search-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.clozr-phone .phone-search-label {
+  font: 500 13px/1.3 var(--sans);
+  color: var(--muted);
+}
+.clozr-phone .phone-search-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 6px 0 10px;
+  border-radius: 10px;
+  background: rgba(118, 118, 128, 0.24);
+  color: rgba(235, 235, 245, 0.6);
+}
+.clozr-phone .phone-search-field:focus-within {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.clozr-phone .phone-search-field input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: none;
+  background: none;
+  color: #fff;
+  /* 17px: iOS zooms the page into anything smaller. */
+  font: 400 17px/1.2 var(--sans);
+}
+.clozr-phone .phone-search-field input::-webkit-search-cancel-button {
+  display: none;
+}
+.clozr-phone .phone-search-clear {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(118, 118, 128, 0.5);
+  color: #fff;
+}
+.clozr-phone .phone-search-list .dial-lookup-row {
+  min-height: 56px;
+  padding: 8px 4px;
+  border-radius: 0;
+  border-bottom: 0.5px solid var(--line);
+}
+.clozr-phone .phone-search-list .dial-lookup-name {
+  font: 600 17px/1.3 var(--sans);
+}
+.clozr-phone .phone-search-list .dial-lookup-sub {
+  font: 400 14px/1.35 var(--sans);
+}
+.clozr-phone .phone-search-list .dial-lookup-group {
+  padding: 10px 4px 4px;
+  font: 600 13px/1.3 var(--sans);
+}
+.clozr-phone .phone-search-list .dial-lookup-note {
+  padding: 16px 4px;
+  font: 400 15px/1.4 var(--sans);
+}
+
 /* The keypad. Sizes come from --key so it fits any phone without scrolling:
    78px at 390×844, smaller on an SE or with Safari's toolbar up. */
 .clozr-phone .phone-pad {
@@ -457,8 +562,8 @@
   color: var(--on-dark, #fff);
 }
 .clozr-phone .phone-key .phone-key-l {
-  font: 700 10px/1 var(--sans);
-  letter-spacing: 2px;
+  font: 700 10.5px/1 var(--sans);
+  letter-spacing: 1.5px;
   color: var(--on-dark, #fff);
   margin-top: 2px;
   min-height: 10px;
@@ -648,7 +753,7 @@
   padding: 0;
   background: none;
   color: rgba(255, 255, 255, 0.55);
-  font: 500 10px/1 var(--sans);
+  font: 500 11px/1 var(--sans);
 }
 .clozr-phone .phone-tab[aria-selected='true'] {
   color: var(--phone-mint-ink);
@@ -806,7 +911,7 @@
   right: 12px;
   bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 8px);
   height: 44px;
-  z-index: 47;
+  z-index: var(--z-toast);
   border: 0;
   border-radius: 22px;
   display: flex;
@@ -828,7 +933,7 @@
 .talkr-dialer .glass-bar {
   background: var(--band);
   border-bottom-color: var(--edge) !important;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 2px 6px -2px rgba(20, 30, 55, 0.1);
+  box-shadow: 0 1px 0 var(--glass-hi, rgba(255, 255, 255, 0.8)) inset, 0 2px 6px -2px rgb(var(--shadow-rgb, 20 30 55) / 0.1);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -846,6 +951,10 @@
 }
 .talkr-dialer .dial-display input {
   color: var(--text);
+}
+/* The display's rounded ring is the focus mark; the input inside draws none. */
+.talkr-dialer .dial-display input:focus-visible {
+  outline: none;
 }
 .talkr-dialer .dial-display input::placeholder {
   color: var(--muted-2);
@@ -895,6 +1004,29 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.talkr-dialer .dial-lookup-group {
+  padding: 8px 9px 4px;
+  font: 600 11px/1.3 var(--sans);
+  color: var(--muted);
+}
+/* Part of a number typed: whose it could be, as a button under the box. */
+.talkr-dialer .dial-hint {
+  min-height: 28px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 2px 10px;
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  cursor: pointer;
+}
+.talkr-dialer .dial-hint:hover {
+  background: var(--panel-2);
+}
+.talkr-dialer .dial-hint:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .talkr-dialer .dial-lookup-note {
   padding: 10px 9px;
@@ -950,12 +1082,21 @@
 }
 @media (hover: hover) and (pointer: fine) {
   .talkr-dialer .dial-row:hover {
-    background-color: #e9f6f0 !important;
+    background-color: var(--mint-hover, #e9f6f0) !important;
   }
 }
 .talkr-dialer .dial-row:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+/* The phone's dark Recents: the light band and wash left its white names unreadable. */
+.clozr-phone .phone-dark .dial-row:nth-child(odd) {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+@media (hover: hover) and (pointer: fine) {
+  .clozr-phone .phone-dark .dial-row:hover {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+  }
 }
 .talkr-dialer .lift-row .inline-flex[style*='--panel-2'] {
   box-shadow: inset 0 0 0 1px var(--edge);
@@ -984,7 +1125,7 @@
   box-shadow: var(--elev-rail);
 }
 .talkr-dialer .dial-rail-r {
-  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.75);
+  box-shadow: inset 1px 0 0 var(--glass-hi, rgba(255, 255, 255, 0.75));
 }
 .talkr-dialer .dial-note {
   border-style: solid !important;
@@ -1002,7 +1143,7 @@
 }
 
 /* Eyebrows on a dark surface keep a light grey; the muted-2 above is for light ones. */
-.talkr-dialer :is([style*='background: var(--ink)'], [style*='background:var(--ink)']) .eyebrow {
+.talkr-dialer :is([style*='background: var(--ink)'], [style*='background:var(--ink)'], [style*='background: var(--ink-fill,'], [style*='background:var(--ink-fill,']) .eyebrow {
   color: #c4c4cc;
 }
 
@@ -1263,7 +1404,7 @@
   letter-spacing: -0.01em;
 }
 /* On a dark card (the suggested response) the label stays light. */
-.talkr-dialer .dial-desk :is([style*='background: var(--ink)'], [style*='background:var(--ink)']) .eyebrow {
+.talkr-dialer .dial-desk :is([style*='background: var(--ink)'], [style*='background:var(--ink)'], [style*='background: var(--ink-fill,'], [style*='background:var(--ink-fill,']) .eyebrow {
   color: rgba(255, 255, 255, 0.72);
   font-size: 13px;
 }
@@ -1318,3 +1459,6 @@
   .call-profile .cp-btn:active:not(:disabled),
   .call-profile .cp-chip:active { transform: none; }
 }
+
+/* The inbox in the dialer's middle: the dialer's own bar already has the status, clock and phone. */
+.talkr-dialer .dial-inbox .topbar-tools { display: none; }

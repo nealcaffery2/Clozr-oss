@@ -197,7 +197,11 @@ export const MARKET_CSS = `
 .mk-chip[aria-pressed=true]{background:var(--ink);color:#fff;box-shadow:none}
 .mk-err{margin:0;color:#b91c1c;font-size:12.5px}
 .mk-gate-switch{margin:0;text-align:center;color:var(--muted);font-size:12.5px}
-.mk-gate-switch button{border:0;background:none;padding:0;color:var(--brand);font-weight:600;cursor:pointer}
+.mk-gate-switch button{border:0;background:none;padding:0;min-height:24px;color:var(--brand);font-weight:600;cursor:pointer}
+.mk-gate-body h2:focus{outline:none}
+.mk-sent-to{color:var(--ink);font-weight:600;overflow-wrap:anywhere}
+.mk-sent-note{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.mk-ghost:disabled{opacity:.5;cursor:default}
 .mk-trap{position:absolute;left:-9999px;width:1px;height:1px}
 
 .mk-viewer{position:fixed;inset:0;z-index:900;display:grid;place-items:center;background:rgba(9,9,11,.92);animation:hpFade 200ms var(--ease)}

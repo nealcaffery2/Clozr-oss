@@ -180,3 +180,21 @@ export function aggregateStats(rows: CallRow[]): AgentStats[] {
   }
   return [...by.values()].map((e) => ({ ...e.s, avg_duration_s: e.n ? Math.round(e.dur / e.n) : 0 })).sort((a, b) => a.agent_key.localeCompare(b.agent_key));
 }
+
+/**
+ * The bell line for a Compr demo-setter call that left nothing else behind: a
+ * voicemail, a hang-up, a "not now". A booking or a transfer already notifies
+ * the rep (afterBooking, briefTransfer), so those get null, as does a call
+ * filed on no record.
+ */
+export function callNotice(
+  p: { agentName: string; recordName: string; summary: string | null; flags: { booked: boolean; transferred: boolean; tools: string[] } },
+): { title: string; body: string } | null {
+  if (p.flags.booked || p.flags.transferred) return null;
+  const who = p.recordName || 'a contact';
+  const vm = p.flags.tools.includes('voicemail_detection');
+  return {
+    title: `${p.agentName} ${vm ? 'left a voicemail for' : 'called'} ${who}`.slice(0, 120),
+    body: String(p.summary ?? '').slice(0, 500),
+  };
+}

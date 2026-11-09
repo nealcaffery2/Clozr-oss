@@ -367,7 +367,7 @@ export function VoicemailRecorderHost({ workspaceId, userId }: { workspaceId: nu
       <div
         onClick={(e) => e.stopPropagation()}
         className="talkr-dialer flex flex-col gap-3"
-        style={{ width: 'min(480px, 100%)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', background: '#fdfcfa', color: '#1c1d1f', borderRadius: 18, padding: '18px 16px 16px', boxShadow: '0 30px 80px rgba(28,29,31,.35)' }}
+        style={{ width: 'min(480px, 100%)', maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto', background: 'var(--warm-card, #fdfcfa)', color: 'var(--ink-deep, #1c1d1f)', borderRadius: 18, padding: '18px 16px 16px', boxShadow: '0 30px 80px rgba(28,29,31,.35)' }}
       >
         <div id="vm-record-title" style={{ font: '700 18px/1.2 var(--sans)' }}>Record a voicemail</div>
         <VoicemailDropPanel workspaceId={workspaceId} userId={userId} />

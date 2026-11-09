@@ -44,8 +44,9 @@ export function AiPanel({
   };
 
   return (
-    <div style={{ background: 'var(--ink-hero, #141419)', color: 'var(--on-dark, #fff)', borderRadius: '12px', padding: '14px 16px', position: 'relative', overflow: 'hidden' }}>
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'radial-gradient(120% 90% at 90% -10%, rgba(10, 133, 96,0.34), transparent 58%)' }} />
+    <div className="aip-dark" style={{ background: 'var(--ink-hero, #141419)', color: 'var(--on-dark, #fff)', borderRadius: '12px', padding: '14px 16px', position: 'relative', overflow: 'hidden' }}>
+      {/* Placeholders on the dark panel: white at 60% holds 7:1, the default grey held 2.6:1. */}
+      <style>{'.aip-dark textarea::placeholder, .aip-dark input::placeholder { color: rgb(255 255 255 / .6); }'}</style>
       <div style={{ position: 'relative' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '11.5px', color: 'rgba(255,255,255,.6)', fontWeight: 600 }}>Draft with AI</span>

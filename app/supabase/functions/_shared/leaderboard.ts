@@ -65,7 +65,18 @@ export type LbDeal = {
   /** The Deal Tracker's transaction coordinator, by name (deals.coordinator). */
   coordinator?: string | null;
 };
-export type LbComm = { seller_id: number | null; buyer_id?: number | null; rep_id?: string | null; from_phone?: string | null; to_phone?: string | null; channel: string; direction: string | null; occurred_at: string; duration_s: number | null; status: string | null };
+export type LbComm = {
+  seller_id: number | null; buyer_id?: number | null; rep_id?: string | null; from_phone?: string | null; to_phone?: string | null;
+  channel: string; direction: string | null; occurred_at: string; duration_s: number | null; status: string | null;
+  /**
+   * leaderboard_comms (migration 391) hands the engine one row per rep, line
+   * owner, seller rep, local day, channel and direction instead of every
+   * communication: `n` rows, `talk_s` seconds, `convos` conversations, with
+   * occurred_at the group's latest. line_rep is the owner of the line used;
+   * seller_rep the seller's assigned rep (null once the rep's reset drops the seller).
+   */
+  n?: number; talk_s?: number; convos?: number; line_rep?: string | null; seller_rep?: string | null;
+};
 export type LbOffer = { seller_id: number | null; direction: string; sent_at: string; created_by: string | null };
 export type LbAppointment = { seller_id: number | null; assigned_to?: string | null; starts_at: string; created_at?: string | null; deleted_at?: string | null };
 export type LbBuyer = { created_at: string; created_by?: string | null };
@@ -79,6 +90,8 @@ export type LeaderboardRaw = {
   lines?: { phone10: string; user_id: string | null; label: string }[];
   /** True when the communications read hit its row cap, so older activity is missing. */
   commsCapped?: boolean;
+  /** With grouped comms: each seller's first outbound contact (seller id → ISO), for speed to lead. */
+  firstTouch?: Record<string, string>;
   offers: LbOffer[];
   appointments?: LbAppointment[];
   buyers?: LbBuyer[];
@@ -290,22 +303,24 @@ export function buildLeaderboard(raw: LeaderboardRaw, period: Period | string, o
   // ---- activity
   let unattributed = 0;
   const firstTouch = new Map<number, number>(); // seller → first outbound contact
+  for (const [sid, at] of Object.entries(raw.firstTouch ?? {})) { const t = ts(at); if (t !== null) firstTouch.set(Number(sid), t); }
   for (const c of raw.comms) {
     const t = ts(c.occurred_at);
     if (t === null) continue;
+    const k = c.n ?? 1;
     if (isOut(c) && c.seller_id != null && (firstTouch.get(c.seller_id) ?? Infinity) > t) firstTouch.set(c.seller_id, t);
     if (!cur(c.occurred_at)) continue;
-    const rep = own(c.rep_id) ?? own(ownerOfLine(c)) ?? own(repOfSeller(c.seller_id));
+    const rep = own(c.rep_id) ?? own(c.line_rep ?? ownerOfLine(c)) ?? own(c.seller_rep ?? repOfSeller(c.seller_id));
     const a = A(rep);
-    if (!a) { unattributed++; continue; }
+    if (!a) { unattributed += k; continue; }
     touch(a, c.occurred_at);
     if (isCall(c)) {
-      a.calls++;
-      if (isOut(c)) a.outbound++;
-      a.talk += num(c.duration_s);
-      if (num(c.duration_s) >= CONVERSATION_SECONDS) a.convos++;
-    } else if (c.channel === 'sms' || c.channel === 'text') { if (isOut(c)) a.sms++; }
-    else if (c.channel === 'email') { if (isOut(c)) a.emails++; }
+      a.calls += k;
+      if (isOut(c)) a.outbound += k;
+      a.talk += c.talk_s ?? num(c.duration_s);
+      a.convos += c.convos ?? (num(c.duration_s) >= CONVERSATION_SECONDS ? 1 : 0);
+    } else if (c.channel === 'sms' || c.channel === 'text') { if (isOut(c)) a.sms += k; }
+    else if (c.channel === 'email') { if (isOut(c)) a.emails += k; }
   }
   if (unattributed) notes.push(`${unattributed} call/text/email row${unattributed === 1 ? '' : 's'} in this period could not be credited to a rep (no Talkr user and no assigned rep on the record).`);
   if (raw.commsCapped) notes.push('The communications read hit its row cap, so older activity in long periods may be missing.');
@@ -666,7 +681,7 @@ export function applyLeaderboardResets<T extends LeaderboardRaw>(raw: T, resets:
     ...raw,
     sellers: raw.sellers.filter((s) => !dropped(resets, s.assigned_to, s.created_at)),
     comms: raw.comms.filter((c) => {
-      const rep = c.rep_id || (c.seller_id != null ? sellerRep.get(c.seller_id) ?? null : null);
+      const rep = c.rep_id || (c.seller_rep ?? (c.seller_id != null ? sellerRep.get(c.seller_id) ?? null : null));
       return !dropped(resets, rep, c.occurred_at);
     }),
     offers: raw.offers.filter((o) => !dropped(resets, o.created_by, o.sent_at)),

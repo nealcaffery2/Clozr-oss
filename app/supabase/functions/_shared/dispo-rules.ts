@@ -119,9 +119,14 @@ export function buyerFacts(
 ): BuyerFacts {
   const strategy = strategyOf(buyer.strategies, buyer.buyerType);
   const usable = purchases.filter((p) => clean(p.address));
-  const dated = usable.filter((p) => p.date && Number.isFinite(Date.parse(p.date))).sort((a, b) => Date.parse(b.date!) - Date.parse(a.date!));
-  const p = dated[0] ?? usable.find((x) => !x.date) ?? null;
-  if (!p) return { firstName: firstName(buyer.name), lastPurchase: null, strategy, purchaseCount: 0 };
+  // A purchase dated over five years back is not "the flip you did" (Genius
+  // dated 831 Thistle Dr to 2006, 20 years before a 2026 blast), and neither
+  // is the same address another run left undated.
+  const stale = new Set(usable.filter((p) => p.date && Date.parse(p.date) < now.getTime() - 5 * 365 * 86_400_000).map((p) => clean(p.address).toLowerCase()));
+  const recent = usable.filter((p) => !stale.has(clean(p.address).toLowerCase()));
+  const dated = recent.filter((p) => p.date && Number.isFinite(Date.parse(p.date))).sort((a, b) => Date.parse(b.date!) - Date.parse(a.date!));
+  const p = dated[0] ?? recent.find((x) => !x.date) ?? null;
+  if (!p) return { firstName: firstName(buyer.name), lastPurchase: null, strategy, purchaseCount: usable.length };
   let distanceMi: number | null = p.distanceMi ?? null;
   if (distanceMi == null && p.lat != null && p.lng != null && deal.lat != null && deal.lng != null) {
     distanceMi = Number(milesBetween({ lat: p.lat, lng: p.lng }, { lat: deal.lat, lng: deal.lng }).toFixed(2));
@@ -498,8 +503,10 @@ export function smartTime(fixed: Date, best: { hour: number; weekday: number | n
   return fixed;
 }
 
-/** Spacing between buyers' first sends, in seconds, for the "send frequency" choice. */
-export function staggerSeconds(freq: 'sometimes' | 'frequently', seed: string | number): number {
+export type Pace = 'at_once' | 'sometimes' | 'frequently';
+/** Spacing between buyers' first sends, in seconds, for the "send pace" choice. 'at_once': every buyer's first message is due at launch (the tick sends 60 a minute). */
+export function staggerSeconds(freq: Pace, seed: string | number): number {
+  if (freq === 'at_once') return 0;
   const r = seedOf(seed);
   return freq === 'frequently' ? 30 + Math.round(r * 30) : 90 + Math.round(r * 120);
 }

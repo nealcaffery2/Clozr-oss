@@ -16,6 +16,7 @@
 // `npx tsx tools/stoplight.test.ts`.
 
 import { plusIsoDays, readScheduleC } from './deal-close';
+import { pathFor } from './routes';
 
 export type Light = 'green' | 'yellow' | 'red' | 'none';
 export type Direction = 'higher' | 'lower';
@@ -390,16 +391,18 @@ export function tcCells(files: TcFileRow[], today: string, unlinkedOverdue: numb
 // ---- links -----------------------------------------------------------------------
 
 /**
- * The CLOZR address of a record (lib/nav-hash): the TC file, the seller, or the
- * deal sheet. `sample` is the /demo team (lib/stoplight-sample): its seller N is
- * the demo graph's person pN, and the demo has no deal ids to pin.
+ * The CLOZR address of a record (lib/routes.ts): the TC file, the seller, the
+ * deal sheet or the buyer, or the task list for a task on no record. Where it
+ * was opened from (Reporting) is not in the link: the shell keeps it in
+ * history.state when the link is clicked. `sample` is the /demo team
+ * (lib/stoplight-sample): its seller N is the demo graph's person pN, and the
+ * demo has no deal ids to pin.
  */
-export function recordHref(r: { screen: 'tc' | 'person' | 'dealSheet' | 'buyer'; sellerId?: number | null; dealId?: number | null; buyerId?: number | null }, sample = false): string {
-  const q = new URLSearchParams({ screen: r.screen });
-  if (r.screen === 'buyer') {
-    if (r.buyerId) q.set('id', 'b' + r.buyerId);
-  } else if (r.sellerId) q.set('id', (sample ? 'p' : 's') + r.sellerId);
-  if (r.dealId && r.screen !== 'buyer' && !sample) q.set('deal', 'd' + r.dealId);
-  q.set('from', 'reporting');
-  return '#' + q.toString();
+export function recordHref(r: { screen: 'tc' | 'person' | 'dealSheet' | 'buyer' | 'tasks'; sellerId?: number | null; dealId?: number | null; buyerId?: number | null }, sample = false): string {
+  const base = sample ? '/demo' : '/app';
+  if (r.screen === 'tasks') return pathFor('tasks', {}, base);
+  if (r.screen === 'buyer') return pathFor('buyer', { id: r.buyerId ? 'b' + r.buyerId : null }, base);
+  const id = r.sellerId ? (sample ? 'p' : 's') + r.sellerId : null;
+  const deal = r.dealId && !sample ? 'd' + r.dealId : null;
+  return pathFor(r.screen, { id, deal }, base);
 }

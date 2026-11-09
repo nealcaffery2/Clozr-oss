@@ -59,7 +59,7 @@ export function SchedulePage({ report, workspaceId, userId, myEmail, onBack, onS
 
   return (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 16px', background: '#fff', borderBottom: `1px solid ${LINE}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 16px', background: 'var(--surface, #fff)', borderBottom: `1px solid ${LINE}` }}>
         <button type="button" onClick={onBack} style={btn.ghost}>← Back</button>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: '14px', fontWeight: 700 }}>Send or schedule</div>
@@ -70,7 +70,7 @@ export function SchedulePage({ report, workspaceId, userId, myEmail, onBack, onS
       </div>
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '18px 20px 40px' }}>
         <div style={{ maxWidth: '720px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {note ? <div role="status" style={{ padding: '10px 12px', borderRadius: '9px', fontSize: '12.5px', background: note.ok ? '#dcfce7' : '#fee2e2', border: `1px solid ${note.ok ? '#bbf7d0' : '#fecaca'}`, color: note.ok ? ACCENT : '#b91c1c' }}>{note.text}</div> : null}
+          {note ? <div role="status" style={{ padding: '10px 12px', borderRadius: '9px', fontSize: '12.5px', background: note.ok ? 'var(--positive-soft, #dcfce7)' : 'var(--negative-soft, #fee2e2)', border: `1px solid ${note.ok ? 'var(--tint-green-3, #bbf7d0)' : 'var(--tint-red-2, #fecaca)'}`, color: note.ok ? ACCENT : '#b91c1c' }}>{note.text}</div> : null}
           <div style={{ ...card, padding: '16px 18px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
               <label><span style={eyebrow}>Schedule frequency</span><select value={form.frequency} onChange={(e) => setFreq(e.target.value as ScheduleInput['frequency'])} style={field}>{FREQ.map((f) => <option key={f.v} value={f.v}>{f.label}</option>)}</select></label>
@@ -95,7 +95,7 @@ export function SchedulePage({ report, workspaceId, userId, myEmail, onBack, onS
               <span style={eyebrow}>Recipients (to)</span>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '6px', border: `1px solid ${LINE}`, borderRadius: '9px', minHeight: '40px', alignItems: 'center' }}>
                 {form.recipients.map((r) => (
-                  <span key={r} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', height: '26px', padding: '0 4px 0 9px', borderRadius: '7px', background: '#E7F8F1', color: ACCENT, fontSize: '12px', fontWeight: 600 }}>
+                  <span key={r} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', height: '26px', padding: '0 4px 0 9px', borderRadius: '7px', background: 'var(--mint-dim, #e7f8f1)', color: ACCENT, fontSize: '12px', fontWeight: 600 }}>
                     {r}<button type="button" onClick={() => set({ recipients: form.recipients.filter((x) => x !== r) })} aria-label={`Remove ${r}`} style={{ border: 0, background: 'none', color: ACCENT, cursor: 'pointer', fontSize: '14px' }}>×</button>
                   </span>
                 ))}

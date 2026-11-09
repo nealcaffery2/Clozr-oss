@@ -8,13 +8,13 @@
 // which was already the right shape for the same facts.
 'use client';
 
+import { ArrowDown, ArrowUp } from 'lucide-react';
 import { ContractsButton } from '@/components/ContractsHub';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { keepInView } from '@/components/ds/keepInView';
 import { useReveal } from '@/components/ds/useReveal';
 import { useDebouncedText } from '@/components/ds/useDebouncedText';
 import { Empty, EmptyRow } from '@/components/ds/Empty';
-import { GeniusPicker } from '@/components/AiButton';
 import type { ClozrView } from '@/app/clozr/view';
 import { BlacklistButton } from '@/components/BlacklistButton';
 import { openReach } from '@/app/components/record/reach';
@@ -31,19 +31,29 @@ import { ColumnPicker, SortMenu, ViewMenu, sameList, type ColumnDef } from '@/co
 import { cmpSort, toggleSort, type SortDir } from '@/lib/list-sort';
 import { Chevron, CZ, MenuCheck, trayBtn } from '@/components/ds/chrome';
 import { RailRow, RailToggle, useRailOpen, type RailItem } from '@/components/ds/ListRail';
-import { Ring, tier } from '@/components/genius/parts';
+import { Ring, tier } from '@/components/kit/parts';
 import { ListMapSwitch, useListOrMap } from '@/components/ListMap';
 import { BuyerMap } from '@/app/components/buyer/BuyerMap';
 import type { RealtorPick } from '@/lib/crm';
 import { cleanColumns, useSavedViews } from '@/lib/saved-views';
 import { remember, useRemembered } from '@/lib/screen-memory';
 import { buyerStatusTone } from '@/lib/people-colors';
-import { buyerListLabelOf, inBuyerList } from '@/lib/buyer-list-profile';
+import { COMPR_ALL_LIST, COMPR_CONTACTED_LIST, COMPR_IN_PLAN_LIST, COMPR_INTERESTED_LIST, COMPR_NOT_CONTACTED_LIST, COMPR_NOT_INTERESTED_LIST, COMPR_PAID_LIST, COMPR_TRIAL_LIST, buyerListLabelOf, inBuyerList } from '@/lib/buyer-list-profile';
+import { COMPR_PLAN_FILTERS, comprBillingFlag, comprPlanBucket, comprStatusLabel, paidLabel, planLabel, useComprSignups, type ComprSignup } from '@/lib/compr-signups';
+import { ComprSuggested } from '@/app/components/buyer/ComprStubs';
+import { ComprAutomations } from '@/app/components/buyer/ComprStubs';
+import { isPicked, picksLabel, picksOf, togglePick } from '@/lib/multi-filter';
+import { NOT_ON_A_PLAN, ON_A_PLAN, runningMatch, useRunningPlans } from '@/lib/running-plans';
+import { PaymentLinkDialog, TRIAL_ICON, TrialLinkButton, type PayPerson } from '@/app/components/buyer/ComprStubs';
+import { TRIAL_DEFAULT_DAYS, alreadyPaid } from '@/lib/compr-payment-link';
+import { ExtendTrialButton, ExtendTrialDialog, P_CAL } from '@/app/components/buyer/ComprStubs';
+import { canExtendTrial, withTrialEnd } from '@/lib/compr-extend-trial';
 import { NewSmartListDialog, PlusIcon, SavedRailRow, useBuyerSmartLists, useRemoveSmartList, type BuyerSmartList } from '@/app/components/buyer/BuyerSmartLists';
 import { buyersNavAction, isArchiveChord, isOpenKey, isTypingTarget, listNavBlocked } from '@/lib/people-keys';
 import { PickLabel } from '@/components/ds/PickBox';
-import { FilterPanel } from '@/app/components/filters/FilterPanel';
+import { ActiveFilters, FilterRail, FilterRailShow, FilterSheet, chipsFromMenus, useFilterRailOpen, type FilterGroup } from '@/app/components/filters/FilterRail';
 import { DateRangeFields } from '@/app/components/filters/RangeFilters';
+import { ScreenHeader } from '@/components/ds/Screen';
 
 /** Every field the buyers table can show. Buyer is always on. */
 const BUYER_FIELDS: ColumnDef[] = [
@@ -73,6 +83,40 @@ const BUYER_FIELDS: ColumnDef[] = [
 const BUYER_KEYS = BUYER_FIELDS.map((f) => f.key);
 const BUYER_DEFAULT = ['buyer', 'stage', 'status', 'markets', 'entity', 'type', 'price', 'exit', 'engagement', 'lastPurchase', 'lastActivity', 'added', 'pref'];
 
+/**
+ * A Compr workspace's Buyers holds Compr customers (lib/buyer-list-profile).
+ * Every view opens on the first seven; the rest come from compr-trial-sync
+ * (`buyers.compr_signup`) or the record itself and can be added.
+ */
+const COMPR_FIELDS: ColumnDef[] = [
+  { key: 'buyer', label: 'Name', locked: true },
+  { key: 'phone', label: 'Phone' },
+  { key: 'email', label: 'Email' },
+  { key: 'markets', label: 'Market' },
+  { key: 'lastActivity', label: 'Last activity' },
+  { key: 'type', label: 'Type' },
+  { key: 'status', label: 'Status' },
+  { key: 'actionPlan', label: 'Action plan' },
+  { key: 'plan', label: 'Plan' },
+  { key: 'signedUp', label: 'Signed up' },
+  { key: 'runs', label: 'Underwrites' },
+  { key: 'paid', label: 'Paid' },
+  { key: 'company', label: 'Company' },
+  { key: 'tags', label: 'Tags' },
+  { key: 'added', label: 'Date added' },
+  { key: 'owner', label: 'Owner' },
+];
+const COMPR_KEYS = COMPR_FIELDS.map((f) => f.key);
+const COMPR_DEFAULT = ['buyer', 'phone', 'email', 'markets', 'lastActivity', 'type', 'status', 'actionPlan', 'runs', 'paid'];
+const COMPR_SORT_OPTIONS = [
+  { id: 'lastActivity:desc', label: 'Last activity' },
+  { id: 'signedUp:desc', label: 'Signed up, newest' },
+  { id: 'runs:desc', label: 'Most underwrites' },
+  { id: 'paid:desc', label: 'Paid, most' },
+  { id: 'buyer:asc', label: 'Name' },
+  { id: 'status:asc', label: 'Status' },
+  { id: 'added:desc', label: 'Date added, newest' },
+];
 const BUYER_SORT_OPTIONS = [
   { id: 'added:desc', label: 'Date added, newest' },
   { id: 'added:asc', label: 'Date added, oldest' },
@@ -86,9 +130,14 @@ const BUYER_SORT_OPTIONS = [
 ];
 const BUYER_DEFAULT_SORT = { key: 'added', dir: 'desc' as SortDir };
 
-function buyerSortValue(b: BuyerRow, key: string, ai?: BuyerAiScore): string | number {
+function buyerSortValue(b: BuyerRow, key: string, ai?: BuyerAiScore, signup?: ComprSignup, compr?: boolean): string | number {
   if (key === 'added') return b.addedAt || '';
   if (key === 'lastActivity') return b.lastActivityAt || '';
+  if (key === 'signedUp') return signup?.signed_up_at ?? '';
+  if (key === 'runs' && signup) return signup.runs;
+  if (key === 'paid' && signup) return signup.paid_cents ?? -1;
+  if (key === 'status' && signup) return comprStatusLabel(signup);
+  if (key === 'status' && compr) return b.stage;
   if (key === 'buyer') return b.company || b.name;
   if (key === 'engagement') return responseOf(b, ai).pct ?? -1;
   if (key === 'score') return ai?.score ?? b.engagement;
@@ -96,10 +145,36 @@ function buyerSortValue(b: BuyerRow, key: string, ai?: BuyerAiScore): string | n
   const v = (b as unknown as Record<string, unknown>)[key];
   return v == null ? '' : typeof v === 'number' ? v : String(v);
 }
-const NO_BUYER_FILTERS = { buyerState: 'Any', buyerCity: 'Any', buyerEntity: 'Any', buyerType: 'Any', buyerStatus: 'Any', buyerPhone: 'Any', buyerEmail: 'Any', buyerOwner: 'Any', buyerDeal: 'Any', buyerTag: 'Any' };
+/** What each Compr bucket holds, for its rail tooltip and empty state. */
+const COMPR_LIST_TITLES: Record<string, string> = {
+  [COMPR_NOT_CONTACTED_LIST]: 'Never texted, emailed or called, and not on an action plan. Start here.',
+  [COMPR_IN_PLAN_LIST]: 'An action plan is running for them now. They leave it when it ends or they answer.',
+  [COMPR_CONTACTED_LIST]: 'Reached by text, email or call, not on a plan now, and no answer either way yet.',
+  [COMPR_INTERESTED_LIST]: 'Asked for a demo, a call, info or the price, or you moved them here.',
+  [COMPR_NOT_INTERESTED_LIST]: 'Said no, STOP or wrong number. Off every plan, and no plan will take them.',
+  [COMPR_TRIAL_LIST]: 'Every Compr free trial user, synced from Compr every 15 minutes',
+  [COMPR_PAID_LIST]: 'Everyone on a paid Compr plan, synced from Compr every 15 minutes',
+};
 
-/** What a saved Buyers view keeps (lib/saved-views.ts). */
-type BuyersConfig = { cols: string[]; filters: typeof NO_BUYER_FILTERS; geniusOnly: boolean };
+const NO_BUYER_FILTERS = { buyerState: 'Any', buyerCity: 'Any', buyerEntity: 'Any', buyerType: 'Any', buyerStatus: 'Any', buyerPhone: 'Any', buyerEmail: 'Any', buyerOwner: 'Any', buyerDeal: 'Any', buyerPlan: 'Any', buyerTag: 'Any', buyerRunning: 'Any' };
+
+/**
+ * What a saved Buyers view keeps (lib/saved-views.ts). `profile` marks a view
+ * saved on the Compr columns; on a Compr workspace any other view opens on
+ * the Compr defaults, so every view there shows the Compr fields.
+ */
+type BuyersConfig = { cols: string[]; filters: typeof NO_BUYER_FILTERS; geniusOnly: boolean; profile?: 'compr' };
+
+/** The filter rail's sections for Buyers (Compr workspaces add Plan and Action plan). */
+const BUYER_FILTER_GROUPS: FilterGroup[] = [
+  { title: 'Deal', keys: ['buyerDeal'] },
+  { title: 'Compr', keys: ['buyerPlan', 'buyerRunning'] },
+  { title: 'Buyer', keys: ['buyerStatus', 'buyerStage', 'buyerType', 'buyerEntity', 'buyerTag'] },
+  { title: 'Assigned', keys: ['buyerOwner'] },
+  { title: 'Location', keys: ['buyerState', 'buyerCity'] },
+  { title: 'Stage history', keys: ['buyerHistory', 'buyerHistoryWhen'] },
+  { title: 'Contact info', keys: ['buyerPhone', 'buyerEmail'] },
+];
 
 /** Filters with long option lists get a type-ahead box. */
 const SEARCHABLE = new Set(['buyerState', 'buyerCity']);
@@ -221,14 +296,67 @@ function foundHow(b: BuyerRow): string | null {
   if (b.prospectList !== 'buyer-prospect') return null;
   const tags = b.tags.toLowerCase();
   if (tags.includes('fb-comment')) return 'Facebook';
-  if (tags.includes('buyr') || b.source === 'buyr') return 'Buyr';
+  if (tags.includes('buyr') || b.source === 'buyr') return 'Discovered';
   if (tags.includes('investorbase') || b.source === 'investorbase') return 'InvestorBase';
-  if (b.genius || tags.includes('genius') || b.source === 'genius') return 'Genius';
+  if (b.genius || tags.includes('genius') || b.source === 'genius') return 'Discovered';
   return null;
 }
 
+/** A Compr signup's state as a badge: a billing problem red with its icon, trial in the accent tint, a used trial amber, paid ink. */
+function ComprStatusChip({ s }: { s: ComprSignup }) {
+  const label = comprStatusLabel(s);
+  const flag = comprBillingFlag(s);
+  const tone = flag ? { fg: 'var(--tx-red, #b91c1c)', bg: 'var(--tint-red, #fef2f2)', line: 'var(--tint-red-2, #fecaca)' }
+    : s.trial === 'active' || s.trial === 'stripe' ? { fg: 'var(--tx-mint-deep, #08694c)', bg: 'var(--c-action-soft, #e7f5ef)', line: 'var(--c-action-line, #a7dcc5)' }
+      : s.trial === 'used' ? { fg: 'var(--tx-amber, #b45309)', bg: 'var(--tint-amber, #fffbeb)', line: 'var(--tint-amber-2, #fde68a)' }
+        : { fg: 'var(--ink, #18181b)', bg: 'var(--surface-2, #f4f4f5)', line: 'var(--divider, #e4e4e7)' };
+  return (
+    <span title={flag ? `${flag}: call them from their record` : undefined} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', height: '22px', padding: '0 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 600, color: tone.fg, background: tone.bg, border: `1px solid ${tone.line}`, whiteSpace: 'nowrap' }}>
+      {flag ? (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: 'none' }}>
+          <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+      ) : null}
+      {label}
+    </span>
+  );
+}
+
+const shortDate = (iso: string | null | undefined) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+/** The Compr-only cells, by field key; null for a key the default cell draws. */
+function ComprCell({ k, b, s, running }: { k: string; b: BuyerRow; s?: ComprSignup; running?: string[] }): React.ReactElement | null {
+  const dash = <span style={{ color: FAINT }} aria-label="None">–</span>;
+  switch (k) {
+    case 'buyer': {
+      const other = b.company && b.company !== b.name ? b.company : '';
+      return (
+        <td style={{ ...cell, height: '48px' }}>
+          <span className="t-name" style={{ display: 'block', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={b.name}>{b.name}</span>
+          {other ? <span style={{ display: 'block', maxWidth: '260px', fontSize: '11px', color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis' }} title={other}>{other}</span> : null}
+        </td>
+      );
+    }
+    // Compr customers show their Compr plan status; everyone else their stage (migration 417), not the dispo label.
+    case 'status': return <td style={cell}>{s ? <ComprStatusChip s={s} /> : <StatusChip label={b.stage} />}</td>;
+    case 'actionPlan': return <td style={cell}>{running?.length ? <span title={running.join(', ')} style={{ display: 'block', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{running.join(', ')}</span> : <span style={{ color: FAINT }}>Not on a plan</span>}</td>;
+    case 'plan': return <td style={cell}>{s ? planLabel(s.tier) : dash}</td>;
+    case 'signedUp': return <td style={{ ...cell, fontVariantNumeric: 'tabular-nums' }}>{s ? shortDate(s.signed_up_at) || dash : dash}</td>;
+    case 'runs': return <td style={{ ...cell, fontVariantNumeric: 'tabular-nums' }}>{s ? s.runs.toLocaleString('en-US') : dash}</td>;
+    case 'paid': return <td style={{ ...cell, fontVariantNumeric: 'tabular-nums' }}>{s && s.paid_cents != null ? (s.paid_cents ? paidLabel(s.paid_cents) : '$0') : dash}</td>;
+    case 'company': return <td style={cell}>{b.company && b.company !== b.name ? b.company : dash}</td>;
+    default: return null;
+  }
+}
+
 /** One table cell, by field key. */
-function BuyerCell({ k, b, onCall, ai }: { k: string; b: BuyerRow; onCall: (phone: string) => void; ai?: BuyerAiScore }) {
+function BuyerCell({ k, b, onCall, ai, compr, signup, running }: { k: string; b: BuyerRow; onCall: (phone: string) => void; ai?: BuyerAiScore; compr?: boolean; signup?: ComprSignup; running?: string[] }) {
+  const comprCell = compr ? ComprCell({ k, b, s: signup, running }) : null;
+  if (comprCell) return comprCell;
   switch (k) {
     case 'buyer':
       return (
@@ -237,7 +365,7 @@ function BuyerCell({ k, b, onCall, ai }: { k: string; b: BuyerRow; onCall: (phon
             <ScoreRing b={b} ai={ai} />
             <span style={{minWidth: 0}}>
               <span style={{display: 'flex', alignItems: 'center', gap: '6px', maxWidth: '260px'}}>
-                <span style={{fontWeight: 650, color: INK, overflow: 'hidden', textOverflow: 'ellipsis'}}>{b.company}</span>
+                <span className="t-name" style={{overflow: 'hidden', textOverflow: 'ellipsis'}}>{b.company}</span>
                 {foundHow(b) ? <span style={{ flex: 'none', fontSize: '11px', fontWeight: 600, color: 'var(--ink-3, #3f3f46)', background: 'var(--surface-2, #f4f4f5)', borderRadius: '6px', padding: '1px 6px' }}>{foundHow(b)}</span> : null}
               </span>
               <span style={{display: 'flex', alignItems: 'center', gap: '6px', maxWidth: '260px', fontSize: '11px', color: MUTED}}>
@@ -270,16 +398,39 @@ function BuyerCell({ k, b, onCall, ai }: { k: string; b: BuyerRow; onCall: (phon
  * those only when the list, the filters or the data change) and on stable
  * handlers, so a keystroke elsewhere in the shell no longer redraws the page.
  */
-const BuyerTableRow = React.memo(function BuyerTableRow({ b, index, focused, selected, shown, ai, onOpen, onToggle, callPhone }: {
-  b: BuyerRow; index: number; focused: boolean; selected: boolean; shown: ColumnDef[]; ai?: BuyerAiScore;
+const BuyerTableRow = React.memo(function BuyerTableRow({ b, index, focused, selected, shown, compr, canPay, ai, signup, running, onOpen, onToggle, callPhone, onExtend, onPay }: {
+  b: BuyerRow; index: number; focused: boolean; selected: boolean; shown: ColumnDef[]; compr: boolean; canPay: boolean;
+  ai?: BuyerAiScore; signup?: ComprSignup; running?: string[];
   onOpen: (index: number, b: BuyerRow) => void; onToggle: (id: string) => void; callPhone: (phone: string) => void;
+  onExtend: (id: string) => void; onPay: (ids: string[], trial: number | null) => void;
 }) {
   return (
     <tr className="dc2" data-buyer-focus={focused || undefined} onClick={() => onOpen(index, b)} style={{cursor: "pointer", background: selected || focused ? "var(--c-genius-soft, #f0faf5)" : undefined, outline: focused ? `2px solid ${GREEN}` : undefined, outlineOffset: focused ? '-2px' : undefined}}>
       <td onClick={(e) => e.stopPropagation()} style={{padding: "0 14px", borderBottom: `1px solid ${HAIR}`}}>
         <input type="checkbox" aria-label={'Select ' + b.company} checked={selected} onChange={() => onToggle(b.id)} style={{width: "14px", height: "14px", accentColor: GREEN, cursor: "pointer"}} />
       </td>
-      {shown.map((f) => <BuyerCell key={f.key} k={f.key} b={b} onCall={callPhone} ai={ai} />)}
+      {shown.map((f) => <BuyerCell key={f.key} k={f.key} b={b} onCall={callPhone} ai={ai} compr={compr} signup={signup} running={running} />)}
+      {canPay ? (
+        <td onClick={(e) => e.stopPropagation()} style={{padding: "0 8px", borderBottom: `1px solid ${HAIR}`, width: "80px", textAlign: "right", whiteSpace: "nowrap"}}>
+          {canExtendTrial(signup) ? (
+            <button type="button" className="dc2" aria-label={`Extend ${b.name}'s Compr trial`} title="Extend the Compr trial" onClick={() => onExtend(b.id)}
+              style={{width: "32px", height: "32px", display: "inline-grid", placeItems: "center", borderRadius: "8px", border: 0, background: "none", color: MUTED, cursor: "pointer"}}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={P_CAL} /></svg>
+            </button>
+          ) : alreadyPaid(signup?.tier) ? null : (
+            <>
+              <button type="button" className="dc2" aria-label={`Send ${b.name} a trial link`} title="Send a Compr link with a 7-day free trial" onClick={() => onPay([b.id], TRIAL_DEFAULT_DAYS)}
+                style={{width: "32px", height: "32px", display: "inline-grid", placeItems: "center", borderRadius: "8px", border: 0, background: "none", color: MUTED, cursor: "pointer"}}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={TRIAL_ICON} /></svg>
+              </button>
+              <button type="button" className="dc2" aria-label={`Send ${b.name} a payment link`} title="Send a Compr payment link" onClick={() => onPay([b.id], null)}
+                style={{width: "32px", height: "32px", display: "inline-grid", placeItems: "center", borderRadius: "8px", border: 0, background: "none", color: MUTED, cursor: "pointer"}}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM2 10h20" /></svg>
+              </button>
+            </>
+          )}
+        </td>
+      ) : null}
     </tr>
   );
 });
@@ -290,28 +441,58 @@ export function Buyers({ V }: { V: ClozrView }) {
   // Realtors lassoed on the map, by market: they are not rows the list holds.
   const [realtorPicks, setRealtorPicks] = React.useState<Record<string, RealtorPick[]>>({});
   const [automations, setAutomations] = React.useState(false);
+  // Buyer ids (row ids) the payment link dialog is open for.
+  const [paying, setPaying] = React.useState<string[] | null>(null);
+  // Free trial days the dialog opens on: "Trial link" presets 7, every other entry none.
+  const [payTrial, setPayTrial] = React.useState<number | null>(null);
+  const openPay = useCallback((ids: string[], trial: number | null = null) => { setPayTrial(trial); setPaying(ids); }, []);
   const toggleSel = useCallback((id: string) => setSel((x) => ({ ...x, [id]: !x[id] })), []);
   // The rows get stable handlers (the view-model's are new functions on every rebuild), so BuyerTableRow's memo holds.
   const vRef = useRef(V);
   useEffect(() => { vRef.current = V; });
   const openRow = useCallback((index: number, b: BuyerRow) => { vRef.current.setBuyerCursor(index); b.open(); }, []);
   const callPhone = useCallback((phone: string) => vRef.current.callPhone(phone), []);
+  // The row id the Extend trial dialog is open for, and trial ends moved this
+  // session, shown until the next sync carries them.
+  const [extending, setExtending] = React.useState<string | null>(null);
+  const [trialEnds, setTrialEnds] = React.useState<Record<number, string>>({});
+  // A Compr workspace's Buyers holds Compr customers: its own columns, sort
+  // and lists (lib/buyer-list-profile, migration 249).
+  const compr = V.buyerListProfile === 'compr';
+  // On Compr, Suggested and the filter rail stay shut until a rep opens them.
+  const [suggestedOpen, setSuggestedOpen] = useRemembered<boolean>('buyers.suggested.compr', false);
   const [railOpen, toggleRail] = useRailOpen('buyers');
+  const [filtersOpen, toggleFilters] = useFilterRailOpen(compr ? 'buyers.compr' : 'buyers', !compr);
+  const FIELDS = compr ? COMPR_FIELDS : BUYER_FIELDS;
+  const KEYS = compr ? COMPR_KEYS : BUYER_KEYS;
+  const DEFAULT_COLS = compr ? COMPR_DEFAULT : BUYER_DEFAULT;
   // Kept for the session (lib/screen-memory), like the search in V: the list
   // unmounts while a buyer is open and should come back as it was left.
-  const [cols, setCols] = useRemembered<string[]>('buyers.cols', BUYER_DEFAULT);
-  const [sort, setSort] = useRemembered('buyers.sort', BUYER_DEFAULT_SORT);
+  const [buyerCols, setBuyerCols] = useRemembered<string[]>('buyers.cols', BUYER_DEFAULT);
+  const [comprCols, setComprCols] = useRemembered<string[]>('buyers.cols.compr', COMPR_DEFAULT);
+  const cols = compr ? comprCols : buyerCols;
+  const setCols = compr ? setComprCols : setBuyerCols;
+  const [buyerSort, setBuyerSort] = useRemembered('buyers.sort', BUYER_DEFAULT_SORT);
+  const [comprSort, setComprSort] = useRemembered('buyers.sort.compr', { key: 'lastActivity', dir: 'desc' as SortDir });
+  const sort = compr ? comprSort : buyerSort;
+  const setSort = compr ? setComprSort : setBuyerSort;
   const geniusOnly = V.buyerGeniusOnly;
   const q = V.buyerQ;
   const [qText, setQText] = useDebouncedText(q, (v) => { V.setBuyerQ(v); setSel({}); });
   const list = V.buyerList;
+  // Realtors, or Compr's realtor-tag list: a server page with its own pager.
+  const paged = list === 'realtors' || !!V.realtorPaged;
   // Smart lists the team saved on Buyers (app/components/buyer/BuyerSmartLists).
   const me = V.liveIds?.userId ?? null;
   const smart = useBuyerSmartLists(V.liveIds?.workspaceId ?? null, me);
   const [openSavedId, setOpenSavedId] = useRemembered<string | null>('buyers.smartList', null);
   const [newListOpen, setNewListOpen] = React.useState(false);
   const askRemove = useRemoveSmartList(smart, (l) => { if (openSavedId === l.id) setOpenSavedId(null); }, V.showToast);
-  const colsOf = (c: { cols?: unknown } | null | undefined): string[] => (c ? cleanColumns(c.cols, BUYER_KEYS, BUYER_DEFAULT) : BUYER_DEFAULT);
+  /** A view's columns. On Compr, a view saved before the Compr columns opens on them anyway. */
+  const colsOf = (c: { cols?: unknown; profile?: string } | null | undefined): string[] => {
+    if (compr) return c?.profile === 'compr' ? cleanColumns(c.cols, COMPR_KEYS, COMPR_DEFAULT) : COMPR_DEFAULT;
+    return c ? cleanColumns(c.cols, BUYER_KEYS, BUYER_DEFAULT) : BUYER_DEFAULT;
+  };
   const apply = (c: BuyersConfig | null) => {
     setCols(colsOf(c));
     V.setBuyerGeniusOnly(!!c?.geniusOnly);
@@ -320,28 +501,42 @@ export function Buyers({ V }: { V: ClozrView }) {
     setSel({});
   };
   const sv = useSavedViews<BuyersConfig>('buyers', V.liveIds?.workspaceId ?? null, V.liveIds?.userId ?? null, apply, { oncePerSession: true });
-  const current: BuyersConfig = { cols, geniusOnly, filters: { buyerState: V.gf.buyerState, buyerCity: V.gf.buyerCity, buyerEntity: V.gf.buyerEntity, buyerType: V.gf.buyerType, buyerStatus: V.gf.buyerStatus, buyerPhone: V.gf.buyerPhone, buyerEmail: V.gf.buyerEmail, buyerOwner: V.gf.buyerOwner ?? 'Any', buyerDeal: V.gf.buyerDeal ?? 'Any', buyerTag: V.gf.buyerTag ?? 'Any' } };
-  const base: BuyersConfig = sv.active?.config ?? { cols: BUYER_DEFAULT, geniusOnly: false, filters: NO_BUYER_FILTERS };
+  const current: BuyersConfig = { cols, geniusOnly, filters: { buyerState: V.gf.buyerState, buyerCity: V.gf.buyerCity, buyerEntity: V.gf.buyerEntity, buyerType: V.gf.buyerType, buyerStatus: V.gf.buyerStatus, buyerPhone: V.gf.buyerPhone, buyerEmail: V.gf.buyerEmail, buyerOwner: V.gf.buyerOwner ?? 'Any', buyerDeal: V.gf.buyerDeal ?? 'Any', buyerPlan: V.gf.buyerPlan ?? 'Any', buyerTag: V.gf.buyerTag ?? 'Any', buyerRunning: V.gf.buyerRunning ?? 'Any' }, ...(compr ? { profile: 'compr' as const } : {}) };
+  const base: BuyersConfig = sv.active?.config ?? { cols: DEFAULT_COLS, geniusOnly: false, filters: NO_BUYER_FILTERS };
   const dirty = !sameList(cols, colsOf(base)) || geniusOnly !== !!base.geniusOnly
     || (Object.keys(NO_BUYER_FILTERS) as (keyof typeof NO_BUYER_FILTERS)[]).some((k) => current.filters[k] !== (base.filters?.[k] ?? 'Any'));
-  const shown = useMemo(() => cols.map((k) => BUYER_FIELDS.find((f) => f.key === k)).filter((f): f is ColumnDef => !!f), [cols]);
+  const shown = useMemo(() => cols.map((k) => FIELDS.find((f) => f.key === k)).filter((f): f is ColumnDef => !!f), [cols, FIELDS]);
   const navRows = V.buyerNavRows || [];
   // Score what is on screen first; realtors are a 127k corpus and are scored only on Refresh.
-  const autoIds = list === 'realtors' ? [] : navRows.slice(0, 25).map((b) => dbId(b.id));
+  // Compr customers are not cash buyers, so they carry no buyer score.
+  const autoIds = paged || compr ? [] : navRows.slice(0, 25).map((b) => dbId(b.id));
   const ai = useBuyerScores(V.liveIds?.workspaceId ?? null, autoIds, V.showToast);
   const aiOf = (b: BuyerRow) => ai.scores.get(dbId(b.id));
+  const signups = useComprSignups(V.liveIds?.workspaceId ?? null, compr);
+  const signupOf = (b: BuyerRow) => {
+    const s = signups.get(dbId(b.id));
+    const moved = trialEnds[dbId(b.id)];
+    return s && moved ? withTrialEnd(s, moved) : s;
+  };
   // Sorted once per list, sort or score change, not on every render: at
   // 11,000 buyers a sort on each keystroke elsewhere in the shell was felt.
   const scores = ai.scores;
   // While searching, the best matches (name or company is, or starts with,
   // the query) lead and the chosen sort orders within each tier.
   const ranks = V.buyerSearchRanks;
+  // Compr's Plan filter reads the synced signups, so it runs here rather than in useClozr.
+  const planPicks = compr ? picksOf(V.gf.buyerPlan) : [];
+  // Who is on a running action plan or campaign: the Action plan column and filter.
+  const running = useRunningPlans(V.liveIds?.workspaceId ?? null, compr);
+  const runningPicks = compr ? picksOf(V.gf.buyerRunning) : [];
   const rows = useMemo(() => {
-    const keyed = (V.buyerNavRows || []).map((b) => ({ b, r: ranks?.get(b.id) ?? 0, v: buyerSortValue(b, sort.key, scores.get(dbId(b.id))) }));
+    const inPlan = (b: BuyerRow) => (!planPicks.length || planPicks.includes(comprPlanBucket(signups.get(dbId(b.id))))) && runningMatch(runningPicks, running.get(dbId(b.id)));
+    const keyed = (V.buyerNavRows || []).filter(inPlan).map((b) => ({ b, r: ranks?.get(b.id) ?? 0, v: buyerSortValue(b, sort.key, scores.get(dbId(b.id)), signups.get(dbId(b.id)), compr) }));
     const byDeal = V.gf.buyerDeal && V.gf.buyerDeal !== 'Any';
     keyed.sort((x, y) => (byDeal ? (y.b.dealMatch ?? 0) - (x.b.dealMatch ?? 0) : 0) || x.r - y.r || cmpSort(x.v, y.v, sort.dir));
     return keyed.map((x) => x.b);
-  }, [V.buyerNavRows, V.gf.buyerDeal, ranks, sort.key, sort.dir, scores]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- planPicks is a fresh array each render; its value is V.gf.buyerPlan
+  }, [V.buyerNavRows, V.gf.buyerDeal, V.gf.buyerPlan, V.gf.buyerRunning, running, compr, ranks, sort.key, sort.dir, scores, signups]);
   // The open buyer's arrows walk this same order (useClozr moveOpenBuyer), so
   // the record steps to the row below it here, and the highlight lands on it.
   useEffect(() => { remember('buyers.order', rows.map((b) => b.id)); }, [rows]);
@@ -351,9 +546,9 @@ export function Buyers({ V }: { V: ClozrView }) {
   const moreNote = more ? `Showing ${revealed.toLocaleString('en-US')} of ${rows.length.toLocaleString('en-US')} · scroll for more` : '';
   const sortMenu = (
     <SortMenu
-      options={BUYER_SORT_OPTIONS}
+      options={compr ? COMPR_SORT_OPTIONS : BUYER_SORT_OPTIONS}
       value={`${sort.key}:${sort.dir}`}
-      resetId="added:desc"
+      resetId={compr ? 'lastActivity:desc' : 'added:desc'}
       pill={V.isMobile}
       onChange={(id) => {
         const [key, dir] = id.split(':');
@@ -370,7 +565,7 @@ export function Buyers({ V }: { V: ClozrView }) {
     V.setBuyerList(baseOf(l));
     V.setGf(filters as typeof NO_BUYER_FILTERS);
     V.setBuyerGeniusOnly(l.filters.geniusOnly === '1');
-    if (l.cols.length) setCols(cleanColumns(l.cols, BUYER_KEYS, BUYER_DEFAULT));
+    if (l.cols.length) setCols(cleanColumns(l.cols, KEYS, DEFAULT_COLS));
     setOpenSavedId(l.id);
     setSel({});
   };
@@ -414,14 +609,19 @@ export function Buyers({ V }: { V: ClozrView }) {
   // The lists a buyer can sit on, as smart lists: the same rail People has.
   // The phone keeps the pill strip, since it has no room for a rail.
   const RAIL_DOT: Record<string, string> = {
-    buyers: '#0A8560', 'buyer-prospect': '#b45309',
+    buyers: '#0A8560', 'compr-customer-prospect': 'var(--c-compr)', 'buyer-prospect': '#b45309',
     'capital-raise-prospect': '#2563eb', realtors: '#0d9488',
+    [COMPR_NOT_CONTACTED_LIST]: 'var(--subtle, #a1a1aa)', [COMPR_IN_PLAN_LIST]: '#2563eb', [COMPR_CONTACTED_LIST]: '#0d9488',
+    [COMPR_INTERESTED_LIST]: '#0A8560', [COMPR_NOT_INTERESTED_LIST]: 'var(--tx-red, #b91c1c)',
+    [COMPR_TRIAL_LIST]: 'var(--c-compr)', [COMPR_PAID_LIST]: 'var(--ink, #18181b)', [COMPR_ALL_LIST]: '#b45309',
   };
+  const profile = V.buyerListProfile;
   const listItems: RailItem[] = V.buyerListNames.map((id) => {
-    const listed = (V.buyerRows || []).filter((b) => inBuyerList(id, b)).length;
+    const listed = (V.buyerRows || []).filter((b) => inBuyerList(id, b, profile)).length;
     return {
-      id, label: buyerListLabelOf(id) ?? id, on: list === id && !openSaved, dot: RAIL_DOT[id] ?? 'var(--subtle, #a1a1aa)',
+      id, label: buyerListLabelOf(id, profile) ?? id, on: list === id && !openSaved, dot: RAIL_DOT[id] ?? 'var(--subtle, #a1a1aa)',
       count: id === 'realtors' ? (V.realtorCorpusTotal || listed) : listed,
+      title: COMPR_LIST_TITLES[id],
       go: () => { V.setBuyerList(id); setOpenSavedId(null); clearSel(); },
     };
   });
@@ -443,10 +643,10 @@ export function Buyers({ V }: { V: ClozrView }) {
           {item.label}{item.count == null ? '' : ` ${item.count.toLocaleString('en-US')}`}
         </button>
       ))}
-      <button type="button" className="dc2" onClick={() => setNewListOpen(true)} style={{ ...pill(false), display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+      {compr ? null : <button type="button" className="dc2" onClick={() => setNewListOpen(true)} style={{ ...pill(false), display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
         <PlusIcon />
         New list
-      </button>
+      </button>}
       {openSaved && openSaved.mine !== false ? (
         <button type="button" className="dc2" onClick={() => void askRemove(openSaved)} style={{ ...pill(false), color: 'var(--tx-red, #b91c1c)' }}>
           Delete list
@@ -466,8 +666,29 @@ export function Buyers({ V }: { V: ClozrView }) {
   useEffect(() => { selRef.current = selectedIds; });
   const bulk = useMemo(() => (Object.keys(picked).length ? { ...V.buyerBulk, buyers: { ...V.buyerBulk.buyers, ...picked } } : V.buyerBulk), [V.buyerBulk, picked]);
   const clearSel = () => { setSel({}); setRealtorPicks({}); };
-  const buyerFilterMenus = V.buyerMenus || [];
-  const activeBuyerFilters = buyerFilterMenus.filter((m) => m.on).length;
+  const realValue = (v: string | null | undefined) => (v && v.trim() && v.trim() !== '—' ? v.trim() : null);
+  const payPeople = (ids: string[]): PayPerson[] => ids.flatMap((id) => {
+    const b = rows.find((r) => r.id === id);
+    return b ? [{ id: dbId(b.id), name: b.name, email: realValue(b.email)?.includes('@') ? realValue(b.email) : null, phone: realValue(b.phone), tier: signupOf(b)?.tier ?? null }] : [];
+  });
+  const canPay = compr && !!V.isLiveData && !!V.liveIds?.canWrite;
+  // Compr: paying customers, trials and past-due accounts, so a rep can leave customers off a call list.
+  const planValue = V.gf.buyerPlan ?? 'Any';
+  const planMenu = {
+    key: 'buyerPlan', label: 'Plan', multi: true, on: compr && planValue !== 'Any', value: picksLabel(planValue),
+    options: ['Any', ...COMPR_PLAN_FILTERS].map((o) => ({
+      label: o, on: isPicked(planValue, o), go: () => { V.setGf({ buyerPlan: togglePick(planValue, o) }); setSel({}); },
+    })),
+  };
+  const runningValue = V.gf.buyerRunning ?? 'Any';
+  const runningNames = useMemo(() => [...new Set([...running.values()].flat())].sort(), [running]);
+  const runningMenu = {
+    key: 'buyerRunning', label: 'Action plan', multi: true, on: compr && runningValue !== 'Any', value: picksLabel(runningValue),
+    options: ['Any', NOT_ON_A_PLAN, ON_A_PLAN, ...runningNames].map((o) => ({
+      label: o, on: isPicked(runningValue, o), go: () => { V.setGf({ buyerRunning: togglePick(runningValue, o) }); setSel({}); },
+    })),
+  };
+  const buyerFilterMenus = compr ? [planMenu, runningMenu, ...(V.buyerMenus || [])] : (V.buyerMenus || []);
   // Each menu's own "Any" is its reset, so realtors' server-side state and city clear the same way.
   const buyerDateOn = (V.gf.buyerAdded ?? 'Any') !== 'Any';
   const resetBuyerFilters = () => {
@@ -475,18 +696,20 @@ export function Buyers({ V }: { V: ClozrView }) {
     V.setGf({ buyerAdded: 'Any', buyerAddedFrom: 'Any', buyerAddedTo: 'Any' });
     setSel({});
   };
+  // Every filter, always on screen in the rail beside the table; a sheet on a phone.
+  const buyerFilterExtras = [{
+    title: 'Dates',
+    node: <DateRangeFields when={V.gf.buyerAdded} from={V.gf.buyerAddedFrom} to={V.gf.buyerAddedTo}
+      onChange={(patch) => V.setGf({ buyerAdded: patch.when, ...(patch.from != null ? { buyerAddedFrom: patch.from } : {}), ...(patch.to != null ? { buyerAddedTo: patch.to } : {}) })} />,
+  }];
+  const buyerChips = [
+    ...chipsFromMenus(buyerFilterMenus),
+    ...(buyerDateOn ? [{ key: 'buyerAdded', label: 'Added', value: String(V.gf.buyerAdded), clear: () => V.setGf({ buyerAdded: 'Any', buyerAddedFrom: 'Any', buyerAddedTo: 'Any' }) }] : []),
+  ];
   const buyerFilters = (
-    <FilterPanel
-      menus={buyerFilterMenus}
-      active={activeBuyerFilters + (buyerDateOn ? 1 : 0)}
-      onReset={resetBuyerFilters}
-      onClose={V.closeFilterMenus}
-      showLabel={`Show ${rows.length.toLocaleString('en-US')} ${list === 'realtors' ? 'realtors' : 'buyers'}`}>
-      <div className="cz-fp-more">
-        <DateRangeFields when={V.gf.buyerAdded} from={V.gf.buyerAddedFrom} to={V.gf.buyerAddedTo}
-          onChange={(patch) => V.setGf({ buyerAdded: patch.when, ...(patch.from != null ? { buyerAddedFrom: patch.from } : {}), ...(patch.to != null ? { buyerAddedTo: patch.to } : {}) })} />
-      </div>
-    </FilterPanel>
+    <FilterSheet pill menus={buyerFilterMenus} groups={BUYER_FILTER_GROUPS} extras={buyerFilterExtras} active={buyerChips.length}
+      onClearAll={resetBuyerFilters} storageKey="buyers"
+      showLabel={`Show ${rows.length.toLocaleString('en-US')} ${paged ? 'realtors' : compr ? 'contacts' : 'buyers'}`} />
   );
   const viewSwitch = <ListMapSwitch value={mode} onChange={setMode} pill={V.isMobile} />;
   const allSelected = rows.length > 0 && selectedIds.length === rows.length;
@@ -497,9 +720,9 @@ export function Buyers({ V }: { V: ClozrView }) {
   const rescoreTitle = 'Re-read texts, emails, calls, offers and closings and score again with AI';
   const toggleAll = () => setSel(allSelected ? {} : Object.fromEntries(rows.map((b) => [b.id, true])));
   // A new smart list keeps the list, filters and columns on screen now.
-  const baseLabel = buyerListLabelOf(list) ?? V.buyerListLabel;
+  const baseLabel = buyerListLabelOf(list, profile) ?? V.buyerListLabel;
   const filterWords = buyerFilterMenus.filter((m) => m.on).map((m) => ({ label: m.label, value: String(m.value ?? '') }));
-  const keeps = [baseLabel, ...filterWords.map((f) => `${f.label}: ${f.value}`), ...(geniusOnly ? ['Genius only'] : [])].join(' · ')
+  const keeps = [baseLabel, ...filterWords.map((f) => `${f.label}: ${f.value}`), ...(geniusOnly ? ['Discovered only'] : [])].join(' · ')
     + `, and the ${cols.length} columns on screen`;
   const suggestedName = (filterWords.length ? filterWords.map((f) => f.value).join(', ') : `${baseLabel} ${smart.lists.length + 1}`).slice(0, 80);
   const saveList = async (name: string, shared: boolean) => {
@@ -510,16 +733,25 @@ export function Buyers({ V }: { V: ClozrView }) {
     V.showToast(`Saved "${made.name}"`, 'success');
     return true;
   };
-  const emptyTitle = list === 'realtors' && V.realtorLoading ? 'Loading realtors…'
-    : q.trim() ? `No buyers match “${q.trim()}”`
+  const emptyTitle = paged && V.realtorLoading ? 'Loading realtors…'
+    : q.trim() ? `No ${compr ? 'contacts' : 'buyers'} match “${q.trim()}”`
       : openSaved ? `No one matches ${openSaved.name}`
-        : geniusOnly ? 'No buyers tagged for Genius'
+        : geniusOnly ? 'No discovered buyers'
           : !V.crmOk ? ''
-            : list === 'buyers' ? 'No buyers yet' : list === 'realtors' ? 'No realtors in this workspace' : `No one in ${listTitle} yet`;
-  const emptyHint = list === 'realtors' ? 'Search name, phone, email, company, or market. The list pages through the imported agents.'
+            : list === COMPR_TRIAL_LIST ? 'No Compr trial users yet'
+              : list === COMPR_PAID_LIST ? 'No paying Compr customers yet'
+              : list === COMPR_ALL_LIST ? 'No contacts yet'
+              : compr ? `No one in ${listTitle} right now`
+                : list === 'buyers' ? 'No buyers yet' : list === 'realtors' ? 'No realtors in this workspace' : `No one in ${listTitle} yet`;
+  const emptyHint = paged ? 'Search name, phone, email, company, or market. The list pages through the imported agents.'
     : q.trim() ? 'Search looks at name, company, phone, email, type, status, markets and tags.'
       : openSaved ? 'Its filters match nobody right now. Reset the filters, or delete the list from the rail.'
-        : list === 'buyers' ? 'Vetted buyers live here. Genius, buyr and Facebook comments wait in Buyer Prospects until you vet them.' : 'Genius, buyr and Facebook group comments file here. Vet someone to move them onto Buyers.';
+        : list === COMPR_TRIAL_LIST ? 'Every new Compr free trial signup lands here within 15 minutes, with their plan, market and last activity.'
+          : list === COMPR_PAID_LIST ? 'Every paying Compr customer lands here within 15 minutes, with what they have paid and every address they ran.'
+          : compr && list !== COMPR_ALL_LIST ? COMPR_LIST_TITLES[list] ?? ''
+          : compr ? 'Import Compr customers or add one by hand.'
+            : list === 'buyers' ? 'Vetted buyers live here. Imported finds and Facebook comments wait in Buyer Prospects until you vet them.' : 'Imported finds and Facebook group comments file here. Vet someone to move them onto Buyers.';
+  const addLabel = compr ? 'Contact' : 'Buyer';
   return (
     <section data-screen-label="Buyers" style={{flex: "1", minWidth: "0", display: "flex", flexDirection: "row"}}>
       {!V.isMobile && railOpen ? (
@@ -529,6 +761,8 @@ export function Buyers({ V }: { V: ClozrView }) {
             <RailToggle open onToggle={toggleRail} />
           </div>
           {listItems.map((item) => <RailRow key={item.id} item={item} />)}
+          {/* Compr too: the stage buckets above, then the team's lists by tag (one per avatar). */}
+          <>
           <div className="cz-rail-group">
             <span className="cz-rail-title">Saved lists</span>
             <button type="button" className="dc2 cz-rail-toggle" onClick={() => setNewListOpen(true)} aria-label="New smart list from the filters on now" title="New smart list from the filters on now">
@@ -537,10 +771,17 @@ export function Buyers({ V }: { V: ClozrView }) {
           </div>
           {savedItems.map(({ l, item }) => <SavedRailRow key={item.id} item={item} list={l} onRemove={(x) => void askRemove(x)} />)}
           {!savedItems.length ? <p style={{ margin: '2px 8px 0', fontSize: '11.5px', color: MUTED, lineHeight: 1.5 }}>Set the filters you want, then save them here as a list.</p> : null}
+          </>
           <div className="cz-rail-note">
-            Prospects wait here until you vet them; a vetted buyer moves onto Buyers.
+            {compr
+              ? 'Everyone sits on one list, and moves on their own: a text, email or call makes them Contacted, a reply that says no makes them Not interested and takes them off every plan, and Compr fills Free trial and Paid users every 15 minutes.'
+              : 'Prospects wait here until you vet them; a vetted buyer moves onto Buyers.'}
           </div>
         </aside>
+      ) : null}
+      {!V.isMobile && filtersOpen ? (
+        <FilterRail menus={buyerFilterMenus} groups={BUYER_FILTER_GROUPS} extras={buyerFilterExtras} active={buyerChips.length}
+          onClearAll={resetBuyerFilters} onHide={toggleFilters} storageKey="buyers" />
       ) : null}
       <NewSmartListDialog open={newListOpen} suggested={suggestedName} keeps={keeps} onSave={saveList} onClose={() => setNewListOpen(false)} />
       <div style={{flex: "1", minWidth: "0", display: "flex", flexDirection: "column"}}>
@@ -550,21 +791,21 @@ export function Buyers({ V }: { V: ClozrView }) {
             wrapped into three stacked rows and ate half the screen, so the
             phone gets a title line, a full-width search, and a single
             sideways-scrolling control strip. */}
-        <div style={{flex: "none", background: "var(--surface, #fff)", borderBottom: `1px solid ${LINE}`, padding: "10px 0 10px 12px"}}>
-          <div style={{display: "flex", alignItems: "baseline", gap: "8px", paddingRight: "12px", minWidth: "0"}}>
-            <span style={{fontSize: "19px", fontWeight: "700", letterSpacing: "-0.03em", flex: "none"}}>
+        <div style={{flex: "none", background: "var(--surface, #fff)", borderBottom: `1px solid ${LINE}`, padding: "10px 0 10px 16px"}}>
+          <div style={{display: "flex", alignItems: "baseline", gap: "8px", paddingRight: "16px", minWidth: "0"}}>
+            <h1 className="ds-title" style={{flex: "none"}}>
               {listTitle}
-            </span>
+            </h1>
             <span style={{fontSize: "12.5px", color: MUTED, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
-              {list === 'realtors' ? `${rows.length} of ${V.realtorMatchTotal.toLocaleString('en-US')}` : `${rows.length} showing · ${V.buyerTotal} in database`}
+              {paged ? `${rows.length} of ${V.realtorMatchTotal.toLocaleString('en-US')}` : `${rows.length} showing · ${V.buyerTotal} in database`}
             </span>
           </div>
-          <input type="search" value={qText} onChange={(e) => setQText(e.target.value)} placeholder="Search name, company, market…" aria-label="Search buyers" style={{height: "38px", width: "calc(100% - 12px)", marginTop: "9px", borderRadius: "9px", border: `1px solid ${LINE}`, padding: "0 11px", fontSize: "16px", background: "var(--canvas, #fafafa)", color: INK, minWidth: "0"}} />
-          <div data-tabs style={{display: "flex", gap: "6px", overflowX: "auto", marginTop: "9px", paddingRight: "12px", paddingBottom: "2px"}}>
+          <input type="search" value={qText} onChange={(e) => setQText(e.target.value)} placeholder="Search name, company, market…" aria-label={compr ? 'Search contacts' : 'Search buyers'} style={{height: "38px", width: "calc(100% - 12px)", marginTop: "9px", borderRadius: "9px", border: `1px solid ${LINE}`, padding: "0 11px", fontSize: "16px", background: "var(--canvas, #fafafa)", color: INK, minWidth: "0"}} />
+          <div data-tabs data-tray style={{display: "flex", gap: "6px", overflowX: "auto", marginTop: "9px", paddingRight: "12px", paddingBottom: "2px"}}>
             {viewSwitch}
             {listSwitcher}
             <button className="clozr-genius-btn" onClick={V.addBuyer} style={{flex: "none", height: "34px", padding: "0 13px", borderRadius: "999px", border: "1px solid var(--c-genius)", background: "var(--c-genius)", color: "#fff", fontSize: "12.5px", fontWeight: "600", cursor: "pointer", whiteSpace: "nowrap"}}>
-              + Buyer
+              + {addLabel}
             </button>
             <ViewMenu sv={sv} current={current} dirty={dirty} onApply={apply} onToast={V.showToast} pill align="left" />
             {sortMenu}
@@ -575,12 +816,19 @@ export function Buyers({ V }: { V: ClozrView }) {
               Import
             </button>
             ) : null}
+            {compr ? null : <>
             <button className="dc2" onClick={() => { V.setBuyerGeniusOnly(!geniusOnly); setSel({}); }} style={{flex: "none", height: "34px", padding: "0 13px", borderRadius: "999px", border: `1px solid ${geniusOnly ? GREEN : 'var(--c-btn-line)'}`, background: geniusOnly ? 'var(--c-genius-soft, #f0faf5)' : 'var(--c-btn-bg)', color: geniusOnly ? 'var(--tx-mint-deep, #08694c)' : 'var(--ink-2, #27272a)', fontSize: "12.5px", fontWeight: geniusOnly ? "600" : "500", cursor: "pointer", whiteSpace: "nowrap"}}>
-              Genius
+              Discovered
             </button>
             <button className="dc2" disabled={!!ai.progress || !rows.length} onClick={() => ai.refresh(rescoreIds)} title={rescoreTitle} style={{flex: "none", height: "34px", padding: "0 13px", borderRadius: "999px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", color: INK, fontSize: "12.5px", fontWeight: "500", cursor: "pointer", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums"}}>
               {rescoreLabel}
             </button>
+            </>}
+            {compr ? (
+            <button className="dc2" onClick={() => setSuggestedOpen(!suggestedOpen)} aria-pressed={suggestedOpen} style={{flex: "none", height: "34px", padding: "0 13px", borderRadius: "999px", border: `1px solid ${suggestedOpen ? GREEN : 'var(--c-btn-line)'}`, background: suggestedOpen ? 'var(--c-genius-soft, #f0faf5)' : 'var(--c-btn-bg)', color: suggestedOpen ? 'var(--tx-mint-deep, #08694c)' : 'var(--ink-2, #27272a)', fontSize: "12.5px", fontWeight: suggestedOpen ? "600" : "500", cursor: "pointer", whiteSpace: "nowrap"}}>
+              Suggested
+            </button>
+            ) : null}
             <button className="dc2" onClick={() => setAutomations(!automations)} style={{flex: "none", height: "34px", padding: "0 13px", borderRadius: "999px", border: `1px solid ${automations ? GREEN : 'var(--c-btn-line)'}`, background: automations ? 'var(--c-genius-soft, #f0faf5)' : 'var(--c-btn-bg)', color: automations ? 'var(--tx-mint-deep, #08694c)' : 'var(--ink-2, #27272a)', fontSize: "12.5px", fontWeight: automations ? "600" : "500", cursor: "pointer", whiteSpace: "nowrap"}}>
               Automations
             </button>
@@ -620,19 +868,14 @@ export function Buyers({ V }: { V: ClozrView }) {
           something on one; everything that narrows or arranges the table on
           the next, left-aligned. One wrapping row used to scatter fourteen
           controls across two ragged lines. */}
-      <div data-head style={{display: V.isMobile ? "none" : "block", position: "relative", zIndex: 3, background: "var(--surface, #fff)", borderBottom: `1px solid ${LINE}`}}>
-      <div style={{display: "flex", alignItems: "center", gap: "10px", padding: "12px 16px 8px"}}>
-        {!railOpen ? <RailToggle open={false} onToggle={toggleRail} /> : null}
-        <h1 style={{margin: "0", fontSize: "18px", fontWeight: "700", letterSpacing: "-0.02em", whiteSpace: "nowrap"}}>
-          {listTitle}
-        </h1>
-        <span style={{fontSize: "12px", color: MUTED, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums"}}>
-          {list === 'realtors' ? `${rows.length.toLocaleString('en-US')} of ${V.realtorMatchTotal.toLocaleString('en-US')}` : `${rows.length.toLocaleString('en-US')} showing · ${V.buyerTotal} in database`}
-        </span>
-        <div style={{flex: "1"}}></div>
+      {V.isMobile ? null : <ScreenHeader style={{position: "relative", zIndex: 3}}
+        before={!railOpen ? <RailToggle open={false} onToggle={toggleRail} /> : null}
+        title={listTitle}
+        meta={paged ? `${rows.length.toLocaleString('en-US')} of ${V.realtorMatchTotal.toLocaleString('en-US')}` : `${rows.length.toLocaleString('en-US')} showing · ${V.buyerTotal} in database`}
+        actions={<>
         <label style={{display: "flex", alignItems: "center", gap: "8px", height: "32px", padding: "0 10px", border: `1px solid ${LINE}`, borderRadius: "8px", background: "var(--canvas, #fafafa)", width: "min(300px, 28vw)", minWidth: "160px"}}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={MUTED} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-          <input type="search" value={qText} onChange={(e) => setQText(e.target.value)} placeholder="Search name, company, phone, market, tag" aria-label="Search buyers" style={{border: "0", background: "none", outline: "0", fontSize: "13px", width: "100%", minWidth: 0, color: INK}} />
+          <input type="search" value={qText} onChange={(e) => setQText(e.target.value)} placeholder="Search name, company, phone, market, tag" aria-label={compr ? 'Search contacts' : 'Search buyers'} style={{border: "0", background: "none", outline: "0", fontSize: "13px", width: "100%", minWidth: 0, color: INK}} />
         </label>
         <ContractsButton V={V} />
         {V.can.import ? (
@@ -643,43 +886,69 @@ export function Buyers({ V }: { V: ClozrView }) {
         ) : null}
         <button className="clozr-genius-btn" onClick={V.addBuyer} style={{height: "32px", padding: "0 12px", borderRadius: "8px", border: "1px solid var(--c-genius)", background: "var(--c-genius)", color: "#fff", fontSize: "12.5px", fontWeight: "600", cursor: "pointer", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "6px"}}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="M12 5v14M5 12h14" /></svg>
-          Buyer
+          {addLabel}
         </button>
-      </div>
-      <div style={{display: "flex", alignItems: "center", gap: "8px", padding: "0 16px 10px", flexWrap: "wrap"}}>
+        </>}>
+      <div style={{display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap"}}>
         {viewSwitch}
         <ViewMenu sv={sv} current={current} dirty={dirty} onApply={apply} onToast={V.showToast} />
-        <ColumnPicker all={BUYER_FIELDS} value={cols} onChange={setCols} defaults={BUYER_DEFAULT} title="Fields in the buyers table" />
+        <ColumnPicker all={FIELDS} value={cols} onChange={setCols} defaults={DEFAULT_COLS} title={compr ? 'Fields in the contacts table' : 'Fields in the buyers table'} />
         {sortMenu}
-        <span aria-hidden style={{width: "1px", height: "20px", background: LINE, margin: "0 2px"}}></span>
-        {buyerFilters}
-        {activeBuyerFilters || buyerDateOn ? (
-          <button type="button" className="dc12" onClick={resetBuyerFilters} style={{height: "32px", padding: "0 8px", background: "none", border: "0", fontSize: "12px", color: GREEN, cursor: "pointer", whiteSpace: "nowrap"}}>
-            Reset
-          </button>
+        {!filtersOpen ? (
+          <>
+            <span aria-hidden style={{width: "1px", height: "20px", background: LINE, margin: "0 2px"}}></span>
+            <FilterRailShow active={buyerChips.length} onShow={toggleFilters} />
+          </>
         ) : null}
         {/* The rail has its own New button; with the rail folded away, this is the way in. */}
-        {!railOpen ? (
+        {!railOpen && !compr ? (
           <button className="dc2" onClick={() => setNewListOpen(true)} title="Save the list and filters on now as a smart list" style={{...toggleStyle(false), display: "inline-flex", alignItems: "center", gap: "5px"}}>
             <PlusIcon />
             Save as list
           </button>
         ) : null}
-        <button className="dc2" onClick={() => { V.setBuyerGeniusOnly(!geniusOnly); setSel({}); }} aria-pressed={geniusOnly} title="Buyers tagged for Genius" style={toggleStyle(geniusOnly)}>
-          Genius only
-        </button>
+        {compr ? null : (
+          <button className="dc2" onClick={() => { V.setBuyerGeniusOnly(!geniusOnly); setSel({}); }} aria-pressed={geniusOnly} title="Buyers from discovery imports" style={toggleStyle(geniusOnly)}>
+            Discovered only
+          </button>
+        )}
         <div style={{flex: "1"}}></div>
-        <GeniusPicker items={V.inventory || []} label="Find cash buyers (Genius)" />
+        {compr ? null : <>
         <button className="dc2" disabled={!!ai.progress || !rows.length} onClick={() => ai.refresh(rescoreIds)} title={rescoreTitle} style={{...toggleStyle(false), cursor: ai.progress ? "progress" : "pointer", fontVariantNumeric: "tabular-nums"}}>
           {rescoreLabel}
         </button>
-        <button className="dc2" onClick={() => setAutomations(!automations)} aria-pressed={automations} title="Tag buyers from trigger events" style={toggleStyle(automations)}>
+        </>}
+        {compr ? (
+          <button className="dc2" onClick={() => setSuggestedOpen(!suggestedOpen)} aria-pressed={suggestedOpen} title="Campaigns for Compr users who need one: payment issues, upsell, activate, revive" style={toggleStyle(suggestedOpen)}>
+            Suggested
+          </button>
+        ) : null}
+        <button className="dc2" onClick={() => setAutomations(!automations)} aria-pressed={automations} title={compr ? 'What runs on its own for Compr contacts: lifecycle email and text, billing call tasks, cold prospects' : 'Tag buyers from trigger events'} style={toggleStyle(automations)}>
           Automations
         </button>
       </div>
-      </div>
-      {automations ? <BuyerAutomations workspaceId={V.liveIds?.workspaceId ?? null} canWrite={!!V.liveIds?.canWrite} onToast={V.showToast} onChanged={V.reloadCrm} onClose={() => setAutomations(false)} /> : null}
-      {selectedIds.length ? <BuyerBulkBar bulk={bulk} selectedIds={selectedIds} onClear={clearSel} compact={V.isMobile}
+      {buyerChips.length ? (
+        <div style={{display: "flex", alignItems: "center", gap: "8px", paddingTop: "8px", flexWrap: "wrap"}}>
+          <ActiveFilters chips={buyerChips} onClearAll={resetBuyerFilters} />
+        </div>
+      ) : null}
+      </ScreenHeader>}
+      {compr && suggestedOpen && mode !== 'map' ? (
+        <div style={{ flex: 'none', maxHeight: V.isMobile ? '62vh' : '48vh', overflowY: 'auto' }}>
+          <ComprSuggested workspaceId={V.liveIds?.workspaceId ?? null} userId={V.liveIds?.userId ?? null} userName={V.meName || ''}
+            canWrite={!!V.liveIds?.canWrite} compact={V.isMobile} onToast={V.showToast} onClose={() => setSuggestedOpen(false)}
+            onOpenBuyer={V.openBuyerById} onOpenPlan={(id) => V.openPlan(id, 'buyers')} />
+        </div>
+      ) : null}
+      {automations && compr ? (
+        <div style={{ flex: 'none', maxHeight: V.isMobile ? '62vh' : '48vh', overflowY: 'auto' }}>
+          <ComprAutomations workspaceId={V.liveIds?.workspaceId ?? null} onClose={() => setAutomations(false)}
+            onSuggested={mode !== 'map' ? () => { setAutomations(false); setSuggestedOpen(true); } : undefined} />
+        </div>
+      ) : automations ? <BuyerAutomations workspaceId={V.liveIds?.workspaceId ?? null} canWrite={!!V.liveIds?.canWrite} onToast={V.showToast} onChanged={V.reloadCrm} onClose={() => setAutomations(false)} /> : null}
+      {selectedIds.length ? <BuyerBulkBar bulk={bulk} selectedIds={selectedIds} onClear={clearSel} compact={V.isMobile} compr={compr}
+        onGoCampaigns={V.goCampaigns}
+        onPaymentLink={canPay ? () => openPay(selectedIds) : undefined}
         list={rows} onSelect={(ids) => setSel(Object.fromEntries(ids.map((id) => [id, true])))} /> : null}
       {mode === 'map' ? (
         <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
@@ -697,24 +966,35 @@ export function Buyers({ V }: { V: ClozrView }) {
             const focused = b__i === V.buyerCursor;
             return (
             <React.Fragment key={b.id}>
-            <div data-buyer-focus={focused || undefined} onClick={() => { V.setBuyerCursor(b__i); b.open(); }} onDoubleClick={b.open} style={{background: sel[b.id] || focused ? "var(--c-genius-soft, #f0faf5)" : "var(--surface, #fff)", border: `1px solid ${sel[b.id] || focused ? GREEN : LINE}`, borderRadius: "12px", padding: "11px 12px", display: "flex", flexDirection: "column", gap: "8px", cursor: "pointer", minWidth: "0", outline: focused ? `2px solid ${GREEN}` : undefined, outlineOffset: focused ? '-2px' : undefined}}>
+            <div data-buyer-focus={focused || undefined} onClick={() => { V.setBuyerCursor(b__i); b.open(); }} onDoubleClick={b.open} style={{background: sel[b.id] || focused ? "var(--c-genius-soft, #f0faf5)" : "var(--surface, #fff)", border: `1px solid ${sel[b.id] || focused ? GREEN : LINE}`, borderRadius: "12px", padding: "11px 12px", display: "flex", flexDirection: "column", gap: "8px", cursor: "pointer", minWidth: "0", outline: focused ? `2px solid ${GREEN}` : undefined, outlineOffset: focused ? '-2px' : undefined, flexShrink: 0, contentVisibility: "auto", containIntrinsicHeight: "auto 224px"}}>
               <div style={{display: "flex", alignItems: "center", gap: "10px", minWidth: "0"}}>
                 <input type="checkbox" aria-label={'Select ' + b.company} checked={!!sel[b.id]} onClick={(e) => e.stopPropagation()} onChange={() => setSel((x) => ({ ...x, [b.id]: !x[b.id] }))} style={{width: "18px", height: "18px", flex: "none", accentColor: GREEN, cursor: "pointer"}} />
-                <ScoreRing b={b} ai={aiOf(b)} size={38} />
+                {compr ? null : <ScoreRing b={b} ai={aiOf(b)} size={38} />}
                 <span style={{flex: "1", minWidth: "0"}}>
                   <span style={{display: "block", fontWeight: "600", fontSize: "14px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
-                    {b.company}
+                    {compr ? b.name : b.company}
                   </span>
                   <span style={{display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: MUTED, minWidth: 0}}>
-                    <span style={{overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0}}>{b.name}{foundHow(b) ? ` · ${foundHow(b)}` : ''}</span>
+                    <span style={{overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0}}>{compr ? (b.company !== b.name ? b.company : b.type) : b.name}{!compr && foundHow(b) ? ` · ${foundHow(b)}` : ''}</span>
                     {aiOf(b)?.source === 'ai' ? <span style={{ flex: 'none', fontSize: 11, fontWeight: 600, color: 'var(--tx-mint-deep, #08694c)', background: 'var(--c-action-soft, #e7f5ef)', borderRadius: 6, padding: '0 4px' }}>AI</span> : null}
                   </span>
                 </span>
                 <span style={{flex: "none"}}>
-                  <StatusChip label={b.status} color={b.statusColor} />
-                  {responseOf(b, aiOf(b)).tireKicker ? <TireChip /> : null}
+                  {compr && signupOf(b) ? <ComprStatusChip s={signupOf(b)!} /> : <StatusChip label={b.status} color={b.statusColor} />}
+                  {!compr && responseOf(b, aiOf(b)).tireKicker ? <TireChip /> : null}
                 </span>
               </div>
+              {compr ? (
+              <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: "7px 10px", minWidth: "0", paddingTop: "1px"}}>
+                <Fact label="Phone" value={b.phone} />
+                <Fact label="Email" value={b.email} />
+                <Fact label="Market" value={b.markets} />
+                <Fact label="Type" value={b.type} />
+                <Fact label="Last activity" value={b.lastActivity} />
+                <Fact label="Plan" value={signupOf(b) ? `${planLabel(signupOf(b)!.tier)}, since ${shortDate(signupOf(b)!.signed_up_at)}` : ''} />
+                {signupOf(b)?.trial === 'stripe' && signupOf(b)?.trial_ends_at ? <Fact label="Trial ends" value={shortDate(signupOf(b)!.trial_ends_at)} /> : null}
+              </div>
+              ) : (
               <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: "7px 10px", minWidth: "0", paddingTop: "1px"}}>
                 <Fact label="Markets" value={b.markets} />
                 <Fact label="Entity" value={b.entity} />
@@ -725,6 +1005,16 @@ export function Buyers({ V }: { V: ClozrView }) {
                 <Fact label="Last activity" value={b.lastActivity} />
                 <Fact label="Date added" value={b.added} />
               </div>
+              )}
+              {canPay && canExtendTrial(signupOf(b)) ? (
+                <div onClick={(e) => e.stopPropagation()} style={{display: "flex", paddingTop: "2px"}}>
+                  <ExtendTrialButton onClick={() => setExtending(b.id)} />
+                </div>
+              ) : canPay && signupOf(b) && !alreadyPaid(signupOf(b)!.tier) ? (
+                <div onClick={(e) => e.stopPropagation()} style={{display: "flex", paddingTop: "2px"}}>
+                  <TrialLinkButton onClick={() => openPay([b.id], TRIAL_DEFAULT_DAYS)} />
+                </div>
+              ) : null}
             </div>
             </React.Fragment>
             );
@@ -740,8 +1030,8 @@ export function Buyers({ V }: { V: ClozrView }) {
               hint={emptyHint}
               failed={!V.crmOk}
               onRetry={V.reloadCrm}
-              action={list === 'realtors' ? undefined : V.addBuyer}
-              actionLabel="Add a buyer"
+              action={paged ? undefined : V.addBuyer}
+              actionLabel={compr ? 'Add a contact' : 'Add a buyer'}
             />
           ) : null}
         </div>
@@ -759,21 +1049,22 @@ export function Buyers({ V }: { V: ClozrView }) {
                 return (
                 <th key={c.key} aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{position: "sticky", top: "0", background: "var(--c-thead)", borderBottom: `1px solid ${LINE}`, padding: "0 14px", height: "38px", textAlign: "left", fontSize: "12px", fontWeight: active ? "600" : "500", color: active ? GREEN : MUTED, whiteSpace: "nowrap"}}>
                   <button type="button" onClick={() => setSort((cur) => toggleSort(cur, c.key, c.key === 'added' || c.key === 'engagement' ? 'desc' : 'asc'))} style={{background: "none", border: 0, padding: 0, font: "inherit", color: "inherit", cursor: "pointer", fontWeight: "inherit"}}>
-                    {c.label}{active ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : ''}
+                    {c.label}{active ? (sort.dir === 'asc' ? <ArrowUp size={12} aria-hidden style={{marginLeft: 3, verticalAlign: "-2px"}} /> : <ArrowDown size={12} aria-hidden style={{marginLeft: 3, verticalAlign: "-2px"}} />) : null}
                   </button>
                 </th>
                 );
               })}
+              {canPay ? <th style={{position: "sticky", top: "0", background: "var(--c-thead)", borderBottom: `1px solid ${LINE}`, padding: "0 10px", height: "38px", width: "80px"}}><span style={{position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)"}}>Actions</span></th> : null}
             </tr>
           </thead>
           <tbody>
             {visible.map((b, b__i) => (
-              <BuyerTableRow key={b.id} b={b} index={b__i} focused={b__i === V.buyerCursor} selected={!!sel[b.id]} shown={shown}
-                ai={aiOf(b)} onOpen={openRow} onToggle={toggleSel} callPhone={callPhone} />
+              <BuyerTableRow key={b.id} b={b} index={b__i} focused={b__i === V.buyerCursor} selected={!!sel[b.id]} shown={shown} compr={compr} canPay={canPay}
+                ai={aiOf(b)} signup={signupOf(b)} running={compr ? running.get(dbId(b.id)) : undefined} onOpen={openRow} onToggle={toggleSel} callPhone={callPhone} onExtend={setExtending} onPay={openPay} />
             ))}
               {more ? (
                 <tr ref={sentinel}>
-                  <td colSpan={shown.length + 1} style={{padding: "0"}}>
+                  <td colSpan={shown.length + 1 + (canPay ? 1 : 0)} style={{padding: "0"}}>
                     <button type="button" onClick={showMore} className="dc2" style={{width: "100%", height: "40px", border: 0, background: "var(--canvas, #fafafa)", color: MUTED, fontSize: "12px", cursor: "pointer", fontVariantNumeric: "tabular-nums"}}>
                       {moreNote}
                     </button>
@@ -782,13 +1073,13 @@ export function Buyers({ V }: { V: ClozrView }) {
               ) : null}
               {rows.length === 0 ? (
                 <EmptyRow
-                  colSpan={shown.length + 1}
+                  colSpan={shown.length + 1 + (canPay ? 1 : 0)}
                   title={emptyTitle}
                   hint={emptyHint}
                   failed={!V.crmOk}
                   onRetry={V.reloadCrm}
-                  action={list === 'realtors' ? undefined : V.addBuyer}
-                  actionLabel="Add a buyer"
+                  action={paged ? undefined : V.addBuyer}
+                  actionLabel={compr ? 'Add a contact' : 'Add a buyer'}
                 />
               ) : null}
           </tbody>
@@ -796,7 +1087,7 @@ export function Buyers({ V }: { V: ClozrView }) {
       </div>
       )}
       <div style={{ flex: 'none', display: mode === 'map' && V.isMobile ? 'none' : 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '10px 16px', borderTop: `1px solid ${LINE}`, background: 'var(--surface, #fff)' }}>
-        {list === 'realtors' && mode !== 'map' ? (
+        {paged && mode !== 'map' ? (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: MUTED }}>
             <button type="button" className="dc2" disabled={V.realtorOffset <= 0 || V.realtorLoading} onClick={V.realtorPrev} style={{ height: '30px', padding: '0 10px', borderRadius: '8px', border: `1px solid ${LINE}`, background: 'var(--surface, #fff)', color: INK, fontSize: '12px', cursor: V.realtorOffset <= 0 ? 'default' : 'pointer', opacity: V.realtorOffset <= 0 ? 0.45 : 1 }}>Previous</button>
             <span style={{ fontVariantNumeric: 'tabular-nums' }}>{V.realtorMatchTotal ? `${(V.realtorOffset + 1).toLocaleString('en-US')}–${Math.min(V.realtorOffset + rows.length, V.realtorMatchTotal).toLocaleString('en-US')} of ${V.realtorMatchTotal.toLocaleString('en-US')}` : '—'}</span>
@@ -810,6 +1101,19 @@ export function Buyers({ V }: { V: ClozrView }) {
         />
       </div>
       </div>
+      {paying ? (
+        <PaymentLinkDialog workspaceId={V.liveIds?.workspaceId ?? null} people={payPeople(paying)} isMobile={!!V.isMobile} onSent={V.reloadCrm} initialTrial={payTrial}
+          onClose={() => { if (paying.length > 1) clearSel(); setPaying(null); }} />
+      ) : null}
+      {extending ? (() => {
+        const b = rows.find((r) => r.id === extending);
+        const s = b ? signupOf(b) : undefined;
+        return b && s ? (
+          <ExtendTrialDialog workspaceId={V.liveIds?.workspaceId ?? null} buyerId={dbId(b.id)} name={b.name} trialEndsAt={s.trial_ends_at} isMobile={!!V.isMobile}
+            onClose={() => setExtending(null)}
+            onExtended={(end) => { setTrialEnds((m) => ({ ...m, [dbId(b.id)]: end })); V.reloadCrm(); }} />
+        ) : null;
+      })() : null}
     </section>
   );
 }

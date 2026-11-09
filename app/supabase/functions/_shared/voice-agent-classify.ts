@@ -29,7 +29,15 @@ const parse = (v: unknown): Record<string, unknown> | null => {
   try { const o = JSON.parse(v); return o && typeof o === 'object' ? o : null; } catch { return null; }
 };
 
-export function classifyCall(turns: unknown): CallFlags {
+/** How ElevenLabs ends a call it handed to a person (metadata.termination_reason). */
+const TRANSFERRED_END = /\btransferred to (?:a )?(?:number|agent)\b/i;
+
+/**
+ * `terminationReason` is the payload's metadata.termination_reason. A transfer that
+ * goes through ends the call there ("Call was transferred to number"), often before
+ * the transfer_to_number call reaches the transcript, so the end reason counts too.
+ */
+export function classifyCall(turns: unknown, terminationReason?: unknown): CallFlags {
   const list = (Array.isArray(turns) ? turns : []) as Turn[];
   const failed = new Set<string>();
   const called = new Set<string>();
@@ -64,7 +72,7 @@ export function classifyCall(turns: unknown): CallFlags {
   }
   const tools = [...called].filter((n) => !failed.has(n)).sort();
   const booked = bookConfirmed ?? (tools.includes('book_appointment') && bookTried);
-  const transferred = tools.includes('transfer_to_number');
+  const transferred = tools.includes('transfer_to_number') || (typeof terminationReason === 'string' && TRANSFERRED_END.test(terminationReason));
   const dnc = tools.includes('mark_do_not_contact') || DNC_WORDS.test(userText) || outcome === 'do_not_contact';
   const notInterested = outcome === 'not_interested' || (!booked && !transferred && NOT_INTERESTED.test(userText));
   return {

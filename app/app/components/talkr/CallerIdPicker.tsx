@@ -10,7 +10,7 @@
 import { liveCallerBlock, type LinePools } from '@/lib/caller-spin';
 import { pushCallerIdPick } from '@/lib/caller-id-link';
 import { loadLinePools } from '@/lib/line-pools';
-import { lineText, useLineNames } from '@/lib/line-names';
+import { lineGroups, lineText, useLineNames } from '@/lib/line-names';
 import { useSession } from '@/lib/session';
 import { useEffect, useState } from 'react';
 import { api, type MeDto } from '@/lib/talkr-web/api';
@@ -129,14 +129,18 @@ export function CallerIdPicker({
         >
           {me.org_numbers.length === 0 && <option value="">No active numbers</option>}
           {(eligible.length > 1 || me.caller_id_mode === LOCAL) && <option value={LOCAL}>Local presence · match the seller&apos;s area code</option>}
-          {me.org_numbers.map((n) => {
-            const blocked = blockOf(n);
-            return (
-              <option key={n.id} value={n.id} disabled={!!blocked}>
-                {option(n)}{blocked ? ` · ${blocked}` : ''}
-              </option>
-            );
-          })}
+          {lineGroups(me.org_numbers, me.id).map((g) => (
+            <optgroup key={g.label} label={g.label}>
+              {g.lines.map((n) => {
+                const blocked = blockOf(n);
+                return (
+                  <option key={n.id} value={n.id} disabled={!!blocked}>
+                    {option(n)}{blocked ? ` · ${blocked}` : ''}
+                  </option>
+                );
+              })}
+            </optgroup>
+          ))}
         </select>
       </div>
       {currentBlock && (

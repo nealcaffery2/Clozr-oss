@@ -12,15 +12,15 @@ export type HeatLabel = 'Hot' | 'Warm' | 'Mild' | 'Cool' | 'Cold';
 export type Heat = { label: HeatLabel; stroke: string; text: string; tint: string };
 
 const SCALE: [number, Heat][] = [
-  [85, { label: 'Hot', stroke: '#dc2626', text: '#b91c1c', tint: '#fee2e2' }],
-  [70, { label: 'Warm', stroke: '#ea580c', text: '#c2410c', tint: '#ffedd5' }],
-  [50, { label: 'Mild', stroke: '#d97706', text: '#b45309', tint: '#fef3c7' }],
-  [30, { label: 'Cool', stroke: '#0284c7', text: '#0369a1', tint: '#e0f2fe' }],
-  [-Infinity, { label: 'Cold', stroke: '#2563eb', text: '#1d4ed8', tint: '#dbeafe' }],
+  [85, { label: 'Hot', stroke: 'var(--tx-hot, #dc2626)', text: '#b91c1c', tint: 'var(--negative-soft, #fee2e2)' }],
+  [70, { label: 'Warm', stroke: '#ea580c', text: '#c2410c', tint: 'var(--tint-orange-2, #ffedd5)' }],
+  [50, { label: 'Mild', stroke: '#d97706', text: '#b45309', tint: 'var(--caution-soft, #fef3c7)' }],
+  [30, { label: 'Cool', stroke: '#0284c7', text: '#0369a1', tint: 'var(--tint-sky, #e0f2fe)' }],
+  [-Infinity, { label: 'Cold', stroke: 'var(--tx-cold, #2563eb)', text: '#1d4ed8', tint: 'var(--tint-blue-2, #dbeafe)' }],
 ];
 
 /** No score yet: grey, never a temperature. */
-export const NO_HEAT = { stroke: '#d4d4d8', text: '#71717a', tint: '#f4f4f5' } as const;
+export const NO_HEAT = { stroke: 'var(--line, #d4d4d8)', text: 'var(--meta, #71717a)', tint: 'var(--surface-2, #f4f4f5)' } as const;
 
 export function heat(n: number): Heat {
   for (const [min, h] of SCALE) if (n >= min) return h;
@@ -41,10 +41,10 @@ export const tempText = (t: string) => (t === 'HOT' ? heat(85).text : t === 'WAR
  */
 export type ResponseTone = { label: string; stroke: string; text: string; tint: string };
 export function responseTone(pct: number | null | undefined, tireKicker = false): ResponseTone {
-  if (tireKicker) return { label: 'Tire kicker', stroke: '#dc2626', text: '#b91c1c', tint: '#fee2e2' };
+  if (tireKicker) return { label: 'Tire kicker', stroke: 'var(--tx-hot, #dc2626)', text: '#b91c1c', tint: 'var(--negative-soft, #fee2e2)' };
   if (pct == null) return { label: 'Nothing sent', ...NO_HEAT };
-  if (pct >= 60) return { label: 'Responsive', stroke: '#16a34a', text: '#15803d', tint: '#dcfce7' };
-  if (pct >= 40) return { label: 'Fair', stroke: '#ca8a04', text: '#a16207', tint: '#fef9c3' };
-  if (pct > 25) return { label: 'Slow', stroke: '#ea580c', text: '#c2410c', tint: '#ffedd5' };
-  return { label: 'Low', stroke: '#dc2626', text: '#b91c1c', tint: '#fee2e2' };
+  if (pct >= 60) return { label: 'Responsive', stroke: '#16a34a', text: '#15803d', tint: 'var(--positive-soft, #dcfce7)' };
+  if (pct >= 40) return { label: 'Fair', stroke: '#ca8a04', text: '#a16207', tint: 'var(--tint-yellow, #fef9c3)' };
+  if (pct > 25) return { label: 'Slow', stroke: '#ea580c', text: '#c2410c', tint: 'var(--tint-orange-2, #ffedd5)' };
+  return { label: 'Low', stroke: 'var(--tx-hot, #dc2626)', text: '#b91c1c', tint: 'var(--negative-soft, #fee2e2)' };
 }

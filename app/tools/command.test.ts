@@ -46,8 +46,6 @@ const same = (iso: string | null, y: number, m: number, d: number, h: number, mi
   check('parse "move kara" → stage', parseCommand('move kara').verb?.id === 'stage');
   check('parse "go deal machine" → go, not the Deal Machine verb', parseCommand('go deal machine').verb?.id === 'go' && parseCommand('go deal machine').rest === 'deal machine');
   check('parse "deal machine" → dealMachine', parseCommand('deal machine').verb?.id === 'dealMachine');
-  check('parse "buyr" → buyr', parseCommand('buyr').verb?.id === 'buyr');
-  check('parse "homefull" → buyr', parseCommand('homefull').verb?.id === 'buyr');
   check('parse "call" alone → call, empty target', parseCommand('call').verb?.id === 'call' && parseCommand('call').rest === '');
   const comp = verbCompletions('ta').map((c) => c.verb.id);
   check('complete "ta" → task', comp.includes('task'), comp);
@@ -129,13 +127,13 @@ const verbsOf = (role: Role | null) => allowedVerbs((s) => canSee(role, s)).map(
 {
   const tc = verbsOf('tc');
   check('TC gets no new lead, new property, filter or offer', !tc.includes('newLead') && !tc.includes('newProperty') && !tc.includes('filter') && !tc.includes('offer'), tc);
-  check('TC gets no buyers, Genius or Deal Machine', !tc.includes('newBuyer') && !tc.includes('genius') && !tc.includes('dealMachine') && !tc.includes('buyr'));
+  check('TC gets no buyers, Genius or Deal Machine', !tc.includes('newBuyer') && !tc.includes('dealMachine'));
   check('TC keeps call, text, task, go', ['call', 'text', 'task', 'go'].every((id) => tc.includes(id as never)));
   const acq = verbsOf('acquisitions');
-  check('acquisitions gets no buyers and no Genius', !acq.includes('newBuyer') && !acq.includes('genius'), acq);
-  check('acquisitions keeps new lead, offer, filter, Deal Machine', ['newLead', 'offer', 'filter', 'dealMachine', 'buyr'].every((id) => acq.includes(id as never)));
+  check('acquisitions gets no buyers and no Genius', !acq.includes('newBuyer'), acq);
+  check('acquisitions keeps new lead, offer, filter, Deal Machine', ['newLead', 'offer', 'filter', 'dealMachine'].every((id) => acq.includes(id as never)));
   const dispo = verbsOf('dispositions');
-  check('dispositions gets buyers, Genius and new lead (full access)', dispo.includes('newBuyer') && dispo.includes('genius') && dispo.includes('buyr') && dispo.includes('newLead'), dispo);
+  check('dispositions gets buyers, Genius and new lead (full access)', dispo.includes('newBuyer') && dispo.includes('newLead'), dispo);
   check('owner gets every verb', verbsOf('owner').length === VERBS.length);
   check('the demo (DEMO_ROLE) gets every verb', verbsOf(DEMO_ROLE).length === VERBS.length);
   check('no role (a membership that did not load) gets only the verbs that need no screen', verbsOf(null).length === VERBS.filter((v) => !v.needs).length);
@@ -154,7 +152,7 @@ const P = (id: string, name: string, phone: string, addr: string, stage: string,
 });
 const base = (role: Role | null, over: Partial<CmdData> = {}): CmdData => {
   const can: Record<string, boolean> = {};
-  for (const s of ['home', 'people', 'person', 'buyers', 'buyer', 'dispo', 'dispoProperty', 'tc', 'genius', 'dealMachine', 'buyr', 'reporting', 'tasks', 'today', 'inbox', 'dialer']) can[s] = canSee(role, s);
+  for (const s of ['home', 'people', 'person', 'buyers', 'buyer', 'dispo', 'dispoProperty', 'tc', 'dealMachine', 'reporting', 'tasks', 'today', 'inbox', 'dialer']) can[s] = canSee(role, s);
   return {
     role, can, screen: 'home', focus: null, focusBuyer: null, recentIds: [],
     people: [
@@ -274,10 +272,10 @@ const flat = (r: ReturnType<typeof buildCommandRows>) => r.groups.flatMap((g) =>
   check('a lead’s own deal is not listed twice beside its record', !flat(buildCommandRows(subs, 'oakview', null)).some((x) => x.action.t === 'deal'), flat(buildCommandRows(subs, 'oakview', null)).map(rowText));
 
   // Vendors are records too.
-  const withVendor = base('owner', { vendors: [{ id: 'v4', name: 'Alamo Title', kind: 'Title Company', find: 'Alamo Title Jen Park 210-555-0199 Title Company' }] });
-  const vendor = flat(buildCommandRows(withVendor, 'alamo', null)).find((x) => x.action.t === 'vendor');
-  check('"alamo": the vendor, opening its contact', vendor?.action.t === 'vendor' && vendor.action.id === 'v4' && vendor.sub === 'Vendor · Title Company', vendor);
-  check('vendors are not offered to a role without People', !flat(buildCommandRows(base('tc', { vendors: withVendor.vendors }), 'alamo', null)).some((x) => x.action.t === 'vendor'));
+  const withVendor = base('owner', { vendors: [{ id: 'v4', name: 'Example Title', kind: 'Title Company', find: 'Example Title Jen Park 210-555-0199 Title Company' }] });
+  const vendor = flat(buildCommandRows(withVendor, 'example title', null)).find((x) => x.action.t === 'vendor');
+  check('"example title": the vendor, opening its contact', vendor?.action.t === 'vendor' && vendor.action.id === 'v4' && vendor.sub === 'Vendor · Title Company', vendor);
+  check('vendors are not offered to a role without People', !flat(buildCommandRows(base('tc', { vendors: withVendor.vendors }), 'example title', null)).some((x) => x.action.t === 'vendor'));
 
   // A task opens the record it is on; one on nobody, Tasks. A deal-only checklist opens that deal's seller.
   const tasked = base('owner', {

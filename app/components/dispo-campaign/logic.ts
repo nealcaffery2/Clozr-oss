@@ -7,6 +7,7 @@ import type { CampaignResults } from '@/lib/dispo-campaign';
 import { type BuyerRow, type Filters, type Settings, filteredOut } from '@/lib/dispo-plan';
 import type { PlannedRecipient } from '@/lib/dispo-campaign';
 import { localHM } from '@/supabase/functions/_shared/dispo-rules';
+import { plainForSms } from '@/lib/carrier-safe';
 
 // ------------------------------------------------------------------ audience
 export type AudienceView = {
@@ -42,9 +43,10 @@ export function audienceView(rows: BuyerRow[], f: Filters, include: Record<numbe
 }
 
 // ----------------------------------------------------------------- the plan
-/** SMS segments a carrier bills for this body: GSM-7 160/153, anything else UCS-2 70/67. */
-export function smsSegments(text: string): number {
-  if (!text) return 0;
+/** SMS segments a carrier bills for this body as sent (look-alike punctuation and ✔️ go plain first, lib/carrier-safe): GSM-7 160/153, anything else UCS-2 70/67. */
+export function smsSegments(raw: string): number {
+  if (!raw) return 0;
+  const text = plainForSms(raw).text;
   const GSM = /^[@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&'()*+,\-./0-9:;<=>?¡A-ZÄÖÑÜ§¿a-zäöñüà^{}\\[~\]|€]*$/;
   if (GSM.test(text)) {
     const len = Array.from(text).reduce((n, ch) => n + ('^{}\\[~]|€'.includes(ch) ? 2 : 1), 0);
@@ -141,6 +143,11 @@ export function cadenceLabel(s: Settings): string {
 }
 
 // ------------------------------------------------------------- merge fields
+/** How a dispo composer fixes a blank deal field: open the facts, or save one on the deal's house. */
+export type FactFix = {
+  openFacts?: () => void;
+  saveFact?: (field: string, value: string) => Promise<{ ok: true } | { ok: false; message?: string }>;
+};
 const TOKEN = /\{\{?\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}?\}/g;
 /**
  * What a template's merge fields will do: `unknown` are sent exactly as typed
@@ -213,6 +220,25 @@ export function funnel(r: Pick<CampaignResults, 'recipients' | 'messages'>, offe
     interested: rs.filter((x) => ['interested', 'offered'].includes(x.status)).length,
     optedOut: rs.filter((x) => x.status === 'opted_out').length,
   };
+}
+
+/**
+ * Buyers in one campaign that nothing has reached yet whose first send is 12+
+ * hours after launch: the VIP and A-list head start, or a launch after the
+ * sending window. Shown on the campaign so a big list on a head start reads
+ * as waiting, not stopped. `at` is when the first of them starts.
+ */
+export function heldBuyers(ms: Pick<CampaignResults['messages'][number], 'recipient_id' | 'status' | 'send_at' | 'sent_at'>[], launchedAt: string): { held: number; at: string | null } {
+  const started = new Set(ms.filter((m) => m.sent_at || m.status === 'sent' || m.status === 'delivered').map((m) => m.recipient_id));
+  const first = new Map<number, number>();
+  for (const m of ms) {
+    if (m.status !== 'queued' || started.has(m.recipient_id)) continue;
+    const t = Date.parse(m.send_at);
+    if (!first.has(m.recipient_id) || t < first.get(m.recipient_id)!) first.set(m.recipient_id, t);
+  }
+  const after = Date.parse(launchedAt) + 12 * 3_600_000;
+  const late = [...first.values()].filter((t) => t >= after);
+  return { held: late.length, at: late.length ? new Date(Math.min(...late)).toISOString() : null };
 }
 
 /** The per-channel table the old results showed, same counting. */

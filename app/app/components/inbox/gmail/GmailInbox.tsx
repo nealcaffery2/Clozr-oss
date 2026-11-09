@@ -42,6 +42,7 @@ import { FileChip, GmailThread } from './GmailThread';
 import { type DealFolder, FOLDERS, FOLDER_OF, useDealTeam, useMailExtras, useScopedThreads, useTeam } from './mail-extras';
 import { GmailCheck, GmailIcon } from './GmailIcon';
 import { GmailRow } from './GmailRow';
+import type { BlastTag } from '@/lib/inbox-blast-tags';
 import { NewContacts, useSuggestionCount } from './NewContacts';
 import { participantsOf, snippetOf } from './format';
 import '@/app/clozr/gmail-inbox.css';
@@ -68,8 +69,10 @@ export type QuickDraft = {
 
 export function GmailInbox({
   workspaceId, demo, userId, email, recordFor, dealFor, deals = [], seesAllMail = false, mergeFor, picker, placeCall, openKey, toast, onCompose, onPicked,
-  mailbox: mailboxProp,
+  mailbox: mailboxProp, blastFor,
 }: {
+  /** CLOZR: the deal blasts that reached a thread's counterpart (lib/use-blast-tags), for the row's green deal label. */
+  blastFor?: (address: string | null) => BlastTag | null;
   /**
    * CLOZR: whose mailbox, picked in the Inbox header (the same switch as
    * texts and calls). Given, the rail's own Mailbox picker is not drawn; the
@@ -627,7 +630,7 @@ export function GmailInbox({
                   // Sample data (lib/inbox-demo): the demo's threads, receipts included.
                   <>{shown.map((t) => (
                     <GmailRow key={t.key} thread={t} senders={participantsOf(t, recordFor)} unread={false} starred={false} checked={checked.has(t.key)}
-                      record={t.counterpart ? recordFor?.(t.counterpart) ?? null : null} deal={null} hasFiles={false}
+                      record={t.counterpart ? recordFor?.(t.counterpart) ?? null : null} deal={null} hasFiles={false} blast={blastFor?.(t.counterpart) ?? null}
                       opened={t.rows.some((r) => extras.receipts.has(r.id)) ? t.rows.some((r) => (extras.receipts.get(r.id)?.opens ?? 0) > 0) : undefined}
                       onOpen={() => open(t)} onCheck={() => toggleOne(t.key)} onStar={() => undefined} onArchive={() => undefined} onToggleRead={() => undefined} />
                   ))}</>
@@ -654,6 +657,7 @@ export function GmailInbox({
                         starred={ids.some((id) => starred.has(id))}
                         checked={checked.has(t.key)}
                         record={t.counterpart ? recordFor?.(t.counterpart) ?? null : null}
+                        blast={blastFor?.(t.counterpart) ?? null}
                         deal={t.deal_id && !dealId ? dealFor?.(t.deal_id) ?? null : null}
                         hasFiles={t.rows.some((r) => (extras.files.get(r.id)?.length ?? 0) > 0)}
                         opened={tracked.length ? tracked.some((r) => (extras.receipts.get(r.id)?.opens ?? 0) > 0) : undefined}

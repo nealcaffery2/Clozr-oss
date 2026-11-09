@@ -5,11 +5,13 @@
 // supabase/functions/_shared/dispo-rules.ts, shared with the edge functions.
 // Sending on a schedule is server-side (migration 53 + dispo-campaign-tick).
 
-import { BULK_BUYER_SOURCE } from './prospect-lists';
+import { BULK_BUYER_SOURCE, isBuyerProspect } from './prospect-lists';
 import { BLACKLIST_MESSAGE, loadBlocked, type BlacklistDb } from './blacklist';
 import { supabase } from './supabase';
-import { talkr, TalkrError, toE164 } from './talkr';
+import { talkr, TalkrError, toE164, type MeDto } from './talkr';
 import { carrierCheck, carrierReport } from './carrier-safe';
+import { phoneTail } from './bell-events';
+import type { PriorSend } from './blast-dupes';
 import type {
   BuyerAutomationRuleRow, DispoCampaignRow, DispoMessageRow, DispoRecipientRow, Json,
 } from './database.types';
@@ -53,7 +55,7 @@ export type CampaignBuyer = {
 export type MatchLite = { deal_id: number; buyer_id: number; score: number; reasons: string[]; status: string; sent_at: string | null; replied_at: string | null; updated_at: string };
 
 export type CampaignData = {
-  deal: DealFacts & { id: number; price: number | null; updatedAt: string; sellerId: number | null };
+  deal: DealFacts & { id: number; price: number | null; updatedAt: string; sellerId: number | null; state?: string | null };
   buyers: CampaignBuyer[];
   matches: MatchLite[];
   offers: { buyer_id: number; deal_id: number | null; amount: number | null; sent_at: string }[];
@@ -112,7 +114,7 @@ async function readCampaignData(workspaceId: number, dealId: number): Promise<Re
     const { data: d, error } = await sb.from('deals').select('id, seller_id, property_id, marketed_price, sold_price, offer_amount, assignment_fee, updated_at').eq('id', dealId).eq('workspace_id', workspaceId).maybeSingle();
     if (error || !d) return { ok: false, message: error?.message ?? 'Deal not found.' };
     const [propR, buyers, matches, offers, closedRaw, runsR, inbound, photosR, templatesR, gmailR, agentsR] = await Promise.all([
-      d.property_id ? sb.from('properties').select('line1, city, zip, lat, lng, sqft, beds, baths, property_type').eq('id', d.property_id).maybeSingle() : Promise.resolve({ data: null }),
+      d.property_id ? sb.from('properties').select('line1, city, state, zip, lat, lng, sqft, beds, baths, property_type').eq('id', d.property_id).maybeSingle() : Promise.resolve({ data: null }),
       all<Any>(() => sb.from('buyers').select('id, name, company, phone, email, status, vip, vetted_at, blacklisted_at, preferred_channel, wants_follow_ups, tags, markets, criteria, buyer_type, notes, source, last_activity_at').eq('workspace_id', workspaceId).isDistinct('source', BULK_BUYER_SOURCE).order('id')),
       all<MatchLite>(() => sb.from('deal_buyer_matches').select('deal_id, buyer_id, score, reasons, status, sent_at, replied_at, updated_at').eq('workspace_id', workspaceId).order('id')),
       all<Any>(() => sb.from('offers').select('buyer_id, deal_id, amount, sent_at').eq('workspace_id', workspaceId).eq('direction', 'inbound').not('buyer_id', 'is', null).order('id')),
@@ -137,7 +139,7 @@ async function readCampaignData(workspaceId: number, dealId: number): Promise<Re
         deal: {
           id: d.id, sellerId: d.seller_id, updatedAt: d.updated_at,
           price: d.marketed_price ?? d.sold_price ?? (d.offer_amount != null ? d.offer_amount + (d.assignment_fee ?? 0) : null),
-          address: p?.line1 ?? '', city: p?.city ?? null, zip: p?.zip ?? null, lat: p?.lat ?? null, lng: p?.lng ?? null,
+          address: p?.line1 ?? '', city: p?.city ?? null, state: p?.state ?? null, zip: p?.zip ?? null, lat: p?.lat ?? null, lng: p?.lng ?? null,
           sqft: p?.sqft ?? null, beds: p?.beds ?? null, baths: p?.baths ?? null, propertyType: p?.property_type ?? null,
         },
         buyers: (buyers as Any[]).map((b) => ({ ...toCampaignBuyer(b), onAgent: onAgent.has(Number(b.id)) })),
@@ -185,6 +187,22 @@ export function realtorInMarket(b: Pick<CampaignBuyer, 'markets' | 'cities' | 'z
   const zip = (deal.zip ?? '').trim();
   if (city && [...b.markets, ...b.cities].some((m) => m.toLowerCase().includes(city))) return true;
   return !!zip && b.zips.some((z) => z.trim() === zip);
+}
+
+// ---- buyer prospects as a segment of a push ------------------------------------------
+/** The area-code buy-box list (a state from the phone's area code) and Buyers › Buyer Prospects. */
+export const isProspectBuyer = (b: Pick<CampaignBuyer, 'tags' | 'buyerType' | 'status' | 'source'>) =>
+  !isRealtor(b) && (b.tags.some((t) => t.trim().toLowerCase() === 'area-code-buybox') || isBuyerProspect(b.tags, b.status, b.source));
+
+/**
+ * Buys where the deal is: its state among their markets, or its city or zip.
+ * A state is all most prospects say, so they score under the match cutoff
+ * and join a push as their own segment instead.
+ */
+export function prospectInMarket(b: Pick<CampaignBuyer, 'markets' | 'cities' | 'zips'>, deal: Pick<DealFacts, 'city' | 'zip'> & { state?: string | null }): boolean {
+  const st = (deal.state ?? '').trim().toUpperCase();
+  if (st && b.markets.some((m) => m.trim().toUpperCase() === st)) return true;
+  return realtorInMarket(b, deal);
 }
 
 /** How many free-agent realtors one push reads at most. Pages of 100 through search_free_agent_buyers (migration 96). */
@@ -327,7 +345,7 @@ export async function launchCampaign(
 }
 
 // ---- results --------------------------------------------------------------------------
-export type CampaignResults = { campaigns: DispoCampaignRow[]; recipients: DispoRecipientRow[]; messages: (Pick<DispoMessageRow, 'id' | 'campaign_id' | 'recipient_id' | 'buyer_id' | 'channel' | 'kind' | 'status' | 'send_at' | 'sent_at' | 'last_error' | 'body' | 'media_urls'> & { subject?: string | null; communication_id?: number | null; /** The address an email went out from (its communications row). */ from_email?: string | null })[]; offers: number };
+export type CampaignResults = { campaigns: DispoCampaignRow[]; recipients: DispoRecipientRow[]; messages: (Pick<DispoMessageRow, 'id' | 'campaign_id' | 'recipient_id' | 'buyer_id' | 'channel' | 'kind' | 'status' | 'send_at' | 'sent_at' | 'last_error' | 'body' | 'media_urls'> & { subject?: string | null; communication_id?: number | null; /** The address an email went out from (its communications row). */ from_email?: string | null; /** The line a text went out from: a blast rotates across the sender's lines. */ from_phone?: string | null })[]; offers: number };
 
 export async function loadResults(workspaceId: number, dealId: number): Promise<Result<CampaignResults>> {
   if (!supabase) return NO_DB;
@@ -338,15 +356,18 @@ export async function loadResults(workspaceId: number, dealId: number): Promise<
     const ids = campaigns.map((c) => c.id);
     const recipients = await all<DispoRecipientRow>(() => sb.from('dispo_campaign_recipients').select('*').in('campaign_id', ids).order('id'));
     const messages = await all<CampaignResults['messages'][number]>(() => sb.from('dispo_campaign_messages').select('id, campaign_id, recipient_id, buyer_id, channel, kind, status, send_at, sent_at, last_error, subject, body, media_urls, communication_id').in('campaign_id', ids).order('id'));
-    // Which address each email went out from, for the per-address results.
-    const commIds = messages.filter((m) => m.channel === 'email' && m.communication_id).map((m) => m.communication_id!);
+    // Which address each email, and which line each text, went out from.
+    const commIds = messages.filter((m) => (m.channel === 'email' || m.channel === 'sms') && m.communication_id).map((m) => m.communication_id!);
     if (commIds.length) {
-      const fromById = new Map<number, string | null>();
+      const fromById = new Map<number, { from_email: string | null; from_phone: string | null }>();
       for (let i = 0; i < commIds.length; i += 200) {
-        const { data } = await sb.from('communications').select('id, from_email').in('id', commIds.slice(i, i + 200));
-        for (const c of (data ?? []) as { id: number; from_email: string | null }[]) fromById.set(c.id, c.from_email);
+        const { data } = await sb.from('communications').select('id, from_email, from_phone').in('id', commIds.slice(i, i + 200));
+        for (const c of (data ?? []) as { id: number; from_email: string | null; from_phone: string | null }[]) fromById.set(c.id, c);
       }
-      for (const m of messages) if (m.communication_id) m.from_email = fromById.get(m.communication_id) ?? null;
+      for (const m of messages) {
+        const c = m.communication_id ? fromById.get(m.communication_id) : undefined;
+        if (c) { m.from_email = c.from_email; m.from_phone = c.from_phone; }
+      }
     }
     // Offers from anyone the campaigns reached. The deal's offers are few, so
     // read them all and count here: an `in` list stopped at 500 recipients.
@@ -361,11 +382,176 @@ export async function loadResults(workspaceId: number, dealId: number): Promise<
   }
 }
 
+/**
+ * Every blast message this deal already sent or delivered, from anyone on the
+ * team, with the sender's first name ("you" for `me`) for the launch warning
+ * (lib/blast-dupes.ts).
+ */
+export async function loadPriorSends(workspaceId: number, dealId: number, me: string | null): Promise<Result<PriorSend[]>> {
+  if (!supabase) return NO_DB;
+  const sb = supabase;
+  try {
+    const { data: cs, error } = await sb.from('dispo_campaigns').select('id, created_by').eq('workspace_id', workspaceId).eq('deal_id', dealId);
+    if (error) throw new Error(error.message);
+    if (!cs?.length) return { ok: true, data: [] };
+    const sends = await all<{ buyer_id: number; campaign_id: number; sent_at: string | null }>(() => sb.from('dispo_campaign_messages').select('buyer_id, campaign_id, sent_at').in('campaign_id', cs.map((c) => c.id)).in('status', ['sent', 'delivered']).order('id'));
+    const users = [...new Set(cs.map((c) => c.created_by).filter((u): u is string => !!u && u !== me))];
+    const names = new Map<string, string>();
+    if (users.length) {
+      const { data } = await sb.from('workspace_members').select('user_id, profiles(full_name)').eq('workspace_id', workspaceId).in('user_id', users);
+      for (const m of (data ?? []) as unknown as { user_id: string; profiles: { full_name: string | null } | null }[]) {
+        const first = (m.profiles?.full_name ?? '').trim().split(/\s+/)[0];
+        if (first) names.set(m.user_id, first);
+      }
+    }
+    const byOf = new Map(cs.map((c) => [c.id, c.created_by && c.created_by === me ? 'you' : names.get(c.created_by ?? '') ?? null]));
+    return { ok: true, data: sends.map((s) => ({ ...s, by: byOf.get(s.campaign_id) ?? null })) };
+  } catch (e) {
+    return { ok: false, message: (e as Error).message };
+  }
+}
+
 export async function setCampaignStatus(id: number, status: DispoCampaignRow['status']): Promise<Result<null>> {
   if (!supabase) return NO_DB;
-  const { error } = await supabase.from('dispo_campaigns').update({ status }).eq('id', id);
+  // A stop says who and when, so a campaign that went quiet can be traced.
+  const by = status === 'cancelled' ? (await supabase.auth.getSession()).data.session?.user.id ?? null : null;
+  const { error } = await supabase.from('dispo_campaigns').update(status === 'cancelled' ? { status, stopped_at: new Date().toISOString(), stopped_by: by } : { status }).eq('id', id);
   if (!error && status === 'cancelled') await supabase.from('dispo_campaign_messages').update({ status: 'cancelled', last_error: 'campaign cancelled' }).eq('campaign_id', id).eq('status', 'queued');
   return error ? { ok: false, message: error.message } : { ok: true, data: null };
+}
+
+// ---- lines and the workspace's blasts ---------------------------------------------------
+
+/**
+ * The lines a blast with no number picked texts from: every Talkr line
+ * assigned to the sender, one line per buyer (dispo-campaign-tick through
+ * plan-tick/lines.ts loadLines). Every one is the sender's, so replies land
+ * in the sender's own Inbox.
+ */
+export const rotationLines = (me: Pick<MeDto, 'id' | 'org_numbers'>) => me.org_numbers.filter((n) => n.assigned_user_id === me.id);
+
+/** Texts sent per line, busiest first. */
+export function lineCounts(messages: Pick<CampaignResults['messages'][number], 'channel' | 'sent_at' | 'from_phone'>[]): { phone: string; sent: number }[] {
+  const by = new Map<string, number>();
+  for (const m of messages) if (m.channel === 'sms' && m.sent_at && m.from_phone) by.set(m.from_phone, (by.get(m.from_phone) ?? 0) + 1);
+  return [...by].map(([phone, sent]) => ({ phone, sent })).sort((a, b) => b.sent - a.sent);
+}
+
+export type Blast = {
+  id: number; deal_id: number; status: DispoCampaignRow['status']; created_at: string; created_by: string | null;
+  /** The deal's street, or "Deal 5367" when it has no property. */
+  address: string;
+  /** The deal's stage (deals.stage), null when unread. */
+  stage: string | null;
+  recipients: number; replied: number; sent: number; queued: number; total: number;
+};
+
+/**
+ * The workspace's deal blasts, newest first: the Campaigns screen (with
+ * progress) and the Inbox's deal filter (without, which only needs addresses).
+ */
+export async function loadBlasts(workspaceId: number, limit = 40, progress = true): Promise<Result<Blast[]>> {
+  if (!supabase) return NO_DB;
+  const sb = supabase;
+  try {
+    const { data: cs, error } = await sb.from('dispo_campaigns').select('id, deal_id, status, created_at, created_by').eq('workspace_id', workspaceId).order('created_at', { ascending: false }).limit(limit);
+    if (error) return { ok: false, message: error.message };
+    const camps = (cs ?? []) as Pick<DispoCampaignRow, 'id' | 'deal_id' | 'status' | 'created_at' | 'created_by'>[];
+    if (!camps.length) return { ok: true, data: [] };
+    const ids = camps.map((c) => c.id);
+    const dealIds = [...new Set(camps.map((c) => c.deal_id))];
+    const [{ data: deals }, recipients, messages] = await Promise.all([
+      sb.from('deals').select('id, property_id, stage').in('id', dealIds),
+      progress ? all<{ campaign_id: number; replied_at: string | null }>(() => sb.from('dispo_campaign_recipients').select('campaign_id, replied_at').in('campaign_id', ids).order('id')) : [],
+      progress ? all<{ campaign_id: number; status: string; sent_at: string | null }>(() => sb.from('dispo_campaign_messages').select('campaign_id, status, sent_at').in('campaign_id', ids).order('id')) : [],
+    ]);
+    const propIds = [...new Set(((deals ?? []) as { property_id: number | null }[]).map((d) => d.property_id).filter((x): x is number => x != null))];
+    const { data: props } = propIds.length ? await sb.from('properties').select('id, line1, city').in('id', propIds) : { data: [] };
+    const street = new Map(((props ?? []) as { id: number; line1: string | null; city: string | null }[]).map((p) => [p.id, [p.line1, p.city].filter(Boolean).join(', ')]));
+    const addrOf = new Map(((deals ?? []) as { id: number; property_id: number | null }[]).map((d) => [d.id, (d.property_id != null && street.get(d.property_id)) || `Deal ${d.id}`]));
+    const stageOf = new Map(((deals ?? []) as { id: number; stage: string | null }[]).map((d) => [d.id, d.stage]));
+    return {
+      ok: true,
+      data: camps.map((c) => {
+        const rs = recipients.filter((r) => r.campaign_id === c.id);
+        const ms = messages.filter((m) => m.campaign_id === c.id);
+        return {
+          ...c, address: addrOf.get(c.deal_id) ?? `Deal ${c.deal_id}`, stage: stageOf.get(c.deal_id) ?? null,
+          recipients: rs.length, replied: rs.filter((r) => r.replied_at).length,
+          sent: ms.filter((m) => m.sent_at).length, queued: ms.filter((m) => m.status === 'queued').length, total: ms.length,
+        };
+      }),
+    };
+  } catch (e) {
+    return { ok: false, message: (e as Error).message };
+  }
+}
+
+/** A deal stage after which its blasts' inbox is put away: a buyer is signed, or the deal is over. */
+export const BLAST_DONE_STAGES: readonly string[] = ['Buyer Under Contract', 'In Escrow', 'Closed', 'Terminated'];
+
+/** One buyer a deal's blasts texted, with the last text either way. */
+export type BlastThread = {
+  convId: string; phone: string; buyerId: number; name: string;
+  /** The last text, theirs or ours. */
+  at: string; body: string; theyLast: boolean;
+  lastTheirsAt: string; lastTheirsText: string;
+};
+
+/**
+ * One deal's inbox: every buyer its blasts texted, newest activity first,
+ * read from CLOZR's own rows (recipients, then their texts since the first
+ * blast). Talkr's thread list stops at the newest 60, so after a 400-text
+ * blast a buyer who wrote back an hour ago was no longer on it (2026-10-23).
+ */
+export async function loadBlastThreads(dealId: number): Promise<Result<BlastThread[]>> {
+  if (!supabase) return NO_DB;
+  const sb = supabase;
+  try {
+    const { data: cs, error } = await sb.from('dispo_campaigns').select('id, created_at').eq('deal_id', dealId);
+    if (error) return { ok: false, message: error.message };
+    const camps = (cs ?? []) as { id: number; created_at: string }[];
+    if (!camps.length) return { ok: true, data: [] };
+    const rs = await all<{ buyer_id: number; phone: string | null; talkr_conversation_id: string | null }>(
+      () => sb.from('dispo_campaign_recipients').select('buyer_id, phone, talkr_conversation_id').in('campaign_id', camps.map((c) => c.id)).not('talkr_conversation_id', 'is', null).order('id'));
+    const since = camps.map((c) => c.created_at).sort()[0];
+    const ids = [...new Set(rs.map((r) => r.buyer_id))];
+    const texts: { buyer_id: number | null; direction: string | null; occurred_at: string; body: string | null }[] = [];
+    const names = new Map<number, string>();
+    // ponytail: 200 buyers per read keeps the URL short; one RPC if a blast ever reaches thousands.
+    for (let i = 0; i < ids.length; i += 200) {
+      const chunk = ids.slice(i, i + 200);
+      const [t, b] = await Promise.all([
+        all<(typeof texts)[number]>(() => sb.from('communications').select('buyer_id, direction, occurred_at, body')
+          .in('buyer_id', chunk).eq('channel', 'sms').gte('occurred_at', since).order('occurred_at', { ascending: false }).order('id')),
+        all<{ id: number; name: string | null; company: string | null }>(() => sb.from('buyers').select('id, name, company').in('id', chunk).order('id')),
+      ]);
+      texts.push(...t);
+      for (const x of b) names.set(x.id, x.name?.trim() || x.company?.trim() || '');
+    }
+    const byBuyer = new Map<number, typeof texts>();
+    for (const t of texts) { if (t.buyer_id == null) continue; const l = byBuyer.get(t.buyer_id) ?? []; l.push(t); byBuyer.set(t.buyer_id, l); }
+    const byPhone = new Map<string, BlastThread>();
+    for (const r of rs) {
+      const mine = byBuyer.get(r.buyer_id) ?? [];
+      const last = mine[0];
+      if (!last || !r.phone) continue;
+      const theirs = mine.find((t) => t.direction === 'inbound');
+      const row: BlastThread = {
+        convId: r.talkr_conversation_id as string, phone: r.phone, buyerId: r.buyer_id,
+        name: names.get(r.buyer_id) || r.phone,
+        at: last.occurred_at, body: last.body ?? '', theyLast: last.direction === 'inbound',
+        lastTheirsAt: theirs?.occurred_at ?? '', lastTheirsText: theirs?.body ?? '',
+      };
+      // One row per number: the same buyer on two of the deal's blasts is one thread.
+      const k = phoneTail(r.phone);
+      const had = byPhone.get(k);
+      if (!had || Date.parse(row.at) > Date.parse(had.at)) byPhone.set(k, row);
+    }
+    return { ok: true, data: [...byPhone.values()].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)) };
+  } catch (e) {
+    return { ok: false, message: (e as Error).message };
+  }
 }
 
 /** A rep's read of a buyer on this deal: interested / not interested (the match status the automations read). */

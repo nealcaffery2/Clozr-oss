@@ -6,6 +6,7 @@ import {
   gapCells, gapLight, grade, laneOf, overall, personLight, recordHref, scaled, stoplightRange, tcCells, tcFileGaps, workdaysBetween,
   type StoplightMetrics, type TcFileRow,
 } from '../lib/stoplight';
+import { parsePath } from '../lib/routes';
 import { tcChecklists } from '../supabase/functions/_shared/tc-checklists';
 
 let failed = 0;
@@ -138,10 +139,20 @@ const cleanFile = tcCells([{ ...file, checklist: ['a34', 'a11', 'a17', 'a22'] }]
 eq('a clean file grades green', personLight(cleanFile, []), 'green');
 
 // Links follow lib/nav-hash.
-eq('TC file link', recordHref({ screen: 'tc', sellerId: 42, dealId: 7 }), '#screen=tc&id=s42&deal=d7&from=reporting');
-eq('lead link', recordHref({ screen: 'person', sellerId: 9 }), '#screen=person&id=s9&from=reporting');
-eq('buyer link', recordHref({ screen: 'buyer', buyerId: 3 }), '#screen=buyer&id=b3&from=reporting');
-eq('demo lead link uses the demo graph id', recordHref({ screen: 'person', sellerId: 1, dealId: 3 }, true), '#screen=person&id=p1&from=reporting');
+eq('TC file link', recordHref({ screen: 'tc', sellerId: 42, dealId: 7 }), '/app/deals/d7/tc');
+eq('TC file link with no deal', recordHref({ screen: 'tc', sellerId: 42 }), '/app/people/s42/tc');
+eq('lead link', recordHref({ screen: 'person', sellerId: 9 }), '/app/people/s9');
+eq('lead link pinned to its deal', recordHref({ screen: 'person', sellerId: 9, dealId: 7 }), '/app/people/s9/d7');
+eq('deal sheet link with no seller', recordHref({ screen: 'dealSheet', sellerId: null, dealId: 7 }), '/app/deals/d7');
+eq('buyer link', recordHref({ screen: 'buyer', buyerId: 3 }), '/app/buyers/b3');
+eq('task with no record opens the task list', recordHref({ screen: 'tasks' }), '/app/tasks');
+eq('demo lead link uses the demo graph id', recordHref({ screen: 'person', sellerId: 1, dealId: 3 }, true), '/demo/people/p1');
+eq('demo task list', recordHref({ screen: 'tasks' }, true), '/demo/tasks');
+// Each link opens the place it names (lib/routes.ts).
+eq('TC file link parses back', parsePath(recordHref({ screen: 'tc', sellerId: 42, dealId: 7 })), { screen: 'tc', id: null, deal: 'd7', tab: null });
+eq('lead link parses back', parsePath(recordHref({ screen: 'person', sellerId: 9, dealId: 7 })), { screen: 'person', id: 's9', deal: 'd7', tab: null });
+eq('buyer link parses back', parsePath(recordHref({ screen: 'buyer', buyerId: 3 })), { screen: 'buyer', id: 'b3', deal: null, tab: null });
+eq('demo lead link parses back', parsePath(recordHref({ screen: 'person', sellerId: 1 }, true), '/demo'), { screen: 'person', id: 'p1', deal: null, tab: null });
 
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
 console.log('\nall passed');

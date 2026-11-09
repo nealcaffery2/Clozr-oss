@@ -11,8 +11,9 @@
  * cannot disagree.
  *
  * Auth: a read-only ingest key named `dashboard` (Settings → Ingest keys), as
- * `Authorization: Bearer clz_…`. The key names the workspace. A signed-in
- * member's JWT is accepted too (for CLOZR itself and for support).
+ * `Authorization: Bearer clz_…` and nowhere else (no `?key=`). The key names
+ * the workspace. A signed-in member's JWT is accepted too (for CLOZR itself
+ * and for support).
  *
  *   GET ?period=<id>          one period (default last-30-days)
  *   GET ?all=true             every period, keyed by id: { periods: { today: {…}, … } }
@@ -24,6 +25,7 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { type SupabaseClient, createClient } from 'jsr:@supabase/supabase-js@2';
 import { ALLOW_HEADERS, HARDENING, clientIp, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import { DEFAULT_TZ, PERIOD_IDS, type Goals, type LeaderboardPayload, type LeaderboardRaw, applyLeaderboardResets, buildLeaderboard } from '../_shared/leaderboard.ts';
+import { everyRowResult } from '../_shared/every-row.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -40,36 +42,36 @@ async function sha256(s: string): Promise<string> {
 
 // deno-lint-ignore no-explicit-any
 type Any = any;
-const COMMS_CAP = 20_000;
 
 /** Every row the engine reads, for one workspace. One read serves every period. */
 async function loadRaw(db: SupabaseClient, ws: number): Promise<{ raw: LeaderboardRaw; settings: Any }> {
-  const [wsQ, membersQ, sellersQ, dealsQ, commsQ, offersQ, apptsQ, buyersQ, linesQ] = await Promise.all([
-    db.from('workspaces').select('settings').eq('id', ws).maybeSingle(),
+  const { data: wsRow } = await db.from('workspaces').select('settings').eq('id', ws).maybeSingle();
+  const settings = wsRow?.settings ?? {};
+  // Paged by id: a bare select stops at PostgREST's 1,000 rows, and a board past that counted a slice.
+  const [membersQ, sellersQ, dealsQ, commsQ, offersQ, apptsQ, buyersQ] = await Promise.all([
     db.from('workspace_members').select('user_id, role, profiles(full_name, email, avatar_url)').eq('workspace_id', ws),
-    db.from('sellers').select('id, created_at, assigned_to, source').eq('workspace_id', ws).is('archived_at', null),
-    db.from('deals').select('id, seller_id, stage, created_at, stage_entered_at, contract_date, close_date, closed_on, owner_id, dispo_rep_id, assignment_fee, dispo_fee, wholesale_fee, marketed_fee, total_cogs, deal_net_profit, market, coordinator').eq('workspace_id', ws),
-    db.from('communications').select('seller_id, buyer_id, rep_id, from_phone, to_phone, channel, direction, occurred_at, duration_s, status').eq('workspace_id', ws).order('occurred_at', { ascending: false }).limit(COMMS_CAP),
-    db.from('offers').select('seller_id, direction, sent_at, created_by').eq('workspace_id', ws),
-    db.from('appointments').select('seller_id, assigned_to, starts_at, created_at, deleted_at').eq('workspace_id', ws),
-    db.from('buyers').select('created_at, created_by').eq('workspace_id', ws),
-    // Whose each team line is: a call with no rep is its line owner's. A miss leaves them uncredited.
-    db.from('rep_phone_numbers').select('phone_e164, user_id, label').eq('workspace_id', ws),
+    everyRowResult<Any>(() => db.from('sellers').select('id, created_at, assigned_to, source').eq('workspace_id', ws).is('archived_at', null).order('id')),
+    everyRowResult<Any>(() => db.from('deals').select('id, seller_id, stage, created_at, stage_entered_at, contract_date, close_date, closed_on, owner_id, dispo_rep_id, assignment_fee, dispo_fee, wholesale_fee, marketed_fee, total_cogs, deal_net_profit, market, coordinator').eq('workspace_id', ws).order('id')),
+    // Grouped in SQL (migration 391): per rep, line owner, seller rep, day, channel and direction, with the board's resets applied.
+    db.rpc('leaderboard_comms', { p_ws: ws, p_tz: typeof settings?.leaderboard_tz === 'string' ? settings.leaderboard_tz : DEFAULT_TZ, p_resets: resetsOf(settings) }),
+    everyRowResult<Any>(() => db.from('offers').select('seller_id, direction, sent_at, created_by').eq('workspace_id', ws).order('id')),
+    everyRowResult<Any>(() => db.from('appointments').select('seller_id, assigned_to, starts_at, created_at, deleted_at').eq('workspace_id', ws).order('id')),
+    everyRowResult<Any>(() => db.from('buyers').select('created_at, created_by').eq('workspace_id', ws).order('id')),
   ]);
   for (const q of [membersQ, sellersQ, dealsQ, commsQ, offersQ]) if (q.error) throw q.error;
   const members = ((membersQ.data ?? []) as Any[]).map((m) => {
     const p = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles;
     return { id: String(m.user_id), name: p?.full_name || 'Teammate', role: String(m.role ?? 'member'), email: p?.email ?? null, avatar: p?.avatar_url ?? null };
   });
+  const grouped = (commsQ.data ?? {}) as { comms?: LeaderboardRaw['comms']; first_touch?: Record<string, string> };
   return {
-    settings: wsQ.data?.settings ?? {},
+    settings,
     raw: {
       members,
       sellers: (sellersQ.data ?? []) as Any,
       deals: (dealsQ.data ?? []) as Any,
-      comms: (commsQ.data ?? []) as Any,
-      commsCapped: (commsQ.data?.length ?? 0) >= COMMS_CAP,
-      lines: ((linesQ.error ? [] : linesQ.data ?? []) as Any[]).map((l) => ({ phone10: String(l.phone_e164).replace(/\D/g, '').slice(-10), user_id: l.user_id ?? null, label: String(l.label ?? '') })),
+      comms: grouped.comms ?? [],
+      firstTouch: grouped.first_touch ?? {},
       offers: (offersQ.data ?? []) as Any,
       appointments: (apptsQ.data ?? []) as Any,
       buyers: (buyersQ.data ?? []) as Any,
@@ -101,7 +103,8 @@ Deno.serve(async (req) => {
 
   const url = new URL(req.url);
   const auth = req.headers.get('authorization') ?? '';
-  const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : (url.searchParams.get('key') ?? '').trim();
+  // Header only: a key in the URL lands in proxy and browser logs.
+  const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : '';
   if (!bearer) return json({ error: 'missing bearer token' }, 401);
 
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });

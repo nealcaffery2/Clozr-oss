@@ -42,6 +42,7 @@ import {
 } from '../_shared/deal-machine-engine.ts';
 import { dealColumns, dealLinks, hasDealFacts, nameIsAddress } from '../_shared/ingest-deal.ts';
 import { hasRoundRobin, roundRobinLead } from '../_shared/round-robin.ts';
+import { cleanEntity, entityKey } from '../_shared/podio-keys.ts';
 
 const DEVICE = 'clozr-cloud';
 const SOURCE = 'deal_machine';
@@ -233,6 +234,29 @@ class Log {
 type Source = { id: number; settings: Any };
 
 const missingFn = (e: { message: string; code?: string }) => /PGRST202|could not find the function/i.test(`${e.code ?? ''} ${e.message}`);
+
+/**
+ * Every listing names the wholesaler selling it, rejected or not: that is the
+ * LLC list Genius searches deeds by to find who they sell to on a double close.
+ * Each name is written once and never overwritten here.
+ */
+function sellerEntity(ws: number, c: Candidate): Any | null {
+  const name = cleanEntity(c.company).name;
+  const key = entityKey(name);
+  if (!name || !key) return null;
+  return {
+    workspace_id: ws, name, name_key: key, kind: 'wholesaler', source: 'investorlift', state: c.state,
+    contact_name: c.contactName, phone: c.phone, email: c.email,
+    meta: { from: 'investorlift', listing: c.url },
+  };
+}
+
+async function noteWholesalers(db: Db, rows: Any[]): Promise<number> {
+  const { data, error } = await db.from('wholesaler_entities')
+    .upsert(rows, { onConflict: 'workspace_id,name_key', ignoreDuplicates: true }).select('id');
+  if (error) console.warn('[deal-machine-cloud] wholesaler_entities', error.message);
+  return data?.length ?? 0;
+}
 
 /**
  * ingest_apply for the property and contact, then the deal row, photos, COMPR
@@ -482,6 +506,7 @@ async function advance(db: Db, ws: number, run: Run, s: Settings, deadline: numb
         log.add('info', name[key], `Judged ${v.scraped}: ${v.valid} real deals, ${v.qualified} clear the MAO, ${v.landed} new in CLOZR.`);
         break;
       }
+      const sellers = new Map<string, Any>();
       for (const item of items) {
         if (Date.now() > deadline) break;
         v.offset++;
@@ -499,6 +524,8 @@ async function advance(db: Db, ws: number, run: Run, s: Settings, deadline: numb
           bump(key === 'facebook' ? 'not a deal post, or older than the window' : 'off market or unreadable');
           continue;
         }
+        const seller = sellerEntity(ws, c);
+        if (seller) sellers.set(seller.name_key, seller);
         if (c.line1) run.cloud.withAddress++;
         if (c.arv !== null) run.cloud.withArv++;
         if (c.asking !== null) run.cloud.withAsking++;
@@ -537,6 +564,10 @@ async function advance(db: Db, ws: number, run: Run, s: Settings, deadline: numb
           v.errors++;
           log.add('error', name[key], `Could not land ${describe(c)}: ${(e as Error).message}`);
         }
+      }
+      if (sellers.size && !run.dryRun) {
+        const added = await noteWholesalers(db, [...sellers.values()]);
+        if (added) log.add('info', name[key], `${added} new wholesaler${added === 1 ? '' : 's'} on the LLC list`);
       }
       await save(db, run);
       await log.flush();

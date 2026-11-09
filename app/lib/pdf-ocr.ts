@@ -90,6 +90,9 @@ export async function ocrPages(doc: PdfDoc, pageNos: number[], onReading?: (page
         try {
           const { data } = await withTimeout(scheduler.addJob('recognize', canvas), 60_000, `Reading page ${p}`);
           out.push(...wordsOf(p, (data as unknown as { lines: OcrLine[] }).lines ?? []));
+        } catch (e) {
+          // One slow or failed page stays unread; it no longer throws away every other page's words.
+          console.warn('OCR page', p, (e as Error).message);
         } finally { canvas.width = canvas.height = 0; }
         onReading?.(++done, pageNos.length);
       }

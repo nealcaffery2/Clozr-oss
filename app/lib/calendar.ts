@@ -11,6 +11,7 @@
 'use client';
 
 import { isFridayIso, localIsoDay } from './deal-close';
+let calendarChannelSeq = 0;
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from './supabase';
 import { nudgeGoogle } from './google';
@@ -23,10 +24,10 @@ export type EventType = 'appointment' | 'walkthrough' | 'closing' | 'call' | 'ta
 
 export const EVENT_TYPES: { key: EventType; label: string; color: string; kind: string }[] = [
   { key: 'appointment', label: 'Appointment', color: '#16a34a', kind: 'Appointment' },
-  { key: 'walkthrough', label: 'Walkthrough', color: '#0A8560', kind: 'Walkthrough' },
+  { key: 'walkthrough', label: 'Walkthrough', color: 'var(--tx-mint, #0a8560)', kind: 'Walkthrough' },
   { key: 'closing', label: 'Closing', color: '#d97706', kind: 'Closing' },
-  { key: 'call', label: 'Call', color: '#2563eb', kind: 'Call' },
-  { key: 'task', label: 'Task due', color: '#71717a', kind: 'Task' },
+  { key: 'call', label: 'Call', color: 'var(--tx-cold, #2563eb)', kind: 'Call' },
+  { key: 'task', label: 'Task due', color: 'var(--meta, #71717a)', kind: 'Task' },
 ];
 
 /** `appointments.kind` is free text (the quick-add offers a few); this is how it lands in a filter. */
@@ -49,6 +50,8 @@ export type Rep = Teammate & { color: string; initials: string };
 export type CalEvent = {
   /** 'a12' for appointment 12, 't5' for task 5 — the keys the grid renders by. */
   id: string;
+  /** A task a plan, a blast or an automation made (it has an enrolment, or nobody created it), not one a person typed in. */
+  auto?: boolean;
   /** deal: a deal's own close date (deals.close_date), read-only here; it is edited on the deal sheet. */
   source: 'appointment' | 'task' | 'deal';
   dbId: number;
@@ -171,7 +174,7 @@ function fromTask(t: TaskRow, sellers: Map<number, SellerLite>): CalEvent {
   const s = t.seller_id ? sellers.get(t.seller_id) : null;
   const start = new Date(t.due_at as string);
   return {
-    id: `t${t.id}`, source: 'task', dbId: t.id,
+    id: `t${t.id}`, source: 'task', dbId: t.id, auto: t.enrollment_id != null || t.created_by == null,
     title: t.title, type: 'task', kind: t.task_type,
     start, end: new Date(start.getTime() + 30 * 60_000), allDay: false,
     repId: t.assigned_to ?? t.created_by ?? null,
@@ -447,7 +450,10 @@ export function useCalendar(workspaceId: number | null, from: Date, to: Date, op
       if (timer.current) window.clearTimeout(timer.current);
       timer.current = window.setTimeout(() => setTick((n) => n + 1), 350);
     };
-    const ch = supabase.channel(`calendar:${workspaceId}`)
+    // One channel per mount: the Calendar screen and a record's calendar both
+    // mount this, and supabase.channel() hands back an existing channel of the
+    // same name, so one's unmount took the other's feed down.
+    const ch = supabase.channel(`calendar:${workspaceId}:${++calendarChannelSeq}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments', filter: `workspace_id=eq.${workspaceId}` }, bump)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `workspace_id=eq.${workspaceId}` }, bump)
       .subscribe();

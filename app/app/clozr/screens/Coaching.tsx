@@ -5,20 +5,25 @@
 
 import React from 'react';
 import type { ClozrView } from '@/app/clozr/view';
-import { SalesManager } from '@/app/components/coaching/SalesManager';
+import { SalesManager, salesManagerBlurb } from '@/app/components/coaching/SalesManager';
+import { ScreenFrame, ScreenHeader } from '@/components/ds/Screen';
 
 export function Coaching({ V }: { V: ClozrView }) {
+  const admin = !!V.reportAdmin;
   return (
-    <section data-screen-label="Coaching" style={{ flex: '1', minWidth: '0', overflow: 'auto', padding: V.isMobile ? '12px 12px 40px' : '16px 20px 40px', background: 'var(--canvas, #fafafa)' }}>
-      <div style={{ maxWidth: 1180, margin: '0 auto' }}>
-        <SalesManager
-          workspaceId={V.liveIds?.workspaceId ?? null}
-          me={V.liveIds?.userId ?? null}
-          admin={!!V.reportAdmin}
-          isMobile={V.isMobile}
-          toast={V.showToast}
-        />
-      </div>
-    </section>
+    <ScreenFrame data-screen-label="Coaching" header={
+      <ScreenHeader title="AI Sales Manager">
+        <p className="ds-prose" style={{ margin: 0, fontSize: '12.5px', color: 'var(--muted, #52525b)' }}>{salesManagerBlurb(admin)}</p>
+      </ScreenHeader>
+    }>
+      <SalesManager
+        titled={false}
+        workspaceId={V.liveIds?.workspaceId ?? null}
+        me={V.liveIds?.userId ?? null}
+        admin={admin}
+        isMobile={V.isMobile}
+        toast={V.showToast}
+      />
+    </ScreenFrame>
   );
 }

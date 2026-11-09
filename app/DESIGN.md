@@ -30,14 +30,19 @@ They are not allowed as decoration in headings.
 
 ## 2. Colour
 
+The neutral rows name the CSS variable in `app/clozr/tokens.css`. Where the two once disagreed the code won (CLAUDE.md), because its darker greys read better on the cool page; this table now matches the code.
+
 | Token | Hex | Role |
 | --- | --- | --- |
-| ink | `#18181b` | Primary text, selected chips, the confirming row action |
-| ink-2 | `#3f3f46` | Secondary text in rows, unselected chip text |
-| muted | `#71717a` | Labels, meta, helper text. 4.8:1 on white; the lightest tone allowed for text that must be read |
-| faint | `#a1a1aa` | Placeholders and disabled only. 2.6:1, so never for information |
-| line | `#e4e4e7` | Card borders, dividers |
-| hair | `#f0f0f1` | Row dividers inside a card |
+| ink (`--ink`) | `#18181b` | Primary text, selected chips, the confirming row action |
+| ink-2 (`--ink-2`) | `#27272a` | Strong secondary text: a value beside its label, the active tab |
+| ink-3 (`--ink-3`) | `#3f3f46` | Secondary text in rows, unselected chip text |
+| muted (`--muted`) | `#52525b` | Labels, meta, helper text. 7.7:1 on white and 6.7:1 on the rail |
+| muted-2 (`--muted-2`) | `#62626c` | Meta on tinted surfaces (bands, rails), 5.2:1 or better there |
+| meta (`--meta`) | `#71717a` | Light meta on white only: 4.8:1 on white but 4.4:1 on the page `#f2f4f8`, so never on the page or a tinted surface. The lightest tone allowed for text that must be read |
+| faint (`--subtle`) | `#a1a1aa` | Placeholders and disabled only. 2.6:1, so never for information |
+| line (`--divider`) | `#e4e4e7` | Card borders, dividers. `--line` `#d4d4d8` is the stronger hairline for icon strokes and unchecked boxes |
+| hair (`--divider-2`) | `#f0f0f1` | Row dividers inside a card |
 | accent (CLOZR green) | `#0A8560` (hover `#08694C`) | The single primary action in a view, focus rings, links, selected state, Genius identity |
 | accent tint | `#E7F5EF` (palest `#F0FAF5`, border `#A7DCC5`) | Selected/SmartMatch badges, selected rows |
 | green | `#0A8560` | Also success, "in your buyers", good number (status marks carry a word or icon so they read apart from the accent) |
@@ -56,15 +61,18 @@ They are not allowed as decoration in headings.
 
 Inter on every platform (`app/layout.tsx` loads it; `globals.css` and `tokens.css --font-sans` put it first), antialiased on the root, the system sans only as a fallback. Dense-tool sizes:
 
-| Role | Size / weight / line-height |
+| Role | Size / weight / colour |
 | --- | --- |
-| Screen title | 15px / 700 / 1.2, tracking −0.015em |
-| Card title, row name | 13.5px / 650 |
-| Body, controls, buttons | 12.5–13px / 500 (buttons 600 when filled) |
-| Label, meta | 11.5px / 500, muted |
-| Badge | 11px / 600 |
+| Screen title (`--fs-title`, `.ds-title`, `ScreenHeader`) | 16px / 700 / `var(--ink)`, line-height 1.2, tracking −0.015em. Exactly one `<h1>` per screen |
+| Figure, a KPI number (`--fs-figure`) | 22px / 650 / `var(--ink)`, tabular-nums, tracking −0.02em. One figure size per screen; the label under it is a meta line |
+| Record name, row name (seller, buyer, thread sender) | 15px / 700 / `var(--ink)` (`.t-name`) |
+| Card title, section title | 13.5px / 650 / `var(--ink)` (`.t-title`) |
+| Body, controls, buttons | 12.5–13px / 500 / `var(--ink-2)` (buttons 600 when filled) |
+| Label, meta, helper | 11.5–12px / 500 / `var(--muted)` (`.t-meta`) |
+| Badge (`--fs-badge`) | 11px / 600, no letter-spacing, sentence case |
 | Smallest allowed | 10.5px, only for ring captions and map attribution |
 
+- A label and its value never share size and colour. The name is the biggest, darkest thing in its row; everything under it steps down in size or weight or colour, usually two of the three.
 - `font-variant-numeric: tabular-nums` on every figure that changes or aligns: prices, counts, scores, page numbers.
 - Sentence case everywhere. Ranges use an en dash (`$90K – $237K`); the ellipsis is one character (`…`).
 - Truncation always has a recovery: a `title`, a tooltip or an expanded state.
@@ -73,13 +81,16 @@ Inter on every platform (`app/layout.tsx` loads it; `globals.css` and `tokens.cs
 ## 4. Space and shape
 
 - 4px grid. Within a group 4–8px; between groups at least twice that (12–16px); section padding 12–16px.
-- Radius by role: badges 6, chips and buttons 8, inputs 8, map controls 10, cards 12–14, sheets 16 at the top only.
+- Radius by role, as tokens: `--r-badge` 6, `--r-control` 8 (chips, buttons, inputs), `--r-map` 10 (map controls), `--r-card` 12 (cards 12–14; `--r` is the 14 end), `--r-sheet` 16 (sheets at the top only, dialogs). The older `--r-sm`, `--r-btn`, `--r-lg` and `--r-xl` are aliases of these roles.
+- One gutter: 20px on a desk, 16px on a phone (`ScreenFrame`). Prose stops at 72ch. List screens are fluid; settings, account and forms are 960px wide (`ScreenFrame width="form"`).
+- Stacking uses the z-index ladder in `tokens.css`, never a bare number: `--z-base` 1, `--z-sticky` 40, `--z-drawer` 46, `--z-toast` 47, `--z-tabbar` 48, `--z-sheet` 50 (its scrim one lower; the docked quick text and email sit here too), `--z-popover` 60 (menus from the chrome), `--z-phone` 65, `--z-dialog` 72 (the command bar, Quick add), `--z-viewer` 80 (the photo viewer), `--z-confirm` 120 (confirms and takeovers over everything). A component's own stacking (a sticky column, a dropdown inside a card) may keep a small local number. Toasts sit under sheets and dialogs, so a notice never covers the sheet in use, and a reminder leaves on its own after 6–8s.
+- Nothing floats over a screen's content: no floating action buttons. Ask CLOZR and the dialer live in the side menu on a desk and the top bar on a phone.
 - Nested radius = outer radius − padding.
 - The layout is dense on purpose. Do not add air to look "premium"; the team scans hundreds of rows.
 
 ## 5. Elevation (beautiful-shadows)
 
-One recipe per surface, never mixed, never tinted except the accent button's own edge.
+One recipe per surface, never mixed, never tinted except the accent button's own edge. These three are the only shadows: `--shadow-ring`, `--shadow-md` and `--shadow-lg` in `tokens.css`. The older `--elev-*` names are aliases (card and key: ring; lifted card, popover, drawer, sticky bar, toast: md); recessed panels and rails draw with their surface colour and border, not a shadow. A pressed control may show a neutral inset (`--elev-press`); that is feedback, not elevation. Hand-written shadows use `rgb(var(--shadow-rgb) / a)`, which is black.
 
 | Name | Use | Value |
 | --- | --- | --- |
@@ -107,7 +118,19 @@ Ask first: how often is this seen? Hundreds of times a day means no animation. T
 
 ## 7. Components
 
-**Buttons** (`btn()` in parts):
+**Shared primitives** (`components/ds`, styled once in `components/ds/ds.css`; reach for these before writing an inline style, and see them side by side at `/playground/ds`):
+- `ScreenHeader` (`Screen.tsx`): every screen's bar. `title` (the one h1), `meta`, `actions` (they wrap, never clip), `back`, `before`, `after`, children for a second row (tabs sit on the border).
+- `ScreenFrame`: the header plus a scrolling body with the one gutter; `width="fluid"` for lists, `"form"` (960) for settings, account and forms. `Prose` caps text at 72ch.
+- `Button` / `ButtonLink` (`Button.tsx`): `kind` primary, solid, ghost or danger; `size` 32 or 28; `icon`, `iconRight`, `busy`. `IconButton`: `label` required, 24/28/32 square, `kind` plain or ghost, at least `--hit-min`.
+- `SectionLabel` and `Badge` (`Text.tsx`): the 11.5/500 muted label; the 11/600 badge with `tone` neutral, accent, ok, warn, danger or info.
+- `EmptyState` (`Empty.tsx`): title, hint, one action. `Empty` draws through it and adds the failed-load state.
+- `Drawer` (`Drawer.tsx`): Notifications, Ask CLOZR and Lane. 400px on the right with the md shadow on a desk; full width between the bars with a scrim on a phone; `--z-drawer` (`layer={1}` for one that opens over another); a head row of icon, title, meta, actions and a named Close.
+- `textTone()` (`lib/text-tone.ts`): a status fill used as text (`#16a34a`, `#d97706`, `#ea580c`, faint grey) returns its `--tx-*` shade. Wrap a data colour with it wherever it colours a word.
+- Photos on a record are a plain thumbnail grid with a count (`components/ui/photo-strip.tsx`), not an illustration.
+
+**Product colours** (COMPR blue, Talkr red, Deal Machine orange, Lane pink) are marks: the icon beside a label, a dot, a logo. They are never a button fill or outline. Call and Text are ghost buttons; red stays for what cannot be undone (and the dialer's Hang up).
+
+**Buttons** (`btn()` in parts, the inline twin of `Button`):
 - `purple` (a historical kind name; it renders CLOZR green `#0A8560`) is the one primary action of a view: Find buyers, Investor comps.
 - `solid` (ink) is a confirming row action: Add to buyers.
 - `ghost` (white, ring shadow) is everything else.
@@ -123,7 +146,7 @@ Ask first: how often is this seen? Hundreds of times a day means no animation. T
 **Icons**:
 - One family.
 - Icon-only buttons have an `aria-label`, and their SVG is `aria-hidden`.
-- Hit targets are at least 24×24; aim for 32 on desktop and 44 on touch.
+- Hit targets are at least 24×24; aim for 32 on desktop and 44 on touch. `--hit-min` is 24px, and 44px under `(pointer: coarse)`; `Button` and `IconButton` read it.
 
 **States**: design loading, empty and error before the happy path.
 - Empty says what to do next, with one action.
@@ -152,7 +175,7 @@ Ask first: how often is this seen? Hundreds of times a day means no animation. T
 
 Before a UI change ships:
 
-1. Nothing from §1 is present.
+1. Nothing from §1 is present. `npx tsx tools/no-design-tells.test.ts` checks tracked caps, glyph icons and inline gradients in `app/app/**/*.tsx` against a baseline that only shrinks.
 2. Every number is tabular and every figure has a unit.
 3. There is one primary action per view.
 4. Contrast has been measured, not guessed.

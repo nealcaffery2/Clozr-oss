@@ -12,12 +12,14 @@
  *            on the message are on, then any one deal in the workspace (a
  *            buyer asking about a different property files there, not on the
  *            deal they already hold); then a street named in the body among
- *            the people's deals; then the seller's latest deal, or the one
- *            deal a buyer, vendor or deal party (title, agent, lender) is on;
- *            last, a body naming exactly one deal in the workspace. Bulk mail
- *            never files on a street alone. A buyer or title company on
- *            several deals with no street named is left for the AI fallback
- *            (`candidates`) rather than guessed.
+ *            the people's deals; then the seller's one house, or the one
+ *            house a buyer, vendor or deal party (title, agent, lender) is on;
+ *            last, a body naming exactly one deal in the workspace, and only
+ *            when someone outside the team is on the message. Bulk mail
+ *            never files on a street alone. Anyone on several houses with no
+ *            street named (a wholesaler partner, a title company) is left for
+ *            the AI fallback (`candidates`) rather than guessed, and a
+ *            subject naming a house no live deal has is never guessed at all.
  *   thread   a message that matches nothing on its own (the title officer's
  *            assistant replying all, a forward to the lender) inherits the
  *            link of the thread it is in: its Gmail thread-mates, the stored
@@ -26,7 +28,8 @@
  *            only what the message's own match left empty.
  *   reroute  routing is re-run as deals change. A row the rules or the AI
  *            filed moves only when a street now names another deal
- *            (`reroute`); a row a person filed never moves.
+ *            (`reroute`), or off an archived deal onto a live one on the same
+ *            house; a row a person filed never moves.
  */
 
 export type Link = {
@@ -173,6 +176,36 @@ export function subjectNames(subject: string, street: string | null): boolean {
   return parts.length >= 3 && Object.values(SUFFIX).includes(last) && hay.includes(` ${parts.slice(0, -1).join(' ')} `);
 }
 
+const SUFFIXES = new Set(Object.values(SUFFIX));
+
+/**
+ * Whether a text names some street address at all ("Re: 1317 E 3rd Street"),
+ * known to the book or not: a house number with a street suffix a few words
+ * after it. A subject that names a house no live deal has is about that
+ * house, so the people on it must not guess another of their deals.
+ */
+export function namesStreet(text: string): boolean {
+  const w = words(text);
+  for (let i = 0; i < w.length; i++) {
+    if (!/^\d+[a-z]?$/.test(w[i])) continue;
+    for (let j = i + 2; j <= i + 4 && j < w.length; j++) if (SUFFIXES.has(w[j])) return true;
+  }
+  return false;
+}
+
+/**
+ * The one house a list of deals is on, duplicates of one property counted as
+ * one (the one furthest along), else null. A wholesaler partner holds dozens
+ * of houses: "their latest deal" is a guess that files mail on the wrong house.
+ */
+export function oneHouse(deals: DealRef[]): DealRef | null {
+  if (!deals.length) return null;
+  const key = (d: DealRef) => (d.property_id != null ? `p${d.property_id}` : d.street ?? `d${d.id}`);
+  const k = key(deals[0]);
+  if (!deals.every((d) => key(d) === k)) return null;
+  return deals.reduce((best, d) => ((d.rank ?? 1) > (best.rank ?? 1) ? d : best));
+}
+
 /**
  * The deal a text names by street: the one deal, or, when several deals share
  * that one street (duplicates of one house), the one furthest along. None when
@@ -213,11 +246,17 @@ export function routeFor(book: Book, addresses: string[], subject: string, bulk 
   const anywhere = (hay: string) => (bulk || !hay ? null : oneNamed(dealsForText(book, hay), hay));
   let why: Why = null;
   let deal: DealRef | null = null;
+  // A subject or file naming a house no live deal has (archived, not in CLOZR
+  // yet) is about that house: no guessing by person, and no AI pick. The
+  // thread it continues can still lend its deal (mergeLink).
+  const otherHouse = namesStreet(subject) || namesStreet(files);
   const byStreet = oneNamed(known, subject) ?? anywhere(subject) ?? oneNamed(known, files) ?? anywhere(files) ?? oneNamed(known, text);
   if (byStreet) { deal = byStreet; why = 'street'; }
-  else if (sellerDeals.length) { deal = sellerDeals[0]; why = 'person'; }
-  else if (others.length === 1) { deal = others[0]; why = 'person'; }
-  else {
+  else if (otherHouse) { /* left open */ }
+  else if (sellerDeals.length) { deal = oneHouse(sellerDeals); why = deal ? 'person' : null; }
+  else if (others.length) { deal = oneHouse(others); why = deal ? 'person' : null; }
+  // Our own people only (an internal note listing houses) never files on a street in the body.
+  else if (theirs.length) {
     const inBody = anywhere(text);
     if (inBody) { deal = inBody; why = 'street'; }
   }
@@ -227,7 +266,7 @@ export function routeFor(book: Book, addresses: string[], subject: string, bulk 
     // A deal found by a street when no one matched brings its seller.
     if (link.seller_id == null && link.buyer_id == null && link.vendor_id == null && deal.seller_id != null && !known.length) link.seller_id = deal.seller_id;
   }
-  return { link, why, candidates: deal || known.length < 2 ? [] : known };
+  return { link, why, candidates: deal || otherHouse || known.length < 2 ? [] : known };
 }
 
 /** The link for one message; see routeFor for the rules and for why a deal was picked. */
@@ -258,10 +297,13 @@ export function conversationKey(book: Pick<Book, 'ours'>, from: string, to: stri
  * person filed ('manual') never moves, and a row filed on a deal that no
  * longer exists is treated as unfiled.
  */
-export function reroute(book: Book, stored: { deal_id: number | null; routed_by?: string | null }, found: Route): boolean {
+export function reroute(book: Book, stored: { deal_id: number | null; property_id?: number | null; routed_by?: string | null }, found: Route): boolean {
   if (stored.routed_by === 'manual') return false;
   if (found.link.deal_id == null || found.link.deal_id === stored.deal_id) return false;
-  if (stored.deal_id == null || !book.deals.has(stored.deal_id)) return true;
+  if (stored.deal_id == null) return true;
+  // An archived deal's mail moves to a live deal on the same house, or where a
+  // street names; never to some other house of the same person.
+  if (!book.deals.has(stored.deal_id)) return found.why === 'street' || (stored.property_id != null && found.link.property_id === stored.property_id);
   return found.why === 'street' && stored.routed_by != null;
 }
 

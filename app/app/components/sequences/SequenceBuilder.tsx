@@ -77,18 +77,24 @@ const ACTIVE = new Set(['pending', 'running', 'waiting']);
 /** A representative seller, so the `/` picker previews read like a real send. */
 const SAMPLE_MERGE_VALUES = sampleMergeFields(null);
 
-function blankStep(type: SequenceStepDto['type']): SequenceStepDto {
+/** A step in the builder: the DTO plus a client key, so React keeps each editor's state with its step when steps move or go. */
+type StepRow = SequenceStepDto & { key: string };
+let keySeq = 0;
+const stepKey = () => 'k' + Date.now().toString(36) + (keySeq++).toString(36);
+const withKey = (step: SequenceStepDto): StepRow => ({ ...step, key: stepKey() });
+
+function blankStep(type: SequenceStepDto['type']): StepRow {
   switch (type) {
     case 'sms':
-      return { type: 'sms', body: '' };
+      return withKey({ type: 'sms', body: '' });
     case 'wait':
-      return { type: 'wait', days: 2, hours: 0 };
+      return withKey({ type: 'wait', days: 2, hours: 0 });
     case 'task':
-      return { type: 'task', title: '', due_in_days: 1 };
+      return withKey({ type: 'task', title: '', due_in_days: 1 });
     case 'status':
-      return { type: 'status', status: '' };
+      return withKey({ type: 'status', status: '' });
     case 'agent':
-      return { type: 'agent', goal: '', allowed: ['send_sms', 'create_task'] };
+      return withKey({ type: 'agent', goal: '', allowed: ['send_sms', 'create_task'] });
   }
 }
 
@@ -135,7 +141,7 @@ export function SequenceBuilder({ id, onOpen, onBack, headerLeft }: { id: string
   // Builder state — the draft being edited, independent of what is saved.
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [steps, setSteps] = useState<SequenceStepDto[]>([blankStep('sms')]);
+  const [steps, setSteps] = useState<StepRow[]>([blankStep('sms')]);
   const [rules, setRules] = useState<SequenceExitRulesDto>(NO_RULES);
   const [routing, setRouting] = useState<SequenceOnCompleteDto>(NO_ROUTING);
   /** The other live sequences, for the routing picker. */
@@ -154,7 +160,7 @@ export function SequenceBuilder({ id, onOpen, onBack, headerLeft }: { id: string
     setSequence(s);
     setName(s.name);
     setDescription(s.description ?? '');
-    setSteps(s.steps.length ? s.steps : [blankStep('sms')]);
+    setSteps(s.steps.length ? s.steps.map(withKey) : [blankStep('sms')]);
     setRules(s.exit_rules ?? { ...NO_RULES, stop_on_reply: false });
     setRouting(s.on_complete ?? NO_ROUTING);
     setDirty(false);
@@ -197,7 +203,7 @@ export function SequenceBuilder({ id, onOpen, onBack, headerLeft }: { id: string
       const r = JSON.parse(raw) as SequenceDraftResultDto;
       setName(r.draft.name);
       setDescription(r.draft.description);
-      setSteps(r.draft.steps);
+      setSteps(r.draft.steps.map(withKey));
       setRules(r.draft.exit_rules);
       setAiNote({ model: r.model, warnings: r.warnings });
       setDirty(true);
@@ -228,7 +234,7 @@ export function SequenceBuilder({ id, onOpen, onBack, headerLeft }: { id: string
   const activeRuns = runs.filter((r) => ACTIVE.has(r.status)).length;
 
   const update = (i: number, next: SequenceStepDto) => {
-    setSteps((prev) => prev.map((s, j) => (j === i ? next : s)));
+    setSteps((prev) => prev.map((s, j) => (j === i ? { ...next, key: s.key } : s)));
     setDirty(true);
   };
   const move = (i: number, dir: -1 | 1) => {
@@ -450,7 +456,7 @@ export function SequenceBuilder({ id, onOpen, onBack, headerLeft }: { id: string
                 )}
                 {steps.map((step, i) => (
                   <StepEditor
-                    key={i}
+                    key={step.key}
                     index={i}
                     step={step}
                     problem={problems[i] ?? null}
@@ -858,7 +864,7 @@ function StepEditor({
       <div className="flex items-center gap-2">
         <span
           className="inline-flex h-5 min-w-5 items-center justify-center px-1.5"
-          style={{ borderRadius: 6, background: 'var(--dark-1)', color: '#fff', font: '700 10px/1 Inter' }}
+          style={{ borderRadius: 6, background: 'var(--dark-1)', color: '#fff', font: '700 11px/1 Inter' }}
         >
           {index + 1}
         </span>
@@ -1066,7 +1072,7 @@ function IconButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex h-6 w-6 items-center justify-center disabled:cursor-not-allowed disabled:opacity-35"
+      className="inline-flex h-6 w-6 items-center justify-center disabled:cursor-not-allowed disabled:opacity-50"
       style={{ borderRadius: 6, border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--muted)', cursor: 'pointer', font: '600 12px/1 Inter' }}
     >
       {children}

@@ -36,6 +36,7 @@ import { UNTRUSTED_RULE, corsFor, fence, jsonWith, rateLimit, serverError, tooMa
 import { tcChecklists } from '../_shared/tc-checklists.ts';
 import { DOC_LABEL, type DocType } from '../_shared/deal-docs.ts';
 import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
 
 type Any = any;
 
@@ -212,6 +213,7 @@ async function listen(admin: SupabaseClient, client: Anthropic, tx: Tx) {
     tools: [TOOL], tool_choice: { type: 'auto' },
     messages: [{ role: 'user', content: prompt(tx, g) }],
   });
+  await recordUsage(admin, { ws: tx.workspace_id, feature: 'lane_listen', model: res.model, usage: res.usage });
   const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
   const updates = ((call?.input as Any)?.updates ?? []) as Any[];
 

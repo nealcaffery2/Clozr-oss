@@ -11,7 +11,7 @@
 
 import { lazy, type FunctionComponent } from 'react';
 import { SkeletonRows } from '@/components/ds/Skeleton';
-import { decodeNavHash } from '@/lib/nav-hash';
+import { routeAt } from '@/lib/routes';
 import { canSee, landingFor, type Role } from '@/lib/team';
 
 type Loader = () => Promise<unknown>;
@@ -27,6 +27,7 @@ const loaders = {
   dispoProperty: () => import('./DispoProperty'),
   buyers: () => import('./Buyers'),
   buyer: () => import('./BuyerRecord'),
+  vendor: () => import('./VendorRecord'),
   tc: () => import('./TransactionCoordination'),
   dealSheet: () => import('./DealSheet'),
   import: () => import('./Import'),
@@ -37,13 +38,13 @@ const loaders = {
   reporting: () => import('./Reporting'),
   leaderboard: () => import('./SalesLeaderboard'),
   coaching: () => import('./Coaching'),
-  account: () => import('./Account'),
+  // Account is drawn inside Settings (You › Account).
+  account: () => import('./Settings'),
   settings: () => import('./Settings'),
   plans: () => import('./ActionPlans'),
   automations: () => import('./Automations'),
   dealMachine: () => import('./DealMachine'),
-  genius: () => import('./Genius'),
-  buyr: () => import('./Buyr'),
+  campaigns: () => import('./Campaigns'),
 } satisfies Record<string, Loader>;
 
 const started = new Map<Loader, Promise<unknown>>();
@@ -72,6 +73,7 @@ export const Dispo = screen(loaders.dispo, 'Dispo');
 export const DispoProperty = screen(loaders.dispoProperty, 'DispoProperty');
 export const Buyers = screen(loaders.buyers, 'Buyers');
 export const BuyerRecord = screen(loaders.buyer, 'BuyerRecord');
+export const VendorRecord = screen(loaders.vendor, 'VendorRecord');
 export const TransactionCoordination = screen(loaders.tc, 'TransactionCoordination');
 export const DealSheet = screen(loaders.dealSheet, 'DealSheet');
 export const Import = screen(loaders.import, 'Import');
@@ -82,13 +84,11 @@ export const Calendar = screen(loaders.calendar, 'Calendar');
 export const Reporting = screen(loaders.reporting, 'Reporting');
 export const SalesLeaderboard = screen(loaders.leaderboard, 'SalesLeaderboard');
 export const Coaching = screen(loaders.coaching, 'Coaching');
-export const Account = screen(loaders.account, 'Account');
 export const Settings = screen(loaders.settings, 'Settings');
 export const ActionPlans = screen(loaders.plans, 'ActionPlans');
 export const Automations = screen(loaders.automations, 'Automations');
 export const DealMachine = screen(loaders.dealMachine, 'DealMachine');
-export const Genius = screen(loaders.genius, 'Genius');
-export const Buyr = screen(loaders.buyr, 'Buyr');
+export const Campaigns = screen(loaders.campaigns, 'Campaigns');
 
 /**
  * After the first screen and the workspace are up: the screen in view (its
@@ -123,13 +123,18 @@ export function preloadScreens(current: string) {
 
 /**
  * The chunk of the screen /app opens on, decided as useClozr's restore
- * decides it: the screen the address names when this role may see it, else
- * the role's landing. With no role yet, the address's screen alone. Null when
+ * decides it: the screen the address names (its path, or an old #screen=
+ * hash or webhook query, lib/routes.ts) when this role may see it, else the
+ * role's landing. With no role yet, the address's screen alone. Null when
  * there is nothing to load: no role and no address, or a screen with no chunk
- * of its own (Contracts).
+ * of its own (Contracts). `where` is the pathname, search and hash; a bare
+ * hash reads as /app.
  */
-export function bootScreen(hash: string, role: Role | null | undefined): keyof typeof loaders | null {
-  const want = decodeNavHash(hash)?.screen;
+export function bootScreen(where: string, role: Role | null | undefined): keyof typeof loaders | null {
+  const at = routeAt(where);
+  // An address that names no screen reads as a screen with no chunk: nothing
+  // extra for a role that sees every screen, the landing for one that doesn't.
+  const want = at.route?.screen ?? (at.bare ? null : '?');
   if (want && (!role || canSee(role, want))) return Object.prototype.hasOwnProperty.call(loaders, want) ? want as keyof typeof loaders : null;
   return role ? landingFor(role) : null;
 }
@@ -140,7 +145,7 @@ export function bootScreen(hash: string, role: Role | null | undefined): keyof t
  * used to start only then.
  */
 export function preloadBootScreen(role: Role | null | undefined) {
-  const k = bootScreen(window.location.hash, role);
+  const k = bootScreen(window.location.pathname + window.location.search + window.location.hash, role);
   if (k) void load(loaders[k] as Loader);
 }
 

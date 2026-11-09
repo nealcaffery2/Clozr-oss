@@ -13,7 +13,7 @@ import { ContractsCard } from '@/components/ContractsCard';
 import { ContractTemplatePicker } from '@/components/ContractTemplatePicker';
 import { DealTeam } from '@/components/DealTeam';
 import { DealFiles } from '@/components/DealFiles';
-import { InteractiveFolderGallery } from '@/components/ui/interactive-folder-gallery';
+import { PhotoStrip } from '@/components/ui/photo-strip';
 import { eyebrow } from '@/app/components/record/ui';
 
 export const MORE_GROUPS: { group: string; keys: SectionKey[] }[] = [
@@ -31,7 +31,7 @@ export function DealTeamBlock({ V }: { V: ClozrView }) {
       ) : (
         <>
           <div style={eyebrow}>Deal team</div>
-          <div style={{ marginTop: '6px', fontSize: '12.5px', color: '#71717a' }}>Title, agents and the rest of the team show here on a signed-in deal.</div>
+          <div style={{ marginTop: '6px', fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>Title, agents and the rest of the team show here on a signed-in deal.</div>
         </>
       )}
     </div>
@@ -50,7 +50,7 @@ export function ContractsBlock({ V }: { V: ClozrView }) {
   const [full, setFull] = useState<number | null | undefined>(undefined);
   if (live?.sellerId == null) {
     return (
-      <div style={{ marginTop: '16px', fontSize: '12.5px', color: '#71717a', padding: '10px 12px', border: '1px dashed #e4e4e7', borderRadius: '9px' }}>
+      <div style={{ marginTop: '16px', fontSize: '12.5px', color: 'var(--meta, #71717a)', padding: '10px 12px', border: '1px dashed var(--divider, #e4e4e7)', borderRadius: '9px' }}>
         Contracts fill from this record once you are signed in.
       </div>
     );
@@ -58,7 +58,7 @@ export function ContractsBlock({ V }: { V: ClozrView }) {
   const seller = { id: live.sellerId, name: V.P.name, email: V.P.email || '', phone: V.P.phone || '', addr: V.P.addr, dealId: live.dealId };
   return (
     <div style={{ marginTop: '16px' }} data-testid="record-contracts">
-      <button type="button" className="dc2" onClick={() => setFull(null)} style={{ display: 'block', marginLeft: 'auto', marginBottom: '6px', height: '26px', padding: '0 10px', borderRadius: '7px', border: '1px solid #e4e4e7', background: '#fff', fontSize: '11.5px', fontWeight: 600, color: '#0A8560', cursor: 'pointer' }}>
+      <button type="button" className="dc2" onClick={() => setFull(null)} style={{ display: 'block', marginLeft: 'auto', marginBottom: '6px', height: '26px', padding: '0 10px', borderRadius: '7px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '11.5px', fontWeight: 600, color: 'var(--tx-mint, #0a8560)', cursor: 'pointer' }}>
         Open contracts full size
       </button>
       <ContractsCard
@@ -94,13 +94,13 @@ export function ContractsBlock({ V }: { V: ClozrView }) {
   );
 }
 
-export function FilesBlock({ V, compact }: { V: ClozrView; compact?: boolean }) {
+export function FilesBlock({ V, compact, hideTitle }: { V: ClozrView; compact?: boolean; hideTitle?: boolean }) {
   const live = V.liveIds;
   // The house the Property card shows (V.P.dealDbId), so its photos and files sit together.
   const dealId = V.P.dealDbId ?? live?.dealId ?? null;
   return (
-    <div style={{ marginTop: compact ? '10px' : '16px' }} data-testid="record-photos-files">
-      <div style={{ ...eyebrow, marginBottom: '8px' }}>Photos and files</div>
+    <div style={{ marginTop: hideTitle ? 0 : compact ? '10px' : '16px' }} data-testid="record-photos-files">
+      {hideTitle ? null : <div style={{ ...eyebrow, marginBottom: '8px' }}>Photos and files</div>}
       {live && dealId != null ? (
         <DealFiles
           key={dealId}
@@ -114,17 +114,15 @@ export function FilesBlock({ V, compact }: { V: ClozrView; compact?: boolean }) 
       ) : (
         <>
           {V.P.photos.length ? (
-            <div style={{ marginBottom: '8px', padding: '6px 0', display: 'flex', justifyContent: 'center', background: 'transparent' }}>
-              <InteractiveFolderGallery
-                size="sm"
+            <div style={{ marginBottom: '8px' }}>
+              <div style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', marginBottom: '6px', fontVariantNumeric: 'tabular-nums' }}>{V.P.photos.length} photo{V.P.photos.length === 1 ? '' : 's'}</div>
+              <PhotoStrip
                 photos={V.P.photos.map((u, i) => ({ id: i, image: u, label: i === 0 ? 'Front' : undefined }))}
-                folderName={`${V.P.photos.length} photo${V.P.photos.length === 1 ? '' : 's'}`}
-                dragHintText="Tap a photo to view · drag down to close"
-                onPhotoClick={(i) => V.openPhotoShow(V.P.addr, V.P.photos, null, i)}
+                onOpen={(i) => V.openPhotoShow(V.P.addr, V.P.photos, null, i)}
               />
             </div>
           ) : null}
-          <div style={{ fontSize: '12.5px', color: '#71717a', padding: '10px 12px', border: '1px dashed #e4e4e7', borderRadius: '9px' }}>
+          <div style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)', padding: '10px 12px', border: '1px dashed var(--divider, #e4e4e7)', borderRadius: '9px' }}>
             Photos, docs and links attach to a deal, so they sit here once this record has one.
           </div>
         </>

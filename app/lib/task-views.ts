@@ -63,9 +63,9 @@ export function dueLabel(due: string, bucket: string): string {
 export function taskLook(done: boolean, due: string, bucket: string): { due: string; dueColor: string; deco: string; textColor: string } {
   return {
     due: done ? due : dueLabel(due, bucket),
-    dueColor: !done && bucket === 'overdue' ? '#dc2626' : /Overdue/.test(due) ? '#dc2626' : /Now|Today/.test(due) ? '#18181b' : '#71717a',
+    dueColor: !done && bucket === 'overdue' ? '#dc2626' : /Overdue/.test(due) ? '#dc2626' : /Now|Today/.test(due) ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)',
     deco: done ? 'line-through' : 'none',
-    textColor: done ? '#a1a1aa' : '#18181b',
+    textColor: done ? 'var(--subtle, #a1a1aa)' : 'var(--ink, #18181b)',
   };
 }
 

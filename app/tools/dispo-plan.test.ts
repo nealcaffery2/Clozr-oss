@@ -32,7 +32,8 @@ const settings: Settings = {
 };
 const fields = { address: '1 Main St', city: 'Dallas', price: '$200,000', property_type: 'SFH' };
 const now = new Date('2026-09-14T15:00:00Z'); // 10:00 Chicago
-const rows = data.buyers.map((b) => buyerRow(b, data));
+// The facts ("about 3 months ago") read the same clock as the plan, or the test ages.
+const rows = data.buyers.map((b) => buyerRow(b, data, now));
 const plan = buildPlan(rows, settings, fields, { repName: 'Morgan Lane', company: 'Acme Homes' }, data, {}, {}, now);
 
 assert.deepEqual(plan.skipped, [{ name: 'Blocked', why: 'blacklisted' }, { name: 'Found', why: 'buyer prospect' }, { name: 'Window Shopper', why: 'blacklisted' }]);
@@ -61,4 +62,28 @@ const picked = buildPlan(rows, settings, fields, { repName: 'Morgan Lane', compa
 assert.ok(picked.recipients.some((r) => r.buyer_id === 5), 'a hand-picked prospect is on the marketing list');
 assert.equal(picked.skipped.some((s) => s.name === 'Found'), false);
 
+// A start time that does not parse plans from now instead of throwing a RangeError.
+for (const startAt of ['10/32/2026 9:00', '2026-13-45T25:00', 'next tuesday']) {
+  const bad = buildPlan(rows, { ...settings, startAt }, fields, { repName: 'Morgan Lane', company: 'Acme Homes' }, data, {}, {}, now);
+  assert.deepEqual(bad.recipients.map((r) => r.messages.map((m) => m.send_at)), plan.recipients.map((r) => r.messages.map((m) => m.send_at)), `unparseable startAt "${startAt}" is now`);
+}
+const later = buildPlan(rows, { ...settings, startAt: '2026-09-15T15:00:00Z' }, fields, { repName: 'Morgan Lane', company: 'Acme Homes' }, data, {}, {}, now);
+assert.ok(Date.parse(later.recipients[0].messages[0].send_at) >= Date.parse('2026-09-15T15:00:00Z'), 'a valid later start still waits for it');
+
 console.log('dispo-plan: all assertions passed');
+
+// VIP head start: a VIP who is skipped (blacklisted, opted out) gets no head
+// start, so nobody else is held back for one. Campaign 12 (2026-11-04) waited
+// 24 h for its one VIP, who had opted out.
+{
+  const vipFirst = { ...settings, vipFirst: { on: true, hours: 24 } };
+  const firstIntro = (p: ReturnType<typeof buildPlan>) => Math.min(...p.recipients.flatMap((r) => r.messages.filter((m) => m.kind === 'intro').map((m) => Date.parse(m.send_at))));
+  // Buyer 1 closed a deal with us (A-list), so they are left off; buyer 3 is blacklisted.
+  const skippedVip = data.buyers.filter((b) => b.id !== 1).map((b) => buyerRow(b.id === 3 ? { ...b, vip: true } : b, data, now));
+  assert.equal(firstIntro(buildPlan(skippedVip, vipFirst, fields, { repName: 'Morgan', company: 'Acme Homes' }, data, {}, {}, now)), now.getTime(), 'a skipped VIP holds no one back');
+  const liveVip = data.buyers.map((b) => buyerRow(b.id === 4 ? { ...b, vip: true } : b, data, now));
+  const held = buildPlan(liveVip, vipFirst, fields, { repName: 'Morgan', company: 'Acme Homes' }, data, {}, {}, now);
+  const intro = (id: number) => Date.parse(held.recipients.find((r) => r.buyer_id === id)!.messages.find((m) => m.kind === 'intro')!.send_at);
+  assert.ok(intro(6) - intro(4) >= 23 * 3_600_000, 'a reachable VIP still gets the head start');
+}
+console.log('dispo-plan vip head start ok');

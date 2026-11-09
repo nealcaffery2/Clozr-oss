@@ -124,6 +124,10 @@ export default function LoginPage() {
       });
     return () => {
       live = false;
+      // The box unmounts with the MFA step; a re-mounted one needs a new widget.
+      const id = widgetId.current;
+      widgetId.current = null;
+      if (id) window.hcaptcha?.remove?.(id);
     };
   }, [showCaptcha]);
 
@@ -255,7 +259,7 @@ export default function LoginPage() {
               </div>
             ) : null}
 
-            <button type="submit" disabled={busy || s.demo || (mode === 'mfa' && code.length < 6)} className="dc3" style={{ width: '100%', height: '40px', borderRadius: '10px', border: '1px solid #0A8560', background: busy || s.demo ? '#7fcbb2' : '#0A8560', color: '#fff', fontSize: '13.5px', fontWeight: 600, cursor: busy || s.demo ? 'not-allowed' : 'pointer' }}>
+            <button type="submit" disabled={busy || s.demo || (mode === 'mfa' && code.length < 6)} className="dc3" style={{ width: '100%', height: '40px', borderRadius: '10px', border: '1px solid #0A8560', background: '#0A8560', opacity: busy || s.demo ? 0.5 : 1, color: '#fff', fontSize: '13.5px', fontWeight: 600, cursor: busy || s.demo ? 'not-allowed' : 'pointer' }}>
               {busy ? 'Working…' : c.submit}
             </button>
           </form>
@@ -281,7 +285,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <p style={{ margin: '16px 2px 0', fontSize: '12px', color: 'var(--subtle, #a1a1aa)', display: 'flex', gap: '14px' }}>
+        <p style={{ margin: '16px 2px 0', fontSize: '12px', color: 'var(--meta, #71717a)', display: 'flex', gap: '14px' }}>
           <a href="/" style={{ color: 'var(--meta, #71717a)' }}>Back to clozr.com</a>
           {/* Still reachable once sign-in works, for anyone who landed here
               wanting a look rather than an account. */}

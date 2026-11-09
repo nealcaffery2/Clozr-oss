@@ -8,6 +8,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { compute, evalFormula, rangeFor, rangeLabel, type EngineRaw, type Result, type Row, type Source } from '@/lib/report-engine';
 import { SUGGESTED, WIDGET_BY_KEY, type Theme, type WidgetDef } from '@/lib/report-catalog';
+import { checkEmbedUrl, embedProblem } from '@/lib/embed-hosts';
 import { updateReport, uid, type Block, type CustomMetric, type ReportDef, type ReportPage, type ReportRow } from '@/lib/report-store';
 import { DateRangePicker, compareLabelOf } from './DateRangePicker';
 import { WidgetDrawer, type DrawerTab, type ElementKind } from './WidgetDrawer';
@@ -122,20 +123,22 @@ export function ReportEditor({ report, raw, data, members, me, workspaceName, me
     const polarity = b.kind === 'widget' ? b.spec.polarity ?? 'up' : b.kind === 'metric' ? b.polarity : 'up';
     const span = { gridColumn: !isMobile && b.w === 2 ? '1 / -1' : undefined };
     if (b.kind === 'element') {
+      // A host the site's CSP does not frame would draw a blank box: say why instead.
+      const embed = b.element === 'embed' ? checkEmbedUrl(b.text) : null;
       return (
         <div key={b.id} style={{ ...span, position: 'relative', outline: isSel ? `2px solid ${ACCENT}` : 'none', borderRadius: '10px' }} className="report-block">
           {b.element === 'title' ? <h3 style={{ margin: '6px 0 0', fontSize: '17px', fontWeight: 700, letterSpacing: '-0.01em', color: theme.title }}>{fill(b.text) || 'Section title'}</h3>
-            : b.element === 'text' ? <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.6, color: '#3f3f46', whiteSpace: 'pre-wrap' }}>{fill(b.text)}</p>
+            : b.element === 'text' ? <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.6, color: 'var(--ink-3, #3f3f46)', whiteSpace: 'pre-wrap' }}>{fill(b.text)}</p>
               : b.element === 'image' ? (b.text ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={b.text} alt="" style={{ maxWidth: '100%', borderRadius: '8px', display: 'block' }} /> : <div style={{ padding: '24px', border: `1px dashed ${LINE}`, borderRadius: '8px', color: MUTED, fontSize: '12.5px', textAlign: 'center' }}>Image URL goes in the panel →</div>)
-                : (b.text ? <iframe src={b.text} title="Embedded page" style={{ width: '100%', height: '320px', border: `1px solid ${LINE}`, borderRadius: '8px' }} /> : <div style={{ padding: '24px', border: `1px dashed ${LINE}`, borderRadius: '8px', color: MUTED, fontSize: '12.5px', textAlign: 'center' }}>Embed URL goes in the panel →</div>)}
+                : (embed?.ok ? <iframe src={embed.url} title="Embedded page" style={{ width: '100%', height: '320px', border: `1px solid ${LINE}`, borderRadius: '8px' }} /> : <div style={{ padding: '24px', border: `1px dashed ${LINE}`, borderRadius: '8px', color: MUTED, fontSize: '12.5px', textAlign: 'center' }}>{(embed && embedProblem(embed)) ?? 'Embed URL goes in the panel →'}</div>)}
           {canEdit ? blockTools(b, page) : null}
         </div>
       );
     }
     return (
-      <div key={b.id} className="report-block" style={{ ...span, position: 'relative', background: '#fff', border: `1px solid ${isSel ? ACCENT : LINE}`, boxShadow: isSel ? `0 0 0 1px ${ACCENT}` : 'none', borderRadius: '10px', padding: '12px 14px', minWidth: 0 }}>
+      <div key={b.id} className="report-block" style={{ ...span, position: 'relative', background: 'var(--surface, #fff)', border: `1px solid ${isSel ? ACCENT : LINE}`, boxShadow: isSel ? `0 0 0 1px ${ACCENT}` : 'none', borderRadius: '10px', padding: '12px 14px', minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '8px' }}>
-          <span style={{ fontSize: '12px', fontWeight: 600, color: '#52525b', letterSpacing: '.01em', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fill(b.title)}</span>
+          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--muted, #52525b)', letterSpacing: '.01em', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fill(b.title)}</span>
           {b.kind === 'widget' && b.spec.datePreset ? <span style={{ fontSize: '10.5px', color: MUTED, whiteSpace: 'nowrap' }}>{b.spec.datePreset}</span> : null}
         </div>
         {r ? <WidgetView chart={b.chart} result={r} theme={theme} polarity={polarity} compareLabel={compareLabel} compact={isMobile} /> : <div style={{ fontSize: '12.5px', color: MUTED, padding: '8px 0' }}>{raw ? 'Computing…' : 'Loading the workspace…'}</div>}
@@ -145,7 +148,7 @@ export function ReportEditor({ report, raw, data, members, me, workspaceName, me
   };
 
   const blockTools = (b: Block, page: ReportPage) => (
-    <div data-no-print className="report-block-tools" style={{ position: 'absolute', top: '6px', right: '6px', display: 'flex', gap: '2px', background: '#fff', border: `1px solid ${LINE}`, borderRadius: '8px', padding: '2px', boxShadow: '0 2px 8px rgba(0,0,0,.08)' }}>
+    <div data-no-print className="report-block-tools" style={{ position: 'absolute', top: '6px', right: '6px', display: 'flex', gap: '2px', background: 'var(--surface, #fff)', border: `1px solid ${LINE}`, borderRadius: '8px', padding: '2px', boxShadow: '0 2px 8px rgba(0,0,0,.08)' }}>
       <button type="button" onClick={() => setSide({ kind: 'config', blockId: b.id })} title="Configure" aria-label="Configure" style={tool}>⚙</button>
       {b.kind !== 'element' || b.element !== 'title' ? <button type="button" onClick={() => setBlock({ ...b, w: b.w === 2 ? 1 : 2 })} title={b.w === 2 ? 'Half width' : 'Full width'} aria-label="Toggle width" style={tool}>⇔</button> : null}
       <button type="button" onClick={() => moveBlock(b.id, -1)} title="Move up" aria-label="Move up" style={tool}>↑</button>
@@ -160,14 +163,14 @@ export function ReportEditor({ report, raw, data, members, me, workspaceName, me
           ) : null}
         </span>
       ) : null}
-      <button type="button" onClick={() => removeBlock(b.id)} title="Remove" aria-label="Remove" style={{ ...tool, color: '#b91c1c' }}>×</button>
+      <button type="button" onClick={() => removeBlock(b.id)} title="Remove" aria-label="Remove" style={{ ...tool, color: 'var(--tx-red, #b91c1c)' }}>×</button>
     </div>
   );
 
   return (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       {/* Top bar */}
-      <div data-no-print style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: '#fff', borderBottom: `1px solid ${LINE}`, flexWrap: 'wrap' }}>
+      <div data-no-print style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: 'var(--surface, #fff)', borderBottom: `1px solid ${LINE}`, flexWrap: 'wrap' }}>
         <button type="button" onClick={leave} style={btn.ghost}>← Back</button>
         {renaming ? (
           <input autoFocus value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} onBlur={() => setRenaming(false)} onKeyDown={(e) => { if (e.key === 'Enter') setRenaming(false); }} aria-label="Report name" style={{ ...field, width: '280px', fontWeight: 700 }} />
@@ -186,8 +189,8 @@ export function ReportEditor({ report, raw, data, members, me, workspaceName, me
       </div>
 
       {/* Toolbar */}
-      <div data-no-print style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', background: '#fff', borderBottom: `1px solid ${LINE}`, flexWrap: 'wrap' }}>
-        {canEdit ? <button type="button" onClick={() => setSide(side?.kind === 'drawer' ? null : { kind: 'drawer', tab: 'widgets' })} style={{ ...btn.primary, background: side?.kind === 'drawer' ? '#27272a' : INK }}>+ Add widget</button> : null}
+      <div data-no-print style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', background: 'var(--surface, #fff)', borderBottom: `1px solid ${LINE}`, flexWrap: 'wrap' }}>
+        {canEdit ? <button type="button" onClick={() => setSide(side?.kind === 'drawer' ? null : { kind: 'drawer', tab: 'widgets' })} style={{ ...btn.primary, background: side?.kind === 'drawer' ? 'var(--ink-2, #27272a)' : INK }}>+ Add widget</button> : null}
         <button type="button" onClick={() => setPerm(true)} style={btn.ghost}>Manage permissions</button>
         <span style={{ position: 'relative' }}>
           <button type="button" onClick={() => setPanel(panel === 'pages' ? null : 'pages')} aria-expanded={panel === 'pages'} style={btn.ghost}>Page list</button>
@@ -200,7 +203,7 @@ export function ReportEditor({ report, raw, data, members, me, workspaceName, me
                   <input value={p.title} onChange={(e) => renamePage(p.id, e.target.value)} disabled={!canEdit} aria-label="Page title" style={{ ...field, height: '28px' }} />
                   <button type="button" disabled={!canEdit || i === 0} onClick={() => movePage(p.id, -1)} aria-label="Move page up" style={{ ...btn.icon, width: '26px', height: '26px' }}>↑</button>
                   <button type="button" disabled={!canEdit || i === def.pages.length - 1} onClick={() => movePage(p.id, 1)} aria-label="Move page down" style={{ ...btn.icon, width: '26px', height: '26px' }}>↓</button>
-                  <button type="button" disabled={!canEdit} onClick={() => removePage(p.id)} aria-label="Remove page" style={{ ...btn.icon, width: '26px', height: '26px', color: '#b91c1c' }}>×</button>
+                  <button type="button" disabled={!canEdit} onClick={() => removePage(p.id)} aria-label="Remove page" style={{ ...btn.icon, width: '26px', height: '26px', color: 'var(--tx-red, #b91c1c)' }}>×</button>
                 </div>
               ))}
               {canEdit ? <button type="button" onClick={addPage} style={{ ...btn.ghost, marginTop: '6px', width: '100%' }}>+ Add page</button> : null}
@@ -228,7 +231,7 @@ export function ReportEditor({ report, raw, data, members, me, workspaceName, me
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         {/* Canvas */}
-        <div style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: isMobile ? '12px 10px 60px' : '20px 24px 60px', background: '#f4f4f5' }} onClick={() => { setPanel(null); setMoveOpen(null); }}>
+        <div style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: isMobile ? '12px 10px 60px' : '20px 24px 60px', background: 'var(--surface-2, #f4f4f5)' }} onClick={() => { setPanel(null); setMoveOpen(null); }}>
           <div data-report-print style={{ maxWidth: '900px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {def.page.showCover ? (
               <section data-report-page style={{ background: def.page.background, border: `1px solid ${LINE}`, borderRadius: '12px', padding: isMobile ? '28px 20px' : '64px 48px', boxShadow: '0 1px 3px rgba(0,0,0,.05)', minHeight: isMobile ? undefined : '300px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: '10px' }}>
@@ -296,4 +299,4 @@ export function ReportEditor({ report, raw, data, members, me, workspaceName, me
   );
 }
 
-const tool: React.CSSProperties = { width: '24px', height: '24px', border: 0, background: 'none', borderRadius: '5px', cursor: 'pointer', color: '#52525b', fontSize: '12px', display: 'inline-grid', placeItems: 'center' };
+const tool: React.CSSProperties = { width: '24px', height: '24px', border: 0, background: 'none', borderRadius: '5px', cursor: 'pointer', color: 'var(--muted, #52525b)', fontSize: '12px', display: 'inline-grid', placeItems: 'center' };

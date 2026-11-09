@@ -22,18 +22,20 @@ import { SECTION_LABEL, activeIndex, fmtClock, type CallSection, type CallSegmen
 import { loadSections, searchCall, type SearchHit } from '@/lib/call-sections';
 import { loadTalkrCallMedia, type CallMedia } from '@/lib/record-suggest';
 import { DEMO_CALL_SECONDS, DEMO_SECTIONS, DEMO_SEGMENTS, demoCallAudio } from '@/lib/call-demo';
+import { levelsFromSamples, waveBars } from '@/lib/call-wave';
 
-const INK = '#18181b';
-const INK2 = '#3f3f46';
-const MUTED = '#71717a';
-const LINE = '#e4e4e7';
-const HAIR = '#f0f0f1';
+const INK = 'var(--ink, #18181b)';
+const INK2 = 'var(--ink-3, #3f3f46)';
+const MUTED = 'var(--meta, #71717a)';
+const LINE = 'var(--divider, #e4e4e7)';
 const ACCENT = '#0A8560';
-const RED = '#b91c1c';
+const RED = 'var(--tx-red, #b91c1c)';
 const RING = '0 0 0 1px rgba(0,0,0,.08), 0 1px 2px -1px rgba(0,0,0,.08), 0 2px 4px 0 rgba(0,0,0,.04)';
 const SPEEDS = [1, 1.25, 1.5, 2] as const;
 const SKIP = 15;
 
+/** Bars across the waveform; three units wide each in the SVG's own box. */
+const WAVE_BARS = 160;
 const CSS = `
 [data-cr] button{font:inherit;cursor:pointer;transition:transform 140ms cubic-bezier(.23,1,.32,1),filter 120ms ease}
 [data-cr] button:active:not(:disabled){transform:scale(.97)}
@@ -42,17 +44,17 @@ const CSS = `
 @media (hover:hover) and (pointer:fine){[data-cr] button:hover:not(:disabled){filter:brightness(.96)}}
 @media (prefers-reduced-motion:reduce){[data-cr] button{transition:none}}
 [data-cr] .cr-line{display:grid;grid-template-columns:44px 64px 1fr;gap:8px;width:100%;text-align:left;border:0;background:transparent;padding:5px 8px;border-radius:6px;color:${INK};font-size:12.5px;line-height:1.5}
-[data-cr] .cr-line[aria-current=true]{background:#f4f4f5;box-shadow:inset 2px 0 0 ${INK}}
+[data-cr] .cr-line[aria-current=true]{background:var(--surface-2, #f4f4f5);box-shadow:inset 2px 0 0 ${INK}}
 @media (max-width:520px){[data-cr] .cr-line{grid-template-columns:40px 1fr}[data-cr] .cr-who{display:none}[data-cr] .cr-q{font-size:16px!important}}
 `;
 
 const iconBtn: React.CSSProperties = {
-  width: 32, height: 32, borderRadius: 8, border: 0, background: '#fff', color: INK, boxShadow: RING,
+  width: 32, height: 32, borderRadius: 8, border: 0, background: 'var(--surface, #fff)', color: INK, boxShadow: RING,
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0,
 };
 const chip = (on: boolean): React.CSSProperties => ({
   height: 28, padding: '0 9px', borderRadius: 8, border: 0, fontSize: 12, fontWeight: 600,
-  background: on ? INK : '#fff', color: on ? '#fff' : INK2, boxShadow: on ? 'none' : RING,
+  background: on ? INK : 'var(--surface, #fff)', color: on ? 'var(--surface, #fff)' : INK2, boxShadow: on ? 'none' : RING,
   fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
 });
 const label: React.CSSProperties = { fontSize: 11.5, fontWeight: 500, color: MUTED };
@@ -69,6 +71,8 @@ export type CallRecordingProps = {
   sectionsSource?: 'ai' | 'keywords' | null;
   contactName?: string | null;
   repName?: string | null;
+  /** The colour the record's label gives this person (heat on a seller, type on a buyer): their bars in the waveform. Ours are CLOZR green. */
+  contactColor?: string | null;
   /** Shown in place of the player when there is no audio. */
   note?: string | null;
   autoPlay?: boolean;
@@ -76,8 +80,31 @@ export type CallRecordingProps = {
   defaultOpen?: boolean;
 };
 
+// A record's feed draws a card per call and each read its recording's
+// loudness at once: the whole file decoded at the device rate (48 kHz float,
+// about 11 MB a minute), several at a time. One decode runs at a time now,
+// resampled to 8 kHz mono, which is plenty for WAVE_BARS bars and a sixth
+// of the memory; a card gone before its turn is skipped.
+let decodeQueue: Promise<unknown> = Promise.resolve();
+function decodeLevels(url: string, wanted: () => boolean): Promise<number[] | null> {
+  const run = async (): Promise<number[] | null> => {
+    if (!wanted()) return null;
+    try {
+      const r = await fetch(url);
+      if (!r.ok || !wanted()) return null;
+      const audio = await new OfflineAudioContext(1, 1, 8000).decodeAudioData(await r.arrayBuffer());
+      return levelsFromSamples(audio.getChannelData(0), WAVE_BARS);
+    } catch {
+      return null; // not readable from here: pace-sized bars instead
+    }
+  };
+  const next = decodeQueue.then(run);
+  decodeQueue = next;
+  return next;
+}
+
 export function CallRecording({
-  audioUrl, segments, estimated = false, durationS, communicationId, sections: storedSections, sectionsSource,
+  audioUrl, segments, estimated = false, durationS, communicationId, sections: storedSections, sectionsSource, contactColor,
   contactName, repName, note, autoPlay = false, defaultOpen = false,
 }: CallRecordingProps) {
   const [open, setOpen] = useState(defaultOpen);
@@ -95,6 +122,21 @@ export function CallRecording({
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<{ list: SearchHit[]; source: 'ai' | 'text'; note: string | null; busy: boolean; asked: string } | null>(null);
   const [showAll, setShowAll] = useState(false);
+  // The recording's loudness per bar (lib/call-wave), read once the browser
+  // can fetch and decode it; a carrier URL without CORS leaves this null and
+  // the bars take their height from how fast each line was spoken.
+  const [levels, setLevels] = useState<number[] | null>(null);
+  useEffect(() => {
+    if (!audioUrl || typeof window === 'undefined' || !('OfflineAudioContext' in window)) return;
+    let alive = true;
+    void decodeLevels(audioUrl, () => alive).then((lv) => {
+      // A silent file (the demo's generated audio, a dead recording) says nothing about loudness: pace-sized bars instead.
+      if (alive && lv && lv.some((v) => v > 0)) setLevels(lv);
+    });
+    return () => { alive = false; };
+  }, [audioUrl]);
+  const bars = useMemo(() => waveBars(segments, dur, WAVE_BARS, levels), [segments, dur, levels]);
+  const theirs = contactColor || INK;
 
   const who = useCallback((s: CallSegment['speaker']) => (
     s === 'rep' ? (repName?.split(' ')[0] || 'Rep') : s === 'contact' ? (contactName?.split(' ')[0] || 'Contact') : 'Speaker'
@@ -179,7 +221,7 @@ export function CallRecording({
   const hasAudio = !!audioUrl && !audioErr;
 
   return (
-    <div data-cr data-testid="call-recording" style={{ border: `1px solid ${LINE}`, borderRadius: 12, background: '#fff', padding: 12, display: 'grid', gap: 10, minWidth: 0 }}>
+    <div data-cr data-testid="call-recording" style={{ border: `1px solid ${LINE}`, borderRadius: 12, background: 'var(--surface, #fff)', padding: 12, display: 'grid', gap: 10, minWidth: 0 }}>
       <style>{CSS}</style>
       {audioUrl ? (
         <audio
@@ -201,7 +243,7 @@ export function CallRecording({
       {/* Transport */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <button type="button" onClick={toggle} disabled={!hasAudio} aria-label={playing ? 'Pause' : 'Play'}
-          style={{ ...iconBtn, background: INK, color: '#fff', boxShadow: 'none' }}>
+          style={{ ...iconBtn, background: INK, color: 'var(--on-dark, #fff)', boxShadow: 'none' }}>
           {playing ? <Pause size={16} strokeWidth={2} aria-hidden fill="currentColor" /> : <Play size={16} strokeWidth={2} aria-hidden fill="currentColor" />}
         </button>
         <button type="button" onClick={() => seek(t - SKIP, playing)} disabled={!hasAudio} aria-label={`Back ${SKIP} seconds`} title={`Back ${SKIP}s`} style={iconBtn}>
@@ -226,11 +268,15 @@ export function CallRecording({
       {dur > 0 ? (
         <div style={{ display: 'grid', gap: 3 }}>
           {segments.length ? (
-            <div aria-hidden style={{ position: 'relative', height: 6, borderRadius: 3, background: HAIR, overflow: 'hidden' }}>
-              {segments.map((s, i) => (
-                <span key={i} style={{ position: 'absolute', top: s.speaker === 'rep' ? 3 : 0, height: 3, left: pct(s.start), width: `max(1px, calc(${pct(Math.max(s.end, s.start + 0.5))} - ${pct(s.start)}))`, background: s.speaker === 'rep' ? MUTED : INK }} />
-              ))}
-            </div>
+            // The waveform: one bar per slice of the call, their colour for them, CLOZR green for us, silence faint; height is loudness.
+            <svg aria-hidden viewBox={`0 0 ${WAVE_BARS * 3} 32`} preserveAspectRatio="none" style={{ display: 'block', width: '100%', height: 32 }}>
+              {bars.map((b, i) => {
+                const h = Math.max(2, b.level * 30);
+                const fill = b.speaker === 'rep' ? ACCENT : b.speaker === 'contact' ? theirs : b.speaker ? MUTED : LINE;
+                const played = ((i + 1) / WAVE_BARS) * dur <= t;
+                return <rect key={i} x={i * 3 + 0.5} y={16 - h / 2} width={2} height={h} rx={1} fill={fill} opacity={played || !hasAudio ? 1 : 0.4} />;
+              })}
+            </svg>
           ) : null}
           <div
             role="slider" tabIndex={hasAudio ? 0 : -1} aria-label="Seek" aria-valuemin={0} aria-valuemax={Math.round(dur)} aria-valuenow={Math.round(t)}
@@ -243,13 +289,13 @@ export function CallRecording({
             {secState.list.map((s, i) => i === 0 ? null : (
               <span key={i} title={`${s.title} · ${fmtClock(s.start)}`} style={{ position: 'absolute', top: 3, height: 12, width: 2, borderRadius: 1, background: ACCENT, left: pct(s.start) }} />
             ))}
-            <span style={{ position: 'absolute', top: 3, width: 12, height: 12, borderRadius: 6, background: '#fff', boxShadow: RING, left: `calc(${pct(t)} - 6px)` }} />
+            <span style={{ position: 'absolute', top: 3, width: 12, height: 12, borderRadius: 6, background: 'var(--surface, #fff)', boxShadow: RING, left: `calc(${pct(t)} - 6px)` }} />
           </div>
           {segments.length ? (
             <div style={{ display: 'flex', gap: 12, fontSize: 11.5, color: MUTED }}>
-              <span><span aria-hidden style={{ display: 'inline-block', width: 8, height: 3, background: INK, verticalAlign: 'middle', marginRight: 4 }} />{who('contact')}</span>
-              <span><span aria-hidden style={{ display: 'inline-block', width: 8, height: 3, background: MUTED, verticalAlign: 'middle', marginRight: 4 }} />{who('rep')}</span>
-              {estimated ? <span style={{ marginLeft: 'auto' }}>Times are estimated from the transcript</span> : null}
+              <span><span aria-hidden style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: theirs, verticalAlign: 'middle', marginRight: 4 }} />{who('contact')}</span>
+              <span><span aria-hidden style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: ACCENT, verticalAlign: 'middle', marginRight: 4 }} />{who('rep')}</span>
+              <span style={{ marginLeft: 'auto' }}>{estimated ? 'Times are estimated from the transcript' : levels ? 'Height is loudness' : 'Height is talking pace'}</span>
             </div>
           ) : null}
         </div>
@@ -287,7 +333,7 @@ export function CallRecording({
               <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Search this call</span>
               <Search size={14} aria-hidden style={{ position: 'absolute', left: 9, top: 9, color: MUTED }} />
               <input className="cr-q" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask the call: where did they mention the roof?"
-                style={{ width: '100%', height: 32, borderRadius: 8, border: 0, boxShadow: RING, padding: '0 10px 0 28px', fontSize: 13, color: INK, background: '#fff' }} />
+                style={{ width: '100%', height: 32, borderRadius: 8, border: 0, boxShadow: RING, padding: '0 10px 0 28px', fontSize: 13, color: INK, background: 'var(--surface, #fff)' }} />
             </label>
             <button type="submit" disabled={!q.trim() || hits?.busy} style={{ ...chip(false), height: 32 }}>{hits?.busy ? 'Searching…' : 'Search'}</button>
           </div>
@@ -364,13 +410,13 @@ export function TalkrCallRecording({ talkrCallId, contactName, autoPlay = false 
 const noSubscribe = () => () => undefined;
 
 /** The /demo record's sample call: silent audio the call's length, a real transcript and stored chapters. */
-export function DemoCallRecording({ contactName }: { contactName?: string | null }) {
+export function DemoCallRecording({ contactName, contactColor }: { contactName?: string | null; contactColor?: string | null }) {
   // Null on the server, the blob URL in the browser, without a hydration mismatch.
   const audio = useSyncExternalStore(noSubscribe, demoCallAudio, () => null);
   return (
     <CallRecording
       audioUrl={audio} segments={DEMO_SEGMENTS} durationS={DEMO_CALL_SECONDS} communicationId={null}
-      sections={DEMO_SECTIONS} sectionsSource="ai" contactName={contactName} repName="Taylor"
+      sections={DEMO_SECTIONS} sectionsSource="ai" contactName={contactName} contactColor={contactColor} repName="Taylor"
     />
   );
 }

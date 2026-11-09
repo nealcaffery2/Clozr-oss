@@ -32,6 +32,7 @@ import {
 import { laneDrive } from './lane';
 import { emailPlain, looksLikeHtml } from './email-html';
 import { supabase } from './supabase';
+import { reportClientError } from './client-errors';
 import { listingUrl } from './dispo';
 import { canonicalPhotos, collectPhotos, isGalleryImage, photosLineUrls, urlsIn } from './house-photos';
 import { contractSla, localIsoDay, plusIsoDays, type ContractSla } from './deal-close';
@@ -42,12 +43,13 @@ import type { ReportRaw } from './reporting';
 import type { OfferGapPersonRow, OfferGapRow } from './database.types';
 import { dealTypeLabel } from './deal-types';
 import { dealMarketLabel, marketLabel, normalizeMarkets, normalizePlace } from './place-names';
-import { BULK_BUYER_SOURCE, PROSPECT_LISTS, prospectListId } from './prospect-lists';
+import { BULK_BUYER_SOURCE, PROSPECT_LISTS, cleanTags, prospectListId } from './prospect-lists';
 import { isTireKicker } from './tire-kicker';
 import { type KeyCol, type Page, keysetRead } from './keyset';
 import { DELTA_MAX_AGE_MS, type RowCache, mergeDelta, newestStamp, sinceOf } from './delta-rows';
 import { vendorSellersByDeal, type SellerPartyRow } from './vendor-sellers';
 import { chunkIds } from './lead-refresh';
+import { onWorkspaceReset } from './active-workspace';
 
 /** The slice of the graph this module can speak for. */
 export type LiveData = {
@@ -114,6 +116,14 @@ export type LiveData = {
 
 const MIN = 60_000;
 
+// One formatter each, made once. `toLocaleDateString('en-US', opts)` builds a
+// new Intl formatter on every call (about 0.1 ms each); over 25,000 tasks and
+// 26,000 buyers that was seconds of one frame on every workspace load.
+const FMT_MONTH_DAY = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+const FMT_WEEKDAY_DAY = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+const FMT_CLOCK = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' });
+const FMT_INT = new Intl.NumberFormat('en-US');
+
 /** Minutes between then and now; the record timelines sort on this. */
 function minutesAgo(iso: string | null): number | null {
   if (!iso) return null;
@@ -130,7 +140,7 @@ export function relative(iso: string | null): string {
   const d = Math.floor(m / (60 * 24));
   if (d === 1) return 'Yesterday';
   if (d < 7) return d + 'd ago';
-  return new Date(iso!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return FMT_MONTH_DAY.format(new Date(iso!));
 }
 
 /** "Today" / "Tomorrow" / "Sep 30" — what the task and calendar rows show. */
@@ -143,8 +153,8 @@ function dayLabel(iso: string | null): string {
   if (days === 0) return 'Today';
   if (days === 1) return 'Tomorrow';
   if (days === -1) return 'Yesterday';
-  if (days < 0) return 'Overdue · ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (days < 0) return 'Overdue · ' + FMT_MONTH_DAY.format(d);
+  return FMT_MONTH_DAY.format(d);
 }
 
 /**
@@ -164,12 +174,14 @@ function dueBucket(iso: string | null): 'overdue' | 'today' | 'upcoming' {
 
 function shortDate(iso: string | null): string {
   if (!iso) return '—';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  // A date-only value ('2026-10-20', a Postgres date) read as UTC midnight is the
+  // evening before in Chicago, so every close date showed one day early.
+  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T12:00:00` : iso);
+  return Number.isNaN(d.getTime()) ? '—' : FMT_MONTH_DAY.format(d);
 }
 
 const money = (n: number | null | undefined) =>
-  n == null ? null : '$' + Math.round(Number(n)).toLocaleString('en-US');
+  n == null ? null : '$' + FMT_INT.format(Math.round(Number(n)));
 
 function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -203,7 +215,7 @@ type PropertyRow = {
   lat?: number | null; lng?: number | null;
 };
 type CommRow = {
-  id: number; seller_id: number | null; deal_id?: number | null; channel: string; direction: string | null;
+  id: number; seller_id: number | null; deal_id?: number | null; property_id?: number | null; channel: string; direction: string | null;
   occurred_at: string; body: string | null; summary: string | null; subject: string | null;
   duration_s: number | null; recording_url: string | null; from_phone: string | null;
   status: string | null; source: string;
@@ -219,6 +231,17 @@ type CommRow = {
   /** Migration 269: the AI agent that sent it, when one did. */
   ai_agent_key?: string | null;
 };
+/**
+ * The deal's own house, embedded on the deals read. Beds, baths, sqft, year
+ * and type come with it: a partner contact carries many deals on one seller
+ * row, so the seller's property is often a different house, and the dispo
+ * blast used to send that house's facts (or none) for this one.
+ */
+export type DealProp = {
+  line1: string; city: string | null; state: string | null; zip: string | null; lat?: number | null; lng?: number | null;
+  beds?: number | string | null; baths?: number | string | null; sqft?: number | null; year_built?: number | null; property_type?: string | null;
+};
+
 type DealRow = {
   /** Migration 118. */
   archived_at?: string | null; archived_reason?: string | null;
@@ -250,7 +273,7 @@ type DealRow = {
   contract_status: string | null; lead_source: string | null; acq_agent: string | null;
   dispo_agent: string | null; lead_manager: string | null; coordinator: string | null;
   /** The deal's house. Embedded on the deals read so the shell does not also page the whole properties table. */
-  properties?: { line1: string; city: string | null; state: string | null; zip: string | null; lat?: number | null; lng?: number | null } | { line1: string; city: string | null; state: string | null; zip: string | null; lat?: number | null; lng?: number | null }[] | null;
+  properties?: DealProp | DealProp[] | null;
 };
 type MatchRow = { id: number; deal_id: number; buyer_id: number; score: number; reasons: string[]; status: string; sent_at: string | null; viewed_at: string | null; replied_at: string | null; updated_at: string };
 export type OfferGap = {
@@ -294,6 +317,8 @@ type VendorRow = {
   notes: string | null;
   /** Migration 80: where this contact works, and whether they are the company's main contact there. */
   city?: string | null; state?: string | null; office_address?: string | null; is_main_poc?: boolean;
+  /** Migration 398: their job title at the company. */
+  title?: string | null;
   /** Migration 91: the source's true count, kept by refresh_vendor_source_stats. */
   deals_brought?: number | null; offers_sent?: number | null; offers_accepted?: number | null; deals_closed?: number | null;
 };
@@ -427,6 +452,7 @@ function mapVendor(v: VendorRow) {
     markets,
     office: v.office_address || '',
     mainPoc: !!v.is_main_poc,
+    title: v.title || '',
     subs: v.deals_brought ?? 0,
     offered: v.offers_sent ?? 0,
     accepted: v.offers_accepted ?? 0,
@@ -534,7 +560,7 @@ function agentOfRow(key: string | null | undefined, agents: Map<string, AgentFac
   return null;
 }
 
-const COMM_COLS = 'id,seller_id,buyer_id,deal_id,channel,direction,occurred_at,body,summary,subject,duration_s,recording_url,from_phone,to_phone,rep_id,status,source,ai_notes,score_overall,from_email,to_email,source_id';
+const COMM_COLS = 'id,seller_id,buyer_id,deal_id,property_id,channel,direction,occurred_at,body,summary,subject,duration_s,recording_url,from_phone,to_phone,rep_id,status,source,ai_notes,score_overall,from_email,to_email,source_id';
 const ACTIVITY_COLS = 'id,entity_type,entity_id,kind,title,body,actor_id,occurred_at';
 /** False once the database says ai_agent_key is missing (the app shipped before migration 269 ran). */
 let agentColumn = true;
@@ -704,6 +730,78 @@ export async function loadBuyerTimeline(
 }
 
 /**
+ * A vendor's history: messages filed on them (communications.vendor_id) or
+ * to and from their phone or email, and the deals they are on (a deal team
+ * seat, or the title company on the deal), newest first.
+ */
+export async function loadVendorTimeline(
+  workspaceId: number,
+  v: { id: number; name: string; phone: string | null; email: string | null },
+  repName: (id: string | null) => string,
+): Promise<TimelineEntry[] | null> {
+  if (!supabase) return null;
+  const sb = supabase;
+  const base = (a: boolean) => sb.from('communications').select(commCols(a)).eq('workspace_id', workspaceId);
+  const comms = (f: (q: ReturnType<typeof base>) => ReturnType<typeof base>) => withAgentColumn((a) => f(base(a)).order('occurred_at', { ascending: false }).limit(300));
+  const phone = /^\+\d{8,15}$/.test(v.phone ?? '') ? v.phone! : null;
+  // ilike, so a capitalized address still matches; _ and % are literal here.
+  const email = v.email?.trim() ? v.email.trim().replace(/[\\%_]/g, (c) => '\\' + c) : null;
+  const none = Promise.resolve({ data: [] as unknown[], error: null });
+  const [byId, fromPh, toPh, fromEm, toEm, parties, titled, lines, agents] = await Promise.all([
+    comms((q) => q.eq('vendor_id', v.id)),
+    phone ? comms((q) => q.eq('from_phone', phone)) : none,
+    phone ? comms((q) => q.eq('to_phone', phone)) : none,
+    email ? comms((q) => q.ilike('from_email', email)) : none,
+    email ? comms((q) => q.ilike('to_email', '%' + email + '%')) : none,
+    sb.from('deal_parties').select('deal_id,role,created_at').eq('workspace_id', workspaceId).eq('vendor_id', v.id),
+    sb.from('deals').select('id').eq('workspace_id', workspaceId).eq('title_vendor_id', v.id),
+    lineLabels(workspaceId),
+    agentFaces(workspaceId),
+  ]);
+  if (byId.error) return null;
+  const sentBy = sentByFor(lines, repName);
+  const seen = new Set<number>();
+  const rows = [byId, fromPh, toPh, fromEm, toEm].flatMap((r) => (r.data ?? []) as unknown as CommRow[])
+    .filter((c) => !seen.has(c.id) && seen.add(c.id));
+  // Their side of a call or text is them, not a bare number.
+  const msgs = rows.map((c) => {
+    const e = commTimeline(c, new Map(), undefined, sentBy, agents);
+    return { at: c.occurred_at, e: { ...e, who: e.who === c.from_phone ? v.name : e.who, entity: 'v' + v.id } };
+  });
+  // Deals: each once, with every seat they hold on it.
+  const seats = new Map<number, { roles: string[]; at: string | null }>();
+  for (const p of (parties.data ?? []) as { deal_id: number; role: string; created_at: string | null }[]) {
+    const s = seats.get(p.deal_id) ?? { roles: [], at: p.created_at };
+    s.roles.push(p.role);
+    seats.set(p.deal_id, s);
+  }
+  for (const d of (titled.data ?? []) as { id: number }[]) {
+    const s = seats.get(d.id) ?? { roles: [], at: null };
+    if (!s.roles.includes('title')) s.roles.push('title');
+    seats.set(d.id, s);
+  }
+  const dealRows = seats.size
+    ? ((await sb.from('deals').select('id,stage,created_at,properties(line1,city,state)').in('id', [...seats.keys()])).data ?? []) as unknown as
+      { id: number; stage: string | null; created_at: string; properties: { line1: string | null; city: string | null; state: string | null } | null }[]
+    : [];
+  const deals = dealRows.map((d) => {
+    const s = seats.get(d.id)!;
+    const at = s.at ?? d.created_at;
+    const where = [d.properties?.line1, d.properties?.city].filter(Boolean).join(', ') || 'Deal ' + d.id;
+    return {
+      at,
+      e: {
+        id: 'vd' + d.id, type: 'deal', user: null, who: 'CLOZR', time: relative(at),
+        title: 'On deal · ' + where,
+        body: [s.roles.map((r) => r.charAt(0).toUpperCase() + r.slice(1)).join(', '), d.stage].filter(Boolean).join(' · '),
+        dealId: did(d.id), entity: 'v' + v.id,
+      } as TimelineEntry,
+    };
+  });
+  return [...msgs, ...deals].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).map((x) => ({ ...x.e, at: x.at }));
+}
+
+/**
  * Texts with one number that did not go through Talkr — the team's smrtPhone
  * history from Podio, mostly — newest 300. The Inbox thread is Talkr's own
  * store, which only has what Talkr carried, so without these a contact
@@ -838,6 +936,9 @@ function commTimeline(c: CommRow, sellerName: Map<number, string>, ours: Set<str
     ...(c.ai_notes?.summary || c.body || c.summary ? { body: c.ai_notes?.summary || c.summary || c.body || '' } : {}),
     ...(c.seller_id ? { entity: sid(c.seller_id) } : c.buyer_id ? { entity: 'b' + c.buyer_id } : {}),
     ...(c.deal_id ? { dealId: did(c.deal_id) } : {}),
+    ...(c.property_id ? { propertyId: String(c.property_id) } : {}),
+    // A recorded call stays on the record; one logged by hand can be deleted (lib/crm-write deleteCallLog).
+    ...(c.channel === 'call' && c.recording_url ? { recording: true } : {}),
     ...(c.channel === 'email' ? {
       email: {
         subject: c.subject || '(no subject)',
@@ -891,7 +992,7 @@ function mapPerson(s: SellerRow, last: LastComm | null, nextTask: TaskRow | unde
     offer: money(deal?.offer_amount),
     created: shortDate(s.created_at),
     ...(s.created_at ? { createdAt: s.created_at } : {}),
-    tags: s.tags ?? [],
+    tags: cleanTags(s.tags),
     // The Deals and Dispo Market menus are built from this, so it is one
     // label per place: "Charlotte, NC". A state-only market uses the
     // property's city. A deal's own market names the place; the property's
@@ -954,7 +1055,7 @@ export function dealRank(d: { stage?: string | null; id: number | string; contra
   return tier + when / 1e3 + Number(String(d.id).replace(/\D/g, '')) / 1e9;
 }
 
-function mapDeal(d: DealRow, staleDays: number, prop?: { line1: string; city: string | null; state: string | null; zip: string | null; lat?: number | null; lng?: number | null }): Deal {
+function mapDeal(d: DealRow, staleDays: number, prop?: DealProp): Deal {
   const n = (v: number | null) => (v == null ? null : Number(v));
   // The fee actually earned when dispo closed it, else what it was marketed at.
   const assignment = n(d.dispo_fee) ?? n(d.assignment_fee) ?? n(d.marketed_fee);
@@ -980,6 +1081,7 @@ function mapDeal(d: DealRow, staleDays: number, prop?: { line1: string; city: st
     assignment,
     profit: assignment,
     close: d.close_date ? shortDate(d.close_date) : null,
+    closeIso: d.close_date ?? null,
     optionEndsOn: d.option_ends_on ?? null,
     buyerOptionEndsOn: d.buyer_option_ends_on ?? null,
     daysInStage: inStage,
@@ -997,6 +1099,8 @@ function mapDeal(d: DealRow, staleDays: number, prop?: { line1: string; city: st
     ...(prop ? { addr: prop.line1, city: normalizePlace({ city: prop.city, state: prop.state }).city ?? '', st: prop.state ?? '', zip: prop.zip ?? '' } : {}),
     ...(prop?.lat != null && prop?.lng != null ? { lat: Number(prop.lat), lng: Number(prop.lng) } : {}),
     ...(d.property_id != null ? { propertyId: String(d.property_id) } : {}),
+    // Its facts, read as the record reads them (mapProperty): a null is a 0.
+    ...(prop ? { home: { beds: Number(prop.beds ?? 0), baths: Number(prop.baths ?? 0), sqft: prop.sqft ?? 0, year: prop.year_built ?? 0, type: prop.property_type || '—' } } : {}),
     leadStage: d.lead_stage, asking: n(d.asking_price), submittedAt: d.submitted_at, targetAssignment: n(d.target_assignment),
     marketing: { headline: d.marketing_headline, description: d.marketing_description, url: d.marketing_url, garage: n(d.garage_spaces) },
     tracker: {
@@ -1024,6 +1128,16 @@ function byBuyer<T>(rows: T[], idOf: (row: T) => number | null): Map<number, T[]
 
 /** A buyer_scores row: the response rate and the counts behind it (touches sent, answered, offers, closed). */
 type ResponseScore = { buyer_id: number; response_rate: number | null; stats: { touches?: number; answered?: number; offers?: number; closed?: number } | null };
+
+/** Each buyer's last mapping by id, the row and the rest it was made from (see the buyers list in loadWorkspace). */
+const mappedBuyers = new Map<number, { row: BuyerRow; sig: string; buyer: Buyer & { assigned: string | null } }>();
+/**
+ * The buyers list the last full load returned. A reload whose buyers are all
+ * the same objects hands back this very list, so nothing built from it on
+ * screen (the Buyers rows, the lookups) is built again.
+ */
+let lastBuyerList: { ws: number; list: (Buyer & { assigned: string | null })[] } | null = null;
+onWorkspaceReset(() => { lastBuyerList = null; mappedBuyers.clear(); });
 
 function mapBuyer(b: BuyerRow, matches: MatchRow[], offers: OfferRowDb[], comms: CommRow[] = [], deals: DealRow[] = [], score: ResponseScore | null = null): Buyer {
   const box: BuyBox = normalizeBuyBox(b.criteria && typeof b.criteria === 'object' && Object.keys(b.criteria as object).length
@@ -1074,18 +1188,19 @@ function mapBuyer(b: BuyerRow, matches: MatchRow[], offers: OfferRowDb[], comms:
       minCap: sm.minCap, maxCashOut: sm.maxArv, minCashFlow: sm.minCashFlow, avoid: sm.avoid,
     },
     match: best,
-    ceiling: box.price.max != null ? '$' + Math.round(box.price.max).toLocaleString('en-US') : (money(b.max_purchase_price) || '—'),
+    ceiling: box.price.max != null ? '$' + FMT_INT.format(Math.round(box.price.max)) : (money(b.max_purchase_price) || '—'),
     rehabTol: sm.rehab,
     strategy: sm.exit,
     lastPurchase: closed[0] ? shortDate(closed[0].closed_on ?? closed[0].close_date) : '—',
-    lastActivity: b.last_activity_at ? relative(b.last_activity_at) : relative(b.created_at),
+    // Only a real touch (text, email, call, voicemail, a plan starting; migration 422), never the import date.
+    lastActivity: b.last_activity_at ? relative(b.last_activity_at) : '—',
     createdAt: b.created_at,
-    lastActivityAt: b.last_activity_at ?? b.created_at,
+    lastActivityAt: b.last_activity_at ?? null,
     offers: myOffers.length + ' submitted',
     why: mine.length ? Array.from(new Set(mine.flatMap((m) => m.reasons))).slice(0, 4) : [],
     issue: box.location_prefs.length ? '' : 'Buy box has no location — add one to get match scores.',
     vip: b.vip, vetted: !!b.vetted_at, blacklisted: !!b.blacklisted_at, buyerType: b.buyer_type,
-    entityType: b.entity_type, tags: b.tags ?? [], source: b.source, prospectList,
+    entityType: b.entity_type, tags: cleanTags(b.tags), source: b.source, prospectList,
     activity: {
       calls: mineComms.filter((c) => c.channel === 'call').length,
       texts: mineComms.filter((c) => c.channel === 'sms').length,
@@ -1098,16 +1213,19 @@ function mapBuyer(b: BuyerRow, matches: MatchRow[], offers: OfferRowDb[], comms:
   };
 }
 
-/** One page of the free-agent realtor corpus. The shell never loads these rows. */
+/** One page of the free-agent realtor corpus (or, with `tag`, of everyone tagged). The shell never loads these rows. */
 export async function loadRealtorCorpus(
   workspaceId: number,
-  opts: { q?: string; offset?: number; limit?: number; state?: string; city?: string } = {},
+  opts: { q?: string; offset?: number; limit?: number; state?: string; city?: string; tag?: string } = {},
 ): Promise<{ ok: boolean; rows: Buyer[]; total: number; message?: string }> {
   if (!supabase) return { ok: false, rows: [], total: 0, message: 'Not signed in' };
   const state = (opts.state ?? '').trim().toUpperCase();
   const city = (opts.city ?? '').trim();
   const base = { p_workspace_id: workspaceId, p_q: opts.q ?? '', p_limit: opts.limit ?? 50, p_offset: opts.offset ?? 0 };
-  let res = state || city
+  // A tag pages every active row carrying it, corpus or not (migration 426).
+  let res = opts.tag
+    ? await supabase.rpc('search_buyers_by_tag' as never, { ...base, p_tag: opts.tag, p_state: state, p_city: city } as never)
+    : state || city
     ? await supabase.rpc('search_free_agent_buyers_geo', { ...base, p_state: state, p_city: city })
     : await supabase.rpc('search_free_agent_buyers', base);
   // Before migration 106 there is no geo search: fall back to the market text
@@ -1408,7 +1526,8 @@ function mapTransaction(
 }
 
 /** Rows of communications the reporting read takes; past it, long ranges undercount and the screen says so. */
-const REPORT_COMMS_CAP = 10_000;
+// report_comms (migration 371) clamps at 60,000: a year of Acme Homes activity (49,000 rows YTD on 2026-10-18).
+const REPORT_COMMS_CAP = 60_000;
 
 /**
  * Every row, not the first 1,000. PostgREST caps a response at the project's
@@ -1522,6 +1641,8 @@ const ok200 = <T,>(data: unknown[]) => ({ data, error: null, count: null, status
 type TableDelta = { ids: number[] | null; rows: CachedRow[] };
 /** The caches a table function filled, so their rows carry the side columns (underwriter_id, assigned_to, archived_at, the offer bands). */
 const rpcFilled = new Set<string>();
+// A workspace switch: the raw rows (tens of MB) go before the next workspace's read lands beside them.
+onWorkspaceReset(() => { rowCaches.clear(); rpcFilled.clear(); });
 /**
  * One call to a table function (migration 280) in place of a page per
  * thousand rows. Null when the database has no such function, the caller is
@@ -1653,7 +1774,7 @@ async function loadLastTouch(workspaceId: number): Promise<Map<number, LastComm>
   return out;
 }
 
-function dealProperty(p: DealRow['properties']): { line1: string; city: string | null; state: string | null; zip: string | null; lat?: number | null; lng?: number | null } | undefined {
+function dealProperty(p: DealRow['properties']): DealProp | undefined {
   if (!p) return undefined;
   return Array.isArray(p) ? p[0] : p;
 }
@@ -1662,7 +1783,7 @@ const SELLER_COLS = 'id,name,email,phone,property_address,asking_price,motivatio
 
 const BUYER_COLS = 'id,name,company,email,phone,markets,max_purchase_price,buy_box,status,notes,source,buyer_type,entity_type,criteria,vetted_at,vip,blacklisted_at,preferred_channel,created_at,created_by,last_activity_at,tags,updated_at';
 
-const DEAL_COLS ='id,seller_id,property_id,lead_stage,asking_price,submitted_at,target_assignment,marketing_headline,marketing_description,marketing_url,garage_spaces,stage,stage_entered_at,offer_amount,arv,rehab,mao,wholesale_offer,institutional_offer,assignment_fee,hero_image_url,photos_url,buyer_report_url,compr_cma_url,contract_date,close_date,option_ends_on,buyer_option_ends_on,owner_id,market,updated_at,buyer_id,underwriting_url,compr_report_url,title_vendor_id,title_contact,title_email,title_phone,earnest_money,condition_notes,occupancy_notes,dispo_rep_id,tc_rep_id,marketing_started_on,tracker_no,closed_on,sold_price,price_drop,marketed_price,marketed_fee,dispo_upsell,dispo_fee,transaction_type,contract_status,lead_source,acq_agent,dispo_agent,lead_manager,coordinator,created_at,archived_at,archived_reason,properties(line1,city,state,zip,lat,lng)';
+const DEAL_COLS ='id,seller_id,property_id,lead_stage,asking_price,submitted_at,target_assignment,marketing_headline,marketing_description,marketing_url,garage_spaces,stage,stage_entered_at,offer_amount,arv,rehab,mao,wholesale_offer,institutional_offer,assignment_fee,hero_image_url,photos_url,buyer_report_url,compr_cma_url,contract_date,close_date,option_ends_on,buyer_option_ends_on,owner_id,market,updated_at,buyer_id,underwriting_url,compr_report_url,title_vendor_id,title_contact,title_email,title_phone,earnest_money,condition_notes,occupancy_notes,dispo_rep_id,tc_rep_id,marketing_started_on,tracker_no,closed_on,sold_price,price_drop,marketed_price,marketed_fee,dispo_upsell,dispo_fee,transaction_type,contract_status,lead_source,acq_agent,dispo_agent,lead_manager,coordinator,created_at,archived_at,archived_reason,properties(line1,city,state,zip,lat,lng,beds,baths,sqft,year_built,property_type)';
 
 const TASK_COLS = 'id,seller_id,deal_id,buyer_id,title,task_type,priority,due_at,assigned_to,done,notes,completed_at,created_at';
 
@@ -1733,6 +1854,42 @@ export async function loadSharedReads(workspaceId: number): Promise<SharedReads>
  */
 export function reuseShared<T extends Record<string, { error: unknown }>>(given: Promise<T>, read: () => Promise<T>): Promise<T> {
   return given.then((r) => (Object.values(r).some((q) => q.error) ? read() : r), () => read());
+}
+
+/**
+ * Hand the main thread back for a moment: scheduler.yield where the browser
+ * has it, else a message (not throttled in a background tab the way a
+ * timer is).
+ */
+function yieldToMain(): Promise<void> {
+  const sched = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler;
+  if (typeof sched?.yield === 'function') return sched.yield();
+  if (typeof MessageChannel === 'undefined') return new Promise((ok) => setTimeout(ok, 0));
+  return new Promise((ok) => {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = () => { ch.port1.close(); ok(); };
+    ch.port2.postMessage(null);
+  });
+}
+const SLICE_MS = 40;
+const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+/**
+ * rows.map(fn), a slice of about SLICE_MS at a time with the main thread
+ * handed back between slices. Mapping a Compr workspace's 26,000 buyers and
+ * 25,000 tasks in one go held the page (and a call's audio) for seconds.
+ */
+export async function mapInSlices<T, U>(rows: readonly T[], fn: (row: T) => U): Promise<U[]> {
+  const out = new Array<U>(rows.length);
+  let i = 0;
+  while (i < rows.length) {
+    const until = nowMs() + SLICE_MS;
+    do {
+      const stop = Math.min(rows.length, i + 64);
+      for (; i < stop; i++) out[i] = fn(rows[i]);
+    } while (i < rows.length && nowMs() < until);
+    if (i < rows.length) await yieldToMain();
+  }
+  return out;
 }
 
 /** Pages read side by side as one answer. One failed page fails it, as the single read it replaces did. */
@@ -1855,7 +2012,7 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
       },
     })),
     full(() => all(() => supabase!.from('vendors')
-      .select('id,business_name,contact_name,email,phone,service_type,markets,status,notes,city,state,office_address,is_main_poc,deals_brought,offers_sent,offers_accepted,deals_closed')
+      .select('id,business_name,contact_name,email,phone,service_type,markets,status,notes,city,state,office_address,is_main_poc,title,deals_brought,offers_sent,offers_accepted,deals_closed')
       .eq('workspace_id', w).neq('status', 'archived').isDistinct('source', BULK_BUYER_SOURCE).order('business_name').order('id'),
       Number.POSITIVE_INFINITY, [{ col: 'business_name', asc: true }, { col: 'id', asc: true }])),
     full(() => all(() => supabase!.from('enrollments').select('id,plan_id,seller_id,buyer_id,status,step_index').eq('workspace_id', w).order('id'), Number.POSITIVE_INFINITY, BY_ID)),
@@ -1894,8 +2051,14 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
   ]);
   const { commsQ, notifsQ, activityQ, plansQ, membersQ, pinCommsQ, pinActsQ, rosterQ, mailboxesQ } = shared;
 
-  const ok = ![sellersQ, commsQ, dealsQ, tasksQ, buyersQ, vendorsQ, notifsQ, activityQ, plansQ, enrollQ, membersQ, offersQ, apptsQ]
-    .some((q) => q.error);
+  const required = { sellersQ, commsQ, dealsQ, tasksQ, buyersQ, vendorsQ, notifsQ, activityQ, plansQ, enrollQ, membersQ, offersQ, apptsQ };
+  const failedReads = Object.entries(required).filter(([, q]) => q.error);
+  const ok = failedReads.length === 0;
+  // A failed read leaves its screen blank (Deals with no dealsQ looked like a
+  // workspace with no deals), so name it in client_errors.
+  if (!ok && !shell) {
+    reportClientError(new Error('Workspace load failed: ' + failedReads.map(([k, q]) => `${k.replace(/Q$/, '')}: ${q.error?.message ?? 'error'}`).join(' · ')), { kind: 'app', where: 'loadWorkspace' });
+  }
 
   // The side columns ride on a table function's rows. Without the function
   // (or on the shell) each is its own read, so a database without a column
@@ -2124,6 +2287,41 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
     const r = pins.get(e.id);
     return r?.pinned_at ? { ...e, pinnedAt: r.pinned_at, pinnedBy: r.pinned_by } : e;
   };
+  // The big lists are mapped in slices, the main thread handed back between
+  // them, so a load or a reload does not hold the page for the whole mapping.
+  const mappedBuyerList = await mapInSlices(buyers, (b) => {
+    const m = matchesByBuyer.get(b.id) ?? [];
+    const o = offersByBuyer.get(b.id) ?? [];
+    const c = commsByBuyer.get(b.id) ?? [];
+    const d = dealsByBuyer.get(b.id) ?? [];
+    const score = scoreByBuyer.get(b.id) ?? null;
+    const assigned = buyerOwner.get(b.id) ?? null;
+    // A buyer whose row (the same object the delta read kept, or one that
+    // reads the same), matches, offers, messages, deals, score, owner and
+    // "last touch" label are unchanged maps to the Buyer it mapped to last
+    // time: the screens' per-buyer caches key on that object, so a reload
+    // does not redo 26,000 buyers.
+    const sig = (m.length || o.length || c.length || d.length || score ? JSON.stringify([m, o, c, d, score]) : '')
+      + '|' + assigned + '|' + (b.last_activity_at ? relative(b.last_activity_at) : '—');
+    const hit = mappedBuyers.get(b.id);
+    if (hit && hit.sig === sig && (hit.row === b || JSON.stringify(hit.row) === JSON.stringify(b))) {
+      hit.row = b;
+      return hit.buyer;
+    }
+    const buyer = { ...mapBuyer(b, m, o, c, d, score), assigned };
+    mappedBuyers.set(b.id, { row: b, sig, buyer });
+    return buyer;
+  });
+  const prevBuyers = !shell && lastBuyerList?.ws === w ? lastBuyerList.list : null;
+  const buyerList = prevBuyers && prevBuyers.length === mappedBuyerList.length && prevBuyers.every((b, i) => b === mappedBuyerList[i])
+    ? prevBuyers : mappedBuyerList;
+  if (!shell) lastBuyerList = { ws: w, list: buyerList };
+  const sellerByDeal = new Map<number, number | null>();
+  for (const d of deals) sellerByDeal.set(d.id, d.seller_id);
+  const mappedTasks = await mapInSlices(taskRows, (t) => mapTask(t, (id) => sellerByDeal.get(id)));
+  await yieldToMain();
+  const calendar = buildCalendar(appts, taskRows);
+  await yieldToMain();
   return {
     ok,
     data: {
@@ -2141,17 +2339,7 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
           itemId: Number(r.item_id), dealId: r.deal_id != null ? did(r.deal_id) : null, stage: podioStageLabel(r.podio_stage), createdOn: r.created_on, note: r.note,
           clozrStage: r.deal_id != null ? clozrHeldStage(leadStageById.get(Number(r.deal_id)), personMoveByDeal.get(Number(r.deal_id))) : null,
         })),
-      buyers: buyers.map((b) => ({
-        ...mapBuyer(
-          b,
-          matchesByBuyer.get(b.id) ?? [],
-          offersByBuyer.get(b.id) ?? [],
-          commsByBuyer.get(b.id) ?? [],
-          dealsByBuyer.get(b.id) ?? [],
-          scoreByBuyer.get(b.id) ?? null,
-        ),
-        assigned: buyerOwner.get(b.id) ?? null,
-      })),
+      buyers: buyerList,
       vendors: vendors.map(mapVendor),
       offerGaps,
       offerGapPeople,
@@ -2170,19 +2358,20 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
           return rows.length ? rows : [{ at: c.occurred_at, e }];
         }),
       ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).map((x) => ({ ...x.e, at: x.at })),
-      tasks: (() => {
-        const sellerByDeal = new Map<number, number | null>();
-        for (const d of deals) sellerByDeal.set(d.id, d.seller_id);
-        return taskRows.map((t) => mapTask(t, (id) => sellerByDeal.get(id)));
-      })(),
+      tasks: mappedTasks,
       inbox,
-      notifications: notifs.map((n): Notification => {
-        // A Dispo note (a buyer replying to a campaign, migration 86) opens the
-        // buyer, where the reply thread is; one with only a deal opens that
-        // deal's dispo property, which is keyed by the deal's seller.
-        const dispoSeller = n.category === 'Dispo' && n.deal_id ? deals.find((d) => d.id === n.deal_id)?.seller_id ?? null : null;
-        return mapNotificationRow(n, dispoSeller);
-      }).concat(bellFromComms(communications.map((c, i) => ({
+      notifications: (() => {
+        const rows = notifs.map((n): Notification => {
+          // A Dispo note (a buyer replying to a campaign, migration 86) opens the
+          // buyer, where the reply thread is; one with only a deal opens that
+          // deal's dispo property, which is keyed by the deal's seller.
+          const dispoSeller = n.category === 'Dispo' && n.deal_id ? deals.find((d) => d.id === n.deal_id)?.seller_id ?? null : null;
+          return mapNotificationRow(n, dispoSeller);
+        });
+        // A text the database already notified on (an 'inbound_sms' row) is not shown again as a bell item built from the message.
+        const at = (l: Notification['link']) => (l ? l.screen + ':' + l.id : '');
+        const notified = new Set(rows.filter((n) => n.cat === 'inbound_sms').map((n) => at(n.link)));
+        return rows.concat(bellFromComms(communications.map((c, i) => ({
         owner: commOwner(comms[i]),
         id: c.id,
         channel: c.channel,
@@ -2195,9 +2384,11 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
         dur: c.dur,
         personId: c.personId || undefined,
         buyerId: c.buyerId,
-        phone: comms[i].direction === 'inbound' ? comms[i].from_phone : null,
+        // Their number either way, so a call back to a caller with no record clears their missed call.
+        phone: comms[i].direction === 'inbound' ? comms[i].from_phone : comms[i].to_phone,
         at: comms[i].occurred_at,
-      })))),
+        }))).filter((b) => b.cat !== 'SMS' || !notified.has(at(b.link))));
+      })(),
       enrollments: enrolls.map((e) => ({
         id: 'en' + e.id,
         personId: e.seller_id ? sid(e.seller_id) : '',
@@ -2236,14 +2427,14 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
         buyerId: a.buyer_id ? bid(a.buyer_id) : '',
         personId: a.seller_id ? sid(a.seller_id) : '',
         date: shortDate(a.starts_at),
-        time: new Date(a.starts_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+        time: FMT_CLOCK.format(new Date(a.starts_at)),
         // An appointment row carries no confirmation; it is scheduled, nothing more.
         status: 'Scheduled',
       })),
 
       // The calendar is appointments and dated tasks, grouped by day — not a
       // table of its own.
-      calendar: buildCalendar(appts, taskRows),
+      calendar,
 
       // A transaction's screen is built on the Acme Homes contract-to-close
       // checklist. The file is the transactions row (migration 36 opens one
@@ -2282,7 +2473,7 @@ export async function loadWorkspace(workspaceId: number, opts: { shell?: boolean
         ...buildReporting(people, mappedDeals, comms, team),
         raw: {
           members: members.map((m) => ({ id: m.user_id, name: m.profiles?.full_name || 'Teammate', role: m.role, email: m.profiles?.email ?? null, avatar: m.profiles?.avatar_url ?? null })),
-          sellers: sellers.map((x) => ({ id: x.id, name: x.name, created_at: x.created_at, source: x.source, assigned_to: x.assigned_to, stage: x.lead_stage, address: x.properties?.line1 || x.property_address, email: x.email, phone: x.phone, tags: x.tags ?? [], stage_entered_at: x.stage_entered_at })),
+          sellers: sellers.map((x) => ({ id: x.id, name: x.name, created_at: x.created_at, source: x.source, assigned_to: x.assigned_to, stage: x.lead_stage, address: x.properties?.line1 || x.property_address, email: x.email, phone: x.phone, tags: cleanTags(x.tags), stage_entered_at: x.stage_entered_at })),
           // Money columns, the long call history, and offer direction fill in
           // from enrichWorkspace. Until then reporting uses the rows already
           // on screen, and says the call history is still short.
@@ -2839,7 +3030,7 @@ export async function enrichWorkspace(
     heavy ? gapsOne.then((r) => (r ? ok200<Awaited<ReturnType<typeof pageGaps>>>(r.gaps) : pageGaps())) : skip,
     heavy ? gapsOne.then((r) => (r ? ok200<Awaited<ReturnType<typeof pageGapPeople>>>(r.people) : pageGapPeople())) : skip,
     heavy ? all(() => supabase!.from('deals')
-      .select('id,seller_id,buyer_id,stage,created_at,stage_entered_at,contract_date,close_date,closed_on,marketing_started_on,owner_id,dispo_rep_id,offer_amount,arv,mao,assignment_fee,dispo_fee,sold_price,wholesale_fee,total_cogs,team_commissions_paid,deal_net_profit,final_profit,lead_source,market,marketed_price,coordinator')
+      .select('id,seller_id,buyer_id,stage,created_at,stage_entered_at,contract_date,close_date,closed_on,marketing_started_on,owner_id,dispo_rep_id,offer_amount,arv,mao,assignment_fee,dispo_fee,sold_price,wholesale_fee,total_cogs,team_commissions_paid,deal_net_profit,final_profit,lead_source,market,marketed_price,coordinator,termination_reason,terminated_on')
       .eq('workspace_id', w).order('id'), Number.POSITIVE_INFINITY, BY_ID) : skip,
     heavy ? loadReportComms(w) : skip,
     heavy ? all(() => supabase!.from('offers')
@@ -2891,12 +3082,15 @@ export async function enrichWorkspace(
 /** Appointments and dated tasks, grouped into the days the calendar renders. */
 function buildCalendar(appts: AppointmentRow[], tasks: TaskRow[]): CalendarDay[] {
   const byDay = new Map<string, { t: string; title: string; kind: string }[]>();
+  // Pushed in place: copying the day's list on every item was quadratic, and
+  // a cadence that queues 4,000 tasks on one day made that seconds.
   const push = (iso: string, item: { t: string; title: string; kind: string }) => {
-    const day = new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    byDay.set(day, [...(byDay.get(day) ?? []), item]);
+    const day = FMT_WEEKDAY_DAY.format(new Date(iso));
+    const list = byDay.get(day);
+    if (list) list.push(item);
+    else byDay.set(day, [item]);
   };
-  const clock = (iso: string) =>
-    new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const clock = (iso: string) => FMT_CLOCK.format(new Date(iso));
 
   for (const a of appts) push(a.starts_at, { t: clock(a.starts_at), title: a.title, kind: a.kind });
   for (const t of tasks) {
@@ -2948,10 +3142,20 @@ function buildReporting(
   const monthly = Array.from({ length: 12 }, () => 0);
   const nowD = new Date();
   for (const d of deals) {
-    if (!d.close || !d.assignment) continue;
-    const when = Date.parse(d.close + ' ' + nowD.getFullYear());
-    if (Number.isNaN(when)) continue;
-    const diff = (nowD.getFullYear() - new Date(when).getFullYear()) * 12 + (nowD.getMonth() - new Date(when).getMonth());
+    if (!d.assignment) continue;
+    // The close month from the date itself: "Oct 20" plus this year put every
+    // close from last year in the future, and January's chart was empty.
+    let y: number; let mo: number;
+    if (d.closeIso) {
+      [y, mo] = d.closeIso.slice(0, 10).split('-').map(Number) as [number, number];
+    } else {
+      if (!d.close) continue;
+      const when = Date.parse(d.close + ' ' + nowD.getFullYear());
+      if (Number.isNaN(when)) continue;
+      y = new Date(when).getFullYear(); mo = new Date(when).getMonth() + 1;
+    }
+    if (!y || !mo) continue;
+    const diff = (nowD.getFullYear() - y) * 12 + (nowD.getMonth() - (mo - 1));
     if (diff >= 0 && diff < 12) monthly[11 - diff] += d.assignment;
   }
 

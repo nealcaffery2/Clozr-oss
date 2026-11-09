@@ -1,12 +1,12 @@
 /**
- * POST /deliverability Ã¢â‚¬â€ Settings Ã¢â€ â€™ Email deliverability.
+ * POST /deliverability (Settings, Email deliverability).
  *
  * Body: { workspace_id, action, ... }
  *   overview                          everything the section shows: domains (and the
  *                                     ones detected from connected Google accounts),
  *                                     each mailbox's settings, today's count, ramp day,
  *                                     7-day bounce rate, suppressions
- *   check_domain   { id }             DNS check Ã¢â€ â€™ score, launch-blocking failures, fixes
+ *   check_domain   { id }             DNS check: score, launch-blocking failures, fixes
  *   add_domain     { domain, dkim_selectors?, tracking_domain?, uses_resend? }   owner/admin
  *   remove_domain  { id }                                                        owner/admin
  *   save_mailbox   { account_id, settings }                                      owner/admin
@@ -27,18 +27,18 @@
  *   resend_key     { key?, webhook_secret? }           this workspace's Resend key   owner/admin
  *   blast_sender   { from | null }    "Acme Homes <deals@deals.yourcompany.com>"            owner/admin
  *
- * GET|POST /deliverability/unsubscribe?t=<token>   (no sign-in Ã¢â‚¬â€ the signed token is the credential)
+ * GET|POST /deliverability/unsubscribe?t=<token>   (no sign-in; the signed token is the credential)
  *   POST  RFC 8058 one-click (Gmail's unsubscribe button) or the app's
- *         /unsubscribe page Ã¢â€ â€™ the address is suppressed
+ *         /unsubscribe page, and the address is suppressed
  *   GET   redirects to the app's /unsubscribe page, which asks before
  *         POSTing, so a link scanner opening the URL unsubscribes nobody
  *
- * POST /deliverability/resend   Resend (Svix) webhook Ã¢â‚¬â€ bounce / complaint /
+ * POST /deliverability/resend   Resend (Svix) webhook for bounce / complaint /
  *   delivery events. Verified with RESEND_WEBHOOK_SECRET. No JWT.
  *
  *   resend_status                     Resend sender + domain records for this workspace
  *   resend_ensure_domain              add/verify the blast domain at Resend, then DNS-check it
- *   save_sender / pause_sender / resume_sender   owner/admin Ã‚Â· same caps as a mailbox
+ *   save_sender / pause_sender / resume_sender   owner/admin, same caps as a mailbox
  *   verify_emails  { buyer_ids?, seller_ids? }  any member. Power-mode Reoon
  *                                     check; writes email_status,
  *                                     email_safe_to_send, email_verified_at
@@ -62,13 +62,14 @@
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { HARDENING, clientIp, corsFor, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
+import { HARDENING, clientIp, corsFor, isServiceCaller, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import { type Account, SCOPE, accessFor, has, seal } from '../_shared/google.ts';
 import { FREE_MAIL, POSTMASTER_V2_METRICS, dailyAllowance, dayStartUtc, domainOf, isDomain, localParts, postmasterDaysV2, rampDay } from '../_shared/deliverability-rules.ts';
 import { SETTINGS_COLUMNS, SENDER_COLUMNS, type SenderRow, checkAutoPauseSender, ensureBlastSender, ensureRepBlastSenders, readUnsubscribeToken, senderById, settingsFor } from '../_shared/mailguard.ts';
 import { recordDocsDelivery } from '../_shared/parity/delivery.ts';
 import { type EnvLike, blastFrom, classifyResendEvent, ensureResendDomain, parseFrom, resendConnectPayload, resendKeyProblem, suggestBlastFrom, verifyResendWebhook } from '../_shared/resend.ts';
 import { verifyRecords } from '../_shared/reoon.ts';
+import { reoonSweep } from '../_shared/reoon-sweep.ts';
 import { inboxkitKey, inboxkitWorkspaceUids, resendEnvFor, resendWebhookSecrets, setWorkspaceSecret, workspaceSecret } from '../_shared/workspace-email.ts';
 import { warmupKey } from '../_shared/cold-warmup.ts';
 import { InstantlyError, instantlyClient } from '../_shared/instantly.ts';
@@ -76,6 +77,9 @@ import { inboxkitClient, listInboxkitWorkspaces } from '../_shared/inboxkit.ts';
 import { type DnsWriter, autoVerifyDomain, inboxkitDns, siteVerificationClient, vercelDns } from '../_shared/site-verification.ts';
 import { type PmDomain, type RegisterOutcome, mapLimit, pmReadable, postmasterClient, registerDomain } from '../_shared/postmaster.ts';
 import { checkDomain } from './dns.ts';
+import { everyRowResult } from '../_shared/every-row.ts';
+import { alertSendFailure } from '../_shared/send-alert.ts';
+import { appPath } from '../_shared/app-paths.ts';
 
 type Any = any;
 
@@ -99,6 +103,9 @@ async function unsubscribe(req: Request, admin: SupabaseClient, token: string, c
 }
 
 // ---------------------------------------------------------- Resend webhooks
+/** Hard bounces plus complaints in an hour, across a workspace, that alert the owner. */
+const BOUNCE_SPIKE = 5;
+
 async function resendWebhook(req: Request, admin: SupabaseClient, cors: Record<string, string>): Promise<Response> {
   const json = jsonWith(cors);
   // The project's secret, then each workspace's own Resend account's.
@@ -110,9 +117,10 @@ async function resendWebhook(req: Request, admin: SupabaseClient, cors: Record<s
     timestamp: req.headers.get('svix-timestamp') ?? '',
     signature: req.headers.get('svix-signature') ?? '',
   };
-  let ok = false;
-  for (const secret of secrets) if (await verifyResendWebhook(raw, sig, secret)) { ok = true; break; }
-  if (!ok) return json({ error: 'invalid signature' }, 401);
+  // The workspace whose secret signed this event; null when the project's did.
+  let signedBy: number | null | undefined;
+  for (const s of secrets) if (await verifyResendWebhook(raw, sig, s.secret)) { signedBy = s.workspace_id; break; }
+  if (signedBy === undefined) return json({ error: 'invalid signature' }, 401);
   let body: Any;
   try { body = JSON.parse(raw); } catch { return json({ error: 'body is not valid JSON' }, 400); }
   // Document emails (contracts) also get per-recipient delivered / opened / bounced.
@@ -131,8 +139,11 @@ async function resendWebhook(req: Request, admin: SupabaseClient, cors: Record<s
       if (comm) send = { id: null, workspace_id: comm.workspace_id, sender_id: null, recipient: String(comm.to_email ?? '').toLowerCase(), bounced_at: null };
     }
   }
-  if (!send && to[0]) {
-    send = (await admin.from('email_send_log').select('id, workspace_id, sender_id, recipient, bounced_at').eq('recipient', to[0]).not('sender_id', 'is', null).order('sent_at', { ascending: false }).limit(1).maybeSingle()).data;
+  // By recipient alone only inside the workspace whose secret signed the event, and only a
+  // recent send: an address is not a workspace. The project's secret names none, so it stops here.
+  if (!send && to[0] && signedBy != null) {
+    const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    send = (await admin.from('email_send_log').select('id, workspace_id, sender_id, recipient, bounced_at').eq('workspace_id', signedBy).eq('recipient', to[0]).not('sender_id', 'is', null).gte('sent_at', since).order('sent_at', { ascending: false }).limit(1).maybeSingle()).data;
   }
   if (!send?.workspace_id) return json({ ok: true, unmatched: true });
   const email = (send.recipient || to[0] || '').toLowerCase();
@@ -155,6 +166,18 @@ async function resendWebhook(req: Request, admin: SupabaseClient, cors: Record<s
   if (emailId) await admin.from('communications').update({ status: bad }).eq('source', 'resend').eq('source_id', emailId).or(`status.is.null,status.neq.${bad}`);
   let paused: string | null = null;
   if (send.sender_id) paused = await checkAutoPauseSender(admin, { id: send.sender_id, workspace_id: send.workspace_id });
+  // A pause above already alerted. Mail with no sender row (lifecycle, transactional) never pauses, so a burst is told here.
+  if (!paused) {
+    const { count } = await admin.from('email_suppressions').select('id', { count: 'exact', head: true })
+      .eq('workspace_id', send.workspace_id).in('reason', ['hard_bounce', 'complaint']).gte('created_at', new Date(Date.now() - 3_600_000).toISOString());
+    if ((count ?? 0) >= BOUNCE_SPIKE) {
+      await alertSendFailure(admin, {
+        ws: send.workspace_id, key: 'resend_bounces', title: `${count} emails bounced or were marked spam in the last hour`,
+        reason: `Resend reported ${count} hard bounces and spam complaints in an hour, the last one ${email}. Each address is suppressed; a run like this usually means a bad list or a sending domain problem.`,
+        path: appPath.deliverability, place: 'Email deliverability',
+      });
+    }
+  }
   return json({ ok: true, reason, paused });
 }
 
@@ -168,6 +191,26 @@ function senderView(sender: SenderRow) {
 async function resendOverview(admin: SupabaseClient, ws: number) {
   const wsResend = await resendEnvFor(admin, ws);
   const senders = (await ensureRepBlastSenders(admin, ws, wsResend.env)).map(senderView);
+  // Every caller gets today's real room: the campaign composer reads this
+  // through resend_status, and zeros there read as "0 more today".
+  if (senders.length) {
+    const now = new Date();
+    const since7 = new Date(now.getTime() - 7 * 86_400_000).toISOString();
+    // Paged: a .limit() over PostgREST's max-rows still stops at 1,000, which read as a quiet week.
+    const { data: log } = await everyRowResult<Any>(() => admin.from('email_send_log').select('sender_id, sent_at, bounced_at')
+      .eq('workspace_id', ws).in('sender_id', senders.map((s) => s.id)).gte('sent_at', since7).order('id'));
+    const rows = (log ?? []) as Any[];
+    for (const view of senders) {
+      const week = rows.filter((r) => r.sender_id === view.id);
+      const dayStart = dayStartUtc(now, view.settings.timezone).toISOString();
+      const today = localParts(now, view.settings.timezone).date;
+      view.sent_today = week.filter((r) => r.sent_at >= dayStart).length;
+      view.allowance = dailyAllowance(view.settings, today);
+      view.ramp_day = rampDay(view.settings, today) + 1;
+      view.sent_7d = week.length;
+      view.bounced_7d = week.filter((r) => r.bounced_at).length;
+    }
+  }
   const from = blastFrom(wsResend.env);
   const primary = senders.find((s) => s.from_email === from?.email) ?? senders[0] ?? null;
   const webhook = `${Deno.env.get('SUPABASE_URL')}/functions/v1/deliverability/resend`;
@@ -475,7 +518,7 @@ async function overview(admin: SupabaseClient, ws: number) {
   const [{ data: domains }, { data: sup }, { data: log }, { data: instantlyOwn }, { data: roster }] = await Promise.all([
     admin.from('email_domains').select('id, domain, source, dkim_selectors, tracking_domain, uses_resend, score, blocking, report, checked_at').eq('workspace_id', ws).eq('active', true).order('domain'),
     admin.from('email_suppressions').select('id, email, reason, note, account_id, created_at').eq('workspace_id', ws).order('created_at', { ascending: false }).limit(500),
-    admin.from('email_send_log').select('account_id, sender_id, kind, sent_at, bounced_at').eq('workspace_id', ws).gte('sent_at', since30).limit(50_000),
+    everyRowResult<Any>(() => admin.from('email_send_log').select('account_id, sender_id, kind, sent_at, bounced_at').eq('workspace_id', ws).gte('sent_at', since30).order('id')),
     admin.from('cold_warmup_secrets').select('workspace_id').eq('workspace_id', ws).maybeSingle(),
     admin.from('workspace_roster').select('user_id, full_name, email').eq('workspace_id', ws),
   ]);
@@ -501,17 +544,6 @@ async function overview(admin: SupabaseClient, ws: number) {
     });
   }
   const blast = await resendOverview(admin, ws);
-  for (const view of blast.senders) {
-    const mine = rows.filter((r) => r.sender_id === view.id);
-    const dayStart = dayStartUtc(now, view.settings.timezone).toISOString();
-    const week = mine.filter((r) => r.sent_at >= since7);
-    const today = localParts(now, view.settings.timezone).date;
-    view.sent_today = mine.filter((r) => r.sent_at >= dayStart).length;
-    view.allowance = dailyAllowance(view.settings, today);
-    view.ramp_day = rampDay(view.settings, today) + 1;
-    view.sent_7d = week.length;
-    view.bounced_7d = week.filter((r) => r.bounced_at).length;
-  }
   const kit = await inboxkitKey(admin, ws);
   const warmupKeys = {
     instantly: !!instantlyOwn || !!(Deno.env.get('INSTANTLY_API_KEY') ?? '').trim(), instantly_own: !!instantlyOwn,
@@ -544,6 +576,12 @@ Deno.serve(async (req) => {
   let b: Any;
   try { b = await req.json(); } catch { return json({ error: 'body is not valid JSON' }, 400); }
   if (b.action === 'unsubscribe') return unsubscribe(req, admin, String(b.t ?? ''), cors);
+  // Reoon ahead of the send (migration 379): pg_cron with the service-role key only.
+  if (b.action === 'verify_sweep') {
+    const bearer = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
+    if (!(await isServiceCaller(admin, bearer))) return json({ error: 'service role only' }, 403);
+    return json(await reoonSweep(admin));
+  }
 
   const asCaller = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
     global: { headers: { Authorization: req.headers.get('authorization') ?? '' } }, auth: { persistSession: false },
@@ -610,7 +648,7 @@ Deno.serve(async (req) => {
         if ('timezone' in patch) { try { new Intl.DateTimeFormat('en-US', { timeZone: String(patch.timezone) }); } catch { return json({ error: 'Unknown time zone.' }, 422); } }
         const { data, error } = await admin.from('mailbox_settings').update(patch).eq('account_id', account.id).select(SETTINGS_COLUMNS).single();
         // The table's CHECK constraints are the validation; say which rule, not the SQL.
-        if (error) return json({ error: `Those settings are out of range (${error.message.includes('window') ? 'the window must end after it starts' : 'caps 1Ã¢â‚¬â€œ2000, spacing 0Ã¢â‚¬â€œ3600s, increase 0Ã¢â‚¬â€œ100%'}).` }, 422);
+        if (error) return json({ error: `Those settings are out of range (${error.message.includes('window') ? 'the window must end after it starts' : 'caps 1 to 2000, spacing 0 to 3600 seconds, increase 0 to 100%'}).` }, 422);
         return json({ ok: true, settings: data });
       }
 
@@ -643,7 +681,7 @@ Deno.serve(async (req) => {
       }
 
       case 'postmaster': {
-        const { data: account } = await admin.from('google_accounts').select(ACCOUNT_COLUMNS).eq('workspace_id', ws).eq('user_id', who.user.id).maybeSingle();
+        const { data: account } = await admin.from('google_accounts').select(ACCOUNT_COLUMNS).eq('workspace_id', ws).eq('user_id', who.user.id).eq('shared', false).maybeSingle();
         const known = await workspaceDomains(admin, ws);
         if (!account) return json({ connected: false, granted: false, site_verification: false, domains: [], unverified: known, verification: await verificationRows(admin, ws, known) });
         const force = b.verify === true;
@@ -774,7 +812,7 @@ Deno.serve(async (req) => {
         for (const k of SETTABLE) if (b.settings && k in b.settings) patch[k] = b.settings[k];
         if ('timezone' in patch) { try { new Intl.DateTimeFormat('en-US', { timeZone: String(patch.timezone) }); } catch { return json({ error: 'Unknown time zone.' }, 422); } }
         const { data, error } = await admin.from('email_senders').update(patch).eq('id', sender.id).select(SENDER_COLUMNS).single();
-        if (error) return json({ error: `Those settings are out of range (${error.message.includes('window') ? 'the window must end after it starts' : 'caps 1Ã¢â‚¬â€œ2000, spacing 0Ã¢â‚¬â€œ3600s, increase 0Ã¢â‚¬â€œ100%'}).` }, 422);
+        if (error) return json({ error: `Those settings are out of range (${error.message.includes('window') ? 'the window must end after it starts' : 'caps 1 to 2000, spacing 0 to 3600 seconds, increase 0 to 100%'}).` }, 422);
         return json({ ok: true, settings: data });
       }
 

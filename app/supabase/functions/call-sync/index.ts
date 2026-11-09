@@ -34,9 +34,10 @@
  * workspace admin with {"action":"run","workspace_id":N}.
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
+import { everyRow } from '../_shared/every-row.ts';
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { ALLOW_HEADERS, HARDENING, corsFor, jsonWith, isServiceCaller } from '../_shared/security.ts';
-import { coachTranscript } from '../_shared/coach-run.ts';
+import { coachTranscript, workspaceCallType } from '../_shared/coach-run.ts';
 import { activeTalkrBinding, gateTalkrWrite, readTalkrOrg, TALKR_NOT_CONNECTED, talkrOrgFromPayload } from '../_shared/talkr-binding.ts';
 import { loadTalkrConnections } from '../_shared/talkr-connect.ts';
 import { elsewhereFromRows, homeFor, theirNumber, type ElsewhereRow } from '../_shared/talkr-elsewhere.ts';
@@ -51,6 +52,8 @@ const HISTORY_DAYS = 2;
 const HISTORY_LIMIT = 200;
 /** Inbound texts are read a little further back than calls, so a tick that failed for a while still catches up. */
 const TEXT_HISTORY_DAYS = 4;
+/** Inbound history pages per tick: 1,000 replies, so a campaign's replies are not cut off at the first 200. */
+const TEXT_INBOUND_PAGES = 5;
 const INTEL_PER_TICK = 20;
 const INTEL_MAX_ATTEMPTS = 40; // ~80 minutes of two-minute ticks for a slow transcript
 const INTEL_WINDOW_DAYS = 14;
@@ -105,6 +108,13 @@ type HistoryItem = {
   duration_seconds: number | null; from_number: string; to_number: string; disposition_label: string | null;
   note: string | null; has_recording: boolean; body: string | null; user_id: string | null;
 };
+
+/**
+ * An inbound call nobody picked up. Talkr closes it as "completed" with no
+ * talk time, so the bell read it as answered and never rang for a missed
+ * call or a voicemail. Stored as missed (voicemail when it left a recording).
+ */
+const unanswered = (h: HistoryItem) => h.direction === 'inbound' && h.status === 'completed' && !h.duration_seconds;
 
 type Pending = {
   id: number; source_id: string; recording_id: string | null; recording_url: string | null;
@@ -395,13 +405,13 @@ const TEXT_STATUS_PAGES = 5;
  */
 async function settleTextStatuses(admin: SupabaseClient, base: string, token: string, tally: Tally) {
   const since = new Date(Date.now() - TEXT_HISTORY_DAYS * 86_400_000).toISOString();
-  const { data: open, error } = await admin.from('communications').select('source_id, occurred_at')
+  // Every unsettled text: with more than 1,000 waiting, the oldest-first cap never reached the newest.
+  const open = await everyRow<{ source_id: string; occurred_at: string }>(() => admin.from('communications').select('source_id, occurred_at')
     .eq('channel', 'sms').eq('direction', 'outbound').eq('source', 'talkr').like('source_id', 'msg:%')
-    .or('status.is.null,status.in.(queued,sending,sent)').gte('occurred_at', since).order('occurred_at').limit(2000);
-  if (error) throw new Error(error.message);
-  const waiting = new Set(((open ?? []) as { source_id: string }[]).map((r) => r.source_id));
+    .or('status.is.null,status.in.(queued,sending,sent)').gte('occurred_at', since).order('occurred_at').order('id'));
+  const waiting = new Set(open.map((r) => r.source_id));
   if (!waiting.size) return;
-  const from = new Date(Date.parse((open as { occurred_at: string }[])[0].occurred_at) - 60_000).toISOString();
+  const from = new Date(Date.parse(open[0]!.occurred_at) - 60_000).toISOString();
   for (const status of TEXT_FINAL) {
     for (let page = 0; page < TEXT_STATUS_PAGES && waiting.size; page++) {
       const r = await talkr(base, token, `/v1/history?type=sms&direction=outbound&status=${status}&from=${encodeURIComponent(from)}&limit=${HISTORY_LIMIT}&offset=${page * HISTORY_LIMIT}`);
@@ -429,9 +439,14 @@ async function settleTextStatuses(admin: SupabaseClient, base: string, token: st
  */
 async function syncTexts(admin: SupabaseClient, base: string, token: string, wsId: number, tally: Tally) {
   const from = new Date(Date.now() - TEXT_HISTORY_DAYS * 86_400_000).toISOString();
-  const r = await talkr(base, token, `/v1/history?type=sms&direction=inbound&from=${encodeURIComponent(from)}&limit=${HISTORY_LIMIT}`);
-  if (!r.ok) throw new Error(`Talkr text history ${r.status}`);
-  const items: HistoryItem[] = (r.body?.items ?? []).filter((h: HistoryItem) => h.kind === 'sms' && h.direction === 'inbound');
+  const items: HistoryItem[] = [];
+  for (let page = 0; page < TEXT_INBOUND_PAGES; page++) {
+    const r = await talkr(base, token, `/v1/history?type=sms&direction=inbound&from=${encodeURIComponent(from)}&limit=${HISTORY_LIMIT}&offset=${page * HISTORY_LIMIT}`);
+    if (!r.ok) throw new Error(`Talkr text history ${r.status}`);
+    const got: HistoryItem[] = r.body?.items ?? [];
+    items.push(...got.filter((h) => h.kind === 'sms' && h.direction === 'inbound'));
+    if (got.length < HISTORY_LIMIT) break;
+  }
   tally.texts_seen += items.length;
   if (!items.length) return;
 
@@ -450,23 +465,88 @@ async function syncTexts(admin: SupabaseClient, base: string, token: string, wsI
       if (h.seller_id !== null || h.buyer_id !== null) filedHere.add(h.source_id);
     }
   }
+  // A reply follows the line it came in on: a line only one workspace has (rep_phone_numbers) files
+  // its texts there, so a Compr reply on Alex's Compr line stays in Compr even when Acme Homes texted
+  // the same person last. A line two workspaces share falls back to who texted them last (homeFor).
+  const lineWs = new Map<string, Set<number>>();
+  const lines = [...new Set(items.map((h) => normalizedPhone(h.to_number)).filter((k): k is string => !!k))];
+  if (lines.length) {
+    const { data: owned, error: lineErr } = await admin.from('rep_phone_numbers').select('workspace_id, phone_e164').in('phone_e164', lines);
+    if (lineErr) throw new Error(`lines: ${lineErr.message}`);
+    for (const r of (owned ?? []) as { workspace_id: number; phone_e164: string }[]) {
+      const k = normalizedPhone(r.phone_e164);
+      if (k) lineWs.set(k, (lineWs.get(k) ?? new Set()).add(Number(r.workspace_id)));
+    }
+  }
   const byWs = new Map<number, HistoryItem[]>();
   for (const h of items) {
     const sourceId = 'msg:' + h.id;
-    const home = homeFor({ sourceId, their: theirNumber(h), filedHere: filedHere.has(sourceId), away });
+    const line = normalizedPhone(h.to_number);
+    const only = line ? lineWs.get(line) : undefined;
+    // Already filed in a workspace (here or another): it stays where it is.
+    const filed = away.sources.get(sourceId) ?? (filedHere.has(sourceId) ? 'here' : undefined);
+    const home = filed !== undefined ? filed
+      : only && only.size === 1 ? [...only][0]
+      : homeFor({ sourceId, their: theirNumber(h), filedHere: false, away });
     const ws = home === 'here' ? wsId : home;
     byWs.set(ws, [...(byWs.get(ws) ?? []), h]);
   }
-  for (const [ws, list] of byWs) await fileTexts(admin, ws, list, tally);
+  const strangers: HistoryItem[] = [];
+  for (const [ws, list] of byWs) strangers.push(...await fileTexts(admin, ws, list, tally));
+  if (strangers.length) await fileStrangers(admin, wsId, strangers, tally);
+}
+
+/**
+ * Texts from a number no workspace has a record for. They used to be dropped,
+ * and with them a seller texting "125k" back to a rep's line, a reply from a
+ * second phone, a partner sending deals. Each is filed unattached, so the
+ * Inbox shows the thread and the bell rings the line's owner
+ * (inbox_on_communication); adding the number to a record later picks the
+ * thread up. The workspace is the one whose team line it came in on when only
+ * one has that line (rep_phone_numbers), else this one.
+ */
+async function fileStrangers(admin: SupabaseClient, wsId: number, items: HistoryItem[], tally: Tally) {
+  const lines = [...new Set(items.map((h) => normalizedPhone(h.to_number)).filter((k): k is string => !!k))];
+  const owners = new Map<string, Set<number>>();
+  if (lines.length) {
+    const { data, error } = await admin.from('rep_phone_numbers').select('workspace_id, phone_e164').in('phone_e164', lines);
+    if (error) throw new Error(`lines: ${error.message}`);
+    for (const r of (data ?? []) as { workspace_id: number; phone_e164: string }[]) {
+      const k = normalizedPhone(r.phone_e164);
+      if (k) owners.set(k, (owners.get(k) ?? new Set()).add(Number(r.workspace_id)));
+    }
+  }
+  const byWs = new Map<number, Record<string, unknown>[]>();
+  for (const h of items) {
+    const line = normalizedPhone(h.to_number);
+    const on = line ? owners.get(line) : undefined;
+    const ws = on && on.size === 1 && !on.has(wsId) ? [...on][0] : wsId;
+    byWs.set(ws, [...(byWs.get(ws) ?? []), {
+      workspace_id: ws, seller_id: null, buyer_id: null, channel: 'sms', direction: 'inbound',
+      occurred_at: h.at, from_phone: h.from_number, to_phone: h.to_number, body: h.body,
+      status: h.status || 'received', source: 'talkr', source_id: 'msg:' + h.id,
+    }]);
+  }
+  for (const [ws, rows] of byWs) {
+    // A row already in any workspace (filed there by a dialer or composer) is not filed twice.
+    const { data: have } = await admin.from('communications').select('source_id').eq('source', 'talkr').in('source_id', rows.map((r) => String(r.source_id)));
+    const seen = new Set(((have ?? []) as { source_id: string }[]).map((r) => r.source_id));
+    const fresh = rows.filter((r) => !seen.has(String(r.source_id)));
+    if (!fresh.length) continue;
+    const { data, error } = await admin.from('communications').upsert(fresh, { onConflict: 'workspace_id,source,source_id', ignoreDuplicates: true }).select('id');
+    if (error) throw new Error(`unknown-number texts (ws ${ws}): ${error.message}`);
+    tally.texts_written += (data ?? []).length;
+    tally.unfiled += (data ?? []).length;
+  }
 }
 
 /**
  * Insert inbound texts into one workspace, on the seller or buyer with that
- * number there. A text from a number with no record is left out, as the
- * browser mirror leaves it (lib/talkr-sync): a stranger is not a lead. A row
- * already there is left alone (the triggers made its bell row the first time).
+ * number there. A text from a number with no record there is handed back for
+ * fileStrangers. A row already there is left alone (the triggers made its bell
+ * row the first time).
  */
-async function fileTexts(admin: SupabaseClient, targetWs: number, items: HistoryItem[], tally: Tally) {
+async function fileTexts(admin: SupabaseClient, targetWs: number, items: HistoryItem[], tally: Tally): Promise<HistoryItem[]> {
   const lookupKeys = [...new Set(items.map((h) => normalizedPhone(h.from_number)).filter((k): k is string => !!k))];
   const sellerBy = new Map<string, number>();
   const buyerBy = new Map<string, number>();
@@ -482,23 +562,25 @@ async function fileTexts(admin: SupabaseClient, targetWs: number, items: History
     for (const x of buyers.data ?? []) { const k = phoneKey(x.phone_key ?? x.phone); if (k && !buyerBy.has(k)) buyerBy.set(k, x.id); }
   }
   const rows: Record<string, unknown>[] = [];
+  const strangers: HistoryItem[] = [];
   for (const h of items) {
     const theirs = phoneKey(h.from_number);
     if (!theirs) continue;
     const sellerId = sellerBy.get(theirs) ?? null;
     const buyerId = sellerId === null ? (buyerBy.get(theirs) ?? null) : null;
-    if (sellerId === null && buyerId === null) continue;
+    if (sellerId === null && buyerId === null) { strangers.push(h); continue; }
     rows.push({
       workspace_id: targetWs, seller_id: sellerId, buyer_id: buyerId, channel: 'sms', direction: 'inbound',
       occurred_at: h.at, from_phone: h.from_number, to_phone: h.to_number, body: h.body,
       status: h.status || 'received', source: 'talkr', source_id: 'msg:' + h.id,
     });
   }
-  if (!rows.length) return;
+  if (!rows.length) return strangers;
   const { data, error } = await admin.from('communications')
     .upsert(rows, { onConflict: 'workspace_id,source,source_id', ignoreDuplicates: true }).select('id');
   if (error) throw new Error(`texts upsert: ${error.message}`);
   tally.texts_written += (data ?? []).length;
+  return strangers;
 }
 
 /**
@@ -564,14 +646,14 @@ async function fileCalls(admin: SupabaseClient, targetWs: number, items: History
     if (sellerId === null && buyerId === null) tally.unfiled++;
     rows.push({
       workspace_id: targetWs, seller_id: sellerId, buyer_id: buyerId,
-      channel: h.status === 'voicemail' ? 'voicemail' : 'call',
+      channel: h.status === 'voicemail' || (unanswered(h) && h.has_recording) ? 'voicemail' : 'call',
       direction: h.direction, occurred_at: h.at, from_phone: h.from_number, to_phone: h.to_number,
       body: h.body,
       // Only when Talkr has one: the dialer writes the outcome on the call
       // the moment it is saved (lib/call-outcome-write), and a mirror run
       // before Talkr has the disposition must not blank it.
       ...(h.disposition_label || h.note ? { summary: [h.disposition_label, h.note].filter(Boolean).join(' — ') } : {}),
-      duration_s: h.duration_seconds, status: h.status, source: 'talkr', source_id: 'call:' + h.id,
+      duration_s: h.duration_seconds, status: unanswered(h) ? (h.has_recording ? 'voicemail' : 'missed') : h.status, source: 'talkr', source_id: 'call:' + h.id,
       talkr_user_id: h.user_id ?? null,
       // Only set when known: a null here on a redelivery would erase a rep already credited.
       ...(h.user_id && repByTalkrUser.get(String(h.user_id)) ? { rep_id: repByTalkrUser.get(String(h.user_id)) } : {}),
@@ -717,7 +799,8 @@ async function intelFor(admin: SupabaseClient, base: string, token: string, wsId
         const review = await coachTranscript({
           apiKey, transcript: patch.transcript, repName: names.rep, prospectName: names.prospect, source: 'recording',
           talk: measureTalkSplit(patch.transcript, names.rep, names.prospect),
-          timeline, durationS: c.duration_s, sellerCall: c.buyer_id == null,
+          timeline, durationS: c.duration_s, sellerCall: c.buyer_id == null, ws: wsId,
+          ...(await workspaceCallType(admin, wsId)),
         });
         patch.coaching_review = review;
         patch.score_overall = review.overall;

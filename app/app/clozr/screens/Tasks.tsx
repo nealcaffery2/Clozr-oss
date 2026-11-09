@@ -10,6 +10,11 @@ import type { ClozrView } from '@/app/clozr/view';
 import { Mark } from '@/components/ds/mark';
 import { taskLook } from '@/lib/task-views';
 import { READ_ONLY_TITLE, useCanWrite } from '@/lib/read-only-context';
+import { ScreenHeader } from '@/components/ds/Screen';
+import { Button } from '@/components/ds/Button';
+import { SectionLabel } from '@/components/ds/Text';
+import { Plus } from 'lucide-react';
+import { textTone } from '@/lib/text-tone';
 
 // A ticked task fades and slides out before it leaves the list (useClozr taskLeaving).
 const LEAVE_CSS = `
@@ -17,6 +22,16 @@ const LEAVE_CSS = `
 .task-leaving, .task-leaving > td { animation: taskLeave .5s ease forwards; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .task-leaving, .task-leaving > td { animation-duration: .01s; } }
 `;
+
+// Offscreen tasks skip style, layout and paint (content-visibility). A table
+// row cannot be skipped, so on the desk the rows sit in tables of CHUNK rows
+// inside skippable blocks. The header table sizes the columns from every
+// task's text, as the one table did (SizerRow), and each block copies its
+// column widths (--tc0 to --tc8), so the columns come out the same. Phone
+// cards (here, Buyers, Dispo) also carry flexShrink 0: a skipped card has no
+// content height to keep the flex column from shrinking it.
+const CHUNK = 50;
+const TASK_COLS = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 
 export function Tasks({ V }: { V: ClozrView }) {
   const rows = V.taskRows || [];
@@ -30,22 +45,40 @@ export function Tasks({ V }: { V: ClozrView }) {
   React.useEffect(() => {
     if (focusId) document.querySelector('[data-task-focus="true"]')?.scrollIntoView({ block: 'center' });
   }, [focusId]);
+  // The header table's widths, copied to the row blocks before every paint
+  // (ResizeObserver runs after layout, before paint).
+  const head = React.useRef<HTMLTableElement>(null);
+  React.useLayoutEffect(() => {
+    const table = head.current;
+    const box = table?.closest<HTMLElement>('[role="table"]');
+    if (!table || !box) return;
+    const cells = Array.from(table.rows[0].cells);
+    const sync = () => {
+      box.style.setProperty('--tw', `${table.getBoundingClientRect().width}px`);
+      cells.forEach((c, i) => box.style.setProperty(`--tc${i}`, `${c.getBoundingClientRect().width}px`));
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(table);
+    cells.forEach((c) => ro.observe(c));
+    return () => ro.disconnect();
+  }, [V.isMobile]);
+  const chunks: TaskRow[][] = [];
+  for (let i = 0; i < rows.length; i += CHUNK) chunks.push(rows.slice(i, i + CHUNK));
   return (
     <section data-screen-label="Tasks" style={{flex: "1", minWidth: "0", display: "flex", flexDirection: V.isMobile ? "column" : "row"}}>
       <style>{LEAVE_CSS}</style>
       {(!V.isMobile) ? (
         <>
       <aside style={{width: "210px", flex: "none", background: "var(--surface, #fff)", borderRight: "1px solid var(--divider, #e4e4e7)", padding: "14px 10px"}}>
-        <div style={{fontSize: "10.5px", fontWeight: "600", letterSpacing: ".1em", textTransform: "uppercase", color: "var(--meta, #71717a)", padding: "0 8px 8px"}}>
-          Tasks
-        </div>
+        <SectionLabel style={{padding: "0 8px 8px"}}>Tasks</SectionLabel>
         {(V.tasksViews || []).map((v, v__i) => (
           <React.Fragment key={v__i}>
           <button className="dc2" onClick={v.go} style={{display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", height: "30px", padding: "0 8px", border: "0", borderRadius: "7px", cursor: "pointer", fontSize: "13px", textAlign: "left", background: v.bg, color: v.color, fontWeight: "500"}}>
             <span>
               {v.label}
             </span>
-            <span style={{fontSize: "11.5px", color: "var(--subtle, #a1a1aa)"}}>
+            <span style={{fontSize: "11.5px", color: "var(--meta, #71717a)"}}>
               {v.count}
             </span>
           </button>
@@ -68,15 +101,18 @@ export function Tasks({ V }: { V: ClozrView }) {
         <>
         <div style={{flex: "none", background: "var(--surface, #fff)", borderBottom: "1px solid var(--divider, #e4e4e7)", padding: "10px 0 10px 12px"}}>
           <div style={{display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "6px 8px", paddingRight: "12px"}}>
-            <span style={{fontSize: "19px", fontWeight: "700", letterSpacing: "-0.03em"}}>
+            <span style={{fontSize: "19px", fontWeight: "700", letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums"}}>
               Tasks
             </span>
             <span style={{fontSize: "12.5px", color: "var(--meta, #71717a)", whiteSpace: "nowrap"}}>
               {V.taskCount} in {V.tasksView.toLowerCase()}
             </span>
             {/* Drops under the title on a narrow phone rather than squeezing the count. */}
-            <span style={{marginLeft: "auto"}}>
+            <span style={{marginLeft: "auto", display: "inline-flex", gap: "6px", alignItems: "center"}}>
               <CompleteShown V={V} />
+              <button className="dc10" onClick={V.addTask} style={{height: "32px", padding: "0 12px", borderRadius: "8px", border: "1px solid var(--c-primary)", background: "var(--c-primary)", color: "#fff", fontSize: "12.5px", fontWeight: "600", cursor: "pointer", whiteSpace: "nowrap"}}>
+                + Task
+              </button>
             </span>
           </div>
           <div style={{display: "flex", gap: "6px", overflowX: "auto", marginTop: "9px", paddingRight: "12px", paddingBottom: "2px"}}>
@@ -94,15 +130,10 @@ export function Tasks({ V }: { V: ClozrView }) {
         </div>
         </>
       ) : null}
-      <div style={{flex: "1", minWidth: "0", display: "flex", flexDirection: "column"}}>
-        <div style={{display: V.isMobile ? "none" : "flex", alignItems: "center", gap: "10px", padding: "12px 16px", background: "var(--surface, #fff)", borderBottom: "1px solid var(--divider, #e4e4e7)"}}>
-          <h1 style={{margin: "0", fontSize: "16px", fontWeight: "700", letterSpacing: "-0.02em"}}>
-            {V.tasksView}
-          </h1>
-          <span style={{fontSize: "12px", color: "var(--meta, #71717a)"}}>
-            {V.taskCount} tasks
-          </span>
-          <div style={{flex: "1"}}></div>
+      <div style={{flex: "1", minWidth: "0", minHeight: "0", display: "flex", flexDirection: "column"}}>
+        <ScreenHeader title="Tasks" meta={`${V.taskCount} in ${V.tasksView.toLowerCase()}`} actions={<>
+          {/* A phone keeps its view chips below; the filter menus and plans are desk tools. */}
+          {V.isMobile ? null : <>
           {(V.taskMenus || []).map((f, f__i) => (
             <React.Fragment key={f__i}>
             <div style={{position: "relative"}}>
@@ -140,10 +171,9 @@ export function Tasks({ V }: { V: ClozrView }) {
             Action plans
           </button>
           ) : null}
-          <button className="dc10" onClick={V.addTask} style={{height: "32px", padding: "0 12px", borderRadius: "8px", border: "1px solid var(--c-primary)", background: "var(--c-primary)", color: "#fff", fontSize: "12.5px", fontWeight: "600", cursor: "pointer"}}>
-            + Task
-          </button>
-        </div>
+          </>}
+          <Button kind="primary" onClick={V.addTask} icon={<Plus size={13} aria-hidden />}>Task</Button>
+        </>} />
         {(V.isMobile) ? (
           <>
           {/* A phone gets cards, not the nine-column table: the title column
@@ -165,13 +195,15 @@ export function Tasks({ V }: { V: ClozrView }) {
           </>
         ) : (
         <div style={{flex: "1", overflow: "auto", background: "var(--surface, #fff)"}}>
-          <table style={{width: "100%", borderCollapse: "separate", borderSpacing: "0", fontSize: "12.5px"}}>
+          <div role="table">
+          <div style={{position: "sticky", top: "0", zIndex: 1}}>
+          <table ref={head} role="presentation" style={{width: "100%", borderCollapse: "separate", borderSpacing: "0", fontSize: "12.5px"}}>
             <thead>
-              <tr>
-                <th style={{position: "sticky", top: "0", background: "var(--c-thead)", borderBottom: "1px solid var(--c-thead-line)", width: "40px", height: "36px"}}></th>
+              <tr role="row">
+                <th role="columnheader" style={{position: "sticky", top: "0", background: "var(--c-thead)", borderBottom: "1px solid var(--c-thead-line)", width: "40px", height: "36px"}}></th>
                 {(V.taskCols || []).map((c, c__i) => (
                   <React.Fragment key={c__i}>
-                  <th style={{position: "sticky", top: "0", background: "var(--c-thead)", borderBottom: "1px solid var(--c-thead-line)", padding: "0 12px", height: "36px", textAlign: "left", fontSize: "10.5px", fontWeight: "600", letterSpacing: ".08em", textTransform: "uppercase", color: "var(--meta, #71717a)", whiteSpace: "nowrap"}}>
+                  <th role="columnheader" style={{position: "sticky", top: "0", background: "var(--c-thead)", borderBottom: "1px solid var(--c-thead-line)", padding: "0 12px", height: "36px", textAlign: "left", fontSize: "11.5px", fontWeight: "600", color: "var(--muted, #52525b)", whiteSpace: "nowrap"}}>
                     {c}
                   </th>
                   </React.Fragment>
@@ -179,7 +211,7 @@ export function Tasks({ V }: { V: ClozrView }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((t, t__i) => <TaskItem key={t__i} t={t} phone={false} act={act} />)}
+              {rows.length ? <SizerRow rows={rows} /> : null}
               {rows.length === 0 ? (
                 <EmptyRow
                   colSpan={(V.taskCols || []).length || 1}
@@ -193,6 +225,18 @@ export function Tasks({ V }: { V: ClozrView }) {
               ) : null}
             </tbody>
           </table>
+          </div>
+          {chunks.map((part, ci) => (
+            <div key={ci} style={{width: "var(--tw)", contentVisibility: "auto", containIntrinsicHeight: `auto ${part.length * 44}px`}}>
+              <table role="presentation" style={{width: "100%", tableLayout: "fixed", borderCollapse: "separate", borderSpacing: "0", fontSize: "12.5px"}}>
+                <colgroup>{TASK_COLS.map((i) => <col key={i} style={{width: `var(--tc${i})`}} />)}</colgroup>
+                <tbody>
+                  {part.map((t, t__i) => <TaskItem key={t__i} t={t} phone={false} act={act} />)}
+                </tbody>
+              </table>
+            </div>
+          ))}
+          </div>
         </div>
         )}
       </div>
@@ -217,7 +261,7 @@ function CompleteShown({ V }: { V: ClozrView }) {
 }
 
 type TaskRow = ClozrView['taskRows'][number];
-type TaskAct = (id: string, what: 'toggle' | 'open' | 'call' | 'snooze') => void;
+type TaskAct = (id: string, what: 'toggle' | 'open' | 'call' | 'snooze' | 'edit') => void;
 
 /** A row redraws only when what it shows changes; its handlers are read at click time (act). */
 function sameRow(a: { t: TaskRow; phone: boolean; act: TaskAct }, b: { t: TaskRow; phone: boolean; act: TaskAct }) {
@@ -245,12 +289,13 @@ const TaskItem = React.memo(function TaskItem({ t, phone, act }: { t: TaskRow; p
   const open = () => act(t.id, 'open');
   const call = () => act(t.id, 'call');
   const snooze = () => act(t.id, 'snooze');
+  const edit = () => act(t.id, 'edit');
   if (phone) return (
-    <div data-task-focus={t.focused || undefined} className={mark.leaving ? 'task-leaving' : undefined} style={{background: t.focused ? "var(--mint-dim, #e7f8f1)" : "var(--surface, #fff)", border: t.focused ? "1px solid #0A8560" : "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", padding: "11px 12px", display: "flex", flexDirection: "column", gap: "8px", minWidth: "0"}}>
+    <div data-task-focus={t.focused || undefined} className={mark.leaving ? 'task-leaving' : undefined} style={{background: t.focused ? "var(--mint-dim, #e7f8f1)" : "var(--surface, #fff)", border: t.focused ? "1px solid #0A8560" : "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", padding: "11px 12px", display: "flex", flexDirection: "column", gap: "8px", minWidth: "0", flexShrink: 0, contentVisibility: "auto", containIntrinsicHeight: "auto 116px"}}>
       <div style={{display: "flex", alignItems: "flex-start", gap: "10px", minWidth: "0"}}>
         <input type="checkbox" checked={!!(mark.done)} onChange={toggle} aria-label={`Mark done: ${t.title}`} style={{width: "18px", height: "18px", flex: "none", marginTop: "1px", accentColor: "#16a34a", cursor: "pointer"}} />
         <div onClick={open} style={{flex: "1", minWidth: "0", cursor: "pointer"}}>
-          <div style={{fontSize: "14px", fontWeight: "600", lineHeight: "1.35", color: look.textColor, textDecoration: look.deco}}>
+          <div className="t-name" style={{color: look.textColor, textDecoration: look.deco}}>
             {t.title}
           </div>
           {(t.hasNote) ? (
@@ -259,7 +304,7 @@ const TaskItem = React.memo(function TaskItem({ t, phone, act }: { t: TaskRow; p
             </div>
           ) : null}
         </div>
-        <span style={{flex: "none", display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "10px", fontWeight: "600", letterSpacing: ".08em", textTransform: "uppercase", color: t.prColor, whiteSpace: "nowrap", marginTop: "2px"}}>
+        <span style={{flex: "none", display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", fontWeight: "600", color: t.prColor, whiteSpace: "nowrap", marginTop: "2px"}}>
           <Mark label={t.priority} />
           {t.priority}
         </span>
@@ -282,29 +327,24 @@ const TaskItem = React.memo(function TaskItem({ t, phone, act }: { t: TaskRow; p
           {t.type}
         </span>
         <span style={{color: "var(--line, #d4d4d8)"}}>·</span>
-        <span style={{color: t.assignedColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
+        <span style={{color: textTone(t.assignedColor), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
           {t.assigned}
         </span>
       </div>
       <div style={{display: "flex", gap: "6px", minWidth: "0"}}>
-        <button className="clozr-talkr-ghost" onClick={call} style={{color: "var(--c-talkr)", flex: "1", minWidth: "0", height: "38px", borderRadius: "9px", border: "1px solid var(--tint-rose, #fecdd3)", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "500", cursor: "pointer"}}>
-          Call
-        </button>
-        <button className="dc2" onClick={open} style={{flex: "1", minWidth: "0", height: "38px", borderRadius: "9px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "500", color: "var(--ink, #18181b)", cursor: "pointer"}}>
-          Open
-        </button>
-        <button className="dc2" onClick={snooze} style={{flex: "1", minWidth: "0", height: "38px", borderRadius: "9px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "12.5px", fontWeight: "500", color: "var(--ink, #18181b)", cursor: "pointer"}}>
-          Snooze
-        </button>
+        <Button onClick={call} style={{flex: "1", minWidth: "0", height: "38px"}}>Call</Button>
+        <Button onClick={open} style={{flex: "1", minWidth: "0", height: "38px"}}>Open</Button>
+        <Button onClick={snooze} title="Move it to tomorrow at 9 AM" style={{flex: "1", minWidth: "0", height: "38px"}}>Snooze</Button>
+        <Button onClick={edit} aria-label={`Edit task: ${t.title}`} style={{flex: "1", minWidth: "0", height: "38px"}}>Edit</Button>
       </div>
     </div>
   );
   return (
-    <tr data-task-focus={t.focused || undefined} className={mark.leaving ? 'dc2 task-leaving' : 'dc2'} style={t.focused ? { background: 'var(--mint-dim, #e7f8f1)' } : undefined}>
-      <td style={{padding: "0 0 0 14px", height: "44px", borderBottom: "1px solid var(--divider-2, #f0f0f1)"}}>
+    <tr role="row" data-task-focus={t.focused || undefined} className={mark.leaving ? 'dc2 task-leaving' : 'dc2'} style={t.focused ? { background: 'var(--mint-dim, #e7f8f1)' } : undefined}>
+      <td role="cell" style={{padding: "0 0 0 14px", height: "44px", borderBottom: "1px solid var(--divider-2, #f0f0f1)"}}>
         <input type="checkbox" checked={!!(mark.done)} onChange={toggle} aria-label={`Mark done: ${t.title}`} style={{width: "15px", height: "15px", accentColor: "#16a34a", cursor: "pointer"}} />
       </td>
-      <td onClick={open} style={{padding: "7px 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", fontWeight: "600", cursor: "pointer", color: look.textColor, textDecoration: look.deco, maxWidth: "380px"}}>
+      <td role="cell" onClick={open} style={{padding: "7px 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", fontWeight: "600", cursor: "pointer", color: look.textColor, textDecoration: look.deco, maxWidth: "380px"}}>
         {t.title}
         {(t.hasNote) ? (
           <div style={{fontWeight: "400", fontSize: "12px", color: "var(--meta, #71717a)", textDecoration: "none", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
@@ -312,40 +352,87 @@ const TaskItem = React.memo(function TaskItem({ t, phone, act }: { t: TaskRow; p
           </div>
         ) : null}
       </td>
-      <td onClick={open} style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", cursor: "pointer", color: "var(--tx-mint, #0a8560)"}}>
+      <td role="cell" onClick={open} style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", cursor: "pointer", color: "var(--tx-mint, #0a8560)"}}>
         {t.person}
       </td>
-      <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", color: "var(--muted, #52525b)"}}>
+      <td role="cell" style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", color: "var(--muted, #52525b)"}}>
         {t.addr}
       </td>
-      <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", color: "var(--muted, #52525b)"}}>
+      <td role="cell" style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", color: "var(--muted, #52525b)"}}>
         {t.type}
       </td>
-      <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", fontWeight: "500", color: look.dueColor}}>
+      <td role="cell" style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", fontWeight: "500", color: look.dueColor}}>
         {look.due}
       </td>
-      <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", color: t.assignedColor}}>
+      <td role="cell" style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap", color: textTone(t.assignedColor)}}>
         {t.assigned}
       </td>
-      <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap"}}>
-        <span style={{display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "10.5px", fontWeight: "600", letterSpacing: ".08em", textTransform: "uppercase", color: t.prColor}}>
+      <td role="cell" style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap"}}>
+        <span style={{display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11px", fontWeight: "600", color: t.prColor}}>
           <Mark label={t.priority} />
           {t.priority}
         </span>
       </td>
-      <td style={{padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap"}}>
+      {/* Pinned to the right edge so Call, Open, Snooze and Edit stay in reach when the columns run wider than the screen. */}
+      <td role="cell" className="cz-sticky-col" style={{position: "sticky", right: 0, zIndex: 1, boxShadow: "inset 1px 0 0 var(--divider-2, #f0f0f1)", padding: "0 12px", borderBottom: "1px solid var(--divider-2, #f0f0f1)", whiteSpace: "nowrap"}}>
         <span style={{display: "flex", gap: "4px"}}>
-          <button className="clozr-talkr-ghost" onClick={call} style={{color: "var(--c-talkr)", height: "26px", padding: "0 9px", borderRadius: "7px", border: "1px solid var(--tint-rose, #fecdd3)", background: "var(--c-btn-bg)", fontSize: "11.5px", cursor: "pointer"}}>
-            Call
-          </button>
-          <button className="dc2" onClick={open} style={{height: "26px", padding: "0 9px", borderRadius: "7px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "11.5px", cursor: "pointer"}}>
-            Open
-          </button>
-          <button className="dc2" onClick={snooze} style={{height: "26px", padding: "0 9px", borderRadius: "7px", border: "1px solid var(--c-btn-line)", background: "var(--c-btn-bg)", fontSize: "11.5px", cursor: "pointer"}}>
-            Snooze
-          </button>
+          <Button size={28} onClick={call}>Call</Button>
+          <Button size={28} onClick={open}>Open</Button>
+          <Button size={28} onClick={snooze} title="Move it to tomorrow at 9 AM">Snooze</Button>
+          <Button size={28} onClick={edit} aria-label={`Edit task: ${t.title}`}>Edit</Button>
         </span>
       </td>
     </tr>
   );
 }, sameRow);
+
+/**
+ * The header table's hidden row: each column's distinct values, styled as
+ * TaskItem's cells (keep the two in step). A collapsed row takes no height but
+ * still counts toward column widths, so the header gets the widths one table
+ * of every task gave, and the row blocks copy them.
+ */
+function SizerRow({ rows }: { rows: TaskRow[] }) {
+  const uniq = (f: (t: TaskRow) => string) => [...new Set(rows.map(f))];
+  const titles = [...new Map(rows.map((t) => [t.title + '\n' + (t.hasNote ? t.note : ''), t])).entries()];
+  const lines = (f: (t: TaskRow) => string) => uniq(f).map((v) => <div key={v}>{v}</div>);
+  return (
+    <tr aria-hidden style={{visibility: "collapse"}}>
+      <td style={{padding: "0 0 0 14px"}}>
+        <input type="checkbox" tabIndex={-1} style={{width: "15px", height: "15px"}} />
+      </td>
+      {/* The title column never goes under 220px: below that, titles wrapped five lines deep. */}
+      <td style={{padding: "7px 12px", fontWeight: "600", minWidth: "220px", maxWidth: "380px"}}>
+        {titles.map(([k, t]) => (
+          <div key={k}>
+            {t.title}
+            {t.hasNote ? <div style={{fontWeight: "400", fontSize: "12px", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{t.note}</div> : null}
+          </div>
+        ))}
+      </td>
+      <td style={{padding: "0 12px", whiteSpace: "nowrap"}}>{lines((t) => t.person)}</td>
+      <td style={{padding: "0 12px", whiteSpace: "nowrap"}}>{lines((t) => t.addr)}</td>
+      <td style={{padding: "0 12px", whiteSpace: "nowrap"}}>{lines((t) => t.type)}</td>
+      <td style={{padding: "0 12px", whiteSpace: "nowrap", fontWeight: "500"}}>{lines((t) => taskLook(t.done, t.due, t.bucket).due)}</td>
+      <td style={{padding: "0 12px", whiteSpace: "nowrap"}}>{lines((t) => t.assigned)}</td>
+      <td style={{padding: "0 12px", whiteSpace: "nowrap"}}>
+        {uniq((t) => t.priority).map((p) => (
+          <div key={p}>
+            <span style={{display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11px", fontWeight: "600"}}>
+              <Mark label={p} />
+              {p}
+            </span>
+          </div>
+        ))}
+      </td>
+      <td style={{padding: "0 12px", whiteSpace: "nowrap"}}>
+        <span style={{display: "flex", gap: "4px"}}>
+          <button type="button" tabIndex={-1} className="ds-btn ds-btn--ghost ds-btn--sm">Call</button>
+          <button type="button" tabIndex={-1} className="ds-btn ds-btn--ghost ds-btn--sm">Open</button>
+          <button type="button" tabIndex={-1} className="ds-btn ds-btn--ghost ds-btn--sm">Snooze</button>
+          <button type="button" tabIndex={-1} className="ds-btn ds-btn--ghost ds-btn--sm">Edit</button>
+        </span>
+      </td>
+    </tr>
+  );
+}

@@ -11,7 +11,7 @@ export { stateCode } from './us-states';
 export const BUYER_TYPES = [
   ['investor', 'Individual investor'], ['flipper', 'Flipper'], ['landlord', 'Landlord / buy & hold'], ['institutional', 'Institutional'],
   ['fund', 'Fund'], ['ibuyer', 'iBuyer'], ['developer', 'Builder / developer'], ['wholesaler', 'Wholesaler'], ['agent', 'Agent / broker'],
-  ['realtors', 'Realtors'], ['other', 'Other'],
+  ['realtors', 'Realtors'], ['property_manager', 'Property manager'], ['other', 'Other'],
 ] as const;
 
 /** Spreadsheet words that should land on a BUYER_TYPES code. */

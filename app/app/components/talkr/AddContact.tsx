@@ -21,9 +21,14 @@ import {
   talkrWebUrl,
 } from '@/lib/talkr-web/api';
 import { Icon } from './Icon';
-import { Button, Eyebrow, Input, Labeled, Modal, Notice, TextArea, type ButtonTone } from './ui';
+import { Button, Eyebrow, Input, Labeled, Modal, Notice, Select, TextArea, type ButtonTone } from './ui';
 import { TYPE_LABEL, TagsField, errorMessage, isOrgType } from './contacts';
 import { formatPhone, toE164 } from '@/lib/talkr-web/time';
+import { mirrorContactToClozr } from '@/lib/talkr-contact-mirror';
+import { useSession } from '@/lib/session';
+import { BUYER_TYPES } from '@/lib/buyer-profile';
+import { VENDOR_KINDS } from '@/lib/crm-write';
+import { useTeam } from '@/app/components/inbox/gmail/mail-extras';
 
 /** What every caller gets back; `merged` is true when a duplicate was folded in. */
 export type AddContactHandler = (contact: ContactDto, merged: boolean) => void;
@@ -76,15 +81,30 @@ export function AddContactModal({
   const [email, setEmail] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
-  const [addrOpen, setAddrOpen] = useState(false);
+  // A seller's property is the record: its address starts open.
+  const [addrOpen, setAddrOpen] = useState(true);
   const [line1, setLine1] = useState('');
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
   const [zip, setZip] = useState('');
+  // What CLOZR's record of this type has a field for (lib/talkr-contact-mirror `extra`).
+  const [asking, setAsking] = useState('');
+  const [buyerType, setBuyerType] = useState('');
+  const [markets, setMarkets] = useState('');
+  const [price, setPrice] = useState('');
+  const [kind, setKind] = useState('');
+  const [assignTo, setAssignTo] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   /** The existing contact's id after a 409; '' when the server did not say which. */
   const [dupId, setDupId] = useState<string | null>(null);
+  /** Saved to the dialer but the CLOZR copy failed: the primary button just closes. */
+  const [saved, setSaved] = useState<ContactDto | null>(null);
+  const session = useSession();
+  const workspaceId = session.workspace?.id ?? null;
+  const userId = session.user?.id ?? null;
+  // Who works this contact in CLOZR: a cold-blast reply handed to the rep who follows up.
+  const team = useTeam(workspaceId, true);
 
   const org = isOrgType(type);
   const displayName = name.trim() || (org ? company.trim() : '');
@@ -111,6 +131,7 @@ export function AddContactModal({
   };
 
   const submit = async (merge: boolean) => {
+    if (saved) return onCreated(saved, merge);
     if (!ready || busy) return;
     setBusy(true);
     setErr(null);
@@ -137,6 +158,19 @@ export function AddContactModal({
         ...(merge ? { merge: true } : {}),
       };
       const r = await api.createContact(input);
+      // The dialer's contact is CLOZR's too. A failed copy keeps the modal
+      // open with the reason; the dialer side is already saved.
+      if (workspaceId !== null) {
+        const extra: Record<string, string> = type === 'seller' ? { asking, assignTo }
+          : type === 'buyer' ? { type: buyerType, markets, price, assignTo }
+            : { kind: type === 'vendor' ? kind : type === 'title' ? 'Title Company' : type === 'company' ? 'Company' : '', market: markets };
+        const m = await mirrorContactToClozr(workspaceId, userId, input, extra).catch((e) => ({ ok: false, message: errorMessage(e) }));
+        if (!m.ok) {
+          setSaved(r.contact);
+          setErr(`Saved to the dialer, not to CLOZR: ${m.message ?? 'unknown error'}`);
+          return;
+        }
+      }
       onCreated(r.contact, merge);
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && e.code === 'duplicate_phone') {
@@ -224,6 +258,52 @@ export function AddContactModal({
             </Labeled>
           </div>
 
+          {/* The type's own fields: what the seller, buyer or vendor record in CLOZR asks for. */}
+          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
+            {type === 'seller' && (
+              <Labeled label="Asking price">
+                <Input value={asking} onChange={(e) => setAsking(e.target.value)} placeholder="$" inputMode="decimal" autoComplete="off" />
+              </Labeled>
+            )}
+            {type === 'buyer' && (
+              <>
+                <Labeled label="Buyer type">
+                  <Select value={buyerType} onChange={(e) => setBuyerType(e.target.value)}>
+                    <option value="">Pick one</option>
+                    {BUYER_TYPES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                  </Select>
+                </Labeled>
+                <Labeled label="Markets">
+                  <Input value={markets} onChange={(e) => setMarkets(e.target.value)} placeholder="San Antonio, TX; DFW" autoComplete="off" />
+                </Labeled>
+                <Labeled label="Price range">
+                  <Input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="150k–400k" autoComplete="off" />
+                </Labeled>
+              </>
+            )}
+            {type === 'vendor' && (
+              <Labeled label="Service type">
+                <Select value={kind} onChange={(e) => setKind(e.target.value)}>
+                  <option value="">Pick one</option>
+                  {VENDOR_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+                </Select>
+              </Labeled>
+            )}
+            {org && (
+              <Labeled label="Market">
+                <Input value={markets} onChange={(e) => setMarkets(e.target.value)} placeholder="San Antonio" autoComplete="off" />
+              </Labeled>
+            )}
+            {(type === 'seller' || type === 'buyer') && team.length > 0 && (
+              <Labeled label="Assign to">
+                <Select value={assignTo} onChange={(e) => setAssignTo(e.target.value)}>
+                  <option value="">Me</option>
+                  {team.filter((t) => t.user_id !== userId).map((t) => <option key={t.user_id} value={t.user_id}>{t.full_name || t.email || 'Teammate'}</option>)}
+                </Select>
+              </Labeled>
+            )}
+          </div>
+
           <Labeled label="Tags">
             <TagsField tags={tags} onChange={setTags} placeholder="probate, absentee…" />
           </Labeled>
@@ -237,7 +317,7 @@ export function AddContactModal({
               style={{ font: '600 11.5px/1 var(--sans)', color: 'var(--accent)', cursor: 'pointer' }}
             >
               <Icon name={addrOpen ? 'chevron-down' : 'chevron-right'} size={13} />
-              {org ? 'Add address' : 'Add property address'}
+              {type === 'seller' ? 'Add property address' : 'Add address'}
             </button>
             {addrOpen && (
               <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
@@ -301,7 +381,7 @@ export function AddContactModal({
 
           <div className="flex flex-wrap items-center gap-1.5">
             <Button type="submit" tone="accent" disabled={!ready || busy}>
-              {busy ? 'Saving…' : 'Add contact'}
+              {busy ? 'Saving…' : saved ? 'Done' : 'Add contact'}
             </Button>
             <Button tone="ghost" onClick={onClose} disabled={busy}>
               Cancel

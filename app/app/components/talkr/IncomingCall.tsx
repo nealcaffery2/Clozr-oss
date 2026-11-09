@@ -116,7 +116,7 @@ export function IncomingCall({ record = null, callback = null }: { record?: Cloz
         className="p-5"
         style={{
           borderRadius: 'var(--r-lg)',
-          background: 'var(--ink)',
+          background: 'var(--ink-fill, var(--ink))',
           border: '1px solid var(--dark-2)',
           boxShadow: '0 24px 60px rgba(0,0,0,.45)',
         }}

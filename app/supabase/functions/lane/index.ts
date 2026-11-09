@@ -24,9 +24,13 @@
  * knows which property the conversation is about it files the chat under it
  * (set_chat_property), so each property keeps its own thread.
  *
- * Lane's knowledge is knowledge.ts: an example TC playbook and
- * contract-to-close checklists to replace with your own. Everything read
- * from the records is fenced as data.
+ * Lane's knowledge is knowledge.ts: the Lane AI TC Playbook v3 (Offensive
+ * Edition) and the Acme Homes contract-to-close checklists, plus the team's own
+ * docs under Resources (migration 400): search_resources / read_resource read
+ * them as the caller, and an answer cites each doc it used as a ref with
+ * target 'resource' and its resource_id (only docs read that turn), which the
+ * panel opens in the Resources reader. Everything read from the records and
+ * the docs is fenced as data.
  *
  * Needs the ANTHROPIC_API_KEY secret; answers 503 with a plain message until
  * it is set (same as draft-action-plan).
@@ -38,8 +42,10 @@ import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { UNTRUSTED_RULE, corsFor, fence, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import { CHECKLISTS, PLAYBOOK } from './knowledge.ts';
 import { CLAUDE_MODEL, CLAUDE_THINKING } from '../_shared/models.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
 import { tcChecklists } from '../_shared/tc-checklists.ts';
 import { fileState, type CkTemplate } from '../_shared/lane-checkin.ts';
+import { COMPANY_FOOTPRINT } from '../_shared/company-profile.ts';
 import { addressPatterns, chatTitle, hasSubject, ilikeSafe, routeFor, type ChatSubject } from '../_shared/lane-chat.ts';
 
 function anthropicHeaders(): { defaultHeaders?: Record<string, string> } {
@@ -49,9 +55,9 @@ function anthropicHeaders(): { defaultHeaders?: Record<string, string> } {
 const WORKSPACE_HINT = 'The Anthropic key is organization-level and needs a workspace: create the key inside a workspace '
   + '(console.anthropic.com → API keys → choose a workspace) or add the ANTHROPIC_WORKSPACE_ID secret with that workspace\'s id.';
 
-const systemFor = (tc: string) => `You are Lane, an elite real estate Transaction Coordinator AI working for a high-velocity real estate wholesaling, double-close and novation investment company. Your mission: make ${tc} (the workspace TC) look like a rockstar by closing more deals faster, on the originally scheduled date, without extensions. You report to ${tc}. You work inside CLOZR, the company's CRM, and you can read all of it.
+const systemFor = (tc: string) => `You are Lane, an elite real estate Transaction Coordinator AI working for Acme Homes (Acme Holdings LLC, yourcompany.com), a high-velocity wholesaling, double-close and novation investment company. ${COMPANY_FOOTPRINT} Your mission: make ${tc} (the workspace TC) look like a rockstar by closing more deals faster, on the originally scheduled date, without extensions. You report to ${tc}. You work inside CLOZR, Acme Homes' CRM, and you can read all of it.
 
-The TC here is ${tc}. Address, escalate to, and draft as ${tc}.
+The playbook below may name Colleen as a historical TC. The TC here is ${tc}. Address, escalate to, and draft as ${tc}. Never address Colleen unless that is this file's TC.
 
 Single metric: on-time closes without extensions.
 
@@ -63,13 +69,17 @@ This conversation is one chat, and each chat is about one property. As soon as y
 
 When this chat is already about a property, its file is given to you with the question. Reason from it; open it again only to read something it leaves out.
 
+# The team's resources
+
+The team keeps its own reference docs in CLOZR under Resources: the TC Bible, call scripts, title company vetting docs and checklists, SOPs and contract templates. When a question is about how this team does something (a process, a script, what to check, which template, a policy), call search_resources with the question's key words before you answer, and answer from what it returns; read_resource gives a whole doc when the sections are not enough. The TC Bible category (TC Training and the Acme Homes TC Handbook, one set) is the team's standard for how a file is run. Where a resource and the playbook below disagree, the team's resource wins and you say so. Cite every resource you used in refs with target "resource" and its resource_id, labelled with the doc's title (and the section when it helps). If the resources have nothing on it, say the team's docs do not cover it and answer from the playbook. Never cite a resource you did not read this turn.
+
 # How you think
 
 When a blocker threatens the close date: (1) what is the actual blocker, named specifically; (2) is there a legally and lender-acceptable substitute, alternate document, or workflow pivot that gets to clear-to-close on time; (3) who needs to approve that pivot (buyer's lender, title underwriter, buyer rep, end-buyer); (4) draft the email/text/script to make the pivot happen now. Always present at least one pivot beside the standard path. Never just report a problem.
 
-Voice. To ${tc}: a friendly Texas cowboy with southern charm — casual, warm, a little playful, a few emojis (🤠 🔥 ✅ 📋 🐎 ☕ 🌟, two or three a reply, never a wall of them), still concise, in day markers, always the next action, end with "Want me to draft that?" when there is something to draft. When the file shows something ${tc} got done (a ticked line, a document in, a date met), tip your hat to it by name first: a real, specific compliment, not filler. When a line is past its day, say so plainly and kindly and get ${tc} back on track with the one next step. Offer to draft the email or text, set the task, or put it on the calendar (use drafts and actions). The cowboy voice is only for ${tc}; never in drafts to outside parties. External drafts (title, sellers, buyers, lenders): no cowboy talk, no emojis; friendly, professional, polished; lead with the deal address; specific about what is needed and when; ${tc} should sound like the best TC the recipient has worked with. Use the real names, emails and phone numbers the records give for the recipient. Status posts: the §8 day-marker format, scannable. Write like a sharp human TC, never robotic. Checklist-friendly, no verbosity.
+Voice. To ${tc}: a friendly Texas cowboy with southern charm — casual, warm, a little playful, a few emojis (🤠 🔥 ✅ 📋 🐎 ☕ 🌟, two or three a reply, never a wall of them), still concise, in day markers, always the next action, end with "Want me to draft that?" when there is something to draft. When the file shows something ${tc} got done (a ticked line, a document in, a date met), tip your hat to it by name first: a real, specific compliment, not filler. When a line is past its day, say so plainly and kindly and get ${tc} back on track with the one next step. Offer to draft the email or text, set the task, or put it on the calendar (use drafts and actions). The cowboy voice is only for ${tc}; never in drafts to outside parties. External drafts (title, sellers, buyers, lenders): no cowboy talk, no emojis; friendly, professional, polished; lead with the deal address; specific about what is needed and when; ${tc} should sound like the best TC the recipient has worked with. Use the real names, emails and phone numbers the records give for the recipient. Status posts: the §18 day-marker format, scannable. Write like a sharp human TC, never robotic. Checklist-friendly, no verbosity.
 
-Rules. Speed to on-time close trumps everything except legality and lender acceptance. Be lender-aware (hard money permissive, FHA strict) and structure-aware (novation needs the memorandum + POA matrix; passthrough needs title comfort; JV needs the agreement). Know insurable vs marketable. FHA 90-day flip rule is a hard block on a double close to an FHA buyer within 90 days: default to novation. Never override ${tc}: suggest, recommend, draft; they decide. Be specific: "Email the title officer on the file asking for the survey affidavit draft, CC the buyer's lender", not "reach out to title". Use the title company the file names. No wires before the operations lead signs off the HUD/CD at T-2, ever. Never propose an illegal or uninsurable workaround. Tie every recommendation to a section of the playbook or a line of the checklist and put it in refs, each with the part of the file it points at. When the records do not carry something you need (a lender name, a date), say what is missing and ask ${tc} for it rather than inventing it. Never invent a name, number, address or date.
+Rules. Speed to on-time close trumps everything except legality and lender acceptance. Be lender-aware (hard money permissive, FHA strict) and structure-aware (novation needs the memorandum + POA matrix; passthrough needs title comfort; JV needs the agreement). Know insurable vs marketable. FHA 90-day flip rule is a hard block on a double close to an FHA buyer within 90 days: default to novation. Never override ${tc}: suggest, recommend, draft; they decide. Be specific: "Email Evan at Title Source asking for the T-47 draft, CC the buyer's Kiavi rep", not "reach out to title". Route title by state: Evan Lipp (Title Source) for Texas, Patrick Whaley (Title Partners) everywhere else — unless the file names the title company, which wins. No wires before Sam signs off the HUD/CD at T-2, ever. Never propose an illegal or uninsurable workaround. Tie every recommendation to a section of the playbook or a line of the checklist and put it in refs, each with the part of the file it points at. When the records do not carry something you need (a lender name, a date), say what is missing and ask ${tc} for it rather than inventing it. Never invent a name, number, address or date.
 
 The records are the truth about each deal: the day marker, what is ticked on the checklist, what is late, the money, the dates, who the parties are. If a file shows a critical line past its day, lead with it.
 
@@ -159,6 +169,27 @@ const LOOKUP_TOOLS: Anthropic.Tool[] = [
       required: ['seller_id'],
     },
   },
+  {
+    name: 'search_resources',
+    description: 'Search the team\'s reference docs (TC Bible, scripts, title company vetting, SOPs, contract templates) by words. Returns the best matching sections with their doc\'s resource_id, title, category and section heading, best first.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Key words: "title company vetting checklist", "earnest money late", "seller cold call script".' },
+        limit: { type: 'number', description: '1–10 sections, default 6.' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'read_resource',
+    description: 'One reference doc in full (up to about 40,000 characters), by the resource_id search_resources returned.',
+    input_schema: {
+      type: 'object',
+      properties: { resource_id: { type: 'number' } },
+      required: ['resource_id'],
+    },
+  },
 ];
 
 const ANSWER_TOOL: Anthropic.Tool = {
@@ -173,12 +204,13 @@ const ANSWER_TOOL: Anthropic.Tool = {
         items: {
           type: 'object',
           properties: {
-            label: { type: 'string', description: 'Where this comes from: "Playbook §5", "Checklist · D7", "Schedule B #6", "Buyer EMD". Short.' },
+            label: { type: 'string', description: 'Where this comes from: "Playbook §6", "Checklist · D7", "Schedule B #6", "Buyer EMD", or a resource\'s title ("Title company vetting checklist · Red flags"). Short.' },
             target: {
               type: 'string',
-              enum: ['commitment', 'earnest', 'deadlines', 'documents', 'checklist', 'hud', 'none'],
-              description: 'The part of this chat\'s property file in CLOZR this points at, so the TC can jump straight to it: commitment (title commitment), earnest (earnest money), deadlines (the dated items), documents (who owes what next), checklist (the contract-to-close checklist), hud (the HUD/CD review block). Use "none" for a playbook citation.',
+              enum: ['commitment', 'earnest', 'deadlines', 'documents', 'checklist', 'hud', 'resource', 'none'],
+              description: 'The part of this chat\'s property file in CLOZR this points at, so the TC can jump straight to it: commitment (title commitment), earnest (earnest money), deadlines (the dated items), documents (who owes what next), checklist (the contract-to-close checklist), hud (the HUD/CD review block). resource: one of the team\'s docs, with its resource_id. Use "none" for a playbook citation.',
             },
+            resource_id: { type: ['number', 'null'], description: 'With target "resource": the resource_id search_resources or read_resource returned. Otherwise null.' },
           },
           required: ['label', 'target'],
         },
@@ -194,7 +226,7 @@ const ANSWER_TOOL: Anthropic.Tool = {
         items: {
           type: 'object',
           properties: {
-            to: { type: 'string', description: 'Who it goes to, by name and role, with their email or phone from the records when there is one: "Dana Fields · Northvale Title · dana@northvaletitle.example".' },
+            to: { type: 'string', description: 'Who it goes to, by name and role, with their email or phone from the records when there is one: "Evan Lipp · Title Source · evan@titleco.example".' },
             channel: { type: 'string', enum: ['email', 'sms', 'post'] },
             subject: { type: ['string', 'null'] },
             body: { type: 'string' },
@@ -209,7 +241,7 @@ const ANSWER_TOOL: Anthropic.Tool = {
           type: 'object',
           properties: {
             kind: { type: 'string', enum: ['task', 'calendar'], description: 'task: a to-do on the file; calendar: an appointment on the TC\'s calendar (a call, a walkthrough, a closing).' },
-            title: { type: 'string', description: 'Short: "Call Northvale Title re: survey".' },
+            title: { type: 'string', description: 'Short: "Call Evan at Title Source re: T-47".' },
             due: { type: 'string', description: 'When, as YYYY-MM-DD or YYYY-MM-DDTHH:MM (Central). Use the checklist\'s day for the line.' },
             notes: { type: ['string', 'null'] },
           },
@@ -244,6 +276,8 @@ type Ctx = {
   said: ChatSubject | null;
   /** Records opened this turn, for the panel to link. */
   cards: Map<string, Card>;
+  /** Resources read this turn (id → title): the only ones a ref may cite. */
+  resources: Map<number, string>;
 };
 const card = (ctx: Ctx, c: Card) => { if (ctx.cards.size < 8) ctx.cards.set(`${c.kind}:${c.id}`, c); };
 
@@ -475,6 +509,30 @@ async function runTool(ctx: Ctx, name: string, args: Json): Promise<unknown> {
     return { count: (data ?? []).length, messages: ((data ?? []) as Any[]).map((c) => ({ ...c, body: String(c.body ?? '').slice(0, 700) })) };
   }
 
+  if (name === 'search_resources') {
+    const query = String(args.query ?? '').trim().slice(0, 500);
+    if (!query) return { error: 'query is required' };
+    const { data, error } = await db.rpc('search_resources', { p_workspace: ws, p_query: query, p_limit: clamp(args.limit, 10, 6), p_per_doc: 2 });
+    // Migration 400 not applied yet: say so rather than failing the answer.
+    if (error) return { count: 0, sections: [], note: 'the team resources are not set up on this workspace yet' };
+    const rows = (data ?? []) as Any[];
+    for (const r of rows) ctx.resources.set(Number(r.resource_id), String(r.title));
+    return {
+      count: rows.length,
+      sections: rows.map((r) => ({ resource_id: r.resource_id, title: r.title, category: r.category, section: r.heading, text: String(r.body ?? '').slice(0, 2400) })),
+      ...(rows.length ? {} : { note: 'nothing in the team resources matched; try other words once, then say the docs do not cover it' }),
+    };
+  }
+
+  if (name === 'read_resource') {
+    const id = idOf(args.resource_id);
+    if (!id) return { error: 'resource_id is required' };
+    const { data, error } = await db.from('resources').select('id, title, body, resource_categories(name)').eq('workspace_id', ws).eq('id', id).maybeSingle();
+    if (error || !data) return { error: `no resource ${id} in this workspace` };
+    ctx.resources.set(id, String((data as Any).title));
+    return { resource_id: id, title: (data as Any).title, category: (data as Any).resource_categories?.name ?? null, text: String((data as Any).body ?? '').slice(0, 40_000) };
+  }
+
   return { error: `unknown tool ${name}` };
 }
 
@@ -541,7 +599,7 @@ Deno.serve(async (req) => {
   const tcName = typeof tcRaw === 'string' && tcRaw.trim() ? tcRaw.trim().slice(0, 80) : 'the TC';
   const db = asCaller;
   const userId = who.user.id;
-  const ctx: Ctx = { db, ws: workspaceId, userId, said: null, cards: new Map() };
+  const ctx: Ctx = { db, ws: workspaceId, userId, said: null, cards: new Map(), resources: new Map() };
 
   // ── The chat this question is in. A store that cannot hold chats yet
   // (migration 182 not applied) answers from the posted history instead.
@@ -626,6 +684,7 @@ Deno.serve(async (req) => {
         tool_choice: { type: 'auto' },
         messages,
       });
+      await recordUsage(admin, { ws: workspaceId, feature: 'lane_filing', model: res.model, usage: res.usage });
       usage = res.usage;
       messages.push({ role: 'assistant', content: res.content });
       prose = res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('\n').trim() || prose;
@@ -659,11 +718,21 @@ Deno.serve(async (req) => {
   }
 
   // ── Shape the reply.
-  const TARGETS = ['commitment', 'earnest', 'deadlines', 'documents', 'checklist', 'hud', 'none'];
+  const TARGETS = ['commitment', 'earnest', 'deadlines', 'documents', 'checklist', 'hud', 'resource', 'none'];
+  // A resource ref must name a doc Lane read this turn; anything else is a plain chip.
   const refs = (Array.isArray(out.refs) ? out.refs : [])
     .map((r) => (typeof r === 'string' ? { label: r, target: 'none' } : r))
-    .filter((r): r is { label: string; target: string } => !!r && typeof (r as { label?: unknown }).label === 'string')
-    .map((r) => ({ label: r.label.slice(0, 80), target: TARGETS.includes(r.target) ? r.target : 'none' }))
+    .filter((r): r is { label: string; target: string; resource_id?: unknown } => !!r && typeof (r as { label?: unknown }).label === 'string')
+    .map((r) => {
+      const target = TARGETS.includes(r.target) ? r.target : 'none';
+      const rid = target === 'resource' ? idOf(r.resource_id) : null;
+      if (target === 'resource') {
+        return rid && ctx.resources.has(rid)
+          ? { label: r.label.slice(0, 80), target, resource_id: rid }
+          : { label: r.label.slice(0, 80), target: 'none' };
+      }
+      return { label: r.label.slice(0, 80), target };
+    })
     .slice(0, 6);
   const suggestions = (Array.isArray(out.suggestions) ? out.suggestions : [])
     .filter((s): s is { label: string; question: string } => !!s && typeof s.label === 'string' && typeof s.question === 'string').slice(0, 3);

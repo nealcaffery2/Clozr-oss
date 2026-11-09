@@ -18,7 +18,8 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { UNTRUSTED_RULE, corsFor, fence, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
-import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
+import { CLAUDE_HAIKU_MODEL, HAIKU_THINKING, cachedSystem, toolRule } from '../_shared/models.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
 import { WRITING_RULE, slopFindings } from '../_shared/no-ai-slop.ts';
 import { CALL_PROFILE_SYSTEM, CALL_PROFILE_TOOL, PROFILE_KINDS, emptyProfile, parseCallProfile, tailTranscript } from '../_shared/call-profile.ts';
 
@@ -74,9 +75,9 @@ Deno.serve(async (req) => {
   try {
     const client = new Anthropic({ apiKey, ...anthropicHeaders() });
     const res = await client.messages.create({
-      model: CLAUDE_MODEL, thinking: CLAUDE_THINKING,
+      model: CLAUDE_HAIKU_MODEL, thinking: HAIKU_THINKING,
       max_tokens: 1500,
-      system: SYSTEM,
+      system: cachedSystem(SYSTEM),
       tools: [CALL_PROFILE_TOOL as unknown as Anthropic.Tool],
       tool_choice: { type: 'auto' },
       messages: [{
@@ -87,6 +88,7 @@ Deno.serve(async (req) => {
           + `\n\nThe call so far:\n${fence('transcript', transcript, 7000)}`,
       }],
     });
+    await recordUsage(admin, { ws: workspaceId, feature: 'call_profile', model: res.model, usage: res.usage });
     if (res.stop_reason === 'refusal') return json({ ok: true, profile: emptyProfile() });
     const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     const profile = parseCallProfile(call?.input, transcript, { notesOk: (s) => slopFindings(s).length === 0 });

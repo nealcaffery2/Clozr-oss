@@ -16,6 +16,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { liveCallerBlock, type LinePools } from '@/lib/caller-spin';
 import { loadLinePools } from '@/lib/line-pools';
 import { pushCallerIdPick } from '@/lib/caller-id-link';
+import { lineGroups } from '@/lib/line-names';
 import { useSession } from '@/lib/session';
 import {
   TalkrError,
@@ -32,7 +33,7 @@ const label: React.CSSProperties = { display: 'block', fontSize: '11.5px', color
 const field: React.CSSProperties = { height: '34px', padding: '0 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', fontSize: '13px', outline: 0, background: 'var(--canvas, #fafafa)', color: 'var(--ink, #18181b)' };
 const btn = (primary = false, disabled = false): React.CSSProperties => ({
   height: '32px', padding: '0 12px', borderRadius: '8px', fontSize: '12.5px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer',
-  border: `1px solid ${primary ? '#0A8560' : 'var(--divider, #e4e4e7)'}`, background: primary ? (disabled ? '#7fcbb2' : '#0A8560') : '#fff', color: primary ? '#fff' : disabled ? '#a1a1aa' : '#18181b',
+  border: `1px solid ${primary ? '#0A8560' : 'var(--divider, #e4e4e7)'}`, opacity: disabled ? 0.5 : 1, background: primary ? '#0A8560' : '#fff', color: primary ? '#fff' : disabled ? '#a1a1aa' : '#18181b',
 });
 
 type Note = { ok: boolean; text: string } | null;
@@ -123,7 +124,7 @@ export function TalkrPhone({ demo, isMobile, talkrUrl }: { demo: boolean; isMobi
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
         <TalkrMark size={16} />
         <h2 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Phone</h2>
-        <span style={{ fontSize: '11px', color: 'var(--subtle, #a1a1aa)' }}>Talkr</span>
+        <span style={{ fontSize: '11px', color: 'var(--meta, #71717a)' }}>Talkr</span>
       </div>
       <p style={{ margin: '0 0 12px', fontSize: '12.5px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
         Calls, texts, recordings and the live coach run on Talkr. Your CLOZR sign-in is your Talkr sign-in — there is no second password.
@@ -170,15 +171,19 @@ export function TalkrPhone({ demo, isMobile, talkrUrl }: { demo: boolean; isMobi
                     disabled={busy === 'callerid'}
                     style={{ ...field, width: isMobile ? '100%' : '360px' }}
                   >
-                    {active.map((n) => {
-                      const blocked = blockOf(n);
-                      return (
-                        <option key={n.id} value={n.id} disabled={!!blocked}>
-                          {formatPhone(n.phone_e164)}{areaCity(n.phone_e164) ? ` · ${areaCity(n.phone_e164)}` : ''}{n.label ? ` · ${n.label}` : ''}{n.id === me.default_phone_number_id ? ' · default' : n.assigned_user_id === me.id ? ' · mine' : n.assigned_user_name ? ` · ${n.assigned_user_name}` : ''}{blocked ? ` · ${blocked}` : ''}
-                        </option>
-                      );
-                    })}
                     {(liveCount > 1 || me.caller_id_mode === 'local_presence') ? <option value="local_presence">Local presence · match the seller’s area code</option> : null}
+                    {lineGroups(active, me.id).map((g) => (
+                      <optgroup key={g.label} label={g.label}>
+                        {g.lines.map((n) => {
+                          const blocked = blockOf(n);
+                          return (
+                            <option key={n.id} value={n.id} disabled={!!blocked}>
+                              {formatPhone(n.phone_e164)}{areaCity(n.phone_e164) ? ` · ${areaCity(n.phone_e164)}` : ''}{n.label ? ` · ${n.label}` : ''}{n.id === me.default_phone_number_id ? ' · default' : n.assigned_user_id !== me.id && n.assigned_user_name ? ` · ${n.assigned_user_name}` : ''}{blocked ? ` · ${blocked}` : ''}
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                    ))}
                   </select>
                   {selectedBlock && blockOf(selectedBlock) && (
                     <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--tx-red, #b91c1c)' }}>

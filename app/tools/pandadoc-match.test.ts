@@ -1,6 +1,7 @@
 // Run with:  npx tsx tools/pandadoc-match.test.ts
 import assert from 'node:assert/strict';
 import { addressScore, formatPacket, guessKindFromName, pickPacket, pickPerson, recipientEmails, sharedLinks, webhookFields } from '../lib/pandadoc-match';
+import { belongsElsewhere, metaWorkspace, peopleInOneWorkspace } from '../supabase/functions/_shared/pandadoc-match';
 
 assert.equal(guessKindFromName('Acme Homes Cash Offer Letter'), 'offer');
 assert.equal(guessKindFromName('TX Residential Purchase Agreement'), 'psa');
@@ -51,5 +52,25 @@ const fields = webhookFields({
 assert.equal(fields.template_name, 'Cash Offer');
 assert.equal(fields.tokens?.[0].name, 'Seller.Name');
 assert.equal(sharedLinks(fields.recipients)[0].url, 'https://app.pandadoc.com/document/abc');
+
+// One PandaDoc key serves every workspace: a webhook with no workspace
+// metadata is filed only when every matching person sits in one workspace.
+const twoWs = [
+  { kind: 'seller' as const, id: 1, workspace_id: 1, email: 'kara@home.com', address: '123 Oakview Drive' },
+  { kind: 'seller' as const, id: 2, workspace_id: 2, email: 'kara@home.com', address: '9 Pine' },
+];
+const karaDoc = { name: 'Cash Offer - 123 Oakview', recipients: [{ email: 'kara@home.com' }] };
+assert.equal(peopleInOneWorkspace(karaDoc, twoWs), null);
+assert.deepEqual(peopleInOneWorkspace(karaDoc, [twoWs[0], { ...twoWs[1], email: 'nobody@x.com' }])?.map((p) => p.id), [1]);
+assert.deepEqual(peopleInOneWorkspace(karaDoc, [twoWs[0], { ...twoWs[1], workspace_id: 1 }])?.map((p) => p.id), [1, 2]);
+
+assert.equal(metaWorkspace({ metadata: { clozr_workspace_id: '7' } }), 7);
+assert.equal(metaWorkspace({ metadata: {} }), null);
+// sync / backfill skip documents that are another workspace's.
+assert.equal(belongsElsewhere({ metadata: { clozr_workspace_id: '2' } }, 1, []), true);
+assert.equal(belongsElsewhere({ metadata: { clozr_workspace_id: '1' } }, 1, []), false);
+assert.equal(belongsElsewhere({}, 1, [2]), true);
+assert.equal(belongsElsewhere({}, 1, [2, 1]), false);
+assert.equal(belongsElsewhere({}, 1, []), false);
 
 console.log('pandadoc-match: ok');

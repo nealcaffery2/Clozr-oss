@@ -9,7 +9,7 @@
 // NotSetUp is the short box shown in place of a feature nobody has turned on.
 
 import React, { useState } from 'react';
-import { SHADOW, btn } from '@/components/genius/parts';
+import { SHADOW, btn } from '@/components/kit/parts';
 
 export const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px', minWidth: 0 };
 const h2: React.CSSProperties = { margin: '0 0 4px', fontSize: '13.5px', fontWeight: 650, color: 'var(--ink, #18181b)' };
@@ -102,6 +102,28 @@ export function Icon({ name, size = 14 }: { name: 'chevron' | 'check' | 'x' | 'a
     <svg className={name === 'chevron' ? 'dlv-chev' : undefined} aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}>
       {paths[name]}
     </svg>
+  );
+}
+
+/**
+ * An on/off setting that saves on its own. A native button, so the sheet's
+ * focus ring and the keyboard both work; the 44px row is the touch target.
+ */
+export function Switch({ id, on, busy, onChange, label, hint }: { id: string; on: boolean; busy?: boolean; onChange: (next: boolean) => void; label: string; hint?: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', minHeight: '44px', padding: '4px 0' }}>
+      <button
+        type="button" id={id} role="switch" aria-checked={on} aria-busy={busy || undefined} disabled={busy} aria-labelledby={`${id}-label`}
+        onClick={() => onChange(!on)}
+        style={{ flex: 'none', marginTop: '2px', width: '32px', height: '18px', padding: 0, border: 0, borderRadius: '999px', cursor: busy ? 'progress' : 'pointer', background: on ? 'var(--c-action, #0A8560)' : 'var(--divider, #d4d4d8)', position: 'relative', transition: 'background .14s ease', opacity: busy ? 0.6 : 1 }}
+      >
+        <span aria-hidden="true" style={{ position: 'absolute', top: '2px', left: 0, width: '14px', height: '14px', borderRadius: '999px', background: 'var(--surface, #fff)', boxShadow: '0 1px 2px rgba(0,0,0,.2)', transform: on ? 'translateX(16px)' : 'translateX(2px)', transition: 'transform .14s cubic-bezier(.23,1,.32,1)' }} />
+      </button>
+      <label id={`${id}-label`} htmlFor={id} style={{ minWidth: 0, cursor: 'pointer' }}>
+        <span style={{ display: 'block', fontSize: '12.5px', fontWeight: 500, color: 'var(--ink, #18181b)', lineHeight: '22px' }}>{label}</span>
+        {hint ? <span style={{ display: 'block', fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.5, marginTop: '2px' }}>{hint}</span> : null}
+      </label>
+    </div>
   );
 }
 

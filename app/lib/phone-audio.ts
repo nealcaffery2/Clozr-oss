@@ -2,10 +2,12 @@
 // and which mic and speaker the softphone uses — one per-user preference blob
 // and the Web Audio / HTMLAudio that plays it.
 //
-// Talkr keeps these per browser too (its lib/sounds.ts and the audio-device
-// keys in lib/softphone.tsx): `/v1/me` has no fields for them, and "which
-// headset" is a fact about the desk, not the account. CLOZR keys the blob by
-// the signed-in user so two reps sharing a machine keep their own choices.
+// Talkr keeps these per browser (its lib/sounds.ts and the audio-device keys
+// in lib/softphone.tsx). CLOZR keys the blob by the signed-in user so two reps
+// sharing a machine keep their own choices, and mirrors it to
+// profiles.phone_audio (migration 391) so the choices and the uploaded files
+// follow the rep to the next browser. Which mic, speaker and ring device stay
+// per browser: "which headset" is a fact about the desk, not the account.
 //
 // Built-in tones are synthesized — oscillator sequences, no audio files, nothing
 // copyrighted, nothing to 404 mid-call. A custom HTTPS or uploaded data URL
@@ -17,6 +19,8 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
+import { supabase } from './supabase';
+import type { Json } from './database.types';
 
 // ── Catalogue ────────────────────────────────────────────────────────────────
 
@@ -102,6 +106,8 @@ export type PhoneAudioPrefs = {
   /** Where the ringtone plays (null = system default). */
   ringDeviceId: string | null;
   notifyVolume: number;
+  /** Set once the connected/ended chimes were switched off for everyone (they leaked into calls). */
+  callTonesOff?: boolean;
   /**
    * Also raise a desktop notification for each enabled event (lib/desktop-notify.ts).
    * Off until a rep turns it on in Settings: the browser's permission prompt has
@@ -128,7 +134,8 @@ export const DEFAULT_AUDIO_PREFS: PhoneAudioPrefs = {
   ringDeviceId: null,
   notifyVolume: 0.8,
   desktopNotifications: false,
-  events: Object.fromEntries(Object.entries(NOTIFY_EVENTS).map(([k, v]) => [k, { on: true, tone: v.tone }])) as PhoneAudioPrefs['events'],
+  events: Object.fromEntries(Object.entries(NOTIFY_EVENTS).map(([k, v]) => [k, { on: k !== 'connected' && k !== 'ended', tone: v.tone }])) as PhoneAudioPrefs['events'],
+  callTonesOff: true,
   inputDeviceId: null,
   outputDeviceId: null,
   echoCancellation: true,
@@ -138,14 +145,22 @@ export const DEFAULT_AUDIO_PREFS: PhoneAudioPrefs = {
 
 /**
  * Max size for an uploaded sound: ringtone, wait music or an alert. Uploads
- * live in IndexedDB, with only an `idb:` reference in the prefs: 10 MB is
- * ~13.7 MB as a data URL, well past localStorage's ~5 MB per site.
+ * live in the phone-audio bucket (and a copy in IndexedDB), with only an
+ * `sb:` or `idb:` reference in the prefs: 10 MB is ~13.7 MB as a data URL,
+ * well past localStorage's ~5 MB per site. The bucket's file_size_limit is
+ * the same number.
  */
 export const MAX_CUSTOM_AUDIO_BYTES = 10 * 1024 * 1024;
 /** What still fits as a data URL in localStorage, for a browser with no IndexedDB. */
 const MAX_DATA_URL_AUDIO_BYTES = 2 * 1024 * 1024;
 
 const KEY = 'clozr.phoneAudio.v1';
+/** Fired when a ring falls back to the built-in tone because the chosen file would not play. `detail` says why. */
+export const RING_FALLBACK_EVENT = 'clozr-ring-fallback';
+function ringFellBack(why: string): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(RING_FALLBACK_EVENT, { detail: why }));
+}
 let user = 'anon';
 let snapshot = DEFAULT_AUDIO_PREFS;
 let snapshotRaw: string | null | undefined;
@@ -159,17 +174,88 @@ export function setAudioUser(id: string | null): void {
   snapshotRaw = undefined;
   listeners.forEach((l) => l());
   void loadUploadedSounds();
+  void pullCloudPrefs(next);
 }
 
-// ── Uploaded sounds (IndexedDB) ──────────────────────────────────────────────
+// ── The account's copy (profiles.phone_audio) ────────────────────────────────
+
+/** profiles.phone_audio: a PhoneAudioPrefs with anything missing. */
+export type CloudAudioPrefs = Partial<Omit<PhoneAudioPrefs, 'events'>> & { events?: Partial<PhoneAudioPrefs['events']> };
+
+/** Mic, speaker and ring device: facts about the desk, never in the row. */
+const DESK_KEYS = new Set<string>(['inputDeviceId', 'outputDeviceId', 'ringDeviceId']);
+
+/** What the row holds: everything but the desk's devices. A data: URL (a file this browser could keep nowhere else) stays out too. */
+export function cloudAudioPrefs(p: PhoneAudioPrefs): CloudAudioPrefs {
+  const noData = (v: unknown) => !(typeof v === 'string' && v.startsWith('data:'));
+  const out = Object.fromEntries(Object.entries(p).filter(([k, v]) => !DESK_KEYS.has(k) && noData(v))) as CloudAudioPrefs;
+  out.events = Object.fromEntries(Object.entries(p.events).map(([k, e]) => [k, noData(e.customUrl) ? e : { on: e.on, tone: e.tone }]));
+  return out;
+}
+
+/** Sign-in: the account's choices win, except which mic, speaker and ring device, which stay this browser's. */
+export function mergeAudioPrefs(local: PhoneAudioPrefs, cloud: CloudAudioPrefs | null | undefined): PhoneAudioPrefs {
+  if (!cloud) return local;
+  const events = { ...local.events };
+  for (const [k, e] of Object.entries(cloud.events ?? {})) events[k as NotifyEvent] = { ...local.events[k as NotifyEvent], ...e };
+  return {
+    ...local, ...cloud, events,
+    inputDeviceId: local.inputDeviceId, outputDeviceId: local.outputDeviceId, ringDeviceId: local.ringDeviceId,
+  };
+}
+
+async function pullCloudPrefs(id: string): Promise<void> {
+  const db = supabase;
+  if (!db || id === 'anon') return;
+  const { data } = await db.from('profiles').select('phone_audio').eq('id', id).maybeSingle();
+  if (user !== id) return;
+  const cloud = data?.phone_audio as CloudAudioPrefs | null | undefined;
+  if (!cloud) {
+    // Nothing in the row yet: what this browser has chosen becomes the account's.
+    pushCloudPrefs(getAudioPrefs());
+    return;
+  }
+  const merged = mergeAudioPrefs(getAudioPrefs(), cloud);
+  try {
+    localStorage.setItem(`${KEY}:${user}`, JSON.stringify(merged));
+    snapshotRaw = undefined;
+  } catch {
+    snapshot = merged;
+  }
+  listeners.forEach((l) => l());
+  void loadUploadedSounds();
+}
+
+let pushTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Debounced: a volume slider writes many times a second. */
+function pushCloudPrefs(p: PhoneAudioPrefs): void {
+  const db = supabase;
+  if (!db || user === 'anon') return;
+  const id = user;
+  if (pushTimer) clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => {
+    pushTimer = null;
+    void db.from('profiles').update({ phone_audio: cloudAudioPrefs(p) as unknown as Json }).eq('id', id)
+      .then(({ error }) => { if (error) console.warn('phone audio prefs', error.message); });
+  }, 1000);
+}
+
+// ── Uploaded sounds (phone-audio bucket, IndexedDB copy) ─────────────────────
 
 const IDB_PREFIX = 'idb:';
-/** idb: reference → object URL, so a ring can start synchronously. */
+/** `sb:<user id>/<slot>#<saved at>`: a file in the private phone-audio bucket, which follows the rep across browsers. */
+const SB_PREFIX = 'sb:';
+const SB_BUCKET = 'phone-audio';
+const SIGNED_URL_SECONDS = 3600;
+/** idb:/sb: reference → object URL (or, until the file is down, a signed URL), so a ring can start synchronously. */
 const blobUrls = new Map<string, string>();
 
 /** An uploaded file rather than a link the rep pasted. */
 export const isUploadedSound = (url: string | null | undefined): boolean =>
-  !!url && (url.startsWith(IDB_PREFIX) || url.startsWith('data:'));
+  !!url && (url.startsWith(IDB_PREFIX) || url.startsWith(SB_PREFIX) || url.startsWith('data:'));
+/** A reference that has to be loaded before <audio> can take it. */
+const isStoredRef = (url: string): boolean => url.startsWith(IDB_PREFIX) || url.startsWith(SB_PREFIX);
 
 function soundStore(mode: IDBTransactionMode): Promise<IDBObjectStore> {
   return new Promise((resolve, reject) => {
@@ -187,27 +273,59 @@ function done<T>(req: IDBRequest<T>): Promise<T> {
   });
 }
 
-/** The key inside the store: `idb:<user>:<slot>#<saved at>` → `<user>:<slot>`. */
-const idbKey = (ref: string) => ref.slice(IDB_PREFIX.length).split('#')[0];
+/**
+ * The key inside the store: `idb:<user>:<slot>#<saved at>` → `<user>:<slot>`.
+ * An sb: reference is its own key, so a file re-uploaded on another browser
+ * (a new `#<saved at>`) never plays this browser's stale copy.
+ */
+const idbKey = (ref: string) => (ref.startsWith(SB_PREFIX) ? ref : ref.slice(IDB_PREFIX.length).split('#')[0]);
+const sbPath = (ref: string) => ref.slice(SB_PREFIX.length).split('#')[0];
 
 /** Read every uploaded sound in the prefs into memory. Called on sign-in, and lazily on a miss. */
 export async function loadUploadedSounds(p: PhoneAudioPrefs = getAudioPrefs()): Promise<void> {
   const refs = [p.customRingtoneUrl, p.outgoingCustomRingtoneUrl, ...Object.values(p.events).map((e) => e.customUrl)]
-    .filter((u): u is string => !!u?.startsWith(IDB_PREFIX) && !blobUrls.has(u));
-  if (!refs.length || typeof indexedDB === 'undefined') return;
+    .filter((u): u is string => !!u && isStoredRef(u) && !blobUrls.has(u));
+  if (!refs.length) return;
   await Promise.all(refs.map(async (ref) => {
     try {
-      const blob = await done((await soundStore('readonly')).get(idbKey(ref)) as IDBRequest<Blob | undefined>);
-      if (blob) blobUrls.set(ref, URL.createObjectURL(blob));
+      if (typeof indexedDB !== 'undefined') {
+        const blob = await done((await soundStore('readonly')).get(idbKey(ref)) as IDBRequest<Blob | undefined>);
+        if (blob) {
+          blobUrls.set(ref, URL.createObjectURL(blob));
+          return;
+        }
+      }
     } catch {
-      /* gone or blocked: the built-in tone plays instead */
+      /* gone or blocked: the bucket copy below, or the built-in tone */
     }
+    if (ref.startsWith(SB_PREFIX)) await fetchStoredSound(ref);
   }));
+}
+
+/**
+ * The bucket copy of an sb: reference. A signed URL plays it right away; the
+ * file itself is then pulled down and kept in IndexedDB, so the next ring is
+ * an object URL and a desk that goes offline still has its music.
+ */
+async function fetchStoredSound(ref: string): Promise<void> {
+  if (!supabase) return;
+  const { data } = await supabase.storage.from(SB_BUCKET).createSignedUrl(sbPath(ref), SIGNED_URL_SECONDS);
+  const signed = data?.signedUrl;
+  if (!signed) return;
+  blobUrls.set(ref, signed);
+  setTimeout(() => { if (blobUrls.get(ref) === signed) blobUrls.delete(ref); }, (SIGNED_URL_SECONDS - 300) * 1000);
+  try {
+    const blob = await (await fetch(signed)).blob();
+    blobUrls.set(ref, URL.createObjectURL(blob));
+    await done((await soundStore('readwrite')).put(blob, idbKey(ref)));
+  } catch {
+    /* no IndexedDB, or the download failed: the signed URL plays for the hour */
+  }
 }
 
 /** What to hand an <audio> element: an uploaded file's object URL, or the link itself. Null while not loaded yet. */
 function playable(url: string): string | null {
-  if (!url.startsWith(IDB_PREFIX)) return url;
+  if (!isStoredRef(url)) return url;
   const hit = blobUrls.get(url);
   if (!hit) void loadUploadedSounds();
   return hit ?? null;
@@ -217,6 +335,22 @@ function playable(url: string): string | null {
 async function storeAudioFile(file: File, slot: string): Promise<string> {
   if (!file.type.startsWith('audio/') && !/\.(mp3|m4a|wav|ogg|aac)$/i.test(file.name)) throw new Error('File must be an audio file (MP3, WAV, OGG, …).');
   if (file.size > MAX_CUSTOM_AUDIO_BYTES) throw new Error('File too large (max 10 MB). Host it and paste an HTTPS link instead.');
+  // The bucket first, so the file follows the rep; this browser keeps a copy too.
+  if (supabase && user !== 'anon') {
+    const path = `${user}/${slot.replace(':', '-')}`;
+    const up = await supabase.storage.from(SB_BUCKET).upload(path, file, { upsert: true, contentType: file.type || 'audio/mpeg' });
+    if (!up.error) {
+      const ref = `${SB_PREFIX}${path}#${Date.now()}`;
+      blobUrls.set(ref, URL.createObjectURL(file));
+      try {
+        await done((await soundStore('readwrite')).put(file, idbKey(ref)));
+      } catch {
+        /* the bucket has it */
+      }
+      return ref;
+    }
+    console.warn('phone audio upload', up.error.message);
+  }
   const key = `${user}:${slot}`;
   try {
     await done((await soundStore('readwrite')).put(file, key));
@@ -248,6 +382,15 @@ export function getAudioPrefs(): PhoneAudioPrefs {
       customRingtoneUrl: saved.customRingtoneUrl?.trim() || null,
       events: { ...DEFAULT_AUDIO_PREFS.events, ...saved.events },
     };
+    // The connected and ended chimes played on the speaker with the mic open,
+    // and the other side heard a beep. Off once for everyone; a rep can turn
+    // them back on in Settings.
+    if (!saved.callTonesOff) {
+      snapshot = {
+        ...snapshot, callTonesOff: true,
+        events: { ...snapshot.events, connected: { ...snapshot.events.connected, on: false }, ended: { ...snapshot.events.ended, on: false } },
+      };
+    }
   } catch {
     snapshot = DEFAULT_AUDIO_PREFS;
   }
@@ -264,6 +407,7 @@ export function setAudioPrefs(patch: Partial<PhoneAudioPrefs>): void {
   } catch {
     /* private mode: applies for this page only */
   }
+  pushCloudPrefs(next);
   listeners.forEach((l) => l());
 }
 
@@ -284,6 +428,58 @@ export function micConstraints(p: PhoneAudioPrefs = getAudioPrefs()): MediaTrack
     noiseSuppression: p.noiseSuppression,
     autoGainControl: p.autoGainControl,
   };
+}
+
+/** Why the last openMic failed, so the toast can say how to fix it instead of "blocked or unavailable". */
+let lastMicError: { name: string; message: string } | null = null;
+
+/**
+ * getUserMedia that resolves null on failure and remembers why. Call it
+ * inside the tap: that is what makes the browser show its Allow prompt.
+ * A site the rep already blocked never prompts again (no API can re-ask),
+ * so micFailureText says where to flip it back.
+ */
+export function openMic(audio: MediaTrackConstraints | boolean = micConstraints()): Promise<MediaStream | null> {
+  lastMicError = null;
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    lastMicError = { name: 'Unsupported', message: '' };
+    return Promise.resolve(null);
+  }
+  return navigator.mediaDevices.getUserMedia({ audio }).catch((err: unknown) => {
+    lastMicError = { name: (err as Error)?.name ?? 'Error', message: (err as Error)?.message ?? '' };
+    return null;
+  });
+}
+
+/** What to tell the rep after openMic resolved null. */
+export async function micFailureText(): Promise<string> {
+  const e = lastMicError;
+  const ios = isIOSDevice();
+  const siteFix = ios
+    ? 'On iPhone: tap aA in the address bar > Website Settings > Microphone > Allow (or Settings > Safari > Microphone), then call again.'
+    : 'Click the icon at the left of the address bar, set Microphone to Allow, reload, then call again.';
+  if (!e) return 'The microphone did not start. Call again.';
+  if (e.name === 'Unsupported') return 'This browser cannot use a microphone here. Open Clozr in Chrome or Safari over https.';
+  if (e.name === 'NotFoundError' || e.name === 'OverconstrainedError') {
+    return 'No microphone found. Plug one in (or pick another under phone audio settings) and call again.';
+  }
+  if (e.name === 'NotReadableError' || e.name === 'AbortError') {
+    return ios
+      ? 'The microphone is busy. End any other call or recording app and call again.'
+      : 'The microphone is busy or your computer is blocking it. Close other apps using it (Zoom, Teams), and check Windows Settings > Privacy & security > Microphone is on for your browser.';
+  }
+  // NotAllowedError: blocked by the OS, blocked for this site, or the prompt was dismissed.
+  if (/system/i.test(e.message)) {
+    return 'Your computer is blocking the browser from the microphone. Windows: Settings > Privacy & security > Microphone, turn on for your browser. Mac: System Settings > Privacy & Security > Microphone.';
+  }
+  let state: string | null = null;
+  try {
+    state = (await navigator.permissions?.query({ name: 'microphone' as PermissionName }))?.state ?? null;
+  } catch { /* Safari/Firefox may not support the query */ }
+  if (state === 'prompt') {
+    return 'Microphone not allowed. Call again and choose Allow. No prompt showing? ' + siteFix;
+  }
+  return 'Microphone is blocked for this site, so the browser will not ask again. ' + siteFix;
 }
 
 // ── Web Audio ────────────────────────────────────────────────────────────────
@@ -404,34 +600,49 @@ export function primeRemoteCallAudio(): void {
     remoteCallEl = el;
   }
   const el = remoteCallEl;
+  // The one element outlives the engines that play on it; put it back if something took it out of the page.
+  if (!el.isConnected) document.body.appendChild(el);
   el.muted = false;
   if (!el.srcObject && !el.getAttribute('src')) el.src = SILENT_WAV;
   void el.play().catch(() => undefined);
 }
 
-/** Mute the carrier's hold music so a custom MP3 is what the rep hears until the other side answers. */
+let carrierHeardFlag = true;
+
+/**
+ * Mute the carrier (its early media is a second ringback) while this browser
+ * plays its own ringback, until the other side answers. The engine's playback
+ * watchdog reads carrierHeard() so it does not unmute what this muted.
+ */
 export function setCarrierHeard(heard: boolean): void {
+  carrierHeardFlag = heard;
   if (remoteCallEl) remoteCallEl.muted = !heard;
 }
+
+export const carrierHeard = (): boolean => carrierHeardFlag;
 
 export function remoteHasLiveAudio(stream: { getAudioTracks(): { readyState: string }[] } | null | undefined): boolean {
   if (!stream) return false;
   return stream.getAudioTracks().some((t) => t.readyState === 'live');
 }
 
-const sinks = new Map<string, AudioNode>();
+/** The element is kept with its node: an unreferenced <audio> can be collected mid-ring, and the tone goes quiet or to the default speaker. */
+const sinks = new Map<string, { dest: AudioNode; el: HTMLAudioElement }>();
 
 /** The node to connect to for a device: the context itself, or a sink-routed media element (Chrome/Edge; Safari has no setSinkId). */
 function outputFor(c: AudioContext, deviceId: string | null): AudioNode {
   if (!deviceId || deviceId === 'default' || !outputSelectionSupported()) return c.destination;
   const hit = sinks.get(deviceId);
-  if (hit) return hit;
+  if (hit) {
+    if (hit.el.paused) void hit.el.play().catch(() => undefined);
+    return hit.dest;
+  }
   const dest = c.createMediaStreamDestination();
   const el = new Audio();
   el.srcObject = dest.stream;
   void (el as HTMLAudioElement & { setSinkId(id: string): Promise<void> }).setSinkId(deviceId).catch(() => undefined);
   void el.play().catch(() => undefined);
-  sinks.set(deviceId, dest);
+  sinks.set(deviceId, { dest, el });
   return dest;
 }
 
@@ -512,6 +723,35 @@ function previewCustomUrl(url: string, volume: number, deviceId: string | null):
   }
 }
 
+/** Streaming-site pages: a link to one is a web page, never an audio file. */
+const PAGE_LINK = /^https?:\/\/([^/]+\.)?(youtube\.com|youtu\.be|spotify\.com|soundcloud\.com|music\.apple\.com|tiktok\.com)(\/|$)/i;
+const PAGE_LINK_PROBLEM = 'That is a web page, not an audio file. Download the MP3 and use Upload MP3 instead.';
+
+/**
+ * Why a pasted link will not ring, or null when it plays. Loads it the way a
+ * ring would, so a host the CSP blocks, a 404, or a page fails here, in
+ * Settings, instead of as a silent call.
+ */
+export function audioLinkProblem(url: string, timeoutMs = 8000): Promise<string | null> {
+  if (PAGE_LINK.test(url)) return Promise.resolve(PAGE_LINK_PROBLEM);
+  if (typeof Audio === 'undefined') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const el = new Audio();
+    el.preload = 'metadata';
+    const finish = (problem: string | null) => {
+      clearTimeout(timer);
+      el.oncanplay = el.onloadedmetadata = el.onerror = null;
+      el.removeAttribute('src');
+      el.load();
+      resolve(problem);
+    };
+    const timer = setTimeout(() => finish('That link took too long to load. Upload the MP3 instead.'), timeoutMs);
+    el.oncanplay = el.onloadedmetadata = () => finish(null);
+    el.onerror = () => finish('That link will not play here (not an audio file, or its host is blocked). Upload the MP3 instead.');
+    el.src = url;
+  });
+}
+
 /** One ring cycle of a ringtone, for the preview button. */
 export function previewRingtone(id: RingtoneId, p: PhoneAudioPrefs = getAudioPrefs()): void {
   play(RINGTONES[id]?.notes ?? RINGTONES.classic.notes, p.ringVolume, p.ringDeviceId);
@@ -533,10 +773,7 @@ function readAudioFile(file: File): Promise<string> {
   });
 }
 
-/**
- * Give one notification (a new text, a missed call…) its own MP3, up to 10 MB.
- * Kept in this browser only, like the ringtone.
- */
+/** Give one notification (a new text, a missed call…) its own MP3, up to 10 MB. Follows the rep, like the ringtone. */
 export async function setEventSoundFromFile(event: NotifyEvent, file: File): Promise<void> {
   const ref = await storeAudioFile(file, `event:${event}`);
   const p = getAudioPrefs();
@@ -551,7 +788,7 @@ export function previewEvent(event: NotifyEvent, p: PhoneAudioPrefs = getAudioPr
   else previewTone(e.tone, p.notifyVolume, p.outputDeviceId);
 }
 
-/** Use an uploaded audio file (up to 10 MB) as the ringtone or the dial-out wait music, in this browser. */
+/** Use an uploaded audio file (up to 10 MB) as the ringtone or the dial-out wait music. */
 export async function setCustomRingtoneFromFile(
   file: File,
   target: 'incoming' | 'outgoing' = 'incoming',
@@ -642,7 +879,12 @@ type SynthRing = { kind: 'synth'; timer: ReturnType<typeof setInterval>; gain: G
 type FileRing = { kind: 'file'; el: HTMLAudioElement };
 let ring: SynthRing | FileRing | null = null;
 
-function startCustomLoop(url: string, volume: number, deviceId: string | null): boolean {
+/**
+ * `onUnplayable` runs when the source itself will not load: a link that is a
+ * web page (YouTube), a host the page's CSP blocks, a 404. Without it that
+ * ring was silent. An autoplay refusal is not that, and keeps the file.
+ */
+function startCustomLoop(url: string, volume: number, deviceId: string | null, onUnplayable?: () => void): boolean {
   const src = playable(url);
   if (!src) return false;
   try {
@@ -652,7 +894,13 @@ function startCustomLoop(url: string, volume: number, deviceId: string | null): 
     if (deviceId && deviceId !== 'default' && outputSelectionSupported()) {
       void (el as HTMLAudioElement & { setSinkId(id: string): Promise<void> }).setSinkId(deviceId).catch(() => undefined);
     }
-    void el.play().catch(() => undefined);
+    void el.play().catch((e: unknown) => {
+      if ((e as { name?: string })?.name === 'NotAllowedError') return;
+      if (ring?.kind !== 'file' || ring.el !== el) return;
+      ring = null;
+      ringFellBack('the file would not play (a bad link, or a host this page cannot load)');
+      onUnplayable?.();
+    });
     ring = { kind: 'file', el };
     return true;
   } catch {
@@ -686,17 +934,24 @@ function startSynthLoop(p: PhoneAudioPrefs): boolean {
 const RINGBACK: RingtoneId = 'classic';
 
 export function ringSource(p: PhoneAudioPrefs, outgoing = false): { url: string | null; ringtone: RingtoneId } {
-  if (outgoing) {
-    if (p.outgoingCustomRingtoneUrl) {
-      return { url: p.outgoingCustomRingtoneUrl, ringtone: p.outgoingRingtone ?? RINGBACK };
-    }
-    // Dial-out is ringback. It does not follow the incoming ringtone.
-    return { url: null, ringtone: p.outgoingRingtone ?? RINGBACK };
-  }
+  // Dial-out is the standard ringback, always. A chosen tone or an uploaded
+  // MP3 (older prefs still carry one) made dialing out sound like a call
+  // coming in; the fields are kept in the blob and ignored.
+  if (outgoing) return { url: null, ringtone: RINGBACK };
   if (!p.customRingtoneUrl && p.ringtone === RINGBACK && !p.incomingRingChosen) {
     return { url: null, ringtone: 'marimba' };
   }
   return { url: p.customRingtoneUrl, ringtone: p.ringtone };
+}
+
+/**
+ * Where a ring plays. An incoming ring goes to the ringtone device (the desk
+ * speaker, so it is heard without the headset on). Outbound ringback is part
+ * of the call and plays where the call does: the headset. Splitting them was
+ * one ring in the headset and the next on the laptop.
+ */
+export function ringDeviceFor(p: PhoneAudioPrefs, outgoing: boolean): string | null {
+  return outgoing ? p.outputDeviceId : p.ringDeviceId;
 }
 
 function beginRing(outgoing = false): void {
@@ -704,18 +959,30 @@ function beginRing(outgoing = false): void {
   stopCustomPreview();
   const p = getAudioPrefs();
   const src = ringSource(p, outgoing);
-  const playFile = (url: string) => startCustomLoop(url, p.ringVolume, p.ringDeviceId);
+  const device = ringDeviceFor(p, outgoing);
+  const fallBack = () => {
+    if (!startSynthLoop({ ...p, ringtone: src.ringtone, ringDeviceId: device })) ring = null;
+  };
+  const playFile = (url: string) => startCustomLoop(url, p.ringVolume, device, fallBack);
   if (src.url) {
     if (playFile(src.url)) return;
-    // An uploaded MP3 is an idb: reference. The file is not in memory until
-    // IndexedDB answers, and falling through to the piano tone here is what
-    // made a custom file sound like it never took.
-    if (src.url.startsWith(IDB_PREFIX)) {
+    // An uploaded MP3 is an sb: or idb: reference. The file is not in memory
+    // until the bucket or IndexedDB answers, and falling through to the piano
+    // tone here is what made a custom file sound like it never took.
+    if (isStoredRef(src.url)) {
+      // Ring the built-in tone now, never silence, while the file loads (or
+      // forever, on a browser the upload never reached). The file takes over
+      // only if this same ring is still going: a load that lands after the
+      // call connected or ended used to start a loop nothing stopped.
       const url = src.url;
+      fallBack();
+      const mine = ring;
       void loadUploadedSounds(p).then(() => {
-        if (ring) return;
+        if (!mine || ring !== mine) return;
+        stopRing();
         if (!playFile(url)) {
-          if (!startSynthLoop({ ...p, ringtone: src.ringtone })) ring = null;
+          ringFellBack('the uploaded file is not on this browser (uploads stay in the browser they were added in)');
+          fallBack();
         }
       });
       return;

@@ -66,7 +66,7 @@ export function DealPicker({ deals, current, onPick, onClose }: {
         <span>Sort</span>
         {(['stage', 'address', 'seller'] as Sort[]).map((s) => (
           <button key={s} type="button" onClick={() => setSort(s)} aria-pressed={sort === s}
-            style={{ border: '1px solid var(--line, #e4e4e7)', borderRadius: '999px', padding: '3px 10px', fontSize: '12px', cursor: 'pointer', background: sort === s ? 'var(--accent-soft, #e7f5ef)' : 'transparent', color: sort === s ? 'var(--accent, #0A8560)' : 'inherit', fontWeight: sort === s ? 650 : 500 }}>
+            style={{ border: '1px solid var(--line, #e4e4e7)', borderRadius: '999px', padding: '3px 10px', fontSize: '12px', cursor: 'pointer', background: sort === s ? 'var(--accent-soft, #e7f5ef)' : 'transparent', color: sort === s ? 'var(--accent, #0a8560)' : 'inherit', fontWeight: sort === s ? 650 : 500 }}>
             {s === 'stage' ? 'Stage' : s === 'address' ? 'Address' : 'Seller'}
           </button>
         ))}

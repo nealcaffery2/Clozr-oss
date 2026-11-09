@@ -8,11 +8,10 @@ import { EditableName } from './PropertyCard';
 import { BackLink } from '@/components/ds/BackLink';
 import React from 'react';
 import type { ClozrView } from '@/app/clozr/view';
-import { ghostBtn, talkrGhost } from './ui';
+import { Button } from '@/components/ds/Button';
 import { MoreMenu, type MoreItem } from './MoreMenu';
 import { AiAgentToggle } from '@/app/components/ai-agent/AiAgentToggle';
 import { dbId } from '@/lib/crm';
-import { DEAL_SHEET_BTN } from './deal-sheet-style';
 import { CalendarIcon } from '@/app/components/meeting/MeetingInvite';
 import { Mail, MessageSquare } from 'lucide-react';
 
@@ -30,34 +29,49 @@ export function RecordHeader({ V, onText, onEmail, onMeet, moreItems, showBack =
       recordName={V.P.name} canWrite={!!V.liveIds?.canWrite} mobile={mobile} />
   );
   const noEmail = !V.P.email.includes('@');
-  const toolbar = (mobile: boolean) => (
+  // A 390px phone fits Call (top row), Text and More. Email, the meeting
+  // invite and TC move to the top of More instead of running off the screen.
+  const phoneMore: MoreItem[] = [
+    { key: 'email', label: 'Email', note: noEmail ? 'No address yet' : undefined, group: 'Reach', run: onEmail },
+    ...(onMeet ? [{ key: 'meet', label: 'Send a meeting invite', group: 'Reach', run: onMeet }] : []),
+    ...(V.can.tc && !V.hasTcFile ? [{ key: 'tc', label: 'Transaction coordination', group: 'Deal', run: () => V.openClosingFile() }] : []),
+    ...moreItems,
+  ];
+  const toolbar = (mobile: boolean) => mobile ? (
+    <div role="toolbar" aria-label={'Contact ' + first} style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1', minWidth: 0 }}>
+      <Button className="rec-tool" onClick={onText} title="Text (T)" aria-label="Text" icon={<MessageSquare size={15} aria-hidden />}
+        style={{ flex: 1, height: '44px' }}>
+        <span className="rec-tool-label">Text</span>
+      </Button>
+      <MoreMenu items={phoneMore} mobile />
+    </div>
+  ) : (
     <div role="toolbar" aria-label={'Contact ' + first} style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: mobile ? '1' : 'none' }}>
       {mobile ? null : (
-        <button type="button" className="rec-press rec-talkr-ghost rec-tool" onClick={V.callPerson} title="Call (C)" aria-label="Call" style={talkrGhost}>
-          <PhoneIcon /><span className="rec-tool-label">Call</span>
-        </button>
+        <Button className="rec-tool" onClick={V.callPerson} title="Call (C)" aria-label="Call" icon={<PhoneIcon />}>
+          <span className="rec-tool-label">Call</span>
+        </Button>
       )}
-      <button type="button" className="rec-press rec-talkr-ghost rec-tool" onClick={onText} title="Text (T)" aria-label="Text"
-        style={{ ...talkrGhost, ...(mobile ? { flex: 1, height: '36px', justifyContent: 'center' } : {}) }}>
-        {mobile ? null : <MessageSquare size={13} aria-hidden />}<span className="rec-tool-label">Text</span>
-      </button>
-      <button type="button" className="rec-press rec-ghost rec-tool" onClick={onEmail} aria-label="Email"
+      <Button className="rec-tool" onClick={onText} title="Text (T)" aria-label="Text" icon={mobile ? undefined : <MessageSquare size={13} aria-hidden />}
+        style={mobile ? { flex: 1, height: '36px' } : undefined}>
+        <span className="rec-tool-label">Text</span>
+      </Button>
+      <Button className="rec-tool" onClick={onEmail} aria-label="Email" icon={mobile ? undefined : <Mail size={13} aria-hidden />}
         title={noEmail ? 'No email address on this record yet: add one under What we know' : 'Email (E)'}
-        style={{ ...ghostBtn, display: 'inline-flex', alignItems: 'center', gap: '6px', ...(mobile ? { flex: 1, height: '36px', justifyContent: 'center' } : {}) }}>
-        {mobile ? null : <Mail size={13} aria-hidden />}<span className="rec-tool-label">Email</span>
-      </button>
+        style={mobile ? { flex: 1, height: '36px' } : undefined}>
+        <span className="rec-tool-label">Email</span>
+      </Button>
       {onMeet ? (
-        <button type="button" data-testid="record-meet" className="rec-press rec-ghost" onClick={onMeet}
+        <Button data-testid="record-meet" onClick={onMeet} icon={<CalendarIcon size={13} />}
           title="Send a meeting invite with a Google Meet link" aria-label={mobile ? 'Send meeting invite' : undefined}
-          style={{ ...ghostBtn, display: 'inline-flex', alignItems: 'center', gap: '6px', ...(mobile ? { flex: 'none', width: '40px', height: '36px', justifyContent: 'center', padding: 0 } : {}) }}>
-          <CalendarIcon size={13} />{mobile ? null : <span className="rec-tool-label">Meeting</span>}
-        </button>
+          style={mobile ? { flex: 'none', width: '40px', height: '36px', padding: 0 } : undefined}>
+          {mobile ? null : <span className="rec-tool-label">Meeting</span>}
+        </Button>
       ) : null}
       {mobile && V.can.tc ? (
-        <button type="button" data-testid="record-tc" className="rec-press rec-ghost" onClick={() => V.openClosingFile()} title="Open transaction coordination"
-          style={{ ...ghostBtn, fontWeight: 700, color: '#1f7a4d', flex: 1, height: '36px' }}>
+        <Button data-testid="record-tc" onClick={() => V.openClosingFile()} title="Open transaction coordination" style={{ flex: 1, height: '36px' }}>
           TC
-        </button>
+        </Button>
       ) : null}
       <MoreMenu items={moreItems} mobile={mobile} />
     </div>
@@ -65,18 +79,19 @@ export function RecordHeader({ V, onText, onEmail, onMeet, moreItems, showBack =
 
   if (V.isMobile) {
     return (
-      <div style={{ flex: 'none', background: '#fff', borderBottom: '1px solid #e4e4e7', padding: '8px 10px' }}>
+      <div style={{ flex: 'none', background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)', padding: '8px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <BackLink to={V.recordBack} style={{ height: '44px', flex: 'none' }} />
           <span style={{ minWidth: 0, flex: 1, textAlign: 'center' }}>
-            <h1 style={{ margin: 0, display: 'block', fontSize: '18px', fontWeight: 800, letterSpacing: '-0.03em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{V.recordBack.label} / <EditableName as="span" V={V} style={{ font: 'inherit', letterSpacing: 'inherit' }} /></h1>
-            <span style={{ display: 'block', fontSize: '15px', fontWeight: 800, letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{V.P.addr}</span>
-            {V.recordDate ? <span data-testid="record-date" style={{ display: 'block', fontSize: '11.5px', color: '#71717a' }}>{V.recordDate}</span> : null}
+            {/* The back link already names where you came from, so the title is the name alone. */}
+            <h1 className="ds-title" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><EditableName as="span" V={V} style={{ font: 'inherit', letterSpacing: 'inherit' }} /></h1>
+            <span title={V.P.addr} style={{ display: 'block', fontSize: '12.5px', fontWeight: 500, color: 'var(--ink-3, #3f3f46)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{V.P.addr}</span>
+            {V.recordDate ? <span data-testid="record-date" style={{ display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>{V.recordDate}</span> : null}
           </span>
-          <button type="button" className="clozr-talkr-btn rec-press" onClick={V.callPerson} aria-label={'Call ' + first} title="Call"
-            style={{ width: '44px', height: '44px', borderRadius: '10px', border: 0, background: 'var(--c-talkr)', color: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer', flex: 'none' }}>
-            <PhoneIcon size={18} />
-          </button>
+          <Button kind="solid" onClick={V.callPerson} aria-label={'Call ' + first} title="Call" icon={<PhoneIcon size={16} />}
+            style={{ height: '44px', padding: '0 14px' }}>
+            Call
+          </Button>
         </div>
         <div style={{ display: 'flex', marginTop: '8px', gap: '6px' }}>{aiAgent(true)}{toolbar(true)}</div>
       </div>
@@ -96,26 +111,24 @@ export function RecordHeader({ V, onText, onEmail, onMeet, moreItems, showBack =
         {V.canEditAddress ? (
           <button type="button" data-testid="edit-address" className="rec-press" onClick={V.editAddress}
             title={V.hasAddress ? 'Edit address' : 'Set address'} aria-label={V.hasAddress ? 'Edit address' : 'Set address'}
-            style={{ flex: 'none', width: '24px', height: '24px', display: 'inline-grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'none', padding: 0, color: '#71717a', cursor: 'pointer' }}>
+            style={{ flex: 'none', width: '24px', height: '24px', display: 'inline-grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'none', padding: 0, color: 'var(--meta, #71717a)', cursor: 'pointer' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
             </svg>
           </button>
         ) : null}
-        {V.recordDate ? <span data-testid="record-date" style={{ flex: 'none', fontSize: '12px', fontWeight: 500, color: '#71717a', whiteSpace: 'nowrap' }}>{V.recordDate}</span> : null}
+        {V.recordDate ? <span data-testid="record-date" style={{ flex: 'none', fontSize: '12px', fontWeight: 500, color: 'var(--meta, #71717a)', whiteSpace: 'nowrap' }}>{V.recordDate}</span> : null}
       </div>
       <div className="rec-head-tools">
         {V.can.dealSheet ? (
-          <button type="button" data-testid="deal-sheet" className="rec-press" onClick={() => V.openDealSheet()} title="Open the deal sheet"
-            style={DEAL_SHEET_BTN}>
+          <Button kind="solid" data-testid="deal-sheet" onClick={() => V.openDealSheet()} title="Open the deal sheet">
             Deal sheet
-          </button>
+          </Button>
         ) : null}
         {V.can.tc ? (
-          <button type="button" data-testid="record-tc" className="rec-press rec-ghost" onClick={() => V.openClosingFile()} title="Open transaction coordination"
-            style={{ ...ghostBtn, fontWeight: 700, color: '#1f7a4d' }}>
+          <Button data-testid="record-tc" onClick={() => V.openClosingFile()} title="Open transaction coordination">
             TC
-          </button>
+          </Button>
         ) : null}
         {toolbar(false)}
       </div>

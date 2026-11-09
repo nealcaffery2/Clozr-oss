@@ -19,8 +19,9 @@
  * them without the network.
  */
 import { CLAUDE_MODEL } from './models.ts';
+import { recordUsage } from './ai-usage.ts';
 import { WRITING_RULE } from './no-ai-slop.ts';
-import type { DeedTransaction } from './genius-methods.ts';
+import type { DeedTransaction } from './entity-records.ts';
 
 // deno-lint-ignore no-explicit-any
 type Any = any;
@@ -52,6 +53,9 @@ export async function webAgent<T>(system: string, prompt: string, schema: Record
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', ...(ws ? { 'anthropic-workspace-id': ws } : {}) },
         body: JSON.stringify({
           model: CLAUDE_MODEL, max_tokens: 16000, system,
+          // Caching on: the server's search loop re-reads the pages it fetched on
+          // every step, and a pause_turn resume resends them; both read from cache.
+          cache_control: { type: 'ephemeral' },
           output_config: { effort: 'medium', format: { type: 'json_schema', schema } },
           tools: [
             { type: 'web_search_20260209', name: 'web_search', max_uses: opts.searches ?? 6 },
@@ -73,6 +77,7 @@ export async function webAgent<T>(system: string, prompt: string, schema: Record
     const out: Any = JSON.parse(text);
     searches += Number(out?.usage?.server_tool_use?.web_search_requests) || 0;
     fetches += Number(out?.usage?.server_tool_use?.web_fetch_requests) || 0;
+    await recordUsage(null, { feature: 'records_agent', model: String(out?.model ?? ''), usage: out?.usage });
     if (out.stop_reason === 'pause_turn') { messages.push({ role: 'assistant', content: out.content }); continue; }
     if (out.stop_reason === 'refusal') return { data: null, error: 'Claude declined this records search', searches, fetches };
     const raw = (out.content ?? []).filter((c: Any) => c.type === 'text').map((c: Any) => c.text ?? '').join('');
@@ -176,7 +181,7 @@ export function normalizeOwner(j: Any): ParcelOwner {
   };
 }
 
-// ---- resale listing (Homefull) ----------------------------------------------------------------------
+// ---- resale listing ----------------------------------------------------------------------
 
 export type ListingRead = { listing_url: string | null; photo_urls: string[]; remarks: string | null; renovated: boolean | null; confidence: number; signals: string[] };
 

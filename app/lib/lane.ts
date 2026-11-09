@@ -18,6 +18,8 @@
 
 import { D, type TcChecklist, type TcTask, type Transaction } from './clozr-types';
 import { supabase } from './supabase';
+import { demoDocs } from './resources';
+import { searchLocal } from '../supabase/functions/_shared/resource-text';
 
 // ─── Daily drive ─────────────────────────────────────────────────────────────
 
@@ -241,12 +243,13 @@ export type LaneSuggestion = { label: string; question: string };
  * actually renders, so every target except 'none' is somewhere the panel can
  * send you; 'none' is a playbook citation, which has no screen of its own.
  */
-export type LaneRefTarget = 'commitment' | 'earnest' | 'deadlines' | 'documents' | 'checklist' | 'hud' | 'none';
+export type LaneRefTarget = 'commitment' | 'earnest' | 'deadlines' | 'documents' | 'checklist' | 'hud' | 'resource' | 'none';
 
 /** A citation: what it is, and where on the file to find it. */
-export type LaneRef = { label: string; target: LaneRefTarget };
+/** resourceId: with target 'resource', the doc in Resources (lib/resources.ts) the ref opens. */
+export type LaneRef = { label: string; target: LaneRefTarget; resourceId?: string };
 
-const TARGETS: LaneRefTarget[] = ['commitment', 'earnest', 'deadlines', 'documents', 'checklist', 'hud', 'none'];
+const TARGETS: LaneRefTarget[] = ['commitment', 'earnest', 'deadlines', 'documents', 'checklist', 'hud', 'resource', 'none'];
 
 /**
  * Refs used to be bare strings, and the sample stub still writes them that
@@ -257,9 +260,17 @@ const TARGETS: LaneRefTarget[] = ['commitment', 'earnest', 'deadlines', 'documen
 export function toLaneRef(r: unknown): LaneRef | null {
   if (typeof r === 'string') return r.trim() ? { label: r.trim(), target: 'none' } : null;
   if (!r || typeof r !== 'object') return null;
-  const { label, target } = r as { label?: unknown; target?: unknown };
+  const { label, target, resource_id, resourceId } = r as { label?: unknown; target?: unknown; resource_id?: unknown; resourceId?: unknown };
   if (typeof label !== 'string' || !label.trim()) return null;
-  return { label: label.trim(), target: TARGETS.includes(target as LaneRefTarget) ? (target as LaneRefTarget) : 'none' };
+  const t = TARGETS.includes(target as LaneRefTarget) ? (target as LaneRefTarget) : 'none';
+  if (t === 'resource') {
+    // A resource ref without its doc has nowhere to go: a plain chip.
+    const id = resourceId ?? resource_id;
+    return (typeof id === 'string' && id) || (typeof id === 'number' && id > 0)
+      ? { label: label.trim(), target: 'resource', resourceId: String(id) }
+      : { label: label.trim(), target: 'none' };
+  }
+  return { label: label.trim(), target: t };
 }
 
 export const toLaneRefs = (v: unknown): LaneRef[] =>
@@ -412,6 +423,7 @@ export const LANE_START: LaneSuggestion[] = [
   { label: 'Morning sweep', question: 'Run the morning sweep across my open TC files: what is behind, what is due today, and what I do first.' },
   { label: 'Closing this week', question: 'Which files close in the next 7 days, and what is still open on each?' },
   { label: 'What is behind?', question: 'Which files have a critical checklist line past its day? Lead with the worst one.' },
+  { label: 'Vetting a title company', question: 'What do we check when vetting a title company?' },
 ];
 
 /**
@@ -450,6 +462,8 @@ export async function askLane(req: LaneRequest): Promise<LaneResponse> {
     };
   }
   await new Promise((r) => setTimeout(r, 420));
+  const fromDocs = stubFromResources(req.question, !!req.context);
+  if (fromDocs) return fromDocs;
   if (!req.context) {
     return stub({
       answer: 'Sample workspace: name a property with a transaction file (open one from the TC screen) and I\'ll work it. Signed in, I find any property, buyer or vendor in the CRM on my own.',
@@ -467,6 +481,30 @@ const sev = (s: string) => (s === 'critical' ? 'must be cured' : 'should be reso
 const ref = (label: string, target: LaneRefTarget = 'none'): LaneRef => ({ label, target });
 const stub = (r: Omit<LaneResponse, 'stubbed' | 'refs' | 'drafts'> & { refs: unknown[]; drafts?: LaneDraft[] }): LaneResponse =>
   ({ ...r, refs: toLaneRefs(r.refs), drafts: r.drafts ?? [], stubbed: true });
+
+/**
+ * The sample's Resources answer: a how-we-do-it question (or any question
+ * with no file open) that matches a sample doc well is answered from that
+ * doc's best section, cited so the chip opens it in the reader. Signed in,
+ * the lane function does this with search_resources.
+ */
+const HOW_WE = /\b(how do (we|i)|what do we|our (process|script|sop|checklist|policy)|vet|vetting|bible|script|sop|checklist|template|policy|training)\b/i;
+export function stubFromResources(question: string, fileOpen: boolean): LaneResponse | null {
+  const found = searchLocal(demoDocs(), question, 2, 1);
+  const top = found[0];
+  // Cite a second doc only when it matched nearly as well.
+  const hits = found.filter((h) => h.rank >= top?.rank * 0.75);
+  if (!top || top.rank < 0.3 || (fileOpen && !HOW_WE.test(question))) return null;
+  const section = top.heading.split(' > ').slice(1).join(' > ');
+  return stub({
+    answer: `From the ${top.title}${section ? `, ${section}` : ''}:\n\n${top.body}\n\nThis is sample content in the demo workspace. Signed in, I answer from your team's own docs under Resources.`,
+    refs: hits.map((h) => {
+      const sec = h.heading.split(' > ').slice(1).join(' > ');
+      return { label: sec ? `${h.title} · ${sec}` : h.title, target: 'resource', resourceId: h.resourceId };
+    }),
+    suggestions: [],
+  });
+}
 
 function stubAnswer(req: LaneRequest & { context: LaneContext }): LaneResponse {
   const q = req.question.toLowerCase();

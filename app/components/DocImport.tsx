@@ -28,7 +28,7 @@ const field: React.CSSProperties = { width: '100%', height: '34px', padding: '0 
 const cap: React.CSSProperties = { display: 'block', fontSize: '11.5px', color: MUTED, fontWeight: 600, marginBottom: '5px' };
 const btn = (primary = false, disabled = false): React.CSSProperties => ({
   height: '34px', padding: '0 14px', borderRadius: '9px', fontSize: '12.5px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
-  border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? GREEN : 'var(--surface, #fff)', color: primary ? 'var(--surface, #fff)' : INK, opacity: disabled ? 0.55 : 1,
+  border: `1px solid ${primary ? GREEN : LINE}`, background: primary ? GREEN : 'var(--surface, #fff)', color: primary ? 'var(--surface, #fff)' : INK, opacity: disabled ? 0.5 : 1,
 });
 
 const PARTIES: [string, string][] = [['seller', 'Seller on the record'], ['seller2', 'Second seller'], ['buyer', 'Buyer on the record'], ['company', 'Your company signer'], ['other', 'Someone else (typed in)']];

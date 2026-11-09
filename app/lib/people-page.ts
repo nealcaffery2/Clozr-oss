@@ -21,6 +21,8 @@ import { SMART_LIST_QUIET_MIN, isDeadLeadStage, isDeadGroup } from './reactivati
 import { SECRET_BLACKLIST_TAG } from './secret-list';
 import { SELLER_STAGES, sellerStageGroup } from './stages';
 import { supabase } from './supabase';
+import { boundedSet } from './bounded-cache';
+import { onWorkspaceReset } from './active-workspace';
 
 /** people_page's p_filters. Every key optional; see the migration for each. */
 export type PeoplePageFilters = {
@@ -33,6 +35,8 @@ export type PeoplePageFilters = {
   created_from?: string; created_to?: string;
   due_before?: string; closing?: boolean; compr?: 'run' | 'not'; dm?: boolean;
   terms?: string[]; digits?: string;
+  /** The Property header's filter: each word starts a word of the house's address. */
+  addr_terms?: string[];
   archived?: boolean; stage_order?: string[]; ids_only?: boolean;
 };
 export type PeoplePageSort = 'touch' | 'created' | 'name' | 'stage' | 'score';
@@ -45,7 +49,7 @@ const SORTS: Record<string, [PeoplePageSort, PeoplePageDir]> = {
   'Lead score': ['score', 'desc'], Name: ['name', 'asc'], Stage: ['stage', 'asc'], Oldest: ['touch', 'asc'],
 };
 /** Filter keys the server has no equivalent for; any of these set means the in-memory path. */
-const CLIENT_ONLY = ['heat', 'closeCalls', 'declined', 'submitter', 'history', 'attackGap', 'uwTriage', 'offer', 'arv', 'market', 'subs', 'props', 'stack'] as const;
+const CLIENT_ONLY = ['heat', 'closeCalls', 'declined', 'submitter', 'history', 'attackGap', 'uwTriage', 'offer', 'arv', 'state', 'market', 'top', 'subs', 'props', 'stack'] as const;
 
 export type ServerFilterInput = {
   /** The smart list that is open ('My Leads'), a saved list (filters only) when `saved`. */
@@ -168,6 +172,8 @@ export function serverFilters(input: ServerFilterInput): PeoplePageSpec | null {
     f.terms = search.terms;
     if (search.digits) f.digits = search.digits;
   }
+  const addr = pf.addr && pf.addr !== 'Any' ? parseSearch(pf.addr) : null;
+  if (addr) f.addr_terms = addr.terms;
   const hidden = input.hiddenIds.map((id) => Number(id.replace(/^s/, ''))).filter((n) => Number.isFinite(n));
   if (hidden.length) f.not_ids = hidden;
   return { filters: f, sort: sort[0], dir: sort[1] };
@@ -200,6 +206,11 @@ export type PeoplePage = {
 type Cached = { rows: Person[]; total: number; at: number };
 const CACHE_MS = 2 * 60_000;
 const cache = new Map<string, Cached>();
+/** Pages kept: every search prefix, filter, sort and page is a key, so the cache is capped. */
+const CACHE_MAX = 30;
+
+// A workspace switch: the previous workspace's pages go.
+onWorkspaceReset(() => cache.clear());
 const LAST_KEY = 'clozr.peoplePage';
 
 type RpcResult = { total?: number; rows?: PagedSellerRow[]; ids?: number[] };
@@ -274,7 +285,7 @@ export function usePeoplePage({ workspaceId, filters, sort = 'touch', dir = 'des
     void readPage(argsOf(key), ac.signal).then((r) => {
       if (ac.signal.aborted) return;
       const next = { rows: (r.rows ?? []).map(mapPagedSeller), total: r.total ?? 0, at: Date.now() };
-      cache.set(key, next);
+      boundedSet(cache, key, next, CACHE_MAX);
       writeLast(key, next);
       setGot({ key, n, data: next, error: null });
     }).catch((e: unknown) => {
@@ -303,7 +314,7 @@ export function usePeoplePage({ workspaceId, filters, sort = 'touch', dir = 'des
         if (!base) return prev;
         const next = edit(base.rows);
         const d = { ...base, rows: next, total: base.total - (base.rows.length - next.length) };
-        cache.set(key, d);
+        boundedSet(cache, key, d, CACHE_MAX);
         return { key, n, data: d, error: null };
       });
       if (patch) apply((rs) => rs.map((r) => (r.id === patch.id ? { ...r, ...patch } as Person : r)));

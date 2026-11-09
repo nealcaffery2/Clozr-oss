@@ -11,6 +11,9 @@ import { type HistoryItemDto, api } from '@/lib/talkr-web/api';
 import { withoutElsewhereHistory } from '@/lib/talkr-elsewhere';
 import type { ClozrRecord } from '@/app/components/talkr/MessagesScreen';
 import { baseSubject } from '@/lib/email-thread';
+import { htmlToPlain } from '@/lib/email-html';
+import { boundedSet } from '@/lib/bounded-cache';
+import { onWorkspaceReset } from '@/lib/active-workspace';
 
 export type EmailRow = {
   id: number; seller_id: number | null; buyer_id: number | null; direction: string | null; occurred_at: string;
@@ -204,7 +207,8 @@ export async function loadContactEmail(
 }
 
 function asRow(r: EmailRow & { communication_mailboxes?: unknown; body_preview?: string | null }): EmailRow {
-  const row = { ...r, body: null, preview: r.body_preview ?? null } as EmailRow & { communication_mailboxes?: unknown; body_preview?: string | null };
+  // body_preview keeps the HTML's entities (&#34;, &amp;); the list shows words.
+  const row = { ...r, body: null, preview: r.body_preview ? htmlToPlain(r.body_preview) : null } as EmailRow & { communication_mailboxes?: unknown; body_preview?: string | null };
   delete row.communication_mailboxes;
   delete row.body_preview;
   return row;
@@ -212,6 +216,11 @@ function asRow(r: EmailRow & { communication_mailboxes?: unknown; body_preview?:
 
 /** Bodies already read, by communication id, for the session: a thread opened twice is read once. */
 const bodyCache = new Map<number, string | null>();
+/** Bodies kept (20 to 200 KB each); the oldest read go first. */
+const BODY_MAX = 200;
+
+// A workspace switch: the previous workspace's bodies go.
+onWorkspaceReset(() => bodyCache.clear());
 
 /** The bodies of these messages, from the cache or one read. */
 export async function loadEmailBodies(ids: number[]): Promise<Map<number, string | null>> {
@@ -219,7 +228,7 @@ export async function loadEmailBodies(ids: number[]): Promise<Map<number, string
   if (want.length && supabase) {
     for (let i = 0; i < want.length; i += 100) {
       const { data } = await supabase.from('communications').select('id,body').in('id', want.slice(i, i + 100));
-      for (const r of (data ?? []) as { id: number; body: string | null }[]) bodyCache.set(r.id, r.body);
+      for (const r of (data ?? []) as { id: number; body: string | null }[]) boundedSet(bodyCache, r.id, r.body, BODY_MAX);
     }
   }
   return new Map(ids.map((id) => [id, bodyCache.get(id) ?? null]));
@@ -348,7 +357,10 @@ export function useEmail(workspaceId: number | null, ownOnly: string | null = nu
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => { void readNewest(); setVersion((v) => v + 1); }, 1200);
     };
-    const ch = sb.channel(`email-inbox-${workspaceId}`)
+    // A name of its own per mount: the Inbox and the side menu's unread count
+    // both run this hook, and supabase-js hands a second channel() call with
+    // the same name the already-subscribed one, where .on() throws.
+    const ch = sb.channel(`email-inbox-${workspaceId}-${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'communications', filter: `workspace_id=eq.${workspaceId}` }, (p) => {
         const row = (p.new ?? p.old) as { channel?: string } | null;
         if (!row?.channel || row.channel === 'email') bump();

@@ -21,6 +21,8 @@ export type ReportRaw = {
     lead_source?: string | null; market?: string | null; marketed_price?: number | null;
     /** The Deal Tracker's transaction coordinator, by name. */
     coordinator?: string | null;
+    /** Why and when a contract fell out (Deal Tracker columns). */
+    termination_reason?: string | null; terminated_on?: string | null;
   }[];
   comms: { seller_id: number | null; buyer_id?: number | null; /** The rep who handled it (migration 85); null falls back to the line's owner, then the seller's rep (lib/comm-rep). */ rep_id?: string | null; from_phone?: string | null; to_phone?: string | null; channel: string; direction: string | null; occurred_at: string; duration_s: number | null; status: string | null }[];
   /** The team lines (rep_phone_numbers): whose each number is, or its name. */
@@ -62,7 +64,11 @@ export type Diagram =
   | { type: 'dataflow'; counts: Record<string, string> }
   | { type: 'org'; people: { id: string; name: string; role: string; calls: number; offers: number; contracts: number; closings: number }[] }
   | { type: 'pipeline'; stages: { k: string; n: number; days: number | null; fees: number }[] }
-  | { type: 'timeline'; start: number; end: number; total: number; events: { t: number; label: string; fee: number }[] };
+  | { type: 'timeline'; start: number; end: number; total: number; events: { t: number; label: string; fee: number }[] }
+  /** Road to 100 (lib/compr-road-to-100): customers against the marks, then each daily goal's count against its pace. */
+  | { type: 'goals'; customers: number; marks: number[]; goals: { k: string; got: number; want: number; perDay: number }[]; label?: string; money?: boolean }
+  /** One honest-width funnel row per avatar and tier: reached → demos → sign-ups → customers. */
+  | { type: 'avatars'; rows: { label: string; reached: number; demos: number; signups: number; customers: number }[] };
 
 export const REPORT_TABS = ['Overview', 'Acquisitions', 'Lead Sources', 'Calls', 'Team', 'Offers', 'Contracts', 'Dispo', 'Buyers', 'Closings', 'Marketing', 'Profitability', 'Team stoplight', 'AI Agents', 'AI Sales Manager', 'Flows', 'Custom reports'];
 /** Every diagram on one tab (components/reporting/diagrams). */
@@ -77,22 +83,34 @@ export const ADMIN_REPORT_TABS: readonly string[] = ['Profitability', TEAM_STOPL
 export const AI_AGENTS_TAB = 'AI Agents';
 /** The AI Sales Manager (migration 149): call reviews, flagged calls, rep scorecards, roleplay. Draws itself (components/coaching/SalesManager). */
 export const AI_SALES_TAB = 'AI Sales Manager';
-export const REPORT_RANGES = ['Today', 'Yesterday', '7 Days', '30 Days', '90 Days', 'MTD', 'QTD', 'YTD', 'All time'];
+export const REPORT_RANGES = ['Today', 'Yesterday', '7 Days', '30 Days', '90 Days', 'MTD', 'QTD', 'YTD', 'All time', 'Custom'];
+/** A Custom range's days, "YYYY-MM-DD" each; a missing end is today, a missing start 30 days before the end. */
+export type CustomRange = { from: string; to: string };
 
 // ---- time ------------------------------------------------------------------
 
 const DAY = 86_400_000;
 export type Range = { start: number; end: number; prevStart: number | null; prevEnd: number | null };
 
-export function rangeOf(label: string, now = new Date()): Range {
+export function rangeOf(label: string, now = new Date(), custom?: CustomRange): Range {
   const t = now.getTime();
+  if (label === 'Custom') {
+    const end = custom?.to ? new Date(custom.to + 'T00:00:00').getTime() + DAY - 1 : t;
+    const from = custom?.from ? new Date(custom.from + 'T00:00:00').getTime() : end + 1 - 30 * DAY;
+    const start = Math.min(from, end);
+    const len = Math.max(DAY, end - start);
+    return { start, end, prevStart: start - len, prevEnd: start - 1 };
+  }
   const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  // Local midnight `n` days back, by the calendar: a day across a DST change
+  // is 23 or 25 hours, so `midnight - n * DAY` started an hour off.
+  const dayStart = (n: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() - n).getTime();
   const days = (n: number): Range => ({ start: t - n * DAY, end: t, prevStart: t - 2 * n * DAY, prevEnd: t - n * DAY });
   const since = (start: Date, prev: Date): Range => ({ start: start.getTime(), end: t, prevStart: prev.getTime(), prevEnd: prev.getTime() + (t - start.getTime()) });
   const q = Math.floor(now.getMonth() / 3) * 3;
   switch (label) {
-    case 'Today': return { start: midnight, end: t, prevStart: midnight - DAY, prevEnd: t - DAY };
-    case 'Yesterday': return { start: midnight - DAY, end: midnight, prevStart: midnight - 2 * DAY, prevEnd: midnight - DAY };
+    case 'Today': return { start: midnight, end: t, prevStart: dayStart(1), prevEnd: t - DAY };
+    case 'Yesterday': return { start: dayStart(1), end: midnight, prevStart: dayStart(2), prevEnd: dayStart(1) };
     case '7 Days': return days(7);
     case '30 Days': return days(30);
     case '90 Days': return days(90);
@@ -148,9 +166,126 @@ const isCall = (c: ReportRaw['comms'][number]) => c.channel === 'call';
 const isOut = (c: ReportRaw['comms'][number]) => c.direction !== 'inbound';
 const accepted = (s: string) => /accept|signed|won/i.test(s);
 const declined = (s: string) => /declin|reject|expired|lost|dead/i.test(s);
-const closedAt = (d: ReportRaw['deals'][number]) => d.closed_on ?? (d.stage === 'Closed' ? d.close_date : null);
-/** The Deal Tracker's dispo fee when there is one; else wholesale fee (sold − contract); else the assignment fee typed on the deal. */
-const fee = (d: ReportRaw['deals'][number]) => (d.dispo_fee != null ? Number(d.dispo_fee) : Number(d.wholesale_fee) > 0 ? Number(d.wholesale_fee) : Number(d.assignment_fee ?? 0));
+/** When a deal closed. A terminated deal never closed, whatever date the tracker carries in Closed On. */
+export const closedAt = (d: ReportRaw['deals'][number]) => (d.stage === 'Terminated' ? null : d.closed_on ?? (d.stage === 'Closed' ? d.close_date : null));
+/** When a contract fell out: the tracker's terminated date, else when the deal moved to Terminated. */
+const terminatedAt = (d: ReportRaw['deals'][number]) => (d.stage === 'Terminated' ? d.terminated_on ?? d.stage_entered_at : null);
+/** The Deal Tracker's dispo fee when there is one; else the spread (sold − contract) when both prices are on file and it is positive; else the assignment fee typed on the deal. The first load has no wholesale_fee yet, so the spread is figured here. */
+export const fee = (d: ReportRaw['deals'][number]) => {
+  if (d.dispo_fee != null) return Number(d.dispo_fee);
+  const spread = d.sold_price != null && d.offer_amount != null ? Number(d.sold_price) - Number(d.offer_amount) : Number(d.wholesale_fee ?? 0);
+  return spread > 0 ? spread : Number(d.assignment_fee ?? 0);
+};
+/**
+ * A deal's money from its fee down. Not the table's deal_net_profit / final_profit:
+ * those start from wholesale_fee (sold price − contract price), which turns into
+ * minus the whole contract price whenever the sold price is blank.
+ */
+export function profitOf(d: ReportRaw['deals'][number]) {
+  const f = fee(d), cogs = Number(d.total_cogs ?? 0), comm = Number(d.team_commissions_paid ?? 0);
+  return { fee: f, cogs, net: f - cogs, comm, final: f - cogs - comm };
+}
+
+// ---- leads and sources -----------------------------------------------------
+//
+// A cold list pull (PropStream, DealMachine, a dated list name) puts thousands
+// of owners in the workspace who never asked to sell. Each is a prospect, not a
+// lead, until it answers (an inbound call, text or email) or a rep moves it off
+// a new-lead stage. It becomes a lead on that date, not the day it was imported.
+
+const LIST_RE = /propstream|deal ?machine|batch ?leads|skip ?trac|\blist\b|\bpull\b|\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?/i;
+export const isListSource = (src: string | null | undefined) => !!src && LIST_RE.test(src);
+
+/** Source groups, first match wins. Names that fit none show as Other; import channels with no real source as Not recorded. */
+const SOURCE_GROUPS: [string, RegExp][] = [
+  ['Cold lists', LIST_RE],
+  ['Pay per lead', /\bppl\b|pay ?per ?lead|motivated sellers|istl|property leads/i],
+  ['PPC', /ppc|google|facebook|\bmeta\b|adwords|bing/i],
+  ['Direct mail', /direct mail|mailer|postcard|letter/i],
+  ['Cold call', /cold ?call|dialer/i],
+  ['Inbound call', /inbound/i],
+  ['Texting', /\bsms\b|texting/i],
+  ['Website', /website|web ?form|jotform|webhook|zapier|landing/i],
+  ['Referral', /referr|realtor|agent/i],
+  ['MLS', /\bmls\b/i],
+  ['Wholesaler / JV', /wholesal|\bjv\b|offerpad|opendoor|home ?buyers|investments?\b|capital|holdings|propert|realty|\bllc\b|\binc\b|\bco\b|partners?\b/i],
+  ['Not recorded', /^(podio|deal-?tracker|deal tracker|manual|import|csv|unknown)$/i],
+];
+export function sourceGroup(src: string | null | undefined): string {
+  const t = (src ?? '').trim();
+  if (!t) return 'Not recorded';
+  return SOURCE_GROUPS.find(([, re]) => re.test(t))?.[0] ?? 'Other';
+}
+
+export type Lead = { s: ReportRaw['sellers'][number]; at: number };
+/** Every real lead in the workspace and when it became one (see above), built once per load. */
+const leadsCache = new WeakMap<ReportRaw, Lead[]>();
+export function leadsOf(raw: ReportRaw): Lead[] {
+  const hit = leadsCache.get(raw);
+  if (hit) return hit;
+  const reply = new Map<number, number>();
+  for (const c of raw.comms) {
+    if (c.seller_id == null || c.direction !== 'inbound' || c.channel === 'note') continue;
+    const t = ts(c.occurred_at);
+    if (t !== null && t < (reply.get(c.seller_id) ?? Infinity)) reply.set(c.seller_id, t);
+  }
+  const out: Lead[] = [];
+  for (const s of raw.sellers) {
+    const created = ts(s.created_at);
+    if (created === null) continue;
+    if (!isListSource(s.source)) { out.push({ s, at: created }); continue; }
+    const r = reply.get(s.id);
+    // ponytail: a worked prospect with no reply on file is dated by its current stage's entry, which can be later than the day it was first worked.
+    if (r !== undefined || stageGroup(s.stage) !== 'lead') out.push({ s, at: r ?? ts(s.stage_entered_at) ?? created });
+  }
+  leadsCache.set(raw, out);
+  return out;
+}
+
+/** The acquisitions rep on a deal: its owner, else the rep its seller is assigned to. */
+const acqCache = new WeakMap<ReportRaw, (d: ReportRaw['deals'][number]) => string | null>();
+function acqRepOf(raw: ReportRaw) {
+  const hit = acqCache.get(raw);
+  if (hit) return hit;
+  const sellerRep = new Map(raw.sellers.map((s) => [s.id, s.assigned_to] as const));
+  const f = (d: ReportRaw['deals'][number]) => d.owner_id ?? (d.seller_id != null ? sellerRep.get(d.seller_id) ?? null : null);
+  acqCache.set(raw, f);
+  return f;
+}
+
+/**
+ * One teammate's slice of the workspace, for the rep filter: the sellers
+ * assigned to them, the deals they own (acquisitions or dispo), the calls,
+ * texts and emails they handled, the offers they made. Every block and diagram
+ * then reads it like the whole workspace.
+ */
+const scopeCache = new WeakMap<ReportRaw, Map<string, ReportRaw>>();
+export function scopeToRep(raw: ReportRaw, rep: string): ReportRaw {
+  const byRep = scopeCache.get(raw) ?? new Map<string, ReportRaw>();
+  scopeCache.set(raw, byRep);
+  const hit = byRep.get(rep);
+  if (hit) return hit;
+  const acq = acqRepOf(raw), who = handlerOf(raw);
+  const sellers = raw.sellers.filter((s) => s.assigned_to === rep);
+  const sellerIds = new Set(sellers.map((s) => s.id));
+  const deals = raw.deals.filter((d) => acq(d) === rep || d.dispo_rep_id === rep);
+  const dealIds = new Set(deals.map((d) => d.id));
+  const out: ReportRaw = {
+    ...raw,
+    members: raw.members.filter((m) => m.id === rep),
+    sellers, deals,
+    comms: raw.comms.filter((c) => who(c) === rep),
+    offers: raw.offers.filter((o) => o.created_by === rep || (o.seller_id != null && sellerIds.has(o.seller_id)) || (o.deal_id != null && dealIds.has(o.deal_id))),
+    contracts: raw.contracts.filter((c) => c.deal_id != null && dealIds.has(c.deal_id)),
+    matches: raw.matches.filter((m) => dealIds.has(m.deal_id)),
+    buyers: raw.buyers.filter((b) => b.created_by === rep),
+    transactions: raw.transactions.filter((t) => t.deal_id != null && dealIds.has(t.deal_id)),
+    appointments: raw.appointments?.filter((a) => a.assigned_to === rep || (a.seller_id != null && sellerIds.has(a.seller_id))),
+    tasks: raw.tasks?.filter((t) => t.assigned_to === rep),
+  };
+  byRep.set(rep, out);
+  return out;
+}
 
 function delta(cur: number, prev: number | null, money = false, lowerIsBetter = false): Pick<Kpi, 'd' | 'dColor'> {
   if (prev === null) return {};
@@ -207,6 +342,8 @@ function series(r: Range, points: { t: number | null; v: number }[], fmt: (v: nu
 
 export type RepMetrics = {
   newLeads: number; contacted: number; offers: number; contracts: number; closings: number; revenue: number;
+  /** Revenue on closings where the rep is the acquisitions rep, and where they are the dispo rep. One deal can count in both for different reps. */
+  acqRevenue: number; dispoRevenue: number;
   calls: number; connected: number; talk: number; texts: number; emails: number;
   /** Median seconds from a new lead's creation to its first outbound touch; null when none was contacted. */
   speed: number | null;
@@ -245,10 +382,8 @@ function outreachOf(raw: ReportRaw) {
 }
 
 /** Seconds from each lead's creation to its first outbound touch. Leads never contacted are left out rather than counted as zero. */
-function leadSpeeds(leads: ReportRaw['sellers'], outreach: Map<number, number[]>) {
-  return leads.map((s) => {
-    const created = ts(s.created_at);
-    if (created === null) return null;
+function leadSpeeds(leads: Lead[], outreach: Map<number, number[]>) {
+  return leads.map(({ s, at: created }) => {
     const first = (outreach.get(s.id) ?? []).filter((t) => t >= created).sort((a, b) => a - b)[0];
     return first === undefined ? null : (first - created) / 1000;
   }).filter((x): x is number => x !== null);
@@ -260,21 +395,26 @@ export function repMetrics(raw: ReportRaw, r: { start: number; end: number }, re
   const all = rep === undefined;
   const mine = new Set(all ? [] : raw.sellers.filter((s) => s.assigned_to === rep).map((s) => s.id));
   const ownSeller = (id: number | null) => all || (id != null && mine.has(id));
-  const leads = raw.sellers.filter((s) => cur(s.created_at) && (all || s.assigned_to === rep));
-  const cs = raw.comms.filter((c) => cur(c.occurred_at) && ownSeller(c.seller_id));
+  const inRange = (t: number) => t >= r.start && t <= r.end;
+  const leads = leadsOf(raw).filter((l) => inRange(l.at) && (all || l.s.assigned_to === rep));
+  const leadIds = new Set(leadsOf(raw).map((l) => l.s.id));
+  const cs = raw.comms.filter((c) => cur(c.occurred_at) && ownSeller(c.seller_id) && c.seller_id != null && leadIds.has(c.seller_id));
   // Calls, texts and emails count for whoever handled them, not whose seller it was.
   const who = handlerOf(raw);
   const handled = all ? raw.comms.filter((c) => cur(c.occurred_at)) : raw.comms.filter((c) => cur(c.occurred_at) && who(c) === rep);
   const calls = handled.filter(isCall);
-  const closed = raw.deals.filter((d) => cur(closedAt(d)) && (all || d.owner_id === rep || d.dispo_rep_id === rep));
+  const acq = acqRepOf(raw);
+  const closed = raw.deals.filter((d) => cur(closedAt(d)) && (all || acq(d) === rep || d.dispo_rep_id === rep));
   const speeds = leadSpeeds(leads, outreachOf(raw));
   return {
     newLeads: leads.length,
     contacted: new Set(cs.filter((c) => c.seller_id != null && isOut(c) && c.channel !== 'note').map((c) => c.seller_id)).size,
     offers: raw.offers.filter((o) => o.direction === 'outbound' && cur(o.sent_at) && (all || o.created_by === rep || ownSeller(o.seller_id))).length,
-    contracts: raw.deals.filter((d) => cur(d.contract_date) && (all || d.owner_id === rep)).length,
+    contracts: raw.deals.filter((d) => cur(d.contract_date) && (all || acq(d) === rep)).length,
     closings: closed.length,
     revenue: sum(closed.map(fee)),
+    acqRevenue: sum(closed.filter((d) => all || acq(d) === rep).map(fee)),
+    dispoRevenue: sum(closed.filter((d) => all || d.dispo_rep_id === rep).map(fee)),
     calls: calls.length,
     connected: calls.filter((c) => Number(c.duration_s) > 0).length,
     talk: sum(calls.map((c) => c.duration_s)),
@@ -320,8 +460,9 @@ export function homeKpis(raw: ReportRaw, rep?: string, now = new Date()): Kpi[] 
 
 // ---- the report ------------------------------------------------------------
 
-export function buildReport(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admin: boolean; now?: Date }): Block[] {
-  const blocks = tabBlocks(tab, rangeLabel, raw, opts);
+export type ReportOpts = { admin: boolean; now?: Date; custom?: CustomRange; /** One teammate's id: every block reads only their slice (scopeToRep). */ rep?: string | null };
+export function buildReport(tab: string, rangeLabel: string, raw: ReportRaw, opts: ReportOpts): Block[] {
+  const blocks = tabBlocks(tab, rangeLabel, opts.rep ? scopeToRep(raw, opts.rep) : raw, opts);
   if (!raw.partial) return blocks;
   const note: Block = raw.partial === 'loading'
     ? { kind: 'note', title: 'Still loading', text: 'Offers, deal money (fees, COGS, profit), dispo reps and the full call history are still loading, so those figures read low for a few seconds. They fill in on their own.' }
@@ -329,8 +470,8 @@ export function buildReport(tab: string, rangeLabel: string, raw: ReportRaw, opt
   return [note, ...blocks];
 }
 
-function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admin: boolean; now?: Date }): Block[] {
-  const r = rangeOf(rangeLabel, opts.now);
+function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: ReportOpts): Block[] {
+  const r = rangeOf(rangeLabel, opts.now, opts.custom);
   const cur = (iso: string | null | undefined) => inR(iso, r.start, r.end);
   const prev = (iso: string | null | undefined) => r.prevStart !== null && inR(iso, r.prevStart, r.prevEnd!);
   // A "line:" key is a call nobody on the team is credited with, under its line's name.
@@ -348,21 +489,70 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
   const contractedS = (s: ReportRaw['sellers'][number]) => (dealsBySeller.get(s.id) ?? []).some((d) => d.contract_date) || ['contract', 'closed'].includes(stageGroup(s.stage));
   const closedS = (s: ReportRaw['sellers'][number]) => (dealsBySeller.get(s.id) ?? []).some((d) => closedAt(d)) || stageGroup(s.stage) === 'closed';
   const apptSellers = new Set((raw.appointments ?? []).filter((a) => !a.deleted_at && a.seller_id != null).map((a) => a.seller_id));
-  const appointed = (s: ReportRaw['sellers'][number]) => apptSellers.has(s.id) || /appointment/i.test(s.stage) || offered(s);
-  const commsNote = raw.commsCapped ? ' Only the most recent communications are loaded, so long ranges undercount.' : '';
+  // A booked appointment or an appointment stage, never inferred from an offer.
+  const appointed = (s: ReportRaw['sellers'][number]) => apptSellers.has(s.id) || /appointment/i.test(s.stage);
+  // The report holds the newest 60,000 messages. A range that starts before the oldest of them undercounts calls, texts and contacts.
+  const commsFrom = raw.commsCapped && raw.comms.length ? Math.min(...raw.comms.map((c) => ts(c.occurred_at) ?? Infinity)) : null;
+  const commsShort = commsFrom !== null && r.start < commsFrom;
+  const commsNote = commsShort ? ` Calls, texts and emails are loaded from ${shortDay(commsFrom!)} on, so this range undercounts them.` : '';
   const callNote = 'A call is credited to whoever made or took it: the rep on the call, else the owner of the team line it used (Settings → Numbers), else the seller\'s rep. One with none of those shows under its line\'s name.' + commsNote;
 
-  const newLeads = raw.sellers.filter((s) => cur(s.created_at));
+  const inN = (t: number, a: number, b: number) => t >= a && t <= b;
+  // Real leads only (leadsOf): a cold list row counts once it answers or is worked, on that day.
+  const leadsIn = (a: number, b: number) => leadsOf(raw).filter((l) => inN(l.at, a, b));
+  const newLeadRows = leadsIn(r.start, r.end);
+  const newLeads = newLeadRows.map((l) => l.s);
+  const prevLeadCount = r.prevStart === null ? null : leadsIn(r.prevStart, r.prevEnd!).length;
+  const listRows = raw.sellers.filter((s) => isListSource(s.source) && cur(s.created_at)).length;
+  const acq = acqRepOf(raw);
+  const groupOfDeal = (d: ReportRaw['deals'][number]) => {
+    const g = sourceGroup(d.lead_source);
+    if (g !== 'Not recorded') return g;
+    return sourceGroup(d.seller_id != null ? sellerById.get(d.seller_id)?.source : null);
+  };
   const closedDeals = raw.deals.filter((d) => cur(closedAt(d)));
   const prevClosed = raw.deals.filter((d) => prev(closedAt(d)));
+  const terminated = raw.deals.filter((d) => cur(terminatedAt(d)));
+  const activeDeals = raw.deals.filter((d) => (ACTIVE_DEAL_STAGES as string[]).includes(d.stage));
+  /** Share of contracts that ended in the range and fell out rather than closed. */
+  const falloutPct = (t: number, c: number) => (t + c ? Math.round((t / (t + c)) * 100) : null);
+
+  // Where the business came from, by source group: real leads that came in during
+  // the range (and how many of them reached a contract), and the deals that
+  // signed, closed or fell out in the range, by the deal's source, else its seller's.
+  const sourceRows = () => {
+    type Row = { leads: ReportRaw['sellers']; contracts: number; closed: number; revenue: number; fell: number };
+    const groups = new Map<string, Row>();
+    const g = (k: string) => { let x = groups.get(k); if (!x) { x = { leads: [], contracts: 0, closed: 0, revenue: 0, fell: 0 }; groups.set(k, x); } return x; };
+    for (const s of newLeads) g(sourceGroup(s.source)).leads.push(s);
+    for (const d of raw.deals) {
+      const inC = cur(d.contract_date), inX = cur(closedAt(d)), inT = cur(terminatedAt(d));
+      if (!inC && !inX && !inT) continue;
+      const x = g(groupOfDeal(d));
+      if (inC) x.contracts++;
+      if (inX) { x.closed++; x.revenue += fee(d); }
+      if (inT) x.fell++;
+    }
+    return [...groups.entries()].map(([k, x]) => ({ k, ...x, n: x.leads.length, toContract: x.leads.filter(contractedS).length }))
+      .sort((a, b) => b.revenue - a.revenue || b.contracts - a.contracts || b.n - a.n);
+  };
+  const sourceTable = (title: string): Block => {
+    const rows = sourceRows();
+    return {
+      kind: 'table', title, sub: 'Leads: real leads that came in during the range, and the share that reached a contract. Contracts, closed, fell out and revenue: deals that hit that step in the range, by the deal\'s source (else its seller\'s).',
+      cols: ['Source', 'Leads', 'Lead to contract', 'Contracts', 'Closed', 'Fell out', 'Revenue'],
+      rows: rows.map((x) => [x.k, num(x.n), pctOf(x.toContract, x.n), num(x.contracts), num(x.closed), num(x.fell), usd(x.revenue)]),
+      empty: 'No leads or deals in this range.',
+    };
+  };
 
   const funnel = (cohort: ReportRaw['sellers'], title: string): Block => {
     const steps = [
-      ['Leads', cohort.length], ['Contacted', cohort.filter((s) => contacted(s) || appointed(s)).length], ['Appointment', cohort.filter(appointed).length],
+      ['Leads', cohort.length], ['Contacted', cohort.filter((s) => contacted(s) || appointed(s) || offered(s)).length], ['Appointment', cohort.filter(appointed).length],
       ['Offer made', cohort.filter(offered).length], ['Under contract', cohort.filter(contractedS).length], ['Closed', cohort.filter(closedS).length],
     ] as [string, number][];
     return {
-      kind: 'funnel', title, sub: 'leads created in range, how far each got', empty: 'No leads were created in this range.', half: true,
+      kind: 'funnel', title, sub: 'leads that came in during the range, how far each got', empty: 'No leads were created in this range.', half: true,
       steps: steps.map(([k, n], i) => ({ k, n, pct: cohort.length ? Math.round((n / cohort.length) * 100) : 0, rate: i ? pctOf(n, steps[i - 1][1]) + ' of prior step' : '' })),
     };
   };
@@ -371,7 +561,7 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
   const dia = {
     funnel: (): Block => {
       const f = funnel(newLeads, 'Lead funnel') as Extract<Block, { kind: 'funnel' }>;
-      return { kind: 'diagram', half: true, title: f.title, sub: 'leads created in range and how far each got, cold to hot', empty: f.empty, diagram: { type: 'funnel', steps: f.steps } };
+      return { kind: 'diagram', half: true, title: f.title, sub: 'leads that came in during the range and how far each got, cold to hot', empty: f.empty, diagram: { type: 'funnel', steps: f.steps } };
     },
     leadflow: (): Block => {
       const STAGES: [string, string][] = [['lead', 'New'], ['working', 'Working'], ['offer', 'Offer'], ['contract', 'Contract'], ['closed', 'Closed'], ['dead', 'Dead']];
@@ -382,12 +572,12 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
         return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 7).map(([k]) => k);
       };
       // The top sources and reps by volume keep their names; the rest fold into Other so the ribbons stay readable.
-      const top = tally((s) => s.source || 'Unknown');
+      const top = tally((s) => sourceGroup(s.source));
       const topReps = tally((s) => repName(s.assigned_to));
       const sources: string[] = [], reps: string[] = [], stages: string[] = [];
       const flows = new Map<string, { source: number; rep: number; stage: number; n: number }>();
       for (const s of newLeads) {
-        const src = idx(sources, top.includes(s.source || 'Unknown') ? s.source || 'Unknown' : 'Other');
+        const src = idx(sources, top.includes(sourceGroup(s.source)) ? sourceGroup(s.source) : 'Other');
         const rep = idx(reps, topReps.includes(repName(s.assigned_to)) ? repName(s.assigned_to) : 'Other');
         const g = stageGroup(s.stage);
         const stage = idx(stages, STAGES.find(([k]) => k === g)?.[1] ?? 'Other');
@@ -405,13 +595,13 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
     dataflow: (): Block => {
       const comms = raw.comms.filter((c) => cur(c.occurred_at));
       const n = (x: number, unit: string) => `${num(x)} ${unit}${x === 1 ? '' : 's'}`;
-      const leadsFrom = (re: RegExp) => newLeads.filter((s) => re.test(s.source ?? '')).length;
+      const leadsFrom = (re: RegExp) => raw.sellers.filter((s) => cur(s.created_at) && re.test(s.source ?? '')).length;
       const underwritten = raw.deals.filter((d) => d.arv != null && cur(d.created_at)).length;
       const counts: Record<string, string> = {
         talkr: `${n(comms.filter(isCall).length, 'call')} · ${n(comms.filter((c) => c.channel === 'sms').length, 'text')}`,
         gmail: n(comms.filter((c) => c.channel === 'email').length, 'email'),
-        dealmachine: n(leadsFrom(/deal\s*machine/i), 'lead'),
-        podio: n(leadsFrom(/podio/i), 'lead'),
+        dealmachine: n(leadsFrom(/deal\s*machine/i), 'row') + ' imported',
+        podio: n(leadsFrom(/podio/i), 'row') + ' imported',
         compr: raw.partial === 'loading' ? 'loading…' : raw.partial === 'failed' ? 'not loaded' : n(underwritten, 'deal') + ' underwritten',
         clozr: `${n(newLeads.length, 'lead')} · ${n(raw.deals.filter((d) => cur(d.created_at)).length, 'deal')}`,
         buyr: n(raw.matches.filter((m) => cur(m.sent_at)).length, 'deal send'),
@@ -451,25 +641,26 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
     case 'Acquisitions': {
       const reps = raw.members.filter((m) => ['owner', 'admin', 'acquisitions', 'partnerships', 'member'].includes(m.role) || newLeads.some((s) => s.assigned_to === m.id));
       const rows = [...reps.map((m) => m.id), null].map((id) => {
-        const leads = newLeads.filter((s) => s.assigned_to === id);
+        const leadRows = newLeadRows.filter((l) => l.s.assigned_to === id);
+        const leads = leadRows.map((l) => l.s);
         const offers = outboundOffers.filter((o) => cur(o.sent_at) && (o.created_by === id || (o.seller_id != null && sellerById.get(o.seller_id)?.assigned_to === id)));
-        const contracts = raw.deals.filter((d) => cur(d.contract_date) && (d.owner_id ?? (d.seller_id != null ? sellerById.get(d.seller_id)?.assigned_to : null)) === id);
-        const speeds = leadSpeeds(leads, outreachBySeller);
+        const contracts = raw.deals.filter((d) => cur(d.contract_date) && acq(d) === id);
+        const speeds = leadSpeeds(leadRows, outreachBySeller);
         return { id, leads: leads.length, contacted: leads.filter(contacted).length, offers: offers.length, contracts: contracts.length, speed: median(speeds), speedN: speeds.length };
       }).filter((x) => x.id !== null || x.leads || x.offers || x.contracts);
       // The team figure is the median over every contacted new lead, the same
       // number Home shows for the Entire Team, not a median of the reps' medians.
-      const allSpeeds = leadSpeeds(newLeads, outreachBySeller);
+      const allSpeeds = leadSpeeds(newLeadRows, outreachBySeller);
       return [
         { kind: 'kpis', items: [
-          { k: 'New leads', v: num(newLeads.length), ...delta(newLeads.length, r.prevStart === null ? null : raw.sellers.filter((s) => prev(s.created_at)).length) },
+          { k: 'New leads', v: num(newLeads.length), ...delta(newLeads.length, prevLeadCount) },
           { k: 'Contact rate', v: pctOf(newLeads.filter(contacted).length, newLeads.length) },
           { k: 'Offers made', v: num(outboundOffers.filter((o) => cur(o.sent_at)).length) },
           { k: 'Contracts', v: num(raw.deals.filter((d) => cur(d.contract_date)).length) },
           { k: 'Median speed to lead', v: dur(median(allSpeeds)) },
         ] },
         { kind: 'table', title: 'By acquisitions rep', sub: 'leads are credited to whoever they are assigned to; contracts to the deal owner',
-          cols: ['Rep', 'Leads', 'Contacted', 'Contact rate', 'Offers', 'Contracts', 'Lead → contract', 'Median speed to lead'],
+          cols: ['Rep', 'Leads', 'Contacted', 'Contact rate', 'Offers', 'Contracts', 'Lead to contract', 'Median speed to lead'],
           rows: rows.map((x) => [x.id ? repName(x.id) : 'Unassigned', num(x.leads), num(x.contacted), pctOf(x.contacted, x.leads), num(x.offers), num(x.contracts), pctOf(x.contracts, x.leads), x.speedN ? `${dur(x.speed)} (${x.speedN})` : '—']),
           empty: 'No teammates or leads in this range.' },
         funnel(newLeads, 'Acquisitions funnel'),
@@ -479,34 +670,33 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
 
     case 'Lead Sources':
     case 'Marketing': {
-      const bySource = new Map<string, ReportRaw['sellers']>();
-      for (const s of newLeads) bySource.set(s.source || 'Unknown', [...(bySource.get(s.source || 'Unknown') ?? []), s]);
-      const rows = [...bySource.entries()].sort((a, b) => b[1].length - a[1].length).map(([k, ss]) => {
-        const deals = ss.flatMap((s) => dealsBySeller.get(s.id) ?? []);
-        const closed = deals.filter((d) => closedAt(d));
-        return { k, leads: ss.length, contacted: ss.filter(contacted).length, contracts: ss.filter(contractedS).length, closed: ss.filter(closedS).length, revenue: sum(closed.map(fee)) };
-      });
-      const table: Block = { kind: 'table', title: tab === 'Marketing' ? 'Source volume and conversion' : 'By lead source', sub: 'leads created in range, followed to wherever they got',
-        cols: ['Source', 'Leads', 'Share', 'Contacted', 'Contracts', 'Closed', 'Revenue', 'Lead → contract'],
-        rows: rows.map((x) => [x.k, num(x.leads), pctOf(x.leads, newLeads.length), pctOf(x.contacted, x.leads), num(x.contracts), num(x.closed), usd(x.revenue), pctOf(x.contracts, x.leads)]),
-        empty: 'No leads were created in this range.' };
-      const bars: Block = { kind: 'bars', rows: true, title: 'Leads by source', half: true, empty: 'No leads in this range.', items: rows.slice(0, 12).map((x) => ({ label: x.k, value: x.leads, tip: `${x.k} · ${x.leads} leads` })) };
+      const rows = sourceRows();
+      const table = sourceTable(tab === 'Marketing' ? 'Source volume and conversion' : 'By source');
+      const bars: Block = { kind: 'bars', rows: true, title: 'Leads by source', half: true, empty: 'No leads in this range.', items: rows.filter((x) => x.n).slice(0, 12).map((x) => ({ label: x.k, value: x.n, tip: `${x.k} · ${x.n} leads` })) };
+      const volume: Block = { kind: 'bars', half: true, title: 'Lead volume', empty: 'No leads in this range.', items: series(r, newLeadRows.map((l) => ({ t: l.at, v: 1 })), (v) => num(v) + ' leads') };
       if (tab === 'Lead Sources') {
+        const byName = new Map<string, ReportRaw['sellers']>();
+        for (const s of newLeads) byName.set(s.source || 'Not recorded', [...(byName.get(s.source || 'Not recorded') ?? []), s]);
+        const conv = rows.filter((x) => x.n >= 3);
         return [
           dia.leadflow(),
           { kind: 'kpis', items: [
-            { k: 'Sources', v: num(rows.length) }, { k: 'New leads', v: num(newLeads.length) },
-            { k: 'Best converting', v: rows.filter((x) => x.leads >= 3).sort((a, b) => b.contracts / b.leads - a.contracts / a.leads)[0]?.k ?? '—' },
-            { k: 'Top revenue source', v: rows.filter((x) => x.revenue > 0).sort((a, b) => b.revenue - a.revenue)[0]?.k ?? '—' },
+            { k: 'New leads', v: num(newLeads.length), ...delta(newLeads.length, prevLeadCount) },
+            { k: 'List rows imported', v: num(listRows), d: 'not leads until they answer', dColor: MUTED },
+            { k: 'Best converting', v: conv.sort((a, b) => b.toContract / b.n - a.toContract / a.n)[0]?.k ?? '—' },
+            { k: 'Top revenue source', v: rows.filter((x) => x.revenue > 0)[0]?.k ?? '—' },
           ] },
           table, bars,
-          { kind: 'note', half: true, title: 'Cost per lead', text: 'Not shown: CLOZR holds no spend per source. The only cost on file is the lead cost typed on a deal sheet (COGS), which covers leads that became deals, not every lead a source sent.' },
+          { kind: 'table', half: true, title: 'By source name', sub: 'the source field as typed or imported, top 30, with the group it counts under',
+            cols: ['Source name', 'Group', 'Leads', 'Reached contract'],
+            rows: [...byName.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 30).map(([k, ss]) => [k, sourceGroup(k === 'Not recorded' ? '' : k), num(ss.length), num(ss.filter(contractedS).length)]),
+            empty: 'No leads in this range.' },
+          { kind: 'note', title: 'Cost per lead', text: 'Not shown: CLOZR holds no spend per source yet. Once spend per source is imported (Google Ads, Facebook, pay-per-lead invoices, list costs), cost per lead, per contract and per closing go in the table above.' },
         ];
       }
       return [
-        { kind: 'note', title: 'Connect ad spend', text: 'CLOZR has no ad-spend or campaign data yet, so cost per lead, cost per contract and ROAS are not shown rather than guessed. Sources come from the lead\'s "source" field; a campaign split needs spend per source and campaign imported (Google Ads, Facebook, direct-mail invoices) before those figures can exist.' },
-        table, bars,
-        { kind: 'bars', half: true, title: 'Lead volume', empty: 'No leads in this range.', items: series(r, newLeads.map((s) => ({ t: ts(s.created_at), v: 1 })), (v) => num(v) + ' leads') },
+        { kind: 'note', title: 'Connect ad spend', text: 'CLOZR has no ad-spend or campaign data yet, so cost per lead, cost per contract and ROAS are not shown rather than guessed. A campaign split needs spend per source and campaign imported (Google Ads, Facebook, direct-mail invoices) before those figures can exist.' },
+        table, bars, volume,
       ];
     }
 
@@ -553,9 +743,9 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
       const rows = teamRows(raw, r);
       return [
         dia.org(),
-        { kind: 'table', title: 'Leaderboard', sub: callNote + ' Revenue credits both the acquisitions owner and the dispo rep on a closed deal.',
-          cols: ['#', 'Rep', 'Role', 'Calls', 'Talk time', 'Texts', 'Offers', 'Contracts', 'Closings', 'Revenue'],
-          rows: rows.map((x, i) => [String(i + 1), repName(x.id), raw.members.find((m) => m.id === x.id)?.role ?? '—', num(x.calls), dur(x.talk), num(x.texts), num(x.offers), num(x.contracts), num(x.closings), usd(x.revenue)]),
+        { kind: 'table', title: 'Leaderboard', sub: callNote + ' Acquisitions revenue goes to the deal\'s owner, else the seller\'s rep; dispo revenue to the dispo rep. A closing counts once in each column, so neither column double counts.',
+          cols: ['#', 'Rep', 'Role', 'Calls', 'Talk time', 'Texts', 'Offers', 'Contracts', 'Closings', 'Acq. revenue', 'Dispo revenue'],
+          rows: rows.map((x, i) => [String(i + 1), repName(x.id), raw.members.find((m) => m.id === x.id)?.role ?? '—', num(x.calls), dur(x.talk), num(x.texts), num(x.offers), num(x.contracts), num(x.closings), usd(x.acqRevenue), usd(x.dispoRevenue)]),
           empty: 'No teammates in this workspace yet.' },
       ];
     }
@@ -700,15 +890,15 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
 
     case 'Profitability': {
       if (!opts.admin) return [{ kind: 'note', title: 'Owner and admin only', text: 'Profitability shows commissions and bank records, which only an owner or admin can see.' }];
-      const f = (d: ReportRaw['deals'][number]) => ({ fee: fee(d), cogs: Number(d.total_cogs ?? 0), net: Number(d.deal_net_profit ?? fee(d) - Number(d.total_cogs ?? 0)), comm: Number(d.team_commissions_paid ?? 0), final: Number(d.final_profit ?? 0) });
+      const f = profitOf;
       const t = closedDeals.map(f);
       const tot = { fee: sum(t.map((x) => x.fee)), cogs: sum(t.map((x) => x.cogs)), net: sum(t.map((x) => x.net)), comm: sum(t.map((x) => x.comm)), final: sum(t.map((x) => x.final)) };
-      const prevFinal = r.prevStart === null ? null : sum(prevClosed.map((d) => Number(d.final_profit ?? 0)));
+      const prevFinal = r.prevStart === null ? null : sum(prevClosed.map((d) => profitOf(d).final));
       const reps = new Map<string | null, { deals: number; comm: number; final: number }>();
       for (const d of closedDeals) {
-        for (const id of new Set([d.owner_id, d.dispo_rep_id])) {
+        for (const id of new Set([acq(d), d.dispo_rep_id])) {
           const x = reps.get(id) ?? { deals: 0, comm: 0, final: 0 };
-          reps.set(id, { deals: x.deals + 1, comm: x.comm + Number(d.team_commissions_paid ?? 0), final: x.final + Number(d.final_profit ?? 0) });
+          reps.set(id, { deals: x.deals + 1, comm: x.comm + Number(d.team_commissions_paid ?? 0), final: x.final + profitOf(d).final });
         }
       }
       return [
@@ -717,7 +907,7 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
           { k: 'Commissions paid', v: usd(tot.comm) }, { k: 'Final profit', v: usd(tot.final), ...delta(tot.final, prevFinal, true) },
           { k: 'Margin', v: pctOf(tot.final, tot.fee) },
         ] },
-        { kind: 'table', title: 'Per deal', sub: 'deals closed in range · figures are the deal sheet\'s database-computed columns',
+        { kind: 'table', title: 'Per deal', sub: 'deals closed in range · profit is figured from the fee: fee − COGS = net, net − commissions = final',
           cols: ['Property', 'Closed', 'Wholesale fee', 'COGS', 'Deal net', 'Commissions', 'Final profit'],
           rows: [...closedDeals.map((d) => { const x = f(d); return [addr(d), shortDay(ts(closedAt(d))!), usd(x.fee), usd(x.cogs), usd(x.net), usd(x.comm), usd(x.final)]; }),
             ...(closedDeals.length > 1 ? [['Total', '', usd(tot.fee), usd(tot.cogs), usd(tot.net), usd(tot.comm), usd(tot.final)]] : [])],
@@ -730,30 +920,88 @@ function tabBlocks(tab: string, rangeLabel: string, raw: ReportRaw, opts: { admi
       ];
     }
 
-    default: { // Overview
-      // The whole-team figures Home's tiles read too (repMetrics), so the names agree.
+    default: { // Overview: the figures an owner runs a wholesale business by
+      // Whole-team figures come from repMetrics, the same numbers Home's tiles read.
       const m = repMetrics(raw, r);
       const pm = r.prevStart === null ? null : repMetrics(raw, { start: r.prevStart, end: r.prevEnd! });
-      const p = pm !== null;
-      // Offers, profit and the full call history come with the second read; until
+      // Offers, deal money and the full call history come with the second read; until
       // then (or if it failed) those tiles say so instead of showing zero.
       const held = raw.partial === 'loading' ? '…' : raw.partial === 'failed' ? '—' : null;
+      const today = (opts.now ?? new Date()).getTime();
+      const fees = closedDeals.map(fee).filter((n) => n > 0);
+      const days = closedDeals.map((d) => (d.contract_date ? (ts(closedAt(d))! - ts(d.contract_date)!) / DAY : null)).filter((x): x is number => x !== null && x >= 0);
+      const fo = falloutPct(terminated.length, closedDeals.length);
+      const net = sum(closedDeals.map((d) => profitOf(d).final));
+      const txByDeal = new Map(raw.transactions.filter((t) => t.deal_id != null).map((t) => [t.deal_id!, t]));
+      const expected = (d: ReportRaw['deals'][number]) => ts(txByDeal.get(d.id)?.close_date ?? d.close_date);
       const items: Kpi[] = [
-        { k: 'New leads', v: num(m.newLeads), ...delta(m.newLeads, pm && pm.newLeads) },
-        held ? { k: 'Leads contacted', v: held } : { k: 'Leads contacted', v: num(m.contacted), ...delta(m.contacted, pm && pm.contacted) },
-        held ? { k: 'Offers sent', v: held } : { k: 'Offers sent', v: num(m.offers), ...delta(m.offers, pm && pm.offers) },
+        held ? { k: 'Closed revenue', v: held } : { k: 'Closed revenue', v: usd(m.revenue), ...delta(m.revenue, pm && pm.revenue, true) },
+        { k: 'Deals closed', v: num(m.closings), ...delta(m.closings, pm && pm.closings) },
+        held ? { k: 'Avg fee', v: held } : { k: 'Avg fee', v: usd(avg(fees)) },
+        ...(opts.admin ? [held ? { k: 'Net profit', v: held } : { k: 'Net profit', v: usd(net), ...delta(net, pm === null ? null : sum(prevClosed.map((d) => profitOf(d).final)), true) }] : []),
         { k: 'Contracts signed', v: num(m.contracts), ...delta(m.contracts, pm && pm.contracts) },
-        { k: 'Closings', v: num(m.closings), ...delta(m.closings, pm && pm.closings) },
-        { k: 'Assignment revenue', v: usd(m.revenue), ...delta(m.revenue, pm && pm.revenue, true) },
+        { k: 'Fall-out rate', v: fo === null ? '—' : fo + '%', d: `${num(terminated.length)} fell out · ${num(closedDeals.length)} closed`, dColor: fo !== null && fo >= 50 ? RED : MUTED },
+        { k: 'Contract to close', v: days.length ? Math.round(avg(days)!) + ' days' : '—', d: days.length ? `average of ${num(days.length)}` : undefined, dColor: MUTED },
+        held ? { k: 'Pending fees', v: held } : { k: 'Pending fees', v: usd(sum(activeDeals.map(fee))), d: `${num(activeDeals.length)} under contract now`, dColor: MUTED },
+        { k: 'New leads', v: num(m.newLeads), ...delta(m.newLeads, pm && pm.newLeads) },
+        held ? { k: 'Offers sent', v: held } : { k: 'Offers sent', v: num(m.offers), ...delta(m.offers, pm && pm.offers) },
       ];
-      if (opts.admin) items.push(held ? { k: 'Net profit', v: held } : { k: 'Net profit', v: usd(sum(closedDeals.map((d) => d.final_profit))), ...delta(sum(closedDeals.map((d) => d.final_profit)), p ? sum(prevClosed.map((d) => d.final_profit)) : null, true) });
+
+      // Pending closings by the month they are due, so next month's revenue is visible now.
+      const monthKey = (t: number) => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), 1).getTime(); };
+      const byMonth = new Map<string, { order: number; deals: number; fees: number; noFee: number }>();
+      for (const d of activeDeals) {
+        const t = expected(d);
+        const [label, order] = t === null ? ['No close date', Infinity] : t < today - DAY ? ['Past due', -Infinity]
+          : [new Date(t).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }), monthKey(t)];
+        const x = byMonth.get(label) ?? { order, deals: 0, fees: 0, noFee: 0 };
+        byMonth.set(label, { order, deals: x.deals + 1, fees: x.fees + fee(d), noFee: x.noFee + (fee(d) ? 0 : 1) });
+      }
+      const forecast: Block = { kind: 'table', half: true, title: 'Pending closings', sub: 'deals under contract now, by the month they are due to close (TC file, else the deal)',
+        cols: ['Due', 'Deals', 'Fees', 'No fee yet'],
+        rows: [...byMonth.entries()].sort((a, b) => a[1].order - b[1].order).map(([k, x]) => [k, num(x.deals), usd(x.fees), x.noFee ? num(x.noFee) : '—']),
+        empty: 'Nothing under contract right now.' };
+
+      const reasons = new Map<string, { n: number; fees: number }>();
+      for (const d of terminated) {
+        const k = d.termination_reason?.trim() || 'No reason recorded';
+        const x = reasons.get(k) ?? { n: 0, fees: 0 };
+        reasons.set(k, { n: x.n + 1, fees: x.fees + fee(d) });
+      }
+      const fellOut: Block = { kind: 'table', half: true, title: 'Why contracts fell out', sub: 'deals terminated in range, by the reason on the Deal Tracker',
+        cols: ['Reason', 'Deals', 'Share', 'Fees lost'],
+        rows: [...reasons.entries()].sort((a, b) => b[1].n - a[1].n).map(([k, x]) => [k, num(x.n), pctOf(x.n, terminated.length), usd(x.fees)]),
+        empty: 'No contract fell out in this range.' };
+
+      const reps = teamRows(raw, r).filter((x) => x.calls || x.offers || x.contracts || x.closings);
+      const scorecard: Block = { kind: 'table', title: 'Reps', sub: 'activity and results in range; daily minimums and grades are on the Team stoplight tab.' + commsNote,
+        cols: ['Rep', 'Calls', 'Talk time', 'Offers', 'Contracts', 'Closings', 'Acq. revenue', 'Dispo revenue'],
+        rows: reps.map((x) => [repName(x.id), num(x.calls), dur(x.talk), num(x.offers), num(x.contracts), num(x.closings), usd(x.acqRevenue), usd(x.dispoRevenue)]),
+        empty: 'No rep activity in this range.' };
+
+      // What is missing on the records, so the owner knows which figures read low and what to fill in.
+      const noRep = raw.deals.filter((d) => closedAt(d) && !acq(d)).length;
+      const noReason = raw.deals.filter((d) => d.stage === 'Terminated' && !d.termination_reason?.trim()).length;
+      const noFee = activeDeals.filter((d) => !fee(d)).length;
+      const noDate = activeDeals.filter((d) => expected(d) === null).length;
+      const gaps = [
+        noRep && `${num(noRep)} closed deal${noRep === 1 ? ' has' : 's have'} no acquisitions rep, so that revenue counts for no one on the rep tables`,
+        noReason && `${num(noReason)} terminated deal${noReason === 1 ? ' has' : 's have'} no termination reason`,
+        noFee && `${num(noFee)} of ${num(activeDeals.length)} deals under contract have no fee, so pending fees read low`,
+        noDate && `${num(noDate)} of ${num(activeDeals.length)} deals under contract have no close date`,
+      ].filter(Boolean);
+
       return [
         { kind: 'kpis', items },
-        { kind: 'bars', title: 'Assignment revenue', sub: 'by close date', empty: 'Nothing closed in this range.', items: series(r, closedDeals.map((d) => ({ t: ts(closedAt(d)), v: fee(d) })), usd) },
+        ...(commsShort ? [{ kind: 'note' as const, title: 'Activity covers part of this range', text: commsNote.trim() }] : []),
+        { kind: 'bars', title: 'Closed revenue', sub: 'assignment fees by close date', empty: 'Nothing closed in this range.', items: series(r, closedDeals.map((d) => ({ t: ts(closedAt(d)), v: fee(d) })), usd) },
+        forecast, fellOut,
         // The funnel diagram draws the same steps the Acquisitions tab's bar funnel shows.
         dia.funnel(),
-        ...(raw.commsCapped && !raw.partial ? [{ kind: 'note' as const, half: true, title: 'Long ranges', text: 'Only the most recent communications are loaded, so leads contacted reads low over long ranges.' }] : []),
-        { kind: 'bars', half: true, title: 'New leads', empty: 'No leads were created in this range.', items: series(r, newLeads.map((s) => ({ t: ts(s.created_at), v: 1 })), (v) => num(v) + ' leads') },
+        { kind: 'bars', half: true, title: 'New leads', sub: listRows ? `${num(listRows)} list rows imported in range are not counted until they answer` : undefined, empty: 'No leads came in during this range.', items: series(r, newLeadRows.map((l) => ({ t: l.at, v: 1 })), (v) => num(v) + ' leads') },
+        sourceTable('Where the business came from'),
+        scorecard,
+        ...(gaps.length ? [{ kind: 'note' as const, title: 'Fill these in so the numbers are complete', text: gaps.join('. ') + '.' }] : []),
       ];
     }
   }

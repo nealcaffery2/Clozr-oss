@@ -10,6 +10,7 @@ import { notedWorkspaceId } from './active-workspace';
 import { api } from './talkr-web/api';
 import { formatPhone } from './talkr-web/time';
 import { supabase } from './supabase';
+import { isAiLine } from './caller-spin';
 
 type Names = { team: Map<string, string>; byNumber: Map<string, string> };
 let names: Names | null = null;
@@ -66,8 +67,37 @@ export function lineOwner(n: Line, me?: string | null): string {
 /** "(210) 555-0163 · Quinn · San Antonio", or "· Shared" for a line nobody owns. */
 export function lineText(n: Line, me?: string | null): string {
   const owner = lineOwner(n, me) || (n.assigned_user_id ? '' : 'Shared');
-  const label = (n.label ?? '').trim();
-  return [formatPhone(n.phone_e164), owner, label && label.toLowerCase() !== owner.toLowerCase() ? label : ''].filter(Boolean).join(' · ');
+  // A label that repeats the owner ("Alex · Compr" on Alex's line, "AI · Avery (buyer assistant)" on an AI line) keeps only what the owner does not say.
+  const said = new Set(owner.toLowerCase().split(/\s*·\s*/));
+  const label = (n.label ?? '').trim().split(/\s*·\s*/).filter((part) => part && !said.has(part.toLowerCase())).join(' · ');
+  return [formatPhone(n.phone_e164), owner, label].filter(Boolean).join(' · ');
+}
+
+export type LineGroup<T extends Line> = { label: 'Your lines' | 'Team lines' | 'Shared lines'; lines: T[] };
+
+/**
+ * A number picker's groups, in the order a rep looks for them: their own
+ * lines, then teammates' (by owner, then number), then the shared pool.
+ * Empty groups are left out. An AI agent's line is never offered: a lead who
+ * calls it back reaches the agent, not the rep who dialled.
+ */
+export function lineGroups<T extends Line>(numbers: T[], me?: string | null): LineGroup<T>[] {
+  const yours: T[] = [];
+  const team: T[] = [];
+  const shared: T[] = [];
+  for (const n of numbers) {
+    if (isAiLine(n)) continue;
+    if (me && n.assigned_user_id === me) yours.push(n);
+    else if (n.assigned_user_id || names?.byNumber.get(key10(n.phone_e164))) team.push(n);
+    else shared.push(n);
+  }
+  const byNumber = (a: T, b: T) => a.phone_e164.localeCompare(b.phone_e164);
+  team.sort((a, b) => lineOwner(a).localeCompare(lineOwner(b)) || byNumber(a, b));
+  yours.sort(byNumber);
+  shared.sort(byNumber);
+  return ([['Your lines', yours], ['Team lines', team], ['Shared lines', shared]] as const)
+    .filter(([, lines]) => lines.length > 0)
+    .map(([label, lines]) => ({ label, lines }));
 }
 
 /** Re-renders a picker once the names are in. */

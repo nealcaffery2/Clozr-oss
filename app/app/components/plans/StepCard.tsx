@@ -8,6 +8,7 @@ import { RvmRecordingPicker } from '@/app/components/talkr/RvmRecordingPicker';
 import { SELLER_STAGE_LABELS } from '@/lib/stages';
 import { type DelayUnit, type PlanStepDraft, type Priority, type StepType, type Teammate, CAPABILITIES, CAPABILITY_LABEL, DELAY_UNITS, HANDOFF_CHANNELS, MERGE_FIELDS, STEP_TYPES, stepMeta } from '@/lib/plans';
 import { Btn, FAINT, INK, LINE, MUTED, label, smallInput, smallSelect, textarea } from './ui';
+import { SendCheckPanel } from './SendCheckPanel';
 
 export function StepCard({
   step, index, total, team, tags, dragging, onPatch, onRemove, onDuplicate, onMove, onAddAfter, onDragStart, onDragOver, onDrop, onDragEnd, workspaceId = null,
@@ -165,7 +166,7 @@ export function StepCard({
                   <button
                     key={v} type="button" role="radio" aria-checked={on} className="dc23"
                     onClick={() => onPatch(v === 'once' ? { allowed: step.allowed ?? [...CAPABILITIES] } : { allowed: undefined, channels: step.channels ?? HANDOFF_CHANNELS.map((c) => c.v) })}
-                    style={{ height: '26px', padding: '0 10px', borderRadius: '7px', border: `1px solid ${on ? '#0f766e' : LINE}`, background: on ? '#f0fdfa' : '#fff', color: on ? '#0f766e' : MUTED, fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+                    style={{ height: '26px', padding: '0 10px', borderRadius: '7px', border: `1px solid ${on ? '#0f766e' : LINE}`, background: on ? 'var(--c-genius-soft, #f0fdfa)' : 'var(--surface, #fff)', color: on ? '#0f766e' : MUTED, fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
                   >
                     {text}
                   </button>
@@ -247,6 +248,10 @@ export function StepCard({
               ))}
               {step.type === 'sms' || (compr && step.via !== 'email') ? <span style={{ marginLeft: 'auto', fontSize: '11px', color: step.body.length > 320 ? 'var(--tx-red, #b91c1c)' : FAINT, fontVariantNumeric: 'tabular-nums' }}>{step.body.length} chars</span> : null}
             </div>
+            {/* Before it is saved: what will get it flagged, and the fix. */}
+            {step.type === 'sms' || step.type === 'email' || (compr && (step.via === 'email' || step.via === 'sms')) ? (
+              <SendCheckPanel body={step.body} channel={step.type === 'email' || (compr && step.via === 'email') ? 'email' : 'sms'} onFix={(next) => onPatch({ body: next })} />
+            ) : null}
           </>
         ) : null}
 

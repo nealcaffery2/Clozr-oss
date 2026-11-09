@@ -30,3 +30,15 @@ eq('junk screen for a narrow role', bootScreen('#screen=nope', 'tc'), 'home');
 eq('contracts', bootScreen('#screen=contracts', 'owner'), null);
 eq('junk screen for an all-screens role', bootScreen('#screen=nope', 'owner'), null);
 eq('prototype key', bootScreen('#screen=constructor', null), null);
+
+// The address as a path (lib/routes.ts).
+eq('bare path, owner', bootScreen('/app', 'owner'), 'home');
+eq('bare path, acquisitions', bootScreen('/app', 'acquisitions'), 'today');
+eq('bare demo with a role', bootScreen('/demo?as=tc', 'tc'), 'home');
+eq('record path', bootScreen('/app/people/s42', 'acquisitions'), 'person');
+eq('deal-keyed path', bootScreen('/app/deals/d7/tc', 'owner'), 'tc');
+eq('demo path', bootScreen('/demo/deals?as=acquisitions', null), 'deals');
+eq('path the role cannot see', bootScreen('/app/dispo', 'acquisitions'), 'today');
+eq('junk path for a narrow role', bootScreen('/app/nope', 'tc'), 'home');
+eq('an old hash on a path wins', bootScreen('/app/deals#screen=buyers', 'owner'), 'buyers');
+eq('webhook query', bootScreen('/app?seller=4', 'acquisitions'), 'person');

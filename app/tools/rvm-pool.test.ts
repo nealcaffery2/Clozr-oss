@@ -162,6 +162,11 @@ eq('reply-to: own synced inbox', pickReplyTo({ reply_to: 'Morgan@co.com', user_i
 eq('reply-to: rep has another synced inbox', pickReplyTo({ reply_to: 'morgan@personal.com', user_id: 'u1' }, synced, null), 'morgan@co.com');
 eq('reply-to: campaign mailbox when the rep has none', pickReplyTo({ reply_to: 'x@y.com', user_id: 'u9' }, synced, 'avery@co.com'), 'avery@co.com');
 eq('reply-to: unchanged when nothing is synced', pickReplyTo({ reply_to: 'x@y.com', user_id: 'u9' }, [], null), 'x@y.com');
+// An action plan's Reply-To: the rep's login email is on another workspace's Gmail, so the reply goes to their inbox synced here.
+const ws13 = [{ email: 'alex@underwriting.example.com', user_id: 'nh' }];
+eq('plan reply-to: rep login email swapped for their synced inbox', pickReplyTo({ reply_to: 'alex@yourcompany.com', user_id: 'nh' }, ws13), 'alex@underwriting.example.com');
+eq('plan reply-to: no rep inbox here keeps the login email', pickReplyTo({ reply_to: 'sam@yourcompany.com', user_id: 'tr' }, ws13), 'sam@yourcompany.com');
+eq('plan reply-to: no rep at all is none', pickReplyTo({ reply_to: null, user_id: null }, ws13), null);
 
 const res = {
   recipients: [

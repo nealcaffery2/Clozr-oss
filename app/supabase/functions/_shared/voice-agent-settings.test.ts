@@ -159,7 +159,7 @@ eq('destination type enum', n({ live_transfer: { destinations: [{ number: '21055
 eq('fallback enum', n({ live_transfer: { fallback: 'panic' } }).errors, ['live_transfer.fallback must be one of book_callback, voicemail, apologize_end']);
 
 // ---- tools ----
-eq('the built tools', TOOL_KEYS.filter((k) => TOOL_AVAILABLE[k]), ['lead_context', 'book_appointment', 'save_qualification', 'mark_do_not_contact', 'get_compr_offer', 'transfer', 'end_call']);
+eq('the built tools', TOOL_KEYS.filter((k) => TOOL_AVAILABLE[k]), ['lead_context', 'book_appointment', 'save_qualification', 'mark_do_not_contact', 'get_compr_offer', 'deal_lookup', 'transfer', 'end_call']);
 const tools = n({ tools: { request_agreement: { enabled: true, available: true }, book_appointment: { enabled: true, available: false }, lead_context: { enabled: false }, bogus: { enabled: true } } });
 eq('a client cannot mark an unbuilt tool available, or a built one unavailable', [tools.settings.tools.request_agreement, tools.settings.tools.book_appointment, tools.settings.tools.lead_context, tools.warnings], [{ enabled: true, available: false }, { enabled: true, available: true }, { enabled: false, available: true }, ['tools.bogus is not a known tool and was ignored']]);
 eq('tool enabled must be boolean', n({ tools: { end_call: { enabled: 'x' } } }).errors, ['tools.end_call.enabled must be true or false']);

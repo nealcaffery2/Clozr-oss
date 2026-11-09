@@ -27,6 +27,11 @@ export type Receipt = {
 
 type Table = 'email_tracking' | 'contract_signers';
 const shared = new Map<string, { fns: Set<() => void>; stop: () => void }>();
+// Each channel gets a name of its own. removeChannel unsubscribes in the
+// background, and supabase.channel() hands back a still-leaving channel of the
+// same name, whose .on() then throws: the next listener after the last one
+// left would get no live receipts.
+let channelSeq = 0;
 
 /** Runs `fn` when a row of `table` in the workspace changes. One channel per workspace and table, however many listen. */
 export function onReceiptChange(workspaceId: number | null, table: Table, fn: () => void): () => void {
@@ -36,7 +41,7 @@ export function onReceiptChange(workspaceId: number | null, table: Table, fn: ()
   let entry = shared.get(key);
   if (!entry) {
     const fns = new Set<() => void>();
-    const ch = sb.channel(`receipts-${key}`)
+    const ch = sb.channel(`receipts-${key}-${++channelSeq}`)
       .on('postgres_changes', { event: '*', schema: 'public', table, filter: `workspace_id=eq.${workspaceId}` }, () => { for (const f of [...fns]) f(); })
       .subscribe();
     entry = { fns, stop: () => { void sb.removeChannel(ch); } };
@@ -172,4 +177,4 @@ export function useLinkViews(texts: readonly (string | null | undefined)[], work
   }), [views]);
 }
 
-export { emailOpenLabel as emailReceiptLabel } from '@/lib/link-views';
+export { emailOpenLabel as emailReceiptLabel, emailReceiptView, type EmailReceiptView } from '@/lib/link-views';

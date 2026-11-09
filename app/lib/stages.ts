@@ -22,6 +22,15 @@ export const PIPELINE_STAGES: DealStage[] = ['Under Contract Seller', 'Ready To 
  */
 export const BUYER_STAGES = ['Prospect', 'Contacted', 'Active', 'Qualified', 'Closed With Us', 'Inactive'] as const;
 export type BuyerStage = (typeof BUYER_STAGES)[number];
+/**
+ * The Compr workspace (settings.buyer_profile = 'compr') sells Compr, so its
+ * contacts sit on six stages on the same buyers.status column (owner call
+ * 2026-10-27, migration 417): replies, sends and the Compr sync move them,
+ * and Not interested takes them off every plan.
+ */
+export const COMPR_STAGES = ['Not contacted', 'Contacted', 'Interested', 'Not interested', 'Free trial', 'Paid'] as const;
+/** The stage list a workspace's Buyers screen and record use. */
+export const buyerStagesFor = (profile: string | null | undefined): readonly string[] => (profile === 'compr' ? COMPR_STAGES : BUYER_STAGES);
 export const buyerStageOf = (status: string | null | undefined): string => {
   const s = (status ?? '').trim();
   return BUYER_STAGES.find((x) => x.toLowerCase() === s.toLowerCase()) ?? (s || 'Active');

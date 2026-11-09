@@ -8,7 +8,11 @@ import { InlineField, type InlineValue } from '@/components/ds/InlineField';
 import { BackLink } from '@/components/ds/BackLink';
 import { RepPicker } from '@/components/ds/RepPicker';
 import { useConfirm } from '@/components/ds/Confirm';
-import { btn, INK, MUTED } from '@/components/genius/parts';
+import { btn, INK, MUTED } from '@/components/kit/parts';
+import { ScreenHeader } from '@/components/ds/Screen';
+import { Button, IconButton } from '@/components/ds/Button';
+import { Badge, SectionLabel } from '@/components/ds/Text';
+import { EmptyState } from '@/components/ds/Empty';
 import { D as SAMPLE } from '@/lib/clozr-types';
 import { leadStagePicks } from '@/lib/stages';
 import '../../clozr/chrome.css';
@@ -35,7 +39,7 @@ export default function DsPlayground() {
     <main data-gx style={{ minHeight: '100dvh', background: 'var(--page, #f2f4f8)', padding: '16px', color: INK }}>
       <div style={{ maxWidth: '720px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <BackLink to={{ label: 'Deals', go: () => setSaid('Back to Deals') }} />
-        <h1 style={{ margin: 0, fontSize: '15px', fontWeight: 700, letterSpacing: '-0.015em' }}>Building blocks</h1>
+        <h1 className="ds-title">Building blocks</h1>
         <section style={{ background: 'var(--surface, #fff)', border: '1px solid var(--edge, #dde2ea)', borderRadius: '12px', padding: '16px' }}>
           <h2 style={{ margin: '0 0 12px', fontSize: '13.5px', fontWeight: 650 }}>Click to edit</h2>
           <div style={{ ...row, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
@@ -61,7 +65,38 @@ export default function DsPlayground() {
           </div>
           <p role="status" style={{ margin: '12px 0 0', fontSize: '12.5px', color: MUTED }}>{said || 'Nothing yet'}</p>
         </section>
+        <section style={{ background: 'var(--surface, #fff)', border: '1px solid var(--edge, #dde2ea)', borderRadius: '12px', overflow: 'hidden' }}>
+          <ScreenHeader back={{ label: 'People', go: () => setSaid('Back to People') }} title="Screen header" meta="15 deals"
+            actions={<><Button icon={<PlusIcon />}>New list</Button><Button>Import</Button><Button kind="primary" icon={<PlusIcon />}>Lead</Button></>} />
+          <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <SectionLabel as="h2">Buttons</SectionLabel>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <Button kind="primary">Find buyers</Button>
+              <Button kind="solid">Add to buyers</Button>
+              <Button>Export</Button>
+              <Button kind="danger">Delete list</Button>
+              <Button size={28}>Small</Button>
+              <Button disabled>Disabled</Button>
+              <Button kind="primary" busy>Saving…</Button>
+              <IconButton label="Search" icon={<SearchIcon />} />
+              <IconButton label="Search" kind="ghost" size={32} icon={<SearchIcon />} />
+            </div>
+            <SectionLabel as="h2">Badges</SectionLabel>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              <Badge>Neutral</Badge><Badge tone="accent">SmartMatch</Badge><Badge tone="ok">Signed</Badge>
+              <Badge tone="warn">Offer sent</Badge><Badge tone="danger">DNC</Badge><Badge tone="info">New lead</Badge>
+            </div>
+            <EmptyState compact title="No buyers on this list yet" hint="Add buyers from the Buyers screen or import a CSV." action={{ label: 'Import buyers', onClick: () => setSaid('Import') }} />
+          </div>
+        </section>
       </div>
     </main>
   );
 }
+
+const PlusIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+);
+const SearchIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+);

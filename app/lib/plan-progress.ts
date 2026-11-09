@@ -12,7 +12,7 @@
 import { supabase } from './supabase';
 
 export type PlanOutcome = 'sent' | 'failed' | 'not_sent' | 'waiting';
-export type ResultsKind = PlanOutcome | 'replies';
+export type ResultsKind = PlanOutcome | 'replies' | 'report';
 
 export type ProgressEnrollment = {
   id: number;
@@ -25,7 +25,7 @@ export type ProgressEnrollment = {
   stoppedReason: string | null;
 };
 
-export type ProgressStep = { id: number; channel: string };
+export type ProgressStep = { id: number; channel: string; position?: number; title?: string | null };
 
 export type ProgressTask = {
   id: number;
@@ -78,11 +78,16 @@ export type ProgressColdReply = {
 export type PlanAttempt = {
   key: string;
   enrollmentId: number;
+  stepId: number | null;
   channel: string;
   outcome: PlanOutcome;
   reason: string | null;
   at: string | null;
   title: string;
+  /** The carrier's or mail provider's word: delivered, sent, failed, bounced. */
+  status: string | null;
+  opened: boolean;
+  bounced: boolean;
 };
 
 export type PlanReply = {
@@ -102,10 +107,27 @@ export type PersonProgress = {
   sellerId: number | null;
   name: string;
   status: string;
+  stoppedReason: string | null;
   reached: boolean;
   attempts: PlanAttempt[];
   replies: PlanReply[];
 };
+
+/** One line of the report: a step, a week, or the whole plan. */
+export type ReportRow = {
+  key: string;
+  label: string;
+  channel: string | null;
+  sent: number;
+  delivered: number;
+  failed: number;
+  bounced: number;
+  opened: number;
+  replies: number;
+  optOuts: number;
+};
+
+export type PlanReport = { total: ReportRow; steps: ReportRow[]; weeks: ReportRow[] };
 
 export type PlanProgress = {
   planId: number;
@@ -117,6 +139,7 @@ export type PlanProgress = {
   waiting: number;
   replies: number;
   people: PersonProgress[];
+  report: PlanReport;
 };
 
 const SEND = new Set(['email', 'sms', 'rvm', 'ai_agent']);
@@ -152,6 +175,12 @@ function channelOf(task: ProgressTask, steps: Map<number, string>): string | nul
   return SEND.has(raw) ? raw : null;
 }
 
+/** The tick's "Waiting: …" line on an open step, or null when it is only not due yet. */
+function waitingOf(notes: string | null): string | null {
+  const m = /(?:^|\n)Waiting:\s*([^\n]+)\s*$/.exec(notes ?? '');
+  return m ? m[1].trim().slice(0, 180) : null;
+}
+
 function tail(notes: string | null): string | null {
   const line = (notes ?? '').split('\n').map((s) => s.trim()).filter(Boolean).pop() ?? '';
   return line ? line.slice(0, 180) : null;
@@ -172,7 +201,6 @@ function dropOutcome(drop: ProgressDrop): { outcome: PlanOutcome; reason: string
   if (drop.status === 'failed') return { outcome: 'failed', reason: drop.lastError?.trim().slice(0, 180) || 'The drop failed', at: drop.sentAt };
   if (drop.status === 'skipped') {
     const why = drop.skipReason === 'no_phone' ? 'No phone number'
-      : drop.skipReason === 'plan_stopped' ? 'The plan was stopped before this went out'
       : drop.skipReason ? drop.skipReason.replace(/_/g, ' ')
       : 'Did not send';
     return { outcome: 'not_sent', reason: why, at: null };
@@ -191,8 +219,26 @@ export function buildPlanProgress(input: {
   comms: ProgressComm[];
   drops: ProgressDrop[];
   coldReplies: ProgressColdReply[];
+  /** communications ids of plan mail that was opened (email_tracking). */
+  opens?: number[];
+  /** Cold plan emails that bounced after the send, by buyer and time (cold_sends). */
+  coldBounces?: { buyerId: number | null; at: string }[];
 }): PlanProgress[] {
   const steps = new Map(input.steps.map((s) => [s.id, s.channel]));
+  const opened = new Set(input.opens ?? []);
+  const coldBounce = new Map<number, number[]>();
+  for (const b of input.coldBounces ?? []) {
+    if (b.buyerId == null) continue;
+    const list = coldBounce.get(b.buyerId) ?? [];
+    list.push(new Date(b.at).getTime());
+    coldBounce.set(b.buyerId, list);
+  }
+  // A cold bounce lands within a day of the send; the communications row still says sent.
+  const bouncedCold = (buyerId: number | null, at: string) => {
+    if (buyerId == null) return false;
+    const t = new Date(at).getTime();
+    return (coldBounce.get(buyerId) ?? []).some((b) => Math.abs(b - t) < 36 * 3600_000);
+  };
   const byPlan = new Map<number, ProgressEnrollment[]>();
   for (const e of input.enrollments) {
     const list = byPlan.get(e.planId) ?? [];
@@ -282,39 +328,40 @@ export function buildPlanProgress(input: {
         }
         if (channel === 'rvm') {
           attempts.push({
-            key: `task:${task.id}`, enrollmentId: e.id, channel, title: task.title || 'Voicemail',
+            key: `task:${task.id}`, enrollmentId: e.id, stepId: task.planStepId, channel, title: task.title || 'Voicemail',
             outcome: task.done ? 'not_sent' : 'waiting',
-            reason: task.done ? (tail(task.notes) || 'No voicemail on file') : null,
-            at: task.completedAt,
+            reason: task.done ? (tail(task.notes) || 'No voicemail on file') : waitingOf(task.notes),
+            at: task.completedAt, status: null, opened: false, bounced: false,
           });
           continue;
         }
         if (channel === 'ai_agent') {
           const missed = (task.notes ?? '').match(/(?:AI agent not started|AI step not run):\s*(.*)/i);
           attempts.push({
-            key: `task:${task.id}`, enrollmentId: e.id, channel, title: task.title || 'AI agent',
+            key: `task:${task.id}`, enrollmentId: e.id, stepId: task.planStepId, channel, title: task.title || 'AI agent',
             outcome: !task.done ? 'waiting' : missed ? 'not_sent' : 'sent',
             reason: missed ? missed[1].trim().slice(0, 180) : null,
-            at: task.completedAt,
+            at: task.completedAt, status: null, opened: false, bounced: false,
           });
           continue;
         }
         if (channel === 'email') {
           const comm = planComm.get(`plan:${task.id}`);
           if (comm) {
-            const bad = failedStatus(comm.status);
+            const bounced = (comm.status ?? '').toLowerCase() === 'bounced' || bouncedCold(e.buyerId, comm.occurredAt);
+            const bad = bounced || failedStatus(comm.status);
             attempts.push({
-              key: `task:${task.id}`, enrollmentId: e.id, channel, title: task.title || 'Email',
+              key: `task:${task.id}`, enrollmentId: e.id, stepId: task.planStepId, channel, title: task.title || 'Email',
               outcome: bad ? 'failed' : 'sent',
-              reason: bad ? (comm.status || 'Failed') : null,
-              at: comm.occurredAt,
+              reason: bad ? (bounced ? 'Bounced' : comm.status || 'Failed') : null,
+              at: comm.occurredAt, status: bounced ? 'bounced' : comm.status, opened: opened.has(comm.id), bounced,
             });
           } else {
             attempts.push({
-              key: `task:${task.id}`, enrollmentId: e.id, channel, title: task.title || 'Email',
+              key: `task:${task.id}`, enrollmentId: e.id, stepId: task.planStepId, channel, title: task.title || 'Email',
               outcome: task.done ? 'not_sent' : 'waiting',
-              reason: task.done ? (tail(task.notes) || 'No email on file') : null,
-              at: task.done ? task.completedAt : task.dueAt,
+              reason: task.done ? (tail(task.notes) || 'No email on file') : waitingOf(task.notes),
+              at: task.done ? task.completedAt : task.dueAt, status: null, opened: false, bounced: false,
             });
           }
           continue;
@@ -323,42 +370,44 @@ export function buildPlanProgress(input: {
         if (comm) {
           const bad = failedStatus(comm.status);
           attempts.push({
-            key: `task:${task.id}`, enrollmentId: e.id, channel: 'sms', title: task.title || 'Text',
+            key: `task:${task.id}`, enrollmentId: e.id, stepId: task.planStepId, channel: 'sms', title: task.title || 'Text',
             outcome: bad ? 'failed' : 'sent',
             reason: bad ? (comm.status || 'Failed') : null,
-            at: comm.occurredAt,
+            at: comm.occurredAt, status: comm.status, opened: false, bounced: false,
           });
         } else {
           attempts.push({
-            key: `task:${task.id}`, enrollmentId: e.id, channel: 'sms', title: task.title || 'Text',
+            key: `task:${task.id}`, enrollmentId: e.id, stepId: task.planStepId, channel: 'sms', title: task.title || 'Text',
             outcome: task.done ? 'not_sent' : 'waiting',
-            reason: task.done ? (tail(task.notes) || 'No text on file') : null,
-            at: task.done ? task.completedAt : task.dueAt,
+            reason: task.done ? (tail(task.notes) || 'No text on file') : waitingOf(task.notes),
+            at: task.done ? task.completedAt : task.dueAt, status: null, opened: false, bounced: false,
           });
         }
       }
 
       for (const drop of dropsByEnrollment.get(e.id) ?? []) {
         const mark = drop.planStepId != null ? `${e.id}:${drop.planStepId}` : '';
+        // The plan stopped (a reply, a call, a stage change) before the drop's turn: not a send that failed to go out.
+        if (drop.status === 'skipped' && drop.skipReason === 'plan_stopped') continue;
         if (mark && covered.has(mark)) {
           const got = dropOutcome(drop);
           attempts.push({
-            key: `drop:${drop.id}`, enrollmentId: e.id, channel: 'rvm', title: 'Voicemail',
-            outcome: got.outcome, reason: got.reason, at: got.at,
+            key: `drop:${drop.id}`, enrollmentId: e.id, stepId: drop.planStepId, channel: 'rvm', title: 'Voicemail',
+            outcome: got.outcome, reason: got.reason, at: got.at, status: drop.status, opened: false, bounced: false,
           });
           continue;
         }
         if (mark && (tasksByEnrollment.get(e.id) ?? []).some((t) => t.planStepId === drop.planStepId)) continue;
         const got = dropOutcome(drop);
         attempts.push({
-          key: `drop:${drop.id}`, enrollmentId: e.id, channel: 'rvm', title: 'Voicemail',
-          outcome: got.outcome, reason: got.reason, at: got.at,
+          key: `drop:${drop.id}`, enrollmentId: e.id, stepId: drop.planStepId, channel: 'rvm', title: 'Voicemail',
+          outcome: got.outcome, reason: got.reason, at: got.at, status: drop.status, opened: false, bounced: false,
         });
       }
 
       const reached = attempts.some((a) => a.outcome === 'sent');
       return {
-        enrollmentId: e.id, buyerId: e.buyerId, sellerId: e.sellerId, name: e.name, status: e.status,
+        enrollmentId: e.id, buyerId: e.buyerId, sellerId: e.sellerId, name: e.name, status: e.status, stoppedReason: e.stoppedReason,
         reached, attempts, replies: [] as PlanReply[],
       };
     });
@@ -425,150 +474,128 @@ export function buildPlanProgress(input: {
       waiting: count(people, 'waiting'),
       replies: people.reduce((n, p) => n + p.replies.length, 0),
       people,
+      report: buildPlanReport(people, input.steps),
     });
   }
   return plans;
 }
 
-async function readAll<T>(make: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<{ rows: T[]; error: string | null }> {
-  const rows: T[] = [];
-  for (let from = 0; from < 5000; from += 1000) {
-    const { data, error } = await make(from, from + 999);
-    if (error) return { rows, error: error.message };
-    rows.push(...(data ?? []));
-    if (!data || data.length < 1000) break;
+const OPT_OUT = /^\s*(stop|unsubscribe|remove me|opt out|quit|cancel|end)\b/i;
+
+/** The Monday (UTC) of the week an ISO time falls in, as YYYY-MM-DD. */
+export function weekOf(iso: string): string {
+  const d = new Date(iso);
+  const day = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - day);
+  return d.toISOString().slice(0, 10);
+}
+
+const emptyRow = (key: string, label: string, channel: string | null): ReportRow => ({ key, label, channel, sent: 0, delivered: 0, failed: 0, bounced: 0, opened: 0, replies: 0, optOuts: 0 });
+
+function addAttempt(row: ReportRow, a: PlanAttempt): void {
+  if (a.outcome === 'sent' || a.outcome === 'failed') row.sent++;
+  if (a.outcome === 'failed') row.failed++;
+  if (a.bounced) row.bounced++;
+  if (a.opened) row.opened++;
+  // A text is delivered when the carrier said so; an email counts as delivered when it did not bounce or fail.
+  if (a.outcome === 'sent' && (a.channel !== 'sms' || (a.status ?? '').toLowerCase() === 'delivered')) row.delivered++;
+}
+
+/**
+ * The plan's numbers by step and by week (Monday, UTC): sends, delivered,
+ * failed, bounced, opened, replies, opt-outs. A reply or an opt-out is
+ * counted in the week it arrived and in the plan total, not against a step
+ * (a reply answers the plan, not one step). An opt-out is a STOP-style first
+ * word in a reply, or the plan stopped as not interested.
+ */
+export function buildPlanReport(people: PersonProgress[], steps: ProgressStep[]): PlanReport {
+  const total = emptyRow('total', 'Whole plan', null);
+  const byStep = new Map<string, ReportRow>();
+  const byWeek = new Map<string, ReportRow>();
+  const meta = new Map(steps.map((s) => [s.id, s]));
+  const stepRow = (a: PlanAttempt): ReportRow => {
+    const key = a.stepId != null ? `step:${a.stepId}` : `channel:${a.channel}`;
+    let row = byStep.get(key);
+    if (!row) {
+      const s = a.stepId != null ? meta.get(a.stepId) : undefined;
+      const word = channelWord(a.channel);
+      const title = (s?.title ?? '').trim();
+      const label = s?.position != null ? `${s.position + 1}. ${title && title !== word ? title : word}` : word;
+      row = emptyRow(key, label, a.channel);
+      byStep.set(key, row);
+    }
+    return row;
+  };
+  const weekRow = (iso: string): ReportRow => {
+    const wk = weekOf(iso);
+    let row = byWeek.get(wk);
+    if (!row) { row = emptyRow(`week:${wk}`, wk, null); byWeek.set(wk, row); }
+    return row;
+  };
+  for (const p of people) {
+    let lastAt: string | null = null;
+    for (const a of p.attempts) {
+      if (a.outcome !== 'sent' && a.outcome !== 'failed') continue;
+      addAttempt(total, a);
+      addAttempt(stepRow(a), a);
+      if (a.at) { addAttempt(weekRow(a.at), a); if (!lastAt || a.at > lastAt) lastAt = a.at; }
+    }
+    let optedOut = false;
+    for (const r of p.replies) {
+      total.replies++;
+      weekRow(r.at).replies++;
+      if (!optedOut && OPT_OUT.test(r.snippet)) { optedOut = true; total.optOuts++; weekRow(r.at).optOuts++; }
+    }
+    if (!optedOut && p.stoppedReason === 'not_interested') {
+      total.optOuts++;
+      if (lastAt) weekRow(lastAt).optOuts++;
+    }
   }
-  return { rows, error: null };
+  const order = [...steps].sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((s) => `step:${s.id}`);
+  const stepsOut = [...byStep.values()].sort((a, b) => {
+    const ia = order.indexOf(a.key), ib = order.indexOf(b.key);
+    return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib) || a.label.localeCompare(b.label);
+  });
+  const weeks = [...byWeek.values()].sort((a, b) => b.label.localeCompare(a.label));
+  return { total, steps: stepsOut, weeks };
 }
 
-function chunks<T>(xs: T[], n: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n));
-  return out;
+/** What plan_progress_inputs (migration 428, 459) returns. Enrollments and tasks are positional arrays. */
+export type ProgressInputs = {
+  enrollments: [number, number, number | null, number | null, string, string, string, string | null][];
+  steps: ProgressStep[];
+  tasks: [number, number, number | null, boolean, string, string | null, string | null, string, string | null][];
+  mail: ProgressComm[];
+  inbound: ProgressComm[];
+  sms: ProgressComm[];
+  drops: ProgressDrop[];
+  coldReplies: ProgressColdReply[];
+  opens?: number[];
+  coldBounces?: { buyerId: number | null; at: string }[];
+};
+
+/** The RPC's rows as buildPlanProgress takes them. Same order and the same de-duplication as the old per-table reads. */
+export function progressFromInputs(raw: ProgressInputs): Parameters<typeof buildPlanProgress>[0] {
+  const enrollments: ProgressEnrollment[] = raw.enrollments.map(([id, planId, buyerId, sellerId, name, status, enrolledAt, stoppedReason]) => ({
+    id, planId, buyerId, sellerId, name, status, enrolledAt, stoppedReason,
+  }));
+  const tasks: ProgressTask[] = raw.tasks.map(([id, enrollmentId, planStepId, done, taskType, completedAt, dueAt, title, notes]) => ({
+    id, enrollmentId, planStepId, done, taskType, completedAt, dueAt, title, notes,
+  }));
+  const seen = new Set<number>();
+  const comms = [...raw.mail, ...raw.inbound].filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true))).concat(raw.sms);
+  return { enrollments, steps: raw.steps, tasks, comms, drops: raw.drops, coldReplies: raw.coldReplies, opens: raw.opens ?? [], coldBounces: raw.coldBounces ?? [] };
 }
 
-function joinPages<T>(pages: { rows: T[]; error: string | null }[]): { rows: T[]; error: string | null } {
-  const rows: T[] = [];
-  for (const page of pages) {
-    if (page.error) return { rows, error: page.error };
-    rows.push(...page.rows);
-  }
-  return { rows, error: null };
-}
-
-const COMM_COLS = 'id,buyer_id,seller_id,direction,channel,status,source_id,occurred_at,subject,body,from_email';
-
+/**
+ * Every plan's results in one call (plan_progress_inputs, migration 428). It
+ * replaced reading enrollments, people, tasks and messages in chunks of 80
+ * ids, which was about 200 requests and every task's full notes on Compr.
+ */
 export async function fetchPlanProgress(workspaceId: number): Promise<{ ok: true; plans: PlanProgress[] } | { ok: false; message: string }> {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
-  const sb = supabase;
-  const enrolled = await readAll((a, b) => sb.from('enrollments')
-    .select('id,plan_id,buyer_id,seller_id,status,enrolled_at,stopped_reason')
-    .eq('workspace_id', workspaceId).order('id').range(a, b));
-  if (enrolled.error) return { ok: false, message: enrolled.error };
-
-  const buyerIds = [...new Set(enrolled.rows.map((e) => e.buyer_id).filter((id): id is number => id != null))];
-  const sellerIds = [...new Set(enrolled.rows.map((e) => e.seller_id).filter((id): id is number => id != null))];
-  const buyerName = new Map<number, string>();
-  const sellerName = new Map<number, string>();
-  for (const part of chunks(buyerIds, 80)) {
-    const { data, error } = await sb.from('buyers').select('id,name,email').in('id', part);
-    if (error) return { ok: false, message: error.message };
-    for (const b of data ?? []) buyerName.set(b.id, b.name?.trim() || b.email || 'Buyer');
-  }
-  for (const part of chunks(sellerIds, 80)) {
-    const { data, error } = await sb.from('sellers').select('id,name').in('id', part);
-    if (error) return { ok: false, message: error.message };
-    for (const s of data ?? []) sellerName.set(s.id, s.name || 'Seller');
-  }
-
-  const enrollments: ProgressEnrollment[] = enrolled.rows.filter((e) => e.seller_id != null || e.buyer_id != null).map((e) => ({
-    id: e.id,
-    planId: e.plan_id,
-    buyerId: e.buyer_id ?? null,
-    sellerId: e.seller_id,
-    name: e.seller_id != null ? (sellerName.get(e.seller_id) || 'Seller') : (e.buyer_id != null ? (buyerName.get(e.buyer_id) || 'Buyer') : 'Buyer'),
-    status: e.status,
-    enrolledAt: e.enrolled_at,
-    stoppedReason: e.stopped_reason,
-  }));
-  if (!enrollments.length) return { ok: true, plans: [] };
-
-  const ids = enrollments.map((e) => e.id);
-  const since = enrollments.reduce((min, e) => (e.enrolledAt < min ? e.enrolledAt : min), enrollments[0].enrolledAt);
-  const inboundSince = new Date(new Date(since).getTime() - 2 * 60_000).toISOString();
-  const commsFor = (part: number[], who: 'buyer_id' | 'seller_id') =>
-    readAll((a, b) => sb.from('communications').select(COMM_COLS)
-      .eq('workspace_id', workspaceId).eq('direction', 'inbound').in(who, part).gte('occurred_at', inboundSince).order('id').range(a, b));
-
-  const [stepRes, taskRes, mailRes, dropRes, coldRes, buyerIn, sellerIn] = await Promise.all([
-    readAll((a, b) => sb.from('action_plan_steps').select('id,channel').eq('workspace_id', workspaceId).order('id').range(a, b)),
-    Promise.all(chunks(ids, 80).map((part) => readAll((a, b) => sb.from('tasks')
-      .select('id,enrollment_id,plan_step_id,done,task_type,completed_at,due_at,title,notes')
-      .in('enrollment_id', part).order('id').range(a, b)))).then(joinPages),
-    readAll((a, b) => sb.from('communications').select(COMM_COLS).eq('workspace_id', workspaceId).like('source_id', 'plan:%').order('id').range(a, b)),
-    readAll((a, b) => sb.from('rvm_drops')
-      .select('id,enrollment_id,plan_step_id,status,skip_reason,last_error,sent_at,buyer_id,seller_id')
-      .eq('workspace_id', workspaceId).not('enrollment_id', 'is', null).order('id').range(a, b)),
-    buyerIds.length
-      ? readAll((a, b) => sb.from('cold_replies')
-        .select('buyer_id,communication_id,classification,received_at,subject,snippet,from_email')
-        .eq('workspace_id', workspaceId).order('id').range(a, b))
-      : Promise.resolve({ rows: [], error: null as string | null }),
-    buyerIds.length ? Promise.all(chunks(buyerIds, 80).map((part) => commsFor(part, 'buyer_id'))).then(joinPages) : Promise.resolve({ rows: [], error: null as string | null }),
-    sellerIds.length ? Promise.all(chunks(sellerIds, 80).map((part) => commsFor(part, 'seller_id'))).then(joinPages) : Promise.resolve({ rows: [], error: null as string | null }),
-  ]);
-
-  const failed = [stepRes.error, taskRes.error, mailRes.error, dropRes.error, coldRes.error, buyerIn.error, sellerIn.error].find((e): e is string => !!e);
-  if (failed) return { ok: false, message: failed };
-
-  const smsSince = new Date(new Date(since).getTime() - 30 * 60_000).toISOString();
-  const smsRows: ProgressComm[] = [];
-  const pullSms = async (part: number[], who: 'buyer_id' | 'seller_id') => {
-    const page = await readAll((a, b) => sb.from('communications').select(COMM_COLS)
-      .eq('workspace_id', workspaceId).eq('direction', 'outbound').in('channel', ['sms', 'text']).in(who, part).gte('occurred_at', smsSince).order('id').range(a, b));
-    if (page.error) return page.error;
-    smsRows.push(...page.rows.map(mapComm));
-    return null;
-  };
-  for (const part of chunks(buyerIds, 80)) {
-    const err = await pullSms(part, 'buyer_id');
-    if (err) return { ok: false, message: err };
-  }
-  for (const part of chunks(sellerIds, 80)) {
-    const err = await pullSms(part, 'seller_id');
-    if (err) return { ok: false, message: err };
-  }
-
-  return {
-    ok: true,
-    plans: buildPlanProgress({
-      enrollments,
-      steps: stepRes.rows.map((s) => ({ id: s.id, channel: s.channel })),
-      tasks: taskRes.rows.flatMap((r) => (r.enrollment_id == null ? [] : [{
-        id: r.id, enrollmentId: r.enrollment_id, planStepId: r.plan_step_id, done: r.done, taskType: r.task_type,
-        completedAt: r.completed_at, dueAt: r.due_at, title: r.title, notes: r.notes,
-      }])),
-      comms: dedupeComms([...mailRes.rows, ...buyerIn.rows, ...sellerIn.rows].map(mapComm).concat(smsRows)),
-      drops: dropRes.rows.map((r) => ({
-        id: r.id, enrollmentId: r.enrollment_id, planStepId: r.plan_step_id, status: r.status,
-        skipReason: r.skip_reason, lastError: r.last_error, sentAt: r.sent_at, buyerId: r.buyer_id, sellerId: r.seller_id,
-      })),
-      coldReplies: coldRes.rows.map((r) => ({
-        buyerId: r.buyer_id, communicationId: r.communication_id, classification: r.classification,
-        receivedAt: r.received_at, subject: r.subject, snippet: r.snippet, fromEmail: r.from_email,
-      })),
-    }),
-  };
-}
-
-function dedupeComms(rows: ProgressComm[]): ProgressComm[] {
-  const seen = new Set<number>();
-  return rows.filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)));
-}
-
-function mapComm(row: { id: number; buyer_id: number | null; seller_id: number | null; direction: string | null; channel: string; status: string | null; source_id: string; occurred_at: string; subject: string | null; body: string | null; from_email: string | null }): ProgressComm {
-  return {
-    id: row.id, buyerId: row.buyer_id, sellerId: row.seller_id, direction: row.direction, channel: row.channel,
-    status: row.status, sourceId: row.source_id, occurredAt: row.occurred_at, subject: row.subject, body: row.body, fromEmail: row.from_email,
-  };
+  const { data, error } = await supabase.rpc('plan_progress_inputs' as never, { p_workspace_id: workspaceId } as never);
+  if (error) return { ok: false, message: error.message };
+  const input = progressFromInputs(data as ProgressInputs);
+  return { ok: true, plans: input.enrollments.length ? buildPlanProgress(input) : [] };
 }

@@ -36,7 +36,7 @@ import { GmailIcon } from './GmailIcon';
 import type { QuickDraft } from './GmailInbox';
 import { DealPicker } from './DealPicker';
 import { fullStamp, gmailDate } from './format';
-import { type MailFile, type Receipt, fmtBytes, receiptLabel } from './mail-extras';
+import { type MailFile, type Receipt, fmtBytes, receiptView } from './mail-extras';
 
 
 /** "me" is the account holder, in the header and in the To line. */
@@ -86,7 +86,10 @@ function Message({ row, open, onToggle, mine, single, files, receipt, fileProps 
     [doc.html, row.body],
   );
   const outbound = row.direction === 'outbound';
-  const from = outbound ? 'me' : (row.from_email ?? 'Unknown sender');
+  const rv = receiptView(receipt);
+  // Outbound means a workspace address sent it. In my mailbox that is me only
+  // when the sender is my address; a teammate who cc'd me reads by name.
+  const from = outbound && (!mine || !row.from_email || asMe(row.from_email, mine) === 'me') ? 'me' : (row.from_email ?? 'Unknown sender');
 
   // Collapsed: one line, for the older messages in a thread.
   if (!open && !single) {
@@ -115,10 +118,9 @@ function Message({ row, open, onToggle, mine, single, files, receipt, fileProps 
           {row.cc_email ? <> · cc {row.cc_email}</> : null}
           {row.bcc_email ? <> · bcc {row.bcc_email}</> : null}
         </div>
-        {outbound && receiptLabel(receipt) ? (
-          <div className="em-receipt" data-opened={receipt && receipt.opens > 0 ? 'true' : 'false'}
-            title={receipt?.first_opened_at ? `First opened ${fullStamp(receipt.first_opened_at)}` : 'Read receipt on — no open reported yet'}>
-            <GmailIcon name={receipt && receipt.opens > 0 ? 'done_all' : 'done'} size={14} /> {receiptLabel(receipt)}
+        {outbound && rv ? (
+          <div className="em-receipt" data-level={rv.level} title={rv.title}>
+            <GmailIcon name={rv.level === 'clicked' ? 'ads_click' : rv.level === 'opened' ? 'done_all' : 'done'} size={14} /> {rv.label}
           </div>
         ) : null}
         {doc.html ? (
@@ -282,7 +284,8 @@ export function GmailThread({
               to: thread.counterpart, name: c.rec?.name ?? '', subject: `Re: ${thread.subject}`,
               // The newest message id, so Gmail files the reply under it (as useEmailComposer does).
               inReplyTo: [...thread.rows].reverse().find((r) => r.source_id.startsWith('<'))?.source_id ?? null,
-              sellerId: thread.seller_id, buyerId: thread.buyer_id, dealId: composeDealId ?? thread.deal_id,
+              // A reply stays on its thread's house; the folder's deal only for a thread on none.
+              sellerId: thread.seller_id, buyerId: thread.buyer_id, dealId: thread.deal_id ?? composeDealId,
             });
           }}>
             <GmailIcon name="reply" size={16} /> Reply

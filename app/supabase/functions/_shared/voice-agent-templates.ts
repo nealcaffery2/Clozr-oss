@@ -298,7 +298,7 @@ If not, thank them and let it go. Never pressure, never reopen an old offer numb
   },
 ];
 
-const tools = (on: string[]) => Object.fromEntries(['lead_context', 'book_appointment', 'save_qualification', 'mark_do_not_contact', 'get_compr_offer', 'request_agreement', 'transfer', 'end_call'].map((k) => [k, { enabled: on.includes(k) }]));
+const tools = (on: string[]) => Object.fromEntries(['lead_context', 'book_appointment', 'save_qualification', 'mark_do_not_contact', 'get_compr_offer', 'request_agreement', 'deal_lookup', 'transfer', 'end_call'].map((k) => [k, { enabled: on.includes(k) }]));
 
 export const TEMPLATES: Record<string, AgentTemplate> = {
   lead_manager: {
@@ -452,7 +452,7 @@ export const TEMPLATES: Record<string, AgentTemplate> = {
       offer_authority: { mode: 'none' },
       call_handling: { max_call_seconds: 480, voicemail: { detect: true, action: 'leave_message', message_template: 'Hi, this is {{agent_name}} with {{company}}. Just checking what you are buying right now so we only send you deals that fit. Call or text us back when you have a minute. Thanks.' } },
       live_transfer: { enabled: true, mode: 'warm', triggers: { asks_for_person: true, hot_lead: true }, fallback: 'book_callback' },
-      tools: tools(['lead_context', 'book_appointment', 'save_qualification', 'mark_do_not_contact', 'transfer', 'end_call']),
+      tools: tools(['lead_context', 'book_appointment', 'save_qualification', 'mark_do_not_contact', 'deal_lookup', 'transfer', 'end_call']),
     },
     sections: BUYER_ASSISTANT_SECTIONS,
     open_items: [

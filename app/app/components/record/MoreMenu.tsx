@@ -7,7 +7,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Chevron, CZ } from '@/components/ds/chrome';
-import { ghostBtn, menuPanel } from './ui';
+import { menuPanel } from './ui';
 
 export type MoreItem = { key: string; label: string; note?: string; group?: string; run: () => void };
 
@@ -36,9 +36,9 @@ export function MoreMenu({ items, mobile }: { items: MoreItem[]; mobile?: boolea
 
   return (
     <div style={{ position: 'relative', flex: mobile ? 1 : 'none', display: 'flex' }}>
-      <button ref={btn} type="button" className="rec-press rec-ghost" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}
-        style={{ ...ghostBtn, ...(mobile ? { flex: 1, height: '36px' } : {}), display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-        More <Chevron size={11} color={CZ.faint} />
+      <button ref={btn} type="button" className="ds-btn ds-btn--ghost" aria-haspopup="menu" aria-expanded={open} aria-label="More actions for this record" onClick={() => setOpen((o) => !o)}
+        style={mobile ? { flex: 1, height: '44px' } : undefined}>
+        More <Chevron size={11} color={CZ.muted} />
       </button>
       {open ? (
         <>

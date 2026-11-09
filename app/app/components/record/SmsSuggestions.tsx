@@ -35,8 +35,8 @@ export function SmsSuggestions({ workspaceId, sellerId, messages, me, canWrite =
   const state = res.key === key ? { loading: false, ...res } : { loading: true, error: null, items: null };
   if (!key || (state.items && !state.items.length)) return null;
   return (
-    <div style={{ padding: '8px 10px', borderTop: '1px solid #e4e4e7', background: '#fafafa' }}>
-      <div style={{ fontSize: '11.5px', color: '#71717a', fontWeight: 600, marginBottom: '6px' }}>Suggested updates</div>
+    <div style={{ padding: '8px 10px', borderTop: '1px solid var(--divider, #e4e4e7)', background: 'var(--canvas, #fafafa)' }}>
+      <div style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600, marginBottom: '6px' }}>Suggested updates</div>
       <SuggestionList workspaceId={workspaceId} sellerId={sellerId} me={me} canWrite={canWrite} key={key} state={state} onToast={onToast} onChanged={onChanged} />
     </div>
   );

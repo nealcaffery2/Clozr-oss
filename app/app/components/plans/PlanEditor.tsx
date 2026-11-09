@@ -185,13 +185,26 @@ export function PlanEditor({ api, draft, isMobile, onOpenPerson, onOpenBuyer }: 
                   </span>
                 </div>
               ) : null}
+              <span style={{ ...label, color: INK, marginTop: '14px' }}>Drip</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '12.5px', color: INK }}>
+                Start at most
+                <input type="number" inputMode="numeric" min={1} step={1} name="daily-cap" aria-label="People who start this plan per day" placeholder="No limit"
+                  value={draft.settings.daily_cap ?? ''}
+                  onChange={(e) => { const n = Math.floor(Number(e.target.value)); api.patchSettings({ daily_cap: n > 0 ? n : undefined }); }}
+                  style={{ ...smallSelect, width: '96px', height: '30px', fontVariantNumeric: 'tabular-nums' }} />
+                people a day
+              </label>
+              <span style={{ display: 'block', fontSize: '11.5px', color: MUTED, marginTop: '5px' }}>
+                Enroll a big list at once and the plan starts this many a day, every day, in the order they were added. Everyone shows as on the plan right away. Blank starts everyone now.
+              </span>
             </div>
           </div>
         ) : (
           <div style={{ fontSize: '12px', color: MUTED }}>
             {[draft.settings.stop_on_reply && 'stops on reply', draft.settings.stop_on_call && 'stops when a call connects', draft.settings.stop_on_stage && 'stops on stage change',
               routeLine,
-              draft.settings.business_hours.enabled && `${draft.settings.business_hours.start}–${draft.settings.business_hours.end}`].filter(Boolean).join(' · ') || 'No smart stop, no hours, nothing after'}
+              draft.settings.business_hours.enabled && `${draft.settings.business_hours.start}–${draft.settings.business_hours.end}`,
+              draft.settings.daily_cap ? `${draft.settings.daily_cap.toLocaleString('en-US')} start a day` : ''].filter(Boolean).join(' · ') || 'No smart stop, no hours, nothing after'}
           </div>
         )}
       </Section>

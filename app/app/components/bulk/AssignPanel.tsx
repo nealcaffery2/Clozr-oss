@@ -31,7 +31,7 @@ const ROLE_PICKS: { role: string; label: string }[] = [
 
 function Dot({ mate, n }: { mate: AssignMate | null; n?: number }) {
   return (
-    <span aria-hidden style={{ width: 22, height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 700, flex: 'none',
+    <span aria-hidden style={{ width: 22, height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 700, flex: 'none',
       background: n ? GREEN : 'var(--surface-2, #f4f4f5)', color: n ? 'var(--surface, #fff)' : 'var(--muted, #52525b)' }}>
       {n ?? (mate ? (mate.initials || mate.name.slice(0, 1)).slice(0, 2) : '–')}
     </span>
@@ -218,7 +218,7 @@ export function SelectCount({ listCount, onSelect, ownerAware }: {
         </label>
       ) : null}
       <button type="button" disabled={!n} onClick={go} title={`Select the first ${n ?? 'N'} of ${listCount.toLocaleString('en-US')} in the list`}
-        style={{ height: 28, padding: '0 9px', borderRadius: 7, border: '1px solid rgba(10,133,96,.25)', background: 'var(--surface, #fff)', fontSize: 12, fontWeight: 600, color: n ? GREEN : 'var(--subtle, #a1a1aa)', cursor: n ? 'pointer' : 'not-allowed', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+        style={{ height: 28, padding: '0 9px', borderRadius: 7, border: '1px solid rgba(10,133,96,.25)', background: 'var(--surface, #fff)', fontSize: 12, fontWeight: 600, color: n ? GREEN : 'var(--meta, #71717a)', cursor: n ? 'pointer' : 'not-allowed', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
         first {n ? Math.min(n, listCount).toLocaleString('en-US') : 'N'}
       </button>
     </span>

@@ -52,7 +52,7 @@ export function ScriptTab({ form, canEdit }: TabCtx) {
           {PROMPT_VARIABLES.map((v) => (
             <button key={v.name} type="button" className="va-btn va-ghost" disabled={off || !hasTarget} title={v.hint}
               onMouseDown={(e) => e.preventDefault()} onClick={() => insert(v.name)}
-              style={{ ...ghost, height: 28, padding: '0 9px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11.5, fontWeight: 500, opacity: off || !hasTarget ? 0.55 : 1, borderStyle: v.empty ? 'dashed' : 'solid' }}>
+              style={{ ...ghost, height: 28, padding: '0 9px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11.5, fontWeight: 500, opacity: off || !hasTarget ? 0.5 : 1, borderStyle: v.empty ? 'dashed' : 'solid' }}>
               {`{{${v.name}}}`}
             </button>
           ))}

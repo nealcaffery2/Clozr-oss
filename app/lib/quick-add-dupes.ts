@@ -19,7 +19,7 @@ import { normalizePlace } from './place-names';
 
 export type QuickAddKind = 'seller' | 'buyer';
 export type MergeMode = 'fill' | 'overwrite';
-export type DupeBy = 'phone' | 'email' | 'address';
+export type DupeBy = 'phone' | 'email' | 'address' | 'company';
 
 /** An existing record the one being typed matches, and what can be done about it. */
 export type QuickDupe = {
@@ -32,10 +32,27 @@ export type QuickDupe = {
   canCreate: boolean;
   /** The match is archived: adding to or overriding it brings it back. */
   archived?: boolean;
+  /** Buyers: the match's company, and whether what was typed is a different person there (a colleague). */
+  company?: string | null;
+  colleague?: boolean;
+  /** The match's phone, so a shared office line is not copied onto the colleague. */
+  phone?: string | null;
 };
 
 /** A row as the duplicate check reads it. */
 export type DupeRow = { id: number; name: string | null; phone: string | null; email: string | null; property_address?: string | null; company?: string | null; archived_at?: string | null };
+
+/** Mail domains people use personally: two buyers on gmail.com are not colleagues. */
+const FREE_MAIL = new Set(['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com', 'aol.com', 'live.com', 'msn.com', 'me.com', 'comcast.net', 'att.net', 'protonmail.com', 'proton.me', 'ymail.com', 'sbcglobal.net', 'verizon.net']);
+/** The company half of an email, when it is a company's own domain. */
+export function companyDomain(email: string | null | undefined): string | null {
+  const d = (email ?? '').trim().toLowerCase().split('@')[1] ?? '';
+  return d && d.includes('.') && !FREE_MAIL.has(d) ? d : null;
+}
+/** A company name compared loosely: case, punctuation and a trailing LLC / Inc do not matter. */
+export function companyKey(name: string | null | undefined): string {
+  return (name ?? '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\b(llc|inc|corp|co|ltd|lp|llp|company)\b/g, ' ').replace(/\s+/g, ' ').trim();
+}
 
 /**
  * The match to put to the person, from what each key found: phone first, then
@@ -44,14 +61,19 @@ export type DupeRow = { id: number; name: string | null; phone: string | null; e
  */
 export function pickDuplicate(
   kind: QuickAddKind, typedName: string,
-  hits: { phone: DupeRow[]; email: DupeRow[]; address: DupeRow[] },
+  hits: { phone: DupeRow[]; email: DupeRow[]; address: DupeRow[]; company?: DupeRow[] },
 ): QuickDupe | null {
   const sameAtAddress = hits.address.find((r) => sameName(r.name ?? '', typedName));
   const [row, by]: [DupeRow | undefined, DupeBy] = hits.phone[0] ? [hits.phone[0], 'phone']
     : hits.email[0] ? [hits.email[0], 'email']
-      : [sameAtAddress ?? hits.address[0], 'address'];
+      : hits.address.length ? [sameAtAddress ?? hits.address[0], 'address']
+        : [hits.company?.[0], 'company'];
   if (!row) return null;
+  // A buyer under another name at the same company is a colleague, not a duplicate:
+  // they can be added as their own contact there.
+  const colleague = kind === 'buyer' && !!typedName.trim() && !sameName(row.name ?? '', typedName) && (by === 'company' || !!row.company);
   return {
+    company: row.company ?? null, colleague, phone: row.phone,
     kind, id: row.id, name: row.name || 'No name', by,
     detail: [row.phone, row.email, kind === 'seller' ? row.property_address : row.company, row.archived_at ? 'archived' : null].filter((x): x is string => !!x && x.trim() !== ''),
     otherPerson: by === 'address' && !sameAtAddress,
@@ -142,8 +164,8 @@ export function changedWords(keys: string[]): string[] {
 
 // ---- reads and writes ----------------------------------------------------------
 
-/** "%" and "_" are wildcards to ILIKE; an email can carry an underscore. */
-const likeExact = (v: string) => v.replace(/[\\%_]/g, (c) => '\\' + c);
+/** "%" and "_" are wildcards to ILIKE; an email can carry an underscore. For .ilike() only: inside .or() a comma or parenthesis in the value still splits the filter. */
+export const likeExact = (v: string) => v.replace(/[\\%_]/g, (c) => '\\' + c);
 
 /** Look for the record being typed in Quick Add. Null when there is none (or no database). */
 export async function findQuickAddDuplicate(workspaceId: number, kind: QuickAddKind, f: Record<string, string>): Promise<QuickDupe | null> {
@@ -169,12 +191,30 @@ export async function findQuickAddDuplicate(workspaceId: number, kind: QuickAddK
     return rows(sb.from('sellers').select(cols).eq('workspace_id', workspaceId).eq('property_id', props[0].id).order('id').limit(20));
   };
 
-  const [byPhone, byEmail, byAddress] = await Promise.all([
+  // Buyers: someone else already on file at the same company (by name, or by the company's email domain).
+  const atCompany = async (): Promise<DupeRow[]> => {
+    if (kind !== 'buyer') return [];
+    const domain = companyDomain(f.email);
+    const company = (f.company ?? '').trim();
+    if (!domain && !company) return [];
+    // Two reads, not one .or(): "Park Homes, LLC" or "ABC (Texas) Holdings" inside an or() string splits the filter and the query errors.
+    const open = () => sb.from('buyers').select(cols).eq('workspace_id', workspaceId).is('archived_at' as 'id', null).order('id').limit(10);
+    const [byDomain, byName] = await Promise.all([
+      domain ? rows(open().ilike('email', `%@${likeExact(domain)}`)) : none,
+      company ? rows(open().ilike('company', likeExact(company))) : none,
+    ]);
+    const found = [...new Map([...byDomain, ...byName].map((r) => [r.id, r])).values()].sort((a, b) => a.id - b.id);
+    const key = companyKey(company);
+    return found.filter((r) => (domain && companyDomain(r.email) === domain) || (key && companyKey(r.company) === key));
+  };
+
+  const [byPhone, byEmail, byAddress, byCompany] = await Promise.all([
     phone ? rows(sb.from(table as 'sellers').select(cols).eq('workspace_id', workspaceId).eq('phone_key', phone).order('id').limit(5)) : none,
     email ? rows(sb.from(table as 'sellers').select(cols).eq('workspace_id', workspaceId).ilike('email', likeExact(email)).order('id').limit(5)) : none,
     atAddress(),
+    atCompany(),
   ]);
-  return pickDuplicate(kind, f.name ?? '', { phone: byPhone, email: byEmail, address: byAddress });
+  return pickDuplicate(kind, f.name ?? '', { phone: byPhone, email: byEmail, address: byAddress, company: byCompany });
 }
 
 /**

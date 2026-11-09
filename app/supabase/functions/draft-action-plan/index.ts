@@ -10,11 +10,21 @@
  *       function returns) and an instruction — "make the texts shorter",
  *       "add a call on day 5", "drop the email" — and return the revised
  *       plan plus a list of what changed, in words.
+ *   { mode: "compr", workspace_id, bucket, goal, count, reasons? }
+ *       Draft a campaign for one bucket of Compr users from the Compr Buyers
+ *       screen's Suggested panel (payment issues, upsell, activate, revive):
+ *       Compr's own prices and rules instead of a seller sequence, and every
+ *       text and email run through slopFindings, with what it found returned
+ *       as `slop` so the panel can show it before anyone saves the plan.
  *   { mode: "lead", workspace_id, seller_id }
  *       Draft a plan for one seller from their actual history — every call,
  *       text, email and note on the record, talk time, how long since the
  *       last touch, the stage and what they said they wanted. This is the
  *       "AI action plan" for someone who does not want to hand-build one.
+ *
+ * In a Compr workspace (settings.buyer_profile = 'compr') goal and edit use
+ * the Compr prompt (_shared/compr-plan-ai.ts): campaigns to Compr's own
+ * contacts about the software, never seller follow-up. Lead mode is refused.
  *
  * Returns { ok, plan: { name, trigger, description, settings, steps: [{ channel,
  * delay, title, content, subject, stage, tag, priority }] }, changes: string[] }.
@@ -26,14 +36,17 @@
  * Needs the ANTHROPIC_API_KEY secret (supabase secrets set ANTHROPIC_API_KEY=…);
  * answers 503 with a plain message until it is set.
  */
-import { WRITING_RULE, slopFindings, slopReport } from '../_shared/no-ai-slop.ts';
+import { MESSAGE_RULES, WRITING_RULE, slopFindings, slopReport } from '../_shared/no-ai-slop.ts';
 import { seatBrief } from '../_shared/seat-brief.ts';
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { UNTRUSTED_RULE, corsFor, fence, jsonWith, rateLimit, serverError, tooMany } from '../_shared/security.ts';
 import { leadBriefs } from '../_shared/lead-brief.ts';
+import { COMPR_PLAN_SYSTEM } from '../_shared/compr-plan-ai.ts';
 import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from '../_shared/models.ts';
+import { recordUsage } from '../_shared/ai-usage.ts';
+import { COMPANY_FOOTPRINT } from '../_shared/company-profile.ts';
 
 /**
  * An organization-level Anthropic key (one not created inside a workspace)
@@ -101,7 +114,7 @@ const PLAN_TOOL: Anthropic.Tool = {
 };
 
 const SYSTEM =
-  'You write follow-up sequences for a real-estate wholesaling acquisitions team (Acme Homes, Texas). '
+  'You write follow-up sequences for a real-estate wholesaling acquisitions team (Acme Homes). ' + COMPANY_FOOTPRINT + ' '
   + 'A sequence is usually 4 to 9 steps across sms, call, email and task, spaced over days to weeks, each with a delay relative to enrolment that never decreases down the list. '
   + 'Other step kinds exist and are used sparingly: wait (a pause with nothing to do), stage (move the seller to a named stage), tag (add a tag), assign (hand the seller to the lead owner), compr_report (send the Compr Seller or Compr Buyer underwriting report link by sms or email; set audience and via, and put {{report_link}} in content where the link goes), rvm (leave a ringless voicemail; content is the script, short, one reason to call back), ai_agent (switch the AI agent on for the record; content is its goal in one or two sentences, and it texts and emails on its own until a rep switches it off, so it is usually the last step). '
   + 'Texts are short, human and specific — one question, no hype, no emojis, and they always give the seller an easy out. '
@@ -112,6 +125,9 @@ const SYSTEM =
   + 'Set settings.stop_on_reply true unless told otherwise — a seller who answers should hear from a person, not the next step. '
   + 'Reply only by calling submit_plan.'
   + UNTRUSTED_RULE + WRITING_RULE;
+
+/** Compr's campaigns are written to its own contacts, by its rep, with its own facts. */
+const COMPR_SYSTEM = COMPR_PLAN_SYSTEM + MESSAGE_RULES;
 
 type AiStep = { channel?: string; delay?: string; title?: string; content?: string; subject?: string; stage?: string; tag?: string; priority?: string; audience?: string; via?: string };
 type AiPlan = {
@@ -158,7 +174,7 @@ Deno.serve(async (req) => {
   if (!apiKey) return json({ error: 'AI drafting is not configured: set the ANTHROPIC_API_KEY secret on the Supabase project.' }, 503);
 
   let body: {
-    mode?: string; workspace_id?: number; goal?: string; trigger?: string; seller_id?: number;
+    mode?: string; workspace_id?: number; goal?: string; trigger?: string; seller_id?: number; bucket?: string; count?: number; reasons?: string[];
     tone?: string; step_count?: number; channels?: string[]; plan?: AiPlan; instruction?: string;
   };
   try {
@@ -179,8 +195,25 @@ Deno.serve(async (req) => {
   const rl = await rateLimit(admin, `draft-action-plan:${who.user.id}`, 30, 3600);
   if (!rl.allowed) return tooMany(CORS, rl);
 
+  // A Compr workspace sells software to investors: its plans never get the seller prompt.
+  const { data: ws } = await admin.from('workspaces').select('buyer_profile:settings->>buyer_profile').eq('id', workspaceId).maybeSingle();
+  const comprWorkspace = (ws as { buyer_profile?: unknown } | null)?.buyer_profile === 'compr';
+  if (comprWorkspace && body.mode === 'lead') return json({ error: 'Per-lead plans are for seller records; a Compr workspace drafts campaigns from a goal.' }, 422);
+  const comprPrompt = body.mode === 'compr' || comprWorkspace;
+
   let prompt: string;
-  if (body.mode === 'lead') {
+  if (body.mode === 'compr') {
+    const goal = (body.goal ?? '').trim();
+    if (!goal) return json({ error: 'goal is required' }, 422);
+    const reasons = Array.isArray(body.reasons) ? body.reasons.filter((r) => typeof r === 'string').slice(0, 12) : [];
+    prompt = [
+      `Draft a campaign for this group of Compr users: ${fence('goal', goal, 1000)}`,
+      `Group: ${fence('bucket', String(body.bucket ?? ''), 40)}, ${Math.max(0, Math.round(Number(body.count) || 0))} people.`,
+      reasons.length ? `Why some of them are in it: ${fence('reasons', reasons.join('; '), 1500)}` : '',
+      'Everyone in this group already has a Compr account. Besides {{first_name}} and {{rep_name}} you may use {{plan}} (their plan) and {{runs}} (e.g. "12 deals").',
+      'Name the plan starting "Compr · ". Trigger: "Manual enrollment". Leave `changes` empty.',
+    ].filter(Boolean).join('\n');
+  } else if (body.mode === 'lead') {
     const sellerId = Number(body.seller_id);
     if (!Number.isFinite(sellerId)) return json({ error: 'seller_id is required' }, 422);
     // Read as the caller so RLS scopes it; acquisitions can read their sellers.
@@ -247,11 +280,14 @@ Deno.serve(async (req) => {
     const res = await client.messages.create({
       model: CLAUDE_MODEL, thinking: CLAUDE_THINKING,
       max_tokens: 16000,
-      system: toolRule('submit_plan') + SYSTEM + '\n\nThe sequence is for the person drafting it. ' + seatBrief(member.role) + ' Rep tasks and calls in it are that seat\'s work.',
+      system: comprPrompt
+        ? toolRule('submit_plan') + COMPR_SYSTEM + UNTRUSTED_RULE + WRITING_RULE
+        : toolRule('submit_plan') + SYSTEM + '\n\nThe sequence is for the person drafting it. ' + seatBrief(member.role) + ' Rep tasks and calls in it are that seat\'s work.',
       tools: [PLAN_TOOL],
       tool_choice: { type: 'auto' },
       messages: [{ role: 'user', content: prompt }],
     });
+    await recordUsage(admin, { ws: workspaceId, feature: 'draft_action_plan', model: res.model, usage: res.usage });
     const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     if (!call) return json({ error: 'the model returned no plan' }, 502);
     const out = call.input as AiPlan & { changes?: string[] };

@@ -56,6 +56,59 @@ export function slotFree(ms: number, minutes: number, hours: Hours, busy: Busy[]
   return !busy.some((b) => overlaps(b, { start: ms, end }));
 }
 
+// ---- deal_lookup -------------------------------------------------------------------
+
+export const DEAL_LOOKUP_MAX = 8;
+/** The deal stages a buyer can hear about: on the dispo list, not closed, not terminated. */
+export const DEAL_LOOKUP_STAGES = ['Under Contract Seller', 'Ready To Market', 'Buyer Under Contract'] as const;
+
+export type DealRow = {
+  id: number; stage: string | null; contract_status: string | null; arv: unknown; offer_amount: unknown; assignment_fee: unknown; target_assignment: unknown;
+  marketed_price: unknown; bin_price: unknown; marketing_headline: string | null; buyer_id: unknown;
+  properties: { line1: string | null; city: string | null; state: string | null; zip: string | null; beds: unknown; baths: unknown; sqft: unknown; year_built: unknown } | null;
+};
+export type DealForBuyer = {
+  deal_id: number; address: string; asking_price: string; arv: string; beds: string; baths: string; sqft: string; year_built: string; status: string; headline: string;
+};
+
+const money = (n: unknown): string => { const x = Number(n); return Number.isFinite(x) && x > 0 ? '$' + Math.round(x).toLocaleString('en-US') : ''; };
+const numStr = (n: unknown): string => { const x = Number(n); return Number.isFinite(x) && x > 0 ? String(x) : ''; };
+
+/** What we ask buyers: the marketed price, else the buy-it-now price, else what we have it under contract for plus the assignment we want. */
+export function askingPrice(d: Pick<DealRow, 'marketed_price' | 'bin_price' | 'offer_amount' | 'assignment_fee' | 'target_assignment'>): number | null {
+  for (const v of [d.marketed_price, d.bin_price]) { const x = Number(v); if (Number.isFinite(x) && x > 0) return Math.round(x); }
+  const base = Number(d.offer_amount);
+  const fee = Number(d.target_assignment ?? d.assignment_fee);
+  if (Number.isFinite(base) && base > 0 && Number.isFinite(fee) && fee > 0) return Math.round(base + fee);
+  return null;
+}
+
+/** Where the deal stands, in a buyer's words. */
+export function dealStatus(d: Pick<DealRow, 'stage' | 'contract_status' | 'buyer_id'>): string {
+  if (d.stage === 'Buyer Under Contract' || d.buyer_id) return 'under contract with a buyer, taking backup offers';
+  if (d.stage === 'Ready To Market') return 'available';
+  if (d.stage === 'Under Contract Seller') return 'coming soon, we are finishing the paperwork';
+  return String(d.stage ?? 'available');
+}
+
+/** The dispo list for a buyer's ears: address, ask, ARV, beds, baths; `query` narrows by address, city or ZIP. Deals with no address are left out. */
+export function dealsForBuyer(rows: DealRow[], query = '', max = DEAL_LOOKUP_MAX): DealForBuyer[] {
+  const q = clean(query, 80).toLowerCase();
+  const out: DealForBuyer[] = [];
+  for (const d of rows) {
+    const p = d.properties;
+    if (!p?.line1) continue;
+    const address = [p.line1, p.city, p.state, p.zip].filter(Boolean).join(', ');
+    if (q && !address.toLowerCase().includes(q)) continue;
+    out.push({
+      deal_id: Number(d.id), address, asking_price: money(askingPrice(d)), arv: money(d.arv), beds: numStr(p.beds), baths: numStr(p.baths), sqft: numStr(p.sqft), year_built: numStr(p.year_built),
+      status: dealStatus(d), headline: clean(d.marketing_headline, 160),
+    });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
 /**
  * Open times inside the agent's call hours, on the half hour, clear of the
  * rep's appointments, at least LEAD_MINUTES out. At most two a day, spread
@@ -155,7 +208,8 @@ export const QUAL_FIELDS = {
   motivation: 'Motivation', timeline: 'Timeline', condition: 'Condition', major_repairs: 'Major repairs', occupancy: 'Occupancy',
   tenant_status: 'Tenant status', asking_price: 'Asking price', mortgage_payoff: 'Mortgage payoff', desired_net: 'Desired net',
   range_quoted: 'Range quoted', other_offers: 'Other offers', decision_factors: 'Decision factors', decision_makers: 'Decision makers',
-  appointment_time: 'Appointment time', best_phone: 'Best phone', email: 'Email', callback_preference: 'Callback preference', notes: 'Notes',
+  appointment_time: 'Appointment time', best_phone: 'Best phone', email: 'Email', callback_preference: 'Callback preference',
+  offer_property: 'Offer on', offer_amount: 'Offer amount', notes: 'Notes',
 } as const;
 export type QualField = keyof typeof QUAL_FIELDS;
 
@@ -254,6 +308,15 @@ export function withDncTag(tags: readonly string[] | null | undefined, isDnc: (t
   return [...list, DNC_TAG];
 }
 
+/**
+ * The contact_opt_outs row (migration 228) for a caller who asked not to be
+ * contacted. Keyed by the number, so it holds with a record behind it or
+ * without one: a caller nobody has on file is still opted out.
+ */
+export function optOutRow(ws: number, phoneKey: string, reason: string, c: { kind: 'seller' | 'buyer'; id: number } | null) {
+  return { workspace_id: ws, phone_key: phoneKey, channel: 'call', said: reason, record_kind: c?.kind ?? null, record_id: c?.id ?? null };
+}
+
 // ---- ElevenLabs tool configs -------------------------------------------------------
 
 /** The ElevenLabs tool name of each write tool, and the route that serves it. */
@@ -262,6 +325,7 @@ export const WRITE_TOOLS = {
   save_qualification: { route: 'save-qualification' },
   mark_do_not_contact: { route: 'mark-do-not-contact' },
   get_compr_offer: { route: 'get-compr-offer' },
+  deal_lookup: { route: 'deal-lookup' },
 } as const;
 export type WriteTool = keyof typeof WRITE_TOOLS;
 
@@ -308,7 +372,10 @@ const TOOL_DEFS: Record<WriteTool, { description: string; properties: Record<str
       other_offers: str('Other offers or agents they mentioned.'), decision_factors: str('What matters most to them in deciding.'),
       decision_makers: str('Who else decides (spouse, siblings, heirs).'), appointment_time: str('The appointment or callback time agreed, as said.'),
       best_phone: str('The best phone number they confirmed.'), email: str('Their email address, if they gave one.'),
-      callback_preference: str('When and how they prefer to be contacted.'), notes: str('Anything else the rep should know, in one or two sentences.'),
+      callback_preference: str('When and how they prefer to be contacted.'),
+      offer_property: str('A buyer only: the address of our deal they made an offer on, as deal_lookup returned it.'),
+      offer_amount: str('A buyer only: the amount they offered on that deal, as they said it.'),
+      notes: str('Anything else the rep should know, in one or two sentences.'),
       outcome: str('How the call ended.', { enum: [...OUTCOMES] }),
       contact_name: str("The caller's name: when several people share the number, or when the caller has no record yet"),
       property_address: str('Only for a caller with no record yet: the property address they gave, street, city and state.'),
@@ -320,6 +387,12 @@ const TOOL_DEFS: Record<WriteTool, { description: string; properties: Record<str
       rehab_level: str('How much work the house needs, from what the caller said about its condition. Pick the closest.', { enum: [...REHAB_LEVELS] }),
       property_address: str('The full address (street, city, state, and ZIP if they gave it) when the caller names a house that is not the one on file, or when there is no address on file.'),
       contact_name: str("The caller's name, only when several people share the number"),
+    },
+  },
+  deal_lookup: {
+    description: 'Our properties for sale right now (the dispo list): address, asking price, ARV, beds, baths, square feet and where each one stands. Call it when a buyer asks what we have, asks about a property, or names an address; pass query to narrow it. Quote only what it returns. To take an offer, note it with save_qualification (offer_property, offer_amount).',
+    properties: {
+      query: str('Optional: an address, street, city or ZIP to narrow the list. Empty for everything we have.'),
     },
   },
   mark_do_not_contact: {

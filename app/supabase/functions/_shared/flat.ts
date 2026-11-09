@@ -385,7 +385,7 @@ export function buyBoxFromFlat(input: Flat): BuyBox {
 }
 
 /** Only what the buyer row does not already have: CLOZR is the system of record, a form is a source. */
-export function fillOnly(row: Record<string, unknown>, box: BuyBox): BuyBox {
+export function fillOnly<T extends Record<string, unknown>>(row: Record<string, unknown>, box: T): T {
   const empty = (v: unknown) => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
-  return Object.fromEntries(Object.entries(box).filter(([k]) => empty(row[k]))) as BuyBox;
+  return Object.fromEntries(Object.entries(box).filter(([k]) => empty(row[k]))) as T;
 }

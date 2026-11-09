@@ -191,11 +191,14 @@ export default function SignPage() {
     setDeclining(false);
   }
 
-  async function pdf() {
+  /** The fully executed copy, or its audit trail: only once every party has signed. */
+  async function pdf(which: 'signed' | 'audit' = 'signed') {
     if (!token) return;
-    const r = await esign<{ url: string }>({ action: 'pdf', token, gate });
+    const r = await esign<{ url: string; audit_url?: string | null }>({ action: 'pdf', token, gate });
     if (!r.ok) { setErr(r.message); return; }
-    window.open(r.data.url, '_blank', 'noopener');
+    const url = which === 'audit' ? r.data.audit_url : r.data.url;
+    if (!url) { setErr('The audit trail is not ready yet. It is attached to the completion email.'); return; }
+    window.open(url, '_blank', 'noopener');
   }
 
   const status = useMemo(() => {
@@ -306,15 +309,18 @@ export default function SignPage() {
             {done ? (
               <div className="cz-card cz-done">
                 <div className="cz-check" aria-hidden>✓</div>
-                <h1 className="cz-h1">{done.completed ? 'All signed' : isFiller ? 'Your part is done' : 'Your signature is in'}</h1>
+                <h1 className="cz-h1">{done.completed ? 'Thank you. All parties have signed.' : 'Thank you. Your side is done.'}</h1>
                 <p className="cz-lede" style={{ maxWidth: 440, margin: '8px auto 0' }}>
                   {done.completed
-                    ? 'Everyone has signed. Your completed copy, with the signature certificate, is ready to download.'
-                    : `We are waiting on ${done.waiting ?? 1} more signature${(done.waiting ?? 1) === 1 ? '' : 's'}. You will get an email with the completed document, and this same link will always have the latest copy.`}
+                    ? 'The contract is fully executed. We have emailed every party the signed contract and the audit trail. You can download both here too.'
+                    : `The other ${(done.waiting ?? 1) === 1 ? 'party still needs' : `${done.waiting} parties still need`} to ${isFiller ? 'finish' : 'sign'}. When everyone has signed, we will email you the fully executed contract and the audit trail.`}
                 </p>
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 20, flexWrap: 'wrap' }}>
-                  <button type="button" onClick={pdf} className="cz-btn cz-btn-primary">Download your copy</button>
-                </div>
+                {done.completed ? (
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 20, flexWrap: 'wrap' }}>
+                    <button type="button" onClick={() => void pdf()} className="cz-btn cz-btn-primary">Download signed contract</button>
+                    <button type="button" onClick={() => void pdf('audit')} className="cz-btn cz-btn-ghost">Audit trail</button>
+                  </div>
+                ) : null}
                 {err ? <div className="cz-err" style={{ textAlign: 'left' }}>{err}</div> : null}
               </div>
             ) : (
@@ -367,7 +373,7 @@ export default function SignPage() {
               <div className="cz-paper">
                 <div className="cz-paper-top">
                   <span style={{ flex: 1 }}>{signedCount} of {total} signed</span>
-                  <button type="button" onClick={pdf} className="cz-linkbtn">Download PDF</button>
+                  {completed ? <button type="button" onClick={() => void pdf()} className="cz-linkbtn">Download PDF</button> : null}
                 </div>
                 <article className="doc" ref={paper} dangerouslySetInnerHTML={{ __html: c.html }} />
               </div>
@@ -402,7 +408,8 @@ export default function SignPage() {
         <div className="cz-dock">
           <div className="cz-dock-in">
             <span className="cz-dock-stat">
-              {done || alreadySigned ? <><b>Done.</b> Nothing else is needed from you.</>
+              {completed ? <><b>All parties have signed.</b> The signed contract and audit trail were emailed to everyone.</>
+                : done || alreadySigned ? <><b>Your side is done.</b> We will email you the signed contract when everyone has signed.</>
                 : canSign ? <><b>1 signature</b> is needed from you on this document.</>
                 : readOnly && !completed ? <>You are {me.recipient_type === 'cc' ? 'copied on' : 'viewing'} this document. {me.recipient_type === 'cc' ? 'The signed copy comes to you when everyone has signed.' : 'There is nothing for you to sign.'}</>
                 : waitingOn && !completed && !closed ? <>This is signed in order. It is waiting on <b>{waitingOn}</b> first; you will get an email when it is your turn.</>
@@ -417,9 +424,9 @@ export default function SignPage() {
                 <button type="button" onClick={goToSignature} className="cz-btn cz-btn-ghost cz-btn-sm">Go to signature</button>
                 <button type="button" onClick={() => setAdopting(true)} className="cz-btn cz-btn-primary">Sign document</button>
               </>
-            ) : (
-              <button type="button" onClick={pdf} className="cz-btn cz-btn-ghost">Download PDF</button>
-            )}
+            ) : completed ? (
+              <button type="button" onClick={() => void pdf()} className="cz-btn cz-btn-ghost">Download signed contract</button>
+            ) : null}
           </div>
         </div>
       ) : null}

@@ -18,6 +18,9 @@ const flow = { ...blankSmsFlow('+12105550100'), auto_reply_enabled: true, auto_r
 assert.deepEqual(autoReplyFor(null, { body: 'hi', at: tueMorning }), { send: false, reason: 'off' });
 assert.deepEqual(autoReplyFor({ ...flow, auto_reply_body: '  ' }, { body: 'hi', at: tueMorning }), { send: false, reason: 'no message' });
 assert.deepEqual(autoReplyFor(flow, { body: ' STOP ', at: tueMorning }), { send: false, reason: 'keyword' });
+assert.deepEqual(autoReplyFor(flow, { body: 'STOP.', at: tueMorning }), { send: false, reason: 'keyword' });
+assert.deepEqual(autoReplyFor(flow, { body: 'Unsubscribe!', at: tueMorning }), { send: false, reason: 'keyword' });
+assert.equal(autoReplyFor(flow, { body: 'stop by at 3?', at: tueMorning }).send, true);
 assert.deepEqual(autoReplyFor(flow, { body: 'hi', at: tueMorning }), { send: true, body: 'Got it, back soon.' });
 
 // After hours only.

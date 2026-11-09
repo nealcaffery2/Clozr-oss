@@ -41,12 +41,16 @@ assert.equal(serverFilters({ ...base, pf: pf({ compr: 'Run, no offer' }) }), nul
 assert.equal(serverFilters({ ...base, pf: pf({ heat: 'Hot' }) }), null);
 assert.equal(serverFilters({ ...base, pf: pf({ uwTriage: 'Review' }) }), null);
 assert.equal(serverFilters({ ...base, pf: pf({ offer: '100k+' }) }), null);
+assert.equal(serverFilters({ ...base, pf: pf({ state: 'South Carolina' }) }), null);
+assert.equal(serverFilters({ ...base, pf: pf({ top: 'Top 25%' }) }), null);
 assert.equal(serverFilters({ ...base, pf: pf({ addedWhen: 'Last 7 days' }) })!.filters.created_from, new Date(2026, 9, 12).toISOString());
 assert.equal(serverFilters({ ...base, pf: pf({ addedWhen: 'Custom', addedFrom: '2026-01-01', addedTo: '2026-01-31' }) })!.filters.created_to, new Date(2026, 1, 1).toISOString());
 assert.deepEqual(serverFilters({ ...base, hiddenIds: ['s12', 's40'], pf: pf() })!.filters.not_ids, [12, 40]);
 
 // Search and sorts.
 assert.deepEqual(serverFilters({ ...base, q: 'John  Smith', pf: pf() })!.filters.terms, ['john', 'smith']);
+assert.deepEqual(serverFilters({ ...base, pf: { ...pf(), addr: 'Greer, SC' } })!.filters.addr_terms, ['greer', 'sc']);
+assert.equal(serverFilters({ ...base, pf: { ...pf(), addr: 'Any' } })!.filters.addr_terms, undefined);
 assert.equal(serverFilters({ ...base, q: '(214) 555-12', pf: pf() })!.filters.digits, '21455512');
 const byName = serverFilters({ ...base, pf: pf({ sort: 'Name' }) })!;
 assert.deepEqual([byName.sort, byName.dir], ['name', 'asc']);

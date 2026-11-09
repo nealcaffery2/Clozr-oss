@@ -202,7 +202,9 @@ Deno.serve(async (req) => {
   if (wsErr) return json({ error: wsErr.message }, 500);
   if (!ws) return json({ error: 'no such workspace' }, 404);
   const binding = activeTalkrBinding(ws, (await loadTalkrConnections(admin, [wsId]))[0] ?? null);
-  if (!binding) return json({ ok: false, error: TALKR_NOT_CONNECTED });
+  // attach talks to Telnyx with CLOZR's own key and writes nothing to Talkr, so
+  // a workspace without a Talkr connection still gets its lines on the campaign.
+  if (!binding && action !== 'attach') return json({ ok: false, error: TALKR_NOT_CONNECTED });
 
   const facts = (ws.settings?.ten_dlc ?? {}) as TenDlcFacts;
   const entity = (facts.entity ?? {}) as Partial<EntityFacts>;
@@ -249,6 +251,7 @@ Deno.serve(async (req) => {
       registration: state,
     }, failed.length && failed.length === results.length ? 502 : 200);
   }
+  if (!binding) return json({ ok: false, error: TALKR_NOT_CONNECTED });
   if (problems.length) {
     return json({ ok: false, error: 'The 10DLC facts are not complete or not valid yet.', problems, registration: existing ?? null, carrier }, 422);
   }

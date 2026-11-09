@@ -114,6 +114,21 @@ export const MERGE_FIELD_GUIDE: readonly MergeFieldSpec[] = [
     example: '(210) 555-0134',
     aliases: ['number', 'mobile', 'cell', 'tel', 'telephone', 'phonenumber', 'sellerphone'],
   },
+  // CLOZR's own fields, filled from the record on the line (lib/script-doc.ts).
+  { field: 'email', label: 'Seller email', hint: 'The email on the record.', example: 'maria.lopez@gmail.com', aliases: ['mail', 'e-mail'] },
+  { field: 'asking', label: 'Asking price', hint: 'What the seller said they want, from the record.', example: '$235,000', aliases: ['price', 'ask', 'asking_price', 'want'] },
+  { field: 'offer', label: 'Our offer', hint: 'The last offer we made, from the deal.', example: '$198,000', aliases: ['our_offer', 'last_offer', 'net'] },
+  { field: 'mao', label: 'COMPR MAO', hint: 'The max allowable offer COMPR underwrote.', example: '$201,500', aliases: ['max', 'max_offer', 'compr'] },
+  { field: 'arv', label: 'ARV', hint: 'After-repair value from the deal.', example: '$318,000', aliases: ['after_repair', 'value'] },
+  { field: 'condition', label: 'Condition', hint: 'The property condition on the record.', example: 'Dated kitchen, roof 2019', aliases: ['repairs', 'shape'] },
+  { field: 'motivation', label: 'Motivation', hint: 'Why they are selling, from the record.', example: 'Relocating for work', aliases: ['why', 'reason', 'pain'] },
+  { field: 'timeframe', label: 'Timeframe', hint: 'When they want to close, from the record.', example: 'Before Sept 30', aliases: ['timeline', 'when', 'close_by'] },
+  { field: 'beds_baths', label: 'Beds and baths', hint: 'From the property on the record.', example: '3bd/2ba', aliases: ['beds', 'baths', 'bed_bath'] },
+  { field: 'sqft', label: 'Square feet', hint: 'From the property on the record.', example: '1,640', aliases: ['square_feet', 'size'] },
+  { field: 'buybox', label: 'Buy box', hint: 'Price range, property type and strategy from the buyer profile.', example: '$150K to $250K, SFR, flip', aliases: ['buy_box', 'criteria'] },
+  { field: 'markets', label: 'Markets', hint: "The buyer's markets.", example: 'San Antonio, New Braunfels', aliases: ['areas', 'market', 'zips'] },
+  { field: 'last_purchase', label: 'Last purchase', hint: "The buyer's most recent purchase.", example: '418 Mesa Ridge, Jun 2026', aliases: ['purchase', 'bought'] },
+  { field: 'deal_property', label: 'Deal property', hint: 'The property we are pitching this buyer.', example: '123 Oakview Drive', aliases: ['pitch', 'subject', 'deal'] },
 ] as const;
 
 /** Lookup by token name — the guide is small enough that a scan is fine. */

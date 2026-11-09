@@ -46,6 +46,10 @@ eq('membership rows skip a missing workspace and order by id', membershipsFromRo
   { role: 'member', workspaces: null },
   { role: 'owner', workspaces: [{ id: 11, name: 'Acme Homes', owner_id: 'u' }] },
 ]).map((m) => m.id), [11, 40]);
+eq('nav_role is the role the shell draws, role when unset (migration 455)', membershipsFromRows([
+  { role: 'admin', nav_role: 'partnerships', workspaces: { id: 11, name: 'Acme Homes', owner_id: 'u' } },
+  { role: 'admin', nav_role: null, workspaces: { id: 40, name: 'Compr', owner_id: 'u' } },
+]).map((m) => m.role), ['partnerships', 'admin']);
 
 const store = memStore();
 eq('unreadable store is nothing saved', readSavedWorkspaceId(null), null);

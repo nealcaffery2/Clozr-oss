@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { docVars } from '../supabase/functions/_shared/doc-vars';
 import {
   bindToSigners, bindValue, clampRect, displaySize, displayValue, effectiveReadOnly, fieldAllowedFor, missingRequired, newField, normalizeField, planFlatten,
-  recipientColor, signingDay, toPdfPoint, validateValue, type PageBox,
+  recipientColor, signingDay, toPdfPoint, validateValue, type PageBox, parseDay, detectDocFont, DEFAULT_FONT_PT, isMultiline, wrapLines,
 } from '../supabase/functions/_shared/pdf-fields';
 
 const near = (a: number, b: number, msg?: string) => assert.ok(Math.abs(a - b) < 1e-6, `${msg ?? ''} ${a} ≈ ${b}`);
@@ -57,7 +57,12 @@ assert.equal(validateValue({ type: 'number', validation: { min: 1, max: 30 } }, 
 assert.equal(validateValue({ type: 'number' }, 'ten').ok, false);
 assert.deepEqual(validateValue({ type: 'date' }, '2026-10-21'), { ok: true, value: '2026-10-21' });
 assert.equal(validateValue({ type: 'date' }, '2026-02-30').ok, false, 'no Feb 30');
-assert.equal(validateValue({ type: 'date' }, '10/21/2026').ok, false);
+// Dates as people type them are stored as YYYY-MM-DD (the contract 52 date box would not take 10/20/2026).
+assert.deepEqual(validateValue({ type: 'date' }, '10/21/2026'), { ok: true, value: '2026-10-21' });
+assert.deepEqual(validateValue({ type: 'date' }, '1/5/26'), { ok: true, value: '2026-01-05' });
+assert.deepEqual(validateValue({ type: 'date' }, 'Oct 21, 2026'), { ok: true, value: '2026-10-21' });
+assert.equal(validateValue({ type: 'date' }, '13/40/2026').ok, false, 'not a day');
+assert.equal(parseDay('2/30/2026'), null);
 assert.deepEqual(validateValue({ type: 'checkbox' }, true), { ok: true, value: 'true' });
 assert.deepEqual(validateValue({ type: 'checkbox' }, false), { ok: true, value: null });
 assert.deepEqual(validateValue({ type: 'dropdown', options: ['Cash', 'Conventional'] }, 'Cash'), { ok: true, value: 'Cash' });
@@ -152,7 +157,7 @@ const money = plan[0];
 assert.ok(money.op === 'text');
 if (money.op === 'text') {
   assert.equal(money.text, '$85,000');
-  assert.equal(money.size, 11, 'capped at 11pt');
+  assert.equal(money.size, DEFAULT_FONT_PT, 'the document size, not the box height');
   near(money.x, 0.1 * 612 + 2);
   assert.ok(money.y > 792 - 0.1 * 792 - 20 && money.y < 792 - 0.1 * 792, 'baseline inside the box');
 }
@@ -166,9 +171,61 @@ if (s2.op === 'image') {
   near(s2.y, 792 - (0.8 * 792 + 40) + 10, 'vertically centered');
 }
 const long = plan[4];
-assert.ok(long.op === 'text' && long.size < 11 && measure(long.text, long.size) <= 36 + 1e-9, 'shrunk to fit');
+assert.ok(long.op === 'text' && long.size < DEFAULT_FONT_PT && measure(long.text, long.size) <= 36 + 1e-9, 'shrunk to fit');
 // Rotated page: text is turned with the page so it reads upright.
 const rp = planFlatten([{ type: 'text', page: 1, x: 0.1, y: 0.1, w: 0.3, h: 0.03, value: 'Hi' }], [r90], measure);
 assert.ok(rp[0].op === 'text' && rp[0].rotate === 90);
 
 console.log('pdf-fields ok');
+
+// ------------------------------------------------------------ one font size per document
+{
+  const page: PageBox = { x0: 0, y0: 0, width: 612, height: 792, rotation: 0 };
+  const m = (t: string, size: number) => t.length * size * 0.5;
+  const ops = planFlatten([
+    { type: 'text', page: 1, x: 0.1, y: 0.1, w: 0.3, h: 0.006, value: '5000' },  // a short box: was drawn at 4pt
+    { type: 'text', page: 1, x: 0.1, y: 0.2, w: 0.3, h: 0.04, value: 'Morgan' },  // a tall one: was 11pt
+    { type: 'text', page: 1, x: 0.1, y: 0.3, w: 0.3, h: 0.02, value: 'Big', font_size: 14, font_family: 'times' },
+  ], [page], m);
+  const sizes = ops.flatMap((o) => (o.op === 'text' ? [o.size] : []));
+  assert.deepEqual(sizes, [DEFAULT_FONT_PT, DEFAULT_FONT_PT, 14], 'same size whatever the box height; a set size wins');
+  assert.equal(ops[2].op === 'text' && ops[2].font, 'times');
+  const narrow = planFlatten([{ type: 'text', page: 1, x: 0, y: 0, w: 0.05, h: 0.02, value: 'A long company name LLC' }], [page], m);
+  assert.ok(narrow[0].op === 'text' && narrow[0].size < DEFAULT_FONT_PT, 'too wide still shrinks');
+  assert.equal(detectDocFont(['TCDRUW+ArialMT', 'Arial-BoldMT', 'BCDGEE+CourierNewPSMT']), 'helvetica');
+  assert.equal(detectDocFont(['TimesNewRomanPSMT', 'TimesNewRomanPS-BoldMT']), 'times');
+  assert.equal(detectDocFont([]), 'helvetica');
+}
+console.log('pdf-fields: font sizing ok');
+
+// ------------------------------------------------------------ paragraph boxes
+{
+  const page: PageBox = { x0: 0, y0: 0, width: 612, height: 792, rotation: 0 };
+  const m = (t: string, size: number) => t.length * size * 0.5;
+  assert.equal(isMultiline('text', 18, null), false, 'a one-line box stays one line');
+  assert.equal(isMultiline('text', 60, null), true);
+  assert.equal(isMultiline('email', 60, null), false, 'only free text takes paragraphs');
+  assert.equal(isMultiline('text', 30, 14), false, 'the field size decides the line count');
+  assert.deepEqual(wrapLines('aaa bbb ccc', 7, (s) => s.length), ['aaa bbb', 'ccc']);
+  assert.deepEqual(wrapLines('one\n\ntwo', 50, (s) => s.length), ['one', '', 'two'], 'blank lines kept');
+  assert.deepEqual(wrapLines('abcdefghij', 4, (s) => s.length), ['abcd', 'efgh', 'ij'], 'a long word splits');
+  // The clause from the owner's screenshot: two lines typed into a tall box.
+  const clause = '2. Inspection Access: Assignor will coordinate with the AB Contract Holder to arrange inspection access.\nIf access is delayed, the option period extends.';
+  const ops = planFlatten([{ type: 'text', page: 1, x: 0.05, y: 0.1, w: 0.8, h: 60 / 792, value: clause }], [page], m);
+  const lines = ops.flatMap((o) => (o.op === 'text' ? [o] : []));
+  assert.ok(lines.length >= 2, 'drawn on more than one line');
+  assert.ok(lines.every((o) => !o.text.includes('…')), 'nothing cut short');
+  assert.equal(lines.map((o) => o.text).join(' ').replace(/\s+/g, ' '), clause.replace(/\s+/g, ' '), 'every word printed');
+  assert.ok(lines[lines.length - 1].text.startsWith('If access'), 'the typed line break starts a new line');
+  for (let i = 1; i < lines.length; i++) assert.ok(lines[i].y < lines[i - 1].y, 'each line below the last');
+  assert.ok(lines.every((o) => o.size === lines[0].size && o.y >= 792 - 0.1 * 792 - 60), 'inside the box');
+  // Too much for the box: shrinks, then ends with an ellipsis rather than spilling out.
+  const over = planFlatten([{ type: 'text', page: 1, x: 0, y: 0, w: 0.2, h: 30 / 792, value: 'word '.repeat(80) }], [page], m)
+    .flatMap((o) => (o.op === 'text' ? [o] : []));
+  assert.ok(over.length >= 2 && over[over.length - 1].text.endsWith('…') && over[0].size >= 6);
+  assert.ok(over.every((o) => o.y >= 792 - 30 - 0.5), 'stays in the box');
+  // A tall box holding one short line still draws centred, as before.
+  const short = planFlatten([{ type: 'text', page: 1, x: 0.1, y: 0.2, w: 0.3, h: 0.04, value: 'Morgan' }], [page], m);
+  assert.equal(short.length, 1);
+}
+console.log('pdf-fields: paragraph boxes ok');

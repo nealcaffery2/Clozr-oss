@@ -99,3 +99,14 @@ export function searchRows<T>(rows: T[], keyOf: (row: T) => SearchKey, q: Search
   hits.sort((a, b) => a.rank - b.rank || a.at - b.at);
   return hits.map((h) => h.row);
 }
+
+/**
+ * A column search (the Property header's filter): every word of the query
+ * starts a word of `text`, so "sc" finds "SC" and "Scenic Dr" but not "Disc"
+ * or "Escalon". A blank query matches everything.
+ */
+export function wordsStart(text: Field, q: SearchQuery | null): boolean {
+  if (!q) return true;
+  const hay = ' ' + normSearch(text) + ' ';
+  return q.terms.every((t) => hay.includes(' ' + t));
+}

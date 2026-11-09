@@ -11,7 +11,7 @@ import { RVM_SKIP_SENTENCES } from '@/lib/rvm';
 import { Button } from './ui';
 import { useVmLibrary } from './useVmLibrary';
 import { openVoicemailRecorder } from './VoicemailDrop';
-import { blastSummaries, type BlastDrop, type BlastSummary } from '@/lib/rvm-blasts';
+import { finishBlast, type BlastSummary } from '@/lib/rvm-blasts';
 import { loadSettings } from '@/lib/integrations';
 import { formatPhone } from '@/lib/talkr';
 import { RvmPoolHealth } from './RvmPoolHealth';
@@ -69,23 +69,14 @@ export function RvmPanel({ V }: { V: ClozrView }) {
   const loadBlasts = useCallback(async () => {
     if (!supabase || workspaceId == null) return;
     const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
-    let res = await supabase.from('rvm_drops')
-      .select('id, blast_id, enrollment_id, created_by, created_at, status, from_e164, callback_at, pool_tier')
-      .eq('workspace_id', workspaceId).gte('created_at', since).order('created_at', { ascending: false }).limit(5000);
-    // Before migration 198 there is no pool_tier.
-    if (res.error) {
-      res = await supabase.from('rvm_drops')
-        .select('id, blast_id, enrollment_id, created_by, created_at, status, from_e164, callback_at')
-        .eq('workspace_id', workspaceId).gte('created_at', since).order('created_at', { ascending: false }).limit(5000) as unknown as typeof res;
-    }
-    // Before migration 135: no blast_id or callback columns, so sends group by sender and hour.
-    if (res.error) {
-      res = await supabase.from('rvm_drops')
-        .select('id, enrollment_id, created_by, created_at, status, from_e164')
-        .eq('workspace_id', workspaceId).gte('created_at', since).order('created_at', { ascending: false }).limit(5000) as unknown as typeof res;
-    }
-    const settings = await loadSettings(workspaceId).catch(() => null);
-    setBlasts(blastSummaries((res.data ?? []) as unknown as BlastDrop[], settings?.rvm_pool?.cost_per_drop ?? null));
+    // Tallied in SQL per send (migration 391): the drops read stopped at PostgREST's 1,000 rows.
+    const [res, settings] = await Promise.all([
+      supabase.rpc('rvm_blast_summary', { p_ws: workspaceId, p_since: since }),
+      loadSettings(workspaceId).catch(() => null),
+    ]);
+    if (res.error) { setNote(`Could not load the blast results: ${res.error.message}`); return; }
+    const cost = settings?.rvm_pool?.cost_per_drop ?? null;
+    setBlasts(((res.data ?? []) as unknown as Omit<BlastSummary, 'callbackRate' | 'cost'>[]).map((g) => finishBlast(g, cost)));
   }, [workspaceId]);
   useEffect(() => { void loadBlasts(); }, [loadBlasts]);
 
@@ -127,7 +118,7 @@ export function RvmPanel({ V }: { V: ClozrView }) {
       )}
       <div className="flex items-center gap-2">
         <span style={{ font: '600 12px/1 var(--sans)' }}>{ready.length} waiting</span>
-        <Button tone="green" disabled={!ready.length || !!V.queueSession} onClick={() => void start()}>Drop these</Button>
+        <Button tone="green" disabled={!ready.length || !!V.talkrPhone.session.session} onClick={() => void start()}>Drop these</Button>
       </div>
       {drops.length > 0 && (
         <div className="flex items-center justify-between">

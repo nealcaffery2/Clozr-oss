@@ -20,6 +20,7 @@ import { Composer, COMPOSER_CSS } from './dispo-campaign/Composer';
 import { QuickCampaign } from './dispo-campaign/QuickCampaign';
 import { Results, type BuyerInfo } from './dispo-campaign/Results';
 import { Btn, CSS, C } from './dispo-campaign/ui';
+import type { FactFix } from './dispo-campaign/logic';
 import { DEMO_DEAL_ID, DEMO_WORKSPACE_ID, type DemoMarketing } from './dispo-campaign/demo-data';
 
 type Props = {
@@ -36,6 +37,8 @@ type Props = {
   onOpenBuyer?: (id: number) => void;
   onQueue?: (buyerIds: number[]) => void | Promise<void>;
   onAgent?: (buyerIds: number[]) => void | Promise<void>;
+  /** Where a blank {{beds}} gets fixed: the deal's property facts, and a quick fill that saves there. */
+  factFix?: FactFix;
 };
 
 export function DispoCampaign(props: Props) {
@@ -49,7 +52,7 @@ export function DispoCampaign(props: Props) {
   return <Campaigns key={dealId} {...props} workspaceId={workspaceId} dealId={dealId} dealFields={props.dealFields} textCtx={props.textCtx} demo={null} />;
 }
 
-function Campaigns({ workspaceId, dealId, canWrite, isMobile, dealFields, textCtx, onToast, onChanged, demo, viewed, buyer, onCall, onOpenBuyer, onQueue, onAgent }: Props & {
+function Campaigns({ workspaceId, dealId, canWrite, isMobile, dealFields, textCtx, onToast, onChanged, demo, viewed, buyer, onCall, onOpenBuyer, onQueue, onAgent, factFix }: Props & {
   workspaceId: number; dealId: number; dealFields: Record<string, string>; textCtx: { repName: string; company: string }; demo: DemoMarketing | null;
 }) {
   const [results, setResults] = useState<CampaignResults | null>(() => (demo ? demo.results : null));
@@ -77,11 +80,11 @@ function Campaigns({ workspaceId, dealId, canWrite, isMobile, dealFields, textCt
     <Composer workspaceId={workspaceId} dealId={dealId} canWrite={canWrite} isMobile={isMobile} dealFields={dealFields} textCtx={textCtx} prefill={prefill}
       onToast={onToast} onLaunched={() => { setBuilding(false); setAdvanced(true); if (!demo) { refresh(); onChanged(); } }}
       onClose={hasCampaigns ? () => { setBuilding(false); setAdvanced(true); } : null} demo={demo} reveal={building}
-      onQueue={onQueue} onAgent={onAgent} onQuick={demo ? undefined : () => setAdvanced(false)} />
+      onQueue={onQueue} onAgent={onAgent} onQuick={demo ? undefined : () => setAdvanced(false)} factFix={factFix} />
   ) : (
     <QuickCampaign workspaceId={workspaceId} dealId={dealId} canWrite={canWrite} isMobile={isMobile} dealFields={dealFields} textCtx={textCtx} prefill={prefill}
       onToast={onToast} onLaunched={() => { setBuilding(false); setAdvanced(true); refresh(); onChanged(); }} onAdvanced={() => setAdvanced(true)}
-      onClose={hasCampaigns ? () => { setBuilding(false); setAdvanced(true); } : null} />
+      onClose={hasCampaigns ? () => { setBuilding(false); setAdvanced(true); } : null} factFix={factFix} />
   )) : null;
   const where = dealFields.full_address || dealFields.address || 'This deal';
   return (
@@ -93,7 +96,7 @@ function Campaigns({ workspaceId, dealId, canWrite, isMobile, dealFields, textCt
         // give their room to the builder while it is open.
         <div className="mk" role="region" aria-label="Campaign builder" data-testid="marketing-full"
           style={{
-            position: 'fixed', left: isMobile ? 0 : 'var(--clozr-side, 0px)', right: 0, zIndex: 46, background: '#f4f5f7', display: 'flex', flexDirection: 'column',
+            position: 'fixed', left: isMobile ? 0 : 'var(--clozr-side, 0px)', right: 0, zIndex: 46, background: 'var(--soft-page, #f4f5f7)', display: 'flex', flexDirection: 'column',
             top: isMobile ? 'calc(56px + env(safe-area-inset-top, 0px))' : 0,
             bottom: isMobile ? 'calc(var(--clozr-callbar, 0px) + 58px)' : 'var(--clozr-callbar, 0px)',
           }}>

@@ -10,8 +10,8 @@ import type { Chart, Format, Polarity, Result } from '@/lib/report-engine';
 import { fmtDelta, fmtValue } from '@/lib/report-engine';
 import { SERIES, type Theme } from '@/lib/report-catalog';
 
-const GREEN = '#16a34a', RED = '#dc2626', MUTED = '#71717a', INK = '#18181b', LINE = '#e4e4e7', SOFT = '#f0f0f1';
-const label: React.CSSProperties = { fontSize: '11.5px', color: '#52525b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+const GREEN = '#16a34a', RED = '#dc2626', MUTED = 'var(--meta, #71717a)', INK = 'var(--ink, #18181b)', LINE = 'var(--divider, #e4e4e7)', SOFT = 'var(--divider-2, #f0f0f1)';
+const label: React.CSSProperties = { fontSize: '11.5px', color: 'var(--muted, #52525b)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
 const empty: React.CSSProperties = { padding: '18px 0', fontSize: '12.5px', color: MUTED };
 
 export type TipState = { x: number; y: number; text: string } | null;
@@ -19,7 +19,7 @@ export type TipState = { x: number; y: number; text: string } | null;
 function Tip({ tip }: { tip: TipState }) {
   if (!tip) return null;
   return (
-    <div role="tooltip" style={{ position: 'absolute', left: tip.x, top: tip.y, transform: 'translate(-50%, calc(-100% - 8px))', background: INK, color: '#fff', fontSize: '11.5px', padding: '5px 8px', borderRadius: '6px', whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 2 }}>
+    <div role="tooltip" style={{ position: 'absolute', left: tip.x, top: tip.y, transform: 'translate(-50%, calc(-100% - 8px))', background: INK, color: 'var(--on-dark, #fff)', fontSize: '11.5px', padding: '5px 8px', borderRadius: '6px', whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 2 }}>
       {tip.text}
     </div>
   );
@@ -29,7 +29,7 @@ export function DeltaChip({ cur, prev, polarity, compareLabel }: { cur: number |
   const d = fmtDelta(cur, prev, polarity);
   if (!d) return null;
   const color = d.good === null ? MUTED : d.good ? GREEN : RED;
-  const bg = d.good === null ? SOFT : d.good ? '#dcfce7' : '#fee2e2';
+  const bg = d.good === null ? SOFT : d.good ? 'var(--positive-soft, #dcfce7)' : 'var(--negative-soft, #fee2e2)';
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: MUTED }}>
       <span style={{ background: bg, color, fontWeight: 600, padding: '2px 7px', borderRadius: '999px' }}>{d.text}</span>
@@ -71,7 +71,7 @@ function Donut({ groups, format, theme }: { groups: { label: string; value: numb
             onMouseLeave={() => setTip(null)} />
         ))}
         <text x="60" y="57" textAnchor="middle" style={{ font: '700 15px system-ui, sans-serif', fill: theme.metric }}>{fmtValue(total, format)}</text>
-        <text x="60" y="72" textAnchor="middle" style={{ font: '500 9px system-ui, sans-serif', fill: MUTED }}>total</text>
+        <text x="60" y="72" textAnchor="middle" style={{ font: '500 11px system-ui, sans-serif', fill: MUTED }}>total</text>
       </svg>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
         {arcs.map((a) => (
@@ -128,7 +128,7 @@ function Columns({ points, format, theme }: { points: { label: string; value: nu
                 onMouseMove={(e) => { const r = e.currentTarget.ownerSVGElement!.parentElement!.getBoundingClientRect(); setTip({ x: e.clientX - r.left, y: e.clientY - r.top, text: `${p.label} · ${fmtValue(p.value, format)}` }); }}
                 onMouseLeave={() => setTip(null)} />
               <rect x={x} y={BASE - h} width={bw} height={h} rx={Math.min(4, bw / 2)} fill={theme.chart} style={{ pointerEvents: 'none' }} />
-              {i % every === 0 ? <text x={PAD + i * slot + slot / 2} y={H - 6} textAnchor="middle" style={{ font: '500 10px system-ui, sans-serif', fill: MUTED }}>{p.label}</text> : null}
+              {i % every === 0 ? <text x={PAD + i * slot + slot / 2} y={H - 6} textAnchor="middle" style={{ font: '500 11px system-ui, sans-serif', fill: MUTED }}>{p.label}</text> : null}
             </g>
           );
         })}
@@ -161,11 +161,11 @@ function LineChart({ points, format, theme }: { points: { label: string; value: 
         <path d={d} fill="none" stroke={theme.chart} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         {hover !== null ? <>
           <line x1={x(hover)} x2={x(hover)} y1={TOP} y2={BASE} stroke={MUTED} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
-          <circle cx={x(hover)} cy={y(points[hover].value)} r={5} fill={theme.chart} stroke="#fff" strokeWidth={2} />
+          <circle cx={x(hover)} cy={y(points[hover].value)} r={5} fill={theme.chart} stroke="var(--on-dark, #fff)" strokeWidth={2} />
         </> : null}
-        {points.map((p, i) => (i % every === 0 ? <text key={i} x={x(i)} y={H - 6} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} style={{ font: '500 10px system-ui, sans-serif', fill: MUTED }}>{p.label}</text> : null))}
+        {points.map((p, i) => (i % every === 0 ? <text key={i} x={x(i)} y={H - 6} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} style={{ font: '500 11px system-ui, sans-serif', fill: MUTED }}>{p.label}</text> : null))}
       </svg>
-      {h ? <div style={{ position: 'absolute', top: 0, right: 0, background: INK, color: '#fff', fontSize: '11.5px', padding: '5px 8px', borderRadius: '6px', pointerEvents: 'none' }}>{h.label} · {fmtValue(h.value, format)}</div> : null}
+      {h ? <div style={{ position: 'absolute', top: 0, right: 0, background: INK, color: 'var(--on-dark, #fff)', fontSize: '11.5px', padding: '5px 8px', borderRadius: '6px', pointerEvents: 'none' }}>{h.label} · {fmtValue(h.value, format)}</div> : null}
     </div>
   );
 }
@@ -181,7 +181,7 @@ function Funnel({ steps, theme }: { steps: { label: string; value: number }[]; t
         return (
           <div key={s.label}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '12px' }}>
-              <span style={{ color: '#52525b' }}>{s.label}</span>
+              <span style={{ color: 'var(--muted, #52525b)' }}>{s.label}</span>
               <span><span style={{ fontWeight: 600, color: INK }}>{s.value.toLocaleString('en-US')}</span>{rate ? <span style={{ color: MUTED, marginLeft: '8px' }}>{rate} of previous</span> : null}</span>
             </div>
             <div style={{ height: '10px', background: SOFT, borderRadius: '5px', marginTop: '4px', overflow: 'hidden' }}>
@@ -203,7 +203,7 @@ function Table({ cols, rows }: { cols: string[]; rows: string[][] }) {
           <tr>{cols.map((c) => <th key={c} style={{ position: 'sticky', top: 0, background: 'var(--c-thead)', textAlign: 'left', padding: '7px 8px', fontSize: '11px', color: MUTED, fontWeight: 600, borderBottom: `1px solid ${LINE}`, whiteSpace: 'nowrap' }}>{c}</th>)}</tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => <tr key={i}>{r.map((v, j) => <td key={j} style={{ padding: '7px 8px', borderBottom: `1px solid ${SOFT}`, whiteSpace: 'nowrap', color: j === 0 ? INK : '#27272a', fontWeight: j === 0 ? 500 : 400, maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v}</td>)}</tr>)}
+          {rows.map((r, i) => <tr key={i}>{r.map((v, j) => <td key={j} style={{ padding: '7px 8px', borderBottom: `1px solid ${SOFT}`, whiteSpace: 'nowrap', color: j === 0 ? INK : 'var(--ink-2, #27272a)', fontWeight: j === 0 ? 500 : 400, maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v}</td>)}</tr>)}
         </tbody>
       </table>
     </div>

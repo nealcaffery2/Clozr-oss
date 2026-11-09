@@ -182,7 +182,10 @@ export function avatarFallback(name: string): { initials: string; from: string; 
   const initials = ((words[0]?.[0] ?? 'A') + (words[1]?.[0] ?? '')).toUpperCase();
   let h = 0;
   for (const c of name || 'AI') h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  const PAIRS: [string, string][] = [['#0A8560', '#34d399'], ['#4f46e5', '#a78bfa'], ['#db2777', '#f9a8d4'], ['#0891b2', '#67e8f9'], ['#d97706', '#fcd34d'], ['#7c3aed', '#c4b5fd']];
+  // `from` is the flat fill behind white initials, so each holds 4.5:1 under
+  // white (cyan and amber stepped down from #0891b2 and #d97706); `to` is a
+  // lighter partner the avatar no longer paints (DESIGN.md §1: no gradients).
+  const PAIRS: [string, string][] = [['#0A8560', '#34d399'], ['#4f46e5', '#a78bfa'], ['#be185d', '#f9a8d4'], ['#0e7490', '#67e8f9'], ['#b45309', '#fcd34d'], ['#7c3aed', '#c4b5fd']];
   const [from, to] = PAIRS[h % PAIRS.length]!;
   return { initials, from, to };
 }

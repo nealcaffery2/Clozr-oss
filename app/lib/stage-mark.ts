@@ -135,6 +135,7 @@ export function markGlyph(label: string): StageGlyph {
   if (/compr|genius|lane|spark/.test(key)) return 'sparkle';
   if (/buyr|buyer|user/.test(key)) return 'userCheck';
   if (/deal machine|deal/.test(key)) return 'buildings';
+  if (/distress/.test(key)) return 'search';
   if (/calendar|appt|appointment/.test(key)) return 'calendar';
   if (/task|due|clock|follow/.test(key)) return 'clock';
   if (/info|system|mention/.test(key)) return 'info';

@@ -72,7 +72,7 @@ export function RecordCalendar({ workspaceId, sellerId, sellerName, sellerEmail,
             </span>
           ) : null}
         </span>
-        <span style={{ fontSize: '11px', color: ev.end < now ? 'var(--subtle, #a1a1aa)' : MINT, fontWeight: 600, whiteSpace: 'nowrap' }}>{ev.end < now ? 'Past' : relative(ev.start, now)}</span>
+        <span style={{ fontSize: '11px', color: ev.end < now ? 'var(--meta, #71717a)' : MINT, fontWeight: 600, whiteSpace: 'nowrap' }}>{ev.end < now ? 'Past' : relative(ev.start, now)}</span>
       </button>
     );
   };
@@ -95,7 +95,7 @@ export function RecordCalendar({ workspaceId, sellerId, sellerName, sellerEmail,
       ) : null}
 
       {!workspaceId || !sellerId ? (
-        <p style={{ margin: 0, fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>Sign in to see this seller&rsquo;s appointments.</p>
+        <p style={{ margin: 0, fontSize: '12px', color: 'var(--meta, #71717a)' }}>Sign in to see this seller&rsquo;s appointments.</p>
       ) : cal.loading ? (
         <p style={{ margin: 0, fontSize: '12px', color: MUTED }}>Loading…</p>
       ) : !cal.ok ? (
@@ -103,7 +103,7 @@ export function RecordCalendar({ workspaceId, sellerId, sellerName, sellerEmail,
       ) : (
         <>
           {upcoming.length ? upcoming.map(row) : (
-            <p style={{ margin: '0 0 6px', fontSize: '12px', color: 'var(--subtle, #a1a1aa)', lineHeight: 1.5 }}>
+            <p style={{ margin: '0 0 6px', fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.5 }}>
               Nothing booked with {sellerName.split(' ')[0] || 'this seller'}.{valid ? ' Adding one emails them a calendar invitation.' : sellerPhone ? ' No email on file, so the invite would be by phone.' : ''}
             </p>
           )}

@@ -45,18 +45,18 @@ export function guessKind(name: string): ContractKind {
 /** The PandaDoc status as a person reads it. */
 export function statusLabel(s: string): { text: string; color: string; bg: string } {
   switch (s) {
-    case 'completed': return { text: 'Signed', color: '#15803d', bg: '#dcfce7' };
-    case 'sent': return { text: 'Sent', color: '#1d4ed8', bg: '#dbeafe' };
-    case 'viewed': return { text: 'Viewed', color: '#b45309', bg: '#fef3c7' };
-    case 'waiting_approval': case 'approved': return { text: 'In approval', color: '#6d28d9', bg: '#ede9fe' };
-    case 'awaiting_approval': return { text: 'Awaiting approval', color: '#6d28d9', bg: '#ede9fe' };
-    case 'waiting_pay': case 'paid': return { text: 'Payment', color: '#6d28d9', bg: '#ede9fe' };
-    case 'declined': case 'rejected': return { text: 'Declined', color: '#b91c1c', bg: '#fee2e2' };
-    case 'voided': return { text: 'Voided', color: '#71717a', bg: '#f4f4f5' };
-    case 'expired': return { text: 'Expired', color: '#9a3412', bg: '#ffedd5' };
-    case 'error': return { text: 'Error', color: '#b91c1c', bg: '#fee2e2' };
-    case 'uploaded': return { text: 'Generating', color: '#71717a', bg: '#f4f4f5' };
-    default: return { text: 'Draft', color: '#52525b', bg: '#f4f4f5' };
+    case 'completed': return { text: 'Signed', color: 'var(--tx-green, #15803d)', bg: 'var(--positive-soft, #dcfce7)' };
+    case 'sent': return { text: 'Sent', color: 'var(--tx-blue, #1d4ed8)', bg: 'var(--tint-blue-2, #dbeafe)' };
+    case 'viewed': return { text: 'Viewed', color: 'var(--tx-amber, #b45309)', bg: 'var(--caution-soft, #fef3c7)' };
+    case 'waiting_approval': case 'approved': return { text: 'In approval', color: 'var(--tx-violet, #6d28d9)', bg: 'var(--tint-violet, #ede9fe)' };
+    case 'awaiting_approval': return { text: 'Awaiting approval', color: 'var(--tx-violet, #6d28d9)', bg: 'var(--tint-violet, #ede9fe)' };
+    case 'waiting_pay': case 'paid': return { text: 'Payment', color: 'var(--tx-violet, #6d28d9)', bg: 'var(--tint-violet, #ede9fe)' };
+    case 'declined': case 'rejected': return { text: 'Declined', color: 'var(--tx-red, #b91c1c)', bg: 'var(--negative-soft, #fee2e2)' };
+    case 'voided': return { text: 'Voided', color: 'var(--meta, #71717a)', bg: 'var(--surface-2, #f4f4f5)' };
+    case 'expired': return { text: 'Expired', color: 'var(--tx-orange-deep, #9a3412)', bg: 'var(--tint-orange-2, #ffedd5)' };
+    case 'error': return { text: 'Error', color: 'var(--tx-red, #b91c1c)', bg: 'var(--negative-soft, #fee2e2)' };
+    case 'uploaded': return { text: 'Generating', color: 'var(--meta, #71717a)', bg: 'var(--surface-2, #f4f4f5)' };
+    default: return { text: 'Draft', color: 'var(--muted, #52525b)', bg: 'var(--surface-2, #f4f4f5)' };
   }
 }
 

@@ -1,0 +1,12 @@
+diff --git a/dist/platform/web/VoiceSessionSetup.js b/dist/platform/web/VoiceSessionSetup.js
+index 069794854e1dcc64391ec10cdfcbe4793420b769..aa3da678980fd0851bac2bb043c94d87d33add98 100644
+--- a/dist/platform/web/VoiceSessionSetup.js
++++ b/dist/platform/web/VoiceSessionSetup.js
+@@ -45,6 +45,7 @@ async function setupWebSocketIO(options, connection, audioContext) {
+             ...connection.outputFormat,
+             outputDeviceId: options.outputDeviceId,
+             workletPaths: options.workletPaths,
++            libsampleratePath: options.libsampleratePath,
+             audioContext: audioContext ?? undefined,
+         }),
+     ]);

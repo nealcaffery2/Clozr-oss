@@ -33,7 +33,7 @@ export function ScenarioList({ scenarios, value, onChange, disabled }: { scenari
         return (
           <button key={s.id} type="button" role="radio" aria-checked={on} disabled={disabled} className="va-btn" onClick={() => onChange(s.id)}
             style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 10, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', border: `1px solid ${on ? '#0A8560' : LINE}`,
-              background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', boxShadow: on ? '0 0 0 1px #0A8560' : 'none', opacity: disabled && !on ? 0.6 : 1 }}>
+              background: on ? 'var(--mint-dim, #e7f8f1)' : 'var(--surface, #fff)', boxShadow: on ? '0 0 0 1px #0A8560' : 'none', opacity: disabled && !on ? 0.5 : 1 }}>
             <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: on ? 'var(--tx-mint, #0a8560)' : INK }}>{s.title}</span>
             <span style={{ display: 'block', marginTop: 2, fontSize: 12, color: MUTED, lineHeight: 1.4 }}>{s.summary}</span>
           </button>

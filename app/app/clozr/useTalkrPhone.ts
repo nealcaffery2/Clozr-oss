@@ -21,7 +21,6 @@ import { pushCallerIdPick, reconcileCallerId } from '@/lib/caller-id-link';
 import { loadLinePools } from '@/lib/line-pools';
 import { useSession } from '@/lib/session';
 import { carrierCheck, carrierReport } from '@/lib/carrier-safe';
-import { everyWhileVisible } from '@/lib/visible-timer';
 import { getSmsFrom } from '@/lib/sms-from';
 import { replyLine, sendsAsSelf } from '@/lib/thread-line';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -29,7 +28,8 @@ import { useSoftphone, refusalText, type Softphone } from '@/lib/softphone';
 import { mayAutoAcquirePhone } from '@/lib/softphone-lock';
 import { setPhoneBusy } from '@/lib/phone-busy';
 import { onExtensionCall, useTalkrExtension, type ExtensionState } from '@/lib/talkr-extension';
-import { useDialSession, type DialSession } from './useDialSession';
+import { usePowerDialer, type PowerDialer } from './usePowerDialer';
+import type { DialLine } from '@/lib/power-dialer';
 import { useLiveTranscript, type LiveTranscript } from '@/lib/live-transcript';
 import { playEvent } from '@/lib/phone-audio';
 import { fileCallOnRecord } from '@/lib/call-file';
@@ -38,11 +38,23 @@ import { TALKR_EVENT_TYPES, eventFacts, publishTalkrEvent, type TalkrEvent } fro
 import { heartbeatStatus, usePresence } from '@/lib/talkr-presence';
 import { createPresenceLeader, PRESENCE_BEAT_MS, type PresenceLeader } from '@/lib/presence-leader';
 import { foldLists } from '@/lib/talkr-lists';
-import { inInbox, lineOwners, threadOwner } from '@/lib/inbox-owner';
+import { callOwner, inInbox, lineOwners, threadOwner } from '@/lib/inbox-owner';
 
 /** Whether a thread sits in this rep's own inbox. */
 function isOwn(c: ConversationDto, me: MeDto): boolean {
   return inInbox(threadOwner(c, lineOwners(me.org_numbers ?? [])), 'me', me.id);
+}
+
+/**
+ * The dialer's Recent: this rep's own calls, newest 12. Talkr hands an owner
+ * or admin the whole office's calls, so Recent read as everyone's dials. A
+ * call is the rep's who handled it or, picked up by nobody, the owner's of the
+ * line it rang (lib/inbox-owner, the same rule as the Inbox's calls).
+ */
+function ownRecent(calls: readonly CallDto[], me: MeDto | null): CallDto[] {
+  if (!me) return [];
+  const owners = lineOwners(me.org_numbers ?? []);
+  return calls.filter((c) => inInbox(callOwner(c, owners), 'me', me.id)).slice(0, 12);
 }
 
 /**
@@ -51,16 +63,18 @@ function isOwn(c: ConversationDto, me: MeDto): boolean {
  * so the badge also reads Talkr's unread-only list: an unread thread of
  * theirs older than the newest 60 still counts.
  */
-function ownUnread(lists: readonly (readonly ConversationDto[] | null | undefined)[], me: MeDto | null): number {
-  if (!me) return 0;
+const unreadOf = (unreadThreads: UnreadThread[]) => ({ unread: unreadThreads.length, unreadThreads });
+
+function ownUnread(lists: readonly (readonly ConversationDto[] | null | undefined)[], me: MeDto | null): UnreadThread[] {
+  if (!me) return [];
   const seen = new Set<string>();
-  let n = 0;
+  const out: UnreadThread[] = [];
   for (const c of lists.flatMap((l) => l ?? [])) {
     if (seen.has(c.id)) continue;
     seen.add(c.id);
-    if (c.unread_count > 0 && isOwn(c, me)) n++;
+    if (c.unread_count > 0 && isOwn(c, me)) out.push({ id: c.id, phone: c.their_number, at: c.last_message_at });
   }
-  return n;
+  return out;
 }
 import {
   TalkrError,
@@ -101,7 +115,11 @@ export type PhoneData = {
   convs: ConversationDto[];
   msgs: Record<string, MessageDto[]>;
   unread: number;
+  /** The threads behind `unread`, so the nav badge can drop what the rep read or archived in CLOZR (SideNav). */
+  unreadThreads: UnreadThread[];
 };
+
+export type UnreadThread = { id: string; phone: string; at: string | null };
 
 const NO_ORG_NUMBERS: NonNullable<MeDto['org_numbers']> = [];
 
@@ -114,7 +132,7 @@ const NO_ORG_NUMBERS: NonNullable<MeDto['org_numbers']> = [];
 const NO_ANSWER_SECONDS = 25;
 
 const EMPTY: PhoneData = {
-  status: 'off', error: null, me: null, dispositions: [], recent: [], history: [], team: [], convs: [], msgs: {}, unread: 0,
+  status: 'off', error: null, me: null, dispositions: [], recent: [], history: [], team: [], convs: [], msgs: {}, unread: 0, unreadThreads: [],
 };
 
 /** The four chips the dialer shows, mapped onto whatever the org's dispositions are called. */
@@ -218,7 +236,7 @@ export type TalkrPhone = {
    */
   extension: ExtensionState;
   /** The power dialer: a session over a campaign, and the Next that walks it. */
-  session: DialSession;
+  session: PowerDialer;
 };
 
 export function useTalkrPhone({
@@ -227,6 +245,7 @@ export function useTalkrPhone({
   aiEnabled,
   onCallOpened,
   onCallFailed,
+  onLinesDialed,
 }: {
   enabled: boolean;
   talkrUrl: string | null;
@@ -236,6 +255,8 @@ export function useTalkrPhone({
   onCallOpened?: (call: CallDto) => void;
   /** That call's leg could not be opened here, so the screen comes back off it. */
   onCallFailed?: () => void;
+  /** Every line a session's Next rang, so `useClozr` can take those people off the rep's queue. */
+  onLinesDialed?: (lines: DialLine[]) => void;
 }): TalkrPhone {
   const [data, setData] = useState<PhoneData>(EMPTY);
   const [intel, setIntel] = useState<LiveIntelDto | null>(null);
@@ -303,8 +324,8 @@ export function useTalkrPhone({
       setData((d) => (d.status !== 'ok' ? d : foldLists(d, {
         // Unread is this rep's own threads only (lib/inbox-owner): a manager's
         // list holds the office's, and their badge is not the office's count.
-        ...(convs ? { convs: convs.conversations, unread: ownUnread([convs.conversations, unreadList?.conversations], d.me) } : {}),
-        ...(calls ? { recent: calls.calls.slice(0, 12) } : {}),
+        ...(convs ? { convs: convs.conversations, ...unreadOf(ownUnread([convs.conversations, unreadList?.conversations], d.me)) } : {}),
+        ...(calls ? { recent: ownRecent(calls.calls, d.me) } : {}),
         ...(hist ? { history: hist.items } : {}),
       })));
     });
@@ -349,17 +370,19 @@ export function useTalkrPhone({
         ]);
         if (!live) return;
         unreachableRuns.current = 0;
+        const unreadThreads = ownUnread([convs.conversations, unreadList?.conversations], me);
         setData((d) => ({
           ...d,
           status: 'ok',
           error: null,
           me,
           dispositions: disp.dispositions,
-          recent: calls.calls.slice(0, 12),
+          recent: ownRecent(calls.calls, me),
           history: hist.items,
           team: team.members,
           convs: convs.conversations,
-          unread: ownUnread([convs.conversations, unreadList?.conversations], me),
+          unread: unreadThreads.length,
+          unreadThreads,
         }));
       } catch (err) {
         if (!live) return;
@@ -455,15 +478,14 @@ export function useTalkrPhone({
   // The power dialer. Talkr picks who to ring (suppression, attempt caps and
   // the lead's calling window are all selection-time server rules); this tab
   // only opens the leg for the call it hands back.
-  const linePoolsForSpin = useCallback(() => loadLinePools(workspaceId), [workspaceId]);
-  const session = useDialSession({
+  const session = usePowerDialer({
     enabled: enabled && data.status === 'ok',
     sp,
     extensionHasPhone,
     orgNumbers: data.me?.org_numbers ?? NO_ORG_NUMBERS,
-    linePools: linePoolsForSpin,
     onCallOpened,
     onCallFailed,
+    onLinesDialed,
   });
   sessionRefreshRef.current = session.refresh;
   sessionIdRef.current = session.session?.id ?? null;
@@ -549,6 +571,9 @@ export function useTalkrPhone({
   const ledBeat = useRef(false);
   /** The last beat this tab sent; a second ask with the same status inside 10 s is dropped. */
   const lastBeat = useRef<{ at: number; status: string } | null>(null);
+  // Read inside the hide handler below, which outlives a phoneReady change.
+  const phoneReadyRef = useRef(phoneReady);
+  phoneReadyRef.current = phoneReady;
   // Offline once, when this tab stops speaking for the rep, not on every change of presence.
   useEffect(() => {
     if (!beatOn || !meId) return;
@@ -556,7 +581,10 @@ export function useTalkrPhone({
     setLeader(l);
     const release = () => l.release();
     const onHide = () => {
-      if (!document.hidden) return;
+      // A hidden tab that holds the phone still rings, so it keeps the beat:
+      // the rep working in another window is not "away". A hidden tab without
+      // the phone steps down so a tab they are looking at takes over.
+      if (!document.hidden || phoneReadyRef.current) return;
       l.release();
       ledBeat.current = false;
     };
@@ -576,7 +604,7 @@ export function useTalkrPhone({
     if (!leader) return;
     const status = heartbeatStatus(presence, phoneReady);
     const beat = () => {
-      if (document.hidden) return;
+      if (document.hidden && !phoneReady) return;
       if (!leader.claim(phoneReady)) { ledBeat.current = false; return; }
       ledBeat.current = true;
       const last = lastBeat.current;
@@ -595,12 +623,19 @@ export function useTalkrPhone({
       if (freed) clearTimeout(freed);
       freed = setTimeout(beat, Math.round(Math.random() * 500));
     });
-    const stop = everyWhileVisible(beat, PRESENCE_BEAT_MS);
+    // Talkr forgets a rep 90 s after their last beat (PRESENCE_FRESHNESS_MS). A
+    // hidden tab's timers run once a minute at most, so the tab with the phone
+    // beats every 30 s to stay inside that window; beat() drops the extra ones.
+    // ponytail: if Chrome ever freezes hidden tabs outright, move presence to a worker.
+    const tick = setInterval(beat, phoneReady ? PRESENCE_BEAT_MS / 2 : PRESENCE_BEAT_MS);
+    const onShow = () => { if (!document.hidden) beat(); };
+    document.addEventListener('visibilitychange', onShow);
     return () => {
       clearTimeout(first);
       if (freed) clearTimeout(freed);
       offFreed();
-      stop();
+      clearInterval(tick);
+      document.removeEventListener('visibilitychange', onShow);
     };
   }, [leader, phoneReady, presence]);
 
@@ -697,12 +732,18 @@ export function useTalkrPhone({
 
     setSummaryStatus('working');
     let live = true;
+    // Set once this run has put up 'ready' or 'unavailable'. A rerun before
+    // that (a last transcript line, the AI toggle, the call's duration landing)
+    // cancels this run, so the cleanup lets the rerun start over instead of
+    // leaving the card on 'working'.
+    let settled = false;
     void (async () => {
       // What we heard, summarised now.
       if (aiEnabled && turns.length > 0) {
         try {
           const r = await talkr.intel(callId, { mode: 'summary', turns, context: contextRef.current ?? undefined });
           if (!live) return;
+          settled = true;
           setSummary(r);
           setSummaryStatus('ready');
           return;
@@ -732,6 +773,7 @@ export function useTalkrPhone({
               follow_up: ai.next_step ?? null,
               suggested_task: ai.next_step ?? null,
             });
+            settled = true;
             setSummaryStatus('ready');
             return;
           }
@@ -741,10 +783,14 @@ export function useTalkrPhone({
         }
         await new Promise((r) => setTimeout(r, 4000));
       }
-      if (live) setSummaryStatus('unavailable');
+      if (live) {
+        settled = true;
+        setSummaryStatus('unavailable');
+      }
     })();
     return () => {
       live = false;
+      if (!settled && summaryFor.current === callId) summaryFor.current = null;
     };
   }, [sp.phase, callId, aiEnabled, turns, sp.startedAt, sp.call?.duration_seconds, sp.ringOut]);
 
@@ -878,7 +924,8 @@ export function useTalkrPhone({
       if (!was?.unread_count) return d;
       const convs = d.convs.map((c) => (c.id === conversationId ? { ...c, unread_count: 0 } : c));
       // The badge counts past the list on screen, so it steps down instead of recounting that list.
-      return { ...d, unread: d.me && isOwn(was, d.me) ? Math.max(0, d.unread - 1) : d.unread, convs };
+      const unreadThreads = d.unreadThreads.filter((t) => t.id !== conversationId);
+      return { ...d, unread: d.me && isOwn(was, d.me) ? Math.max(0, d.unread - 1) : d.unread, unreadThreads, convs };
     });
     void talkr.markRead(conversationId).catch(() => undefined);
   }, []);
@@ -917,7 +964,7 @@ export function useTalkrPhone({
       setData((d) => ({ ...d, error: refusalText(err) }));
       return false;
     }
-  }, [refresh]);
+  }, [refresh, workspaceId, userId]);
 
   // ---- wrap-up -----------------------------------------------------------------
   const disposition = useCallback<TalkrPhone['disposition']>(async (chip, note, pick) => {

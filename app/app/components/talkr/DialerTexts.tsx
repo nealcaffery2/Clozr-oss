@@ -39,22 +39,19 @@ import { TemplatesManager } from '@/app/components/templates/TemplatesManager';
 import { useTemplates } from '@/app/components/templates/useTemplates';
 import { useRep } from '@/app/components/record/QuickReach';
 import { useSoftphone } from './softphoneAdapter';
-import { Bubble } from './Bubble';
+import { Bubble, SmsReceiptLine } from './Bubble';
 import { EmojiButton, insertAtCaret } from './EmojiPicker';
 import { MmsImage, PendingAttachments, useMmsAttachments } from './MmsAttachments';
 import { DialerEmail } from './DialerEmail';
+import { DialerThread } from './DialerThread';
 import { IosSegmented } from './ios';
 import { Icon } from './Icon';
 import { Card } from './ui';
-import { smsShownStatus } from '@/lib/sms-receipt';
+import { smsReceipt, smsShownStatus } from '@/lib/sms-receipt';
 
 type Media = { url: string; kind: AttachmentKind; name?: string };
-type Line = { id: string; dir: 'in' | 'out'; body: string; time: string; status?: string; media?: Media[] };
+type Line = { id: string; dir: 'in' | 'out'; body: string; time: string; status?: string; readAt?: string | null; media?: Media[] };
 type Mode = 'text' | 'email';
-
-const RECEIPT: Record<string, string> = {
-  queued: 'Sending…', sending: 'Sending…', sent: 'Sent', delivered: 'Delivered', undelivered: 'Not delivered', failed: 'Not delivered',
-};
 
 const clock = (iso: string) => {
   const d = new Date(iso);
@@ -67,14 +64,15 @@ const clock = (iso: string) => {
 };
 
 const toLine = (m: MessageDto): Line => ({
-  id: m.id, dir: m.direction === 'inbound' ? 'in' : 'out', body: m.body, time: clock(m.sent_at ?? m.created_at), status: smsShownStatus(m.status, m.sent_at ?? m.created_at),
+  id: m.id, dir: m.direction === 'inbound' ? 'in' : 'out', body: m.body, time: clock(m.sent_at ?? m.created_at), status: smsShownStatus(m.status, m.sent_at ?? m.created_at), readAt: m.read_at ?? null,
   media: m.media_urls.map((url) => ({ url, kind: kindFromUrl(url) })),
 });
 
 // The tab the rep last used, kept while they move from one number to the next.
 let lastMode: Mode = 'text';
 
-export function DialerTexts({ V, phone }: { V: ClozrView; phone: string }) {
+/** `fill`: take the height left in a bounded column; the thread scrolls inside it and the composer stays put. */
+export function DialerTexts({ V, phone, fill = false }: { V: ClozrView; phone: string; fill?: boolean }) {
   const e164 = toE164(phone);
   const onRecord = V.dialerTextsFor(e164);
   const name = onRecord.name || V.dialerRecordFor(e164)?.name || formatPhone(e164);
@@ -89,6 +87,8 @@ export function DialerTexts({ V, phone }: { V: ClozrView; phone: string }) {
   const [manager, setManager] = useState<'sms' | 'email' | null>(null);
   const rep = useRep(V);
   const { authed } = useSoftphone();
+  // Sample data (/demo): the thread reads lib/inbox-demo, as the Inbox does.
+  const [demo] = useState(() => !authed && (!!session.demo || (typeof window !== 'undefined' && window.location.pathname.startsWith('/demo'))));
   const manage = useCallback((channel: 'sms' | 'email') => {
     if (ws === null) return V.showToast('Templates are kept on a signed-in workspace. The demo shows the samples.');
     setManager(channel);
@@ -97,7 +97,7 @@ export function DialerTexts({ V, phone }: { V: ClozrView; phone: string }) {
   if (!e164) return null;
   const idBase = 'dial-msg';
   return (
-    <Card className="dial-texts flex flex-col" padded={false}>
+    <Card className={`dial-texts flex flex-col ${fill ? 'min-h-[260px] flex-1 overflow-hidden' : ''}`} padded={false}>
       <div className="dial-texts-head">
         <Icon name={mode === 'text' ? 'msg' : 'mail'} size={17} className="dial-texts-icon" />
         <h2 className="dial-texts-title" title={name}>{name}</h2>
@@ -114,10 +114,13 @@ export function DialerTexts({ V, phone }: { V: ClozrView; phone: string }) {
       </div>
       {/* Both panels stay mounted once opened, so a half-written text or email
           survives a look at the other tab. Email is read on first visit. */}
-      <div id={`${idBase}-panel-text`} role="tabpanel" aria-labelledby={`${idBase}-tab-text`} hidden={mode !== 'text'} className="min-w-0 flex-col" style={{ display: mode === 'text' ? 'flex' : 'none' }}>
-        <TextPane key={e164} V={V} e164={e164} name={name} onRecord={onRecord} templates={templates} onManage={() => manage('sms')} />
+      <div id={`${idBase}-panel-text`} role="tabpanel" aria-labelledby={`${idBase}-tab-text`} hidden={mode !== 'text'} className={`min-w-0 flex-col ${fill ? 'min-h-0 flex-1' : ''}`} style={{ display: mode === 'text' ? 'flex' : 'none' }}>
+        {/* The Inbox app's thread. Without Talkr (and off the demo), the record's texts. */}
+        {authed || demo
+          ? <DialerThread V={V} e164={e164} demo={!authed && demo} fill={fill} templates={templates} onManage={() => manage('sms')} />
+          : <TextPane key={e164} V={V} e164={e164} name={name} onRecord={onRecord} templates={templates} onManage={() => manage('sms')} fill={fill} />}
       </div>
-      <div id={`${idBase}-panel-email`} role="tabpanel" aria-labelledby={`${idBase}-tab-email`} hidden={mode !== 'email'} className="min-w-0 flex-col" style={{ display: mode === 'email' ? 'flex' : 'none' }}>
+      <div id={`${idBase}-panel-email`} role="tabpanel" aria-labelledby={`${idBase}-tab-email`} hidden={mode !== 'email'} className={`min-w-0 flex-col ${fill ? 'min-h-0 flex-1 overflow-auto' : ''}`} style={{ display: mode === 'email' ? 'flex' : 'none' }}>
         {(mode === 'email' || emailSeen) && <DialerEmail key={e164} V={V} phone={e164} name={name} onManage={() => manage('email')} />}
       </div>
       {manager && ws !== null && (
@@ -135,8 +138,8 @@ export function DialerTexts({ V, phone }: { V: ClozrView; phone: string }) {
   );
 }
 
-function TextPane({ V, e164, name, onRecord, templates, onManage }: {
-  V: ClozrView; e164: string; name: string;
+function TextPane({ V, e164, name, onRecord, templates, onManage, fill }: {
+  V: ClozrView; e164: string; name: string; fill: boolean;
   onRecord: ReturnType<ClozrView['dialerTextsFor']>;
   templates: ReturnType<typeof useTemplates>;
   onManage: () => void;
@@ -283,7 +286,7 @@ function TextPane({ V, e164, name, onRecord, templates, onManage }: {
 
   return (
     <>
-      <div ref={tail} role="log" aria-label={`Texts with ${name}`} className="dial-thread flex max-h-80 min-h-[120px] flex-col overflow-auto px-4 py-3">
+      <div ref={tail} role="log" aria-label={`Texts with ${name}`} className={`dial-thread flex flex-col overflow-auto px-4 py-3 ${fill ? 'min-h-0 flex-1' : 'max-h-80 min-h-[120px]'}`}>
         {error && <p role="alert" className="dial-note-text" style={{ color: 'var(--red)' }}>{error}</p>}
         {!error && authed && live === null && <p role="status" className="dial-note-text">Loading texts…</p>}
         {!error && (live !== null || !authed) && lines.length === 0 && (
@@ -291,13 +294,21 @@ function TextPane({ V, e164, name, onRecord, templates, onManage }: {
         )}
         {lines.map((l, i) => {
           const out = l.dir === 'out';
+          // iPhone's receipt: on the last text sent, and on any text that failed.
+          const r = out && l.status ? smsReceipt(l.status, null, l.readAt) : null;
+          const showReceipt = !!r && (i === lastOut || r.failed);
+          const view = out ? views.label(l.body) : null;
           return (
             <Bubble
               key={l.id}
               mine={out}
               background="var(--sms-thread, #fff)"
               maxWidth="78%"
-              receipt={<>{l.time}{i === lastOut && l.status && RECEIPT[l.status] ? ` · ${RECEIPT[l.status]}` : ''}{out && views.label(l.body) ? ` · ${views.label(l.body)}` : ''}</>}
+              receipt={<>
+                <span>{l.time}{showReceipt && r && !r.failed ? <> · <SmsReceiptLine receipt={r} /></> : null}</span>
+                {showReceipt && r?.failed && <SmsReceiptLine receipt={r} />}
+                {view && <span style={{ fontWeight: 400 }}>{view}</span>}
+              </>}
             >
               {l.media?.length ? (
                 <span className="mb-1.5 flex flex-col gap-1.5">
@@ -310,7 +321,7 @@ function TextPane({ V, e164, name, onRecord, templates, onManage }: {
         })}
       </div>
 
-      <div className="dial-composer">
+      <div className="dial-composer shrink-0">
         {tplOpen && (
           <div className="dial-tpl">
             <TemplatePicker

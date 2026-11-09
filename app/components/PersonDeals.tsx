@@ -18,7 +18,7 @@ export function PersonDeals({ rows }: { rows: PersonDealRow[] }) {
     <div style={{ marginTop: '14px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
         <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600 }}>Deals &amp; submissions</span>
-        <span style={{ fontSize: '11px', color: 'var(--subtle, #a1a1aa)' }}>{rows.length}</span>
+        <span style={{ fontSize: '11px', color: 'var(--meta, #71717a)' }}>{rows.length}</span>
       </div>
       <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a property" aria-label="Find a property on this contact"
         style={{ width: '100%', height: '30px', padding: '0 9px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '8px', fontSize: '12.5px', background: 'var(--canvas, #fafafa)', marginBottom: '6px' }} />
@@ -38,7 +38,7 @@ export function PersonDeals({ rows }: { rows: PersonDealRow[] }) {
             </span>
           </button>
         ))}
-        {!hits.length ? <div style={{ padding: '10px', fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>No property matches.</div> : null}
+        {!hits.length ? <div style={{ padding: '10px', fontSize: '12px', color: 'var(--meta, #71717a)' }}>No property matches.</div> : null}
       </div>
       {!n && hits.length > 8 ? (
         <button type="button" onClick={() => setAll(!all)} style={{ marginTop: '6px', border: 0, background: 'none', color: 'var(--tx-mint, #0a8560)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}>

@@ -21,7 +21,7 @@ export function RecordActionPlans({ V }: { V: ClozrView }) {
           type="button"
           className="dc12"
           onClick={V.goPlans}
-          style={{ fontSize: '11px', color: '#0A8560', background: 'none', border: 0, cursor: 'pointer', padding: 0, fontWeight: 600 }}
+          style={{ fontSize: '11px', color: 'var(--tx-mint, #0a8560)', background: 'none', border: 0, cursor: 'pointer', padding: 0, fontWeight: 600 }}
         >
           Builder
         </button>
@@ -29,45 +29,45 @@ export function RecordActionPlans({ V }: { V: ClozrView }) {
 
       <AiAgentPlan V={V} />
       {plan ? (
-        <div style={{ marginTop: '8px', padding: '10px', border: '1px solid #e4e4e7', borderRadius: '9px', background: '#fafafa' }}>
+        <div style={{ marginTop: '8px', padding: '10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '9px', background: 'var(--canvas, #fafafa)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '12.5px' }}>
             <button
               type="button"
               className="dc12"
               onClick={plan.open}
-              style={{ fontWeight: 600, background: 'none', border: 0, padding: 0, cursor: 'pointer', textAlign: 'left', color: '#18181b', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              style={{ fontWeight: 600, background: 'none', border: 0, padding: 0, cursor: 'pointer', textAlign: 'left', color: 'var(--ink, #18181b)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
             >
               {plan.name}
             </button>
-            <span style={{ color: '#71717a', flex: 'none' }}>
+            <span style={{ color: 'var(--meta, #71717a)', flex: 'none' }}>
               Step {plan.step} / {plan.total}
             </span>
           </div>
-          <div style={{ height: '4px', background: '#e4e4e7', borderRadius: '2px', overflow: 'hidden', marginTop: '8px' }}>
+          <div style={{ height: '4px', background: 'var(--divider, #e4e4e7)', borderRadius: '2px', overflow: 'hidden', marginTop: '8px' }}>
             <div style={{ width: plan.pct, height: '100%', background: '#0A8560' }} />
           </div>
-          <div style={{ fontSize: '11.5px', color: '#52525b', marginTop: '6px', lineHeight: 1.4 }}>
+          <div style={{ fontSize: '11.5px', color: 'var(--muted, #52525b)', marginTop: '6px', lineHeight: 1.4 }}>
             {plan.nextLabel} · {plan.statusNote}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginTop: '8px' }}>
-            <button type="button" className="dc2 rec-press" onClick={plan.open} style={{ height: '24px', padding: '0 8px', borderRadius: '6px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '11.5px', cursor: 'pointer', color: '#18181b' }}>
+            <button type="button" className="dc2 rec-press" onClick={plan.open} style={{ height: '24px', padding: '0 8px', borderRadius: '6px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '11.5px', cursor: 'pointer', color: 'var(--ink, #18181b)' }}>
               Open plan
             </button>
-            <button type="button" className="dc2 rec-press" onClick={plan.stop} style={{ height: '24px', padding: '0 8px', borderRadius: '6px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '11.5px', cursor: 'pointer', color: '#52525b' }}>
+            <button type="button" className="dc2 rec-press" onClick={plan.stop} style={{ height: '24px', padding: '0 8px', borderRadius: '6px', border: '1px solid var(--c-btn-line)', background: 'var(--c-btn-bg)', fontSize: '11.5px', cursor: 'pointer', color: 'var(--muted, #52525b)' }}>
               Stop
             </button>
           </div>
         </div>
       ) : (
         <div style={{ marginTop: '8px' }}>
-          <div style={{ fontSize: '12px', color: '#71717a', lineHeight: 1.45 }}>
+          <div style={{ fontSize: '12px', color: 'var(--meta, #71717a)', lineHeight: 1.45 }}>
             Not on an action plan.
           </div>
           <select
             aria-label="Start an action plan"
             defaultValue=""
             onChange={V.startPlanFor}
-            style={{ marginTop: '8px', width: '100%', height: '30px', borderRadius: '8px', border: '1px solid #e4e4e7', padding: '0 8px', fontSize: '12.5px', background: '#fff', color: '#18181b' }}
+            style={{ marginTop: '8px', width: '100%', height: '30px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', padding: '0 8px', fontSize: '12.5px', background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)' }}
           >
             <option value="">Start an action plan…</option>
             {(V.planPickerOptions || []).map((o) => (
@@ -110,18 +110,18 @@ export function AiRecommended({ V }: { V: ClozrView }) {
   return (
     // Light, like every card on the record: the dark card with a blue glow
     // and a pulsing dot was a second accent (DESIGN.md §1).
-    <div data-testid="clozr-ai" style={{ borderRadius: '12px', padding: '12px 14px', background: '#fff', border: '1px solid #e4e4e7', color: '#18181b' }}>
+    <div data-testid="clozr-ai" style={{ borderRadius: '12px', padding: '12px 14px', background: 'var(--surface, #fff)', border: '1px solid var(--divider, #e4e4e7)', color: 'var(--ink, #18181b)' }}>
       <span style={eyebrow}>
         Suggested next stage
       </span>
-      <div style={{ fontSize: '13px', lineHeight: 1.5, marginTop: '6px', color: '#27272a' }}>
+      <div style={{ fontSize: '13px', lineHeight: 1.5, marginTop: '6px', color: 'var(--ink-2, #27272a)' }}>
         {pick.reason}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
-        <button type="button" className="dc3 rec-press rec-primary" onClick={() => pick.go(pick.stage!)} title={`Move to ${pick.stage}`} style={{ height: '28px', padding: '0 12px', borderRadius: '8px', border: 0, background: '#0A8560', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+        <button type="button" className="ds-btn ds-btn--solid ds-btn--sm" onClick={() => pick.go(pick.stage!)} title={`Move to ${pick.stage}`}>
           Move to {pick.stage}
         </button>
-        <button type="button" className="rec-press rec-ghost" onClick={V.callPerson} style={{ height: '28px', padding: '0 12px', borderRadius: '8px', border: 0, background: '#fff', color: '#18181b', fontSize: '12px', fontWeight: 600, cursor: 'pointer', boxShadow: 'var(--shadow-ring)' }}>
+        <button type="button" className="ds-btn ds-btn--ghost ds-btn--sm" onClick={V.callPerson}>
           Call now
         </button>
       </div>
@@ -150,16 +150,16 @@ function AiAgentPlan({ V }: { V: ClozrView }) {
   const done = en.touches;
   const total = Math.max(en.plan?.steps?.length ?? 0, done);
   return (
-    <div style={{ marginTop: '8px', padding: '10px', border: '1px solid #A7DCC5', borderRadius: '9px', background: '#F0FAF5' }} data-testid="record-ai-agent-plan">
+    <div style={{ marginTop: '8px', padding: '10px', border: '1px solid var(--c-action-line, #a7dcc5)', borderRadius: '9px', background: 'var(--c-genius-soft, #f0faf5)' }} data-testid="record-ai-agent-plan">
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '12.5px' }}>
-        <span style={{ fontWeight: 600, color: '#18181b', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name} · AI agent</span>
-        <span style={{ color: '#08694C', flex: 'none' }}>{en.status === 'paused' ? 'Paused' : total ? `Touch ${done} / ${total}` : `${done} touches`}</span>
+        <span style={{ fontWeight: 600, color: 'var(--ink, #18181b)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name} · AI agent</span>
+        <span style={{ color: 'var(--tx-mint-deep, #08694c)', flex: 'none' }}>{en.status === 'paused' ? 'Paused' : total ? `Touch ${done} / ${total}` : `${done} touches`}</span>
       </div>
-      {en.plan?.summary ? <div style={{ fontSize: '11.5px', color: '#3f3f46', marginTop: '6px', lineHeight: 1.4 }}>{en.plan.summary}</div> : null}
-      <div style={{ fontSize: '11.5px', color: '#52525b', marginTop: '4px' }}>
+      {en.plan?.summary ? <div style={{ fontSize: '11.5px', color: 'var(--ink-3, #3f3f46)', marginTop: '6px', lineHeight: 1.4 }}>{en.plan.summary}</div> : null}
+      <div style={{ fontSize: '11.5px', color: 'var(--muted, #52525b)', marginTop: '4px' }}>
         {en.next_action_at ? `Next ${whenLabel(en.next_action_at)}` : 'Waiting on a reply'} · every touch is in Activity
       </div>
-      <div style={{ fontSize: '11px', color: '#71717a', marginTop: '4px' }}>Starting an action plan stops {name}: one sequence at a time.</div>
+      <div style={{ fontSize: '11px', color: 'var(--meta, #71717a)', marginTop: '4px' }}>Starting an action plan stops {name}: one sequence at a time.</div>
     </div>
   );
 }

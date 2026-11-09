@@ -1,0 +1,4 @@
+.playwright-cli/
+# Impeccable engine binary: the launcher downloads it on first run.
+.claude/skills/impeccable/scripts/bin/
+.claude/worktrees/

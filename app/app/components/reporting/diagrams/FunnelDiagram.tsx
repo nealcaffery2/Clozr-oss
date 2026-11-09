@@ -44,7 +44,7 @@ export function FunnelDiagram({ d, title, caption, empty }: { d: Funnel; title: 
                 <g key={s.k}>
                   <g {...tipProps(tip, text)}>
                     <polygon points={pts} fill={HEAT[i].color} className={i === worst ? 'dia-funnel-worst' : undefined} stroke="var(--dia-paper)" strokeWidth="1" />
-                    {top >= 56 ? <text x={cx} y={y + h / 2 + 4} textAnchor="middle" fontSize="12" fontWeight="600" fill="#fff" className="dia-on-fill">{num(s.n)}</text> : null}
+                    {top >= 56 ? <text x={cx} y={y + h / 2 + 4} textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--on-dark, #fff)" className="dia-on-fill">{num(s.n)}</text> : null}
                   </g>
                   <text x={lx} y={y + 20} fontSize="12.5" fontWeight="600" fill="var(--dia-ink)">{s.k}</text>
                   <text x={lx} y={y + 36} fontSize="11.5" fill="var(--dia-muted)" className="dia-mono">

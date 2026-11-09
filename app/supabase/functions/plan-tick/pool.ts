@@ -99,7 +99,7 @@ export function buildPool(raw: Any[], domains: readonly Any[], sent: readonly Se
   });
   const coldDomains: ColdDomain[] = domains.map((d) => ({
     id: Number(d.id), domain: String(d.domain), dailyCap: Number(d.daily_cap), sentToday: domainSent.get(Number(d.id)) ?? 0,
-    paused: !!d.paused, blocking: (d.blocking ?? []) as string[], checkedAt: d.checked_at ?? null, trackingDomain: d.tracking_domain ?? null,
+    paused: !!d.paused, blocking: (d.blocking ?? []) as string[], checkedAt: d.checked_at ?? null, score: d.score == null ? null : Number(d.score), trackingDomain: d.tracking_domain ?? null,
   }));
   for (const m of mailboxes) {
     const d = coldDomains.find((x) => x.id === m.domainId);

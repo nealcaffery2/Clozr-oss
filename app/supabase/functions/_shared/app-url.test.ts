@@ -17,6 +17,12 @@ Deno.test('sanitizeClozrOrigin rejects Talkr hosts', () => {
   assertEquals(sanitizeClozrOrigin('https://talkr-web.vercel.app'), '');
 });
 
+Deno.test('sanitizeClozrOrigin is a Talkr block, not an allow list', () => {
+  // A foreign host passes, so it is not a gate for links that carry tokens:
+  // those go through safeOrigin in parity/security.ts (see its test).
+  assertEquals(sanitizeClozrOrigin('https://evil.example/sign/'), 'https://evil.example');
+});
+
 Deno.test('clozrAppOrigin prefers caller origin over Talkr APP_URL', () => {
   const prev = Deno.env.get('APP_URL');
   Deno.env.set('APP_URL', 'https://talkr.example.com');

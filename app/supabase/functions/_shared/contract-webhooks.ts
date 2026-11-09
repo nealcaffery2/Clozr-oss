@@ -9,6 +9,8 @@
 //
 // PandaDoc contracts have no such call site; the row trigger in migration 116
 // publishes theirs with the same payload keys.
+import { appLink, appPath } from './app-paths.ts';
+
 /** Just what publishing needs of the service-role client (keeps this file importable from the app's tests). */
 type Admin = { rpc(fn: string, args: Record<string, unknown>): PromiseLike<{ error: { message: string } | null }> };
 
@@ -59,7 +61,7 @@ export function contractWebhookPayload(
     reason: extra.reason ?? null,
     fields: extra.fields?.length ? extra.fields : null,
     ...(extra.occurredAt ? { occurred_at: extra.occurredAt } : {}),
-    url: dealId ? `${appUrl.replace(/\/$/, '')}/app?deal=${dealId}` : null,
+    url: dealId ? appLink(appUrl, appPath.deal(dealId)) : null,
   };
 }
 

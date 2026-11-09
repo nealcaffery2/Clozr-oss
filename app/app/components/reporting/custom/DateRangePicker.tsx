@@ -30,11 +30,11 @@ export function DateRangePicker({ value, onChange, allowReport, align = 'left' }
       <button type="button" onClick={() => { setDraft(value); setOpen(!open); }} style={{ ...btn.ghost, display: 'inline-flex', alignItems: 'center', gap: '7px', fontWeight: 600 }} aria-haspopup="dialog" aria-expanded={open}>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
         {summary}
-        {value.comparison !== 'none' && value.preset ? <span style={{ color: '#71717a', fontWeight: 500 }}>· vs {compareLabelOf(value)}</span> : null}
+        {value.comparison !== 'none' && value.preset ? <span style={{ color: 'var(--meta, #71717a)', fontWeight: 500 }}>· vs {compareLabelOf(value)}</span> : null}
       </button>
       {open ? (
         <div role="dialog" aria-label="Date range" style={{ ...popover, [align]: 0, width: '320px' }}>
-          <div style={{ fontSize: '11.5px', color: '#71717a', fontWeight: 600, marginBottom: '6px' }}>Select date range</div>
+          <div style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600, marginBottom: '6px' }}>Select date range</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', maxHeight: '190px', overflow: 'auto' }}>
             {allowReport ? <button type="button" onClick={() => setDraft({ ...draft, preset: '', custom: null })} style={{ ...btn.chip(!draft.preset), gridColumn: '1 / -1' }}>Report date range</button> : null}
             {DATE_PRESETS.map((p) => (
@@ -43,11 +43,11 @@ export function DateRangePicker({ value, onChange, allowReport, align = 'left' }
           </div>
           {draft.preset === 'Custom' ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
-              <label style={{ fontSize: '11px', color: '#71717a' }}>From<input type="date" value={draft.custom?.from ?? ''} onChange={(e) => setDraft({ ...draft, custom: { from: e.target.value, to: draft.custom?.to ?? '' } })} style={{ ...field, marginTop: '3px' }} /></label>
-              <label style={{ fontSize: '11px', color: '#71717a' }}>To<input type="date" value={draft.custom?.to ?? ''} onChange={(e) => setDraft({ ...draft, custom: { from: draft.custom?.from ?? '', to: e.target.value } })} style={{ ...field, marginTop: '3px' }} /></label>
+              <label style={{ fontSize: '11px', color: 'var(--meta, #71717a)' }}>From<input type="date" value={draft.custom?.from ?? ''} onChange={(e) => setDraft({ ...draft, custom: { from: e.target.value, to: draft.custom?.to ?? '' } })} style={{ ...field, marginTop: '3px' }} /></label>
+              <label style={{ fontSize: '11px', color: 'var(--meta, #71717a)' }}>To<input type="date" value={draft.custom?.to ?? ''} onChange={(e) => setDraft({ ...draft, custom: { from: draft.custom?.from ?? '', to: e.target.value } })} style={{ ...field, marginTop: '3px' }} /></label>
             </div>
           ) : null}
-          <div style={{ fontSize: '11.5px', color: '#71717a', fontWeight: 600, margin: '12px 0 6px' }}>Comparison</div>
+          <div style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)', fontWeight: 600, margin: '12px 0 6px' }}>Comparison</div>
           <select value={draft.comparison} onChange={(e) => setDraft({ ...draft, comparison: e.target.value as Comparison })} style={field}>
             {COMPARE.map((c) => <option key={c.v} value={c.v}>{c.label}{c.v === 'previous' && draft.preset ? ` (${compareLabelOf({ ...draft, comparison: 'previous' })})` : ''}</option>)}
           </select>

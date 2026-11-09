@@ -6,7 +6,8 @@
  * live in cold-campaign.ts.
  */
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { normalizeMailboxPassword } from './cold-campaign.ts';
+import { gmailPollQuery, normalizeMailboxPassword } from './cold-campaign.ts';
+import { mimeText } from './mime-text.ts';
 import { SCOPE, clientId, messageIdOf, rawMessage, renew, seal, sendMail, textToHtml, unseal, whoami } from './google.ts';
 
 type Any = any;
@@ -250,7 +251,7 @@ export async function pollPool(admin: SupabaseClient, mailbox: Any): Promise<Pol
   if (mailbox.provider === 'google_oauth') {
     const token = await poolAccess(admin, mailbox);
     if (!token) return [];
-    return pollGmail(token);
+    return pollGmail(token, mailbox.last_polled_at ?? null);
   }
   if (mailbox.provider === 'microsoft_oauth') {
     const token = await poolAccess(admin, mailbox);
@@ -268,7 +269,11 @@ export async function pollPool(admin: SupabaseClient, mailbox: Any): Promise<Pol
   });
 }
 
-async function pollGmail(token: string): Promise<Polled[]> {
+/** A Gmail reply check reads up to this many pages of this many messages. */
+const GMAIL_POLL_PAGE = 50;
+const GMAIL_POLL_PAGES = 5;
+
+async function pollGmail(token: string, lastPolledAt: string | null): Promise<Polled[]> {
   const auth = { Authorization: `Bearer ${token}` };
   const labelsRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/labels', { headers: auth });
   const labelNames = new Map<string, string>();
@@ -276,12 +281,22 @@ async function pollGmail(token: string): Promise<Polled[]> {
     const listed = await labelsRes.json() as { labels?: { id: string; name: string }[] };
     for (const label of listed.labels ?? []) labelNames.set(label.id, label.name);
   }
-  const list = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q=${encodeURIComponent('in:inbox newer_than:7d')}`, { headers: auth });
-  if (!list.ok) throw new Error(`Gmail list failed (${list.status})`);
-  const body = await list.json() as { messages?: { id: string }[] };
+  // Everything since the last poll, page by page. The 15 newest of the week
+  // left out whatever came before a burst of more than 15 between two polls.
+  const q = encodeURIComponent(gmailPollQuery(lastPolledAt, Date.now()));
+  const ids: string[] = [];
+  let pageToken = '';
+  for (let page = 0; page < GMAIL_POLL_PAGES; page++) {
+    const list = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${GMAIL_POLL_PAGE}&q=${q}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`, { headers: auth });
+    if (!list.ok) throw new Error(`Gmail list failed (${list.status})`);
+    const body = await list.json() as { messages?: { id: string }[]; nextPageToken?: string };
+    for (const m of body.messages ?? []) ids.push(m.id);
+    pageToken = body.nextPageToken ?? '';
+    if (!pageToken) break;
+  }
   const out: Polled[] = [];
-  for (const m of body.messages ?? []) {
-    const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`, { headers: auth });
+  for (const id of ids) {
+    const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`, { headers: auth });
     if (!res.ok) continue;
     const msg = await res.json() as Any;
     const headers: Record<string, string> = {};
@@ -453,15 +468,23 @@ async function pollImap(opts: { host: string; port: number; username: string; pa
   const conn = await openMail(opts.host, opts.port);
   let n = 0;
   const tag = () => `C${++n}`;
+  // Read until the tagged reply. Gmail sends a FETCH in many small TLS
+  // records, so a fixed eight reads cut the five Google inboxes off before
+  // the OK and every reply check there failed ("IMAP FETCH failed"). The cap
+  // is on bytes; a closed socket (an empty read) ends it.
+  const IMAP_MAX_BYTES = 1_000_000;
   const cmd = async (line: string) => {
     const t = tag();
     await conn.write(enc.encode(`${t} ${line}\r\n`));
+    const done = new RegExp(`(?:^|\\r?\\n)${t} (OK|NO|BAD)\\b`);
     let acc = '';
-    for (let i = 0; i < 8; i++) {
-      acc += await readSome(conn, 5000);
-      if (acc.includes(`${t} OK`) || acc.includes(`${t} NO`) || acc.includes(`${t} BAD`)) break;
+    while (acc.length < IMAP_MAX_BYTES) {
+      const chunk = await readSome(conn, 5000);
+      if (!chunk) break;
+      acc += chunk;
+      if (done.test(acc)) break;
     }
-    if (!acc.includes(`${t} OK`)) throw new Error(`IMAP ${line.split(' ')[0]} failed`);
+    if (done.exec(acc)?.[1] !== 'OK') throw new Error(`IMAP ${line.split(' ')[0]} failed`);
     return acc;
   };
   try {
@@ -522,9 +545,16 @@ function headerMap(raw: string): Record<string, string> {
   return out;
 }
 
+/** The message text, MIME decoded (mime-text.ts), from a FETCH of BODY[HEADER] and BODY[TEXT]. */
 function imapText(raw: string): string {
-  const hit = /BODY\[TEXT\](?:<0>)?\s*\{(\d+)\}/i.exec(raw);
-  if (!hit || hit.index == null) return raw.slice(0, 4000);
+  const body = imapLiteral(raw, 'TEXT');
+  if (body == null) return raw.slice(0, 4000);
+  return mimeText(imapLiteral(raw, 'HEADER') ?? '', body);
+}
+
+function imapLiteral(raw: string, section: 'HEADER' | 'TEXT'): string | null {
+  const hit = new RegExp(`BODY\\[${section}\\](?:<0>)?\\s*\\{(\\d+)\\}`, 'i').exec(raw);
+  if (!hit || hit.index == null) return null;
   const start = raw.indexOf('\n', hit.index);
   if (start < 0) return '';
   return raw.slice(start + 1, start + 1 + Number(hit[1]));

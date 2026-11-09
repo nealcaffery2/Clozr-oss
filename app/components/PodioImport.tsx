@@ -284,7 +284,7 @@ function ImportFlow({ workspaceId, isMobile, onClose, onOpenSeller, onImported }
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', background: 'var(--surface, #fff)', borderBottom: '1px solid var(--divider, #e4e4e7)', flex: 'none', flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 700, letterSpacing: '-0.02em' }}>Import from Podio</h1>
         {(['map', 'preview', 'import'] as Step[]).map((k, i) => (
-          <span key={k} style={{ fontSize: '12.5px', color: step === k ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)', fontWeight: step === k ? 600 : 400 }}>{i + 1} · {k === 'map' ? 'Stages and mapping' : k === 'preview' ? 'Preview' : 'Import'}</span>
+          <span key={k} style={{ fontSize: '12.5px', color: step === k ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)', fontWeight: step === k ? 600 : 400 }}>{i + 1} · {k === 'map' ? 'Stages and mapping' : k === 'preview' ? 'Preview' : 'Import'}</span>
         ))}
         <span style={{ flex: 1 }} />
         <button onClick={onClose} disabled={!!loading && step === 'import'} style={btn}>Close</button>
@@ -330,7 +330,7 @@ function ImportFlow({ workspaceId, isMobile, onClose, onOpenSeller, onImported }
                         const opts = spec.fields.filter((f) => t.types.includes(f.type));
                         return (
                           <label key={t.key} style={{ display: 'grid', gridTemplateColumns: '170px 1fr', gap: '8px', alignItems: 'center', fontSize: '12.5px' }}>
-                            <span style={{ color: 'var(--ink-3, #3f3f46)' }}>{t.label}{mapping[t.key] && mapping[t.key] === spec.guess[t.key] ? <span style={{ color: 'var(--subtle, #a1a1aa)' }}> · guessed</span> : null}</span>
+                            <span style={{ color: 'var(--ink-3, #3f3f46)' }}>{t.label}{mapping[t.key] && mapping[t.key] === spec.guess[t.key] ? <span style={{ color: 'var(--meta, #71717a)' }}> · guessed</span> : null}</span>
                             <select value={mapping[t.key] ?? ''} onChange={(e) => { const next = { ...mapping }; if (e.target.value) next[t.key] = e.target.value; else delete next[t.key]; setMapping(next); }} style={{ ...field, height: '30px', fontSize: '12.5px' }}>
                               <option value="">—</option>
                               {opts.map((f) => <option key={f.external_id} value={f.external_id}>{f.label} ({f.type})</option>)}
@@ -380,10 +380,10 @@ function ImportFlow({ workspaceId, isMobile, onClose, onOpenSeller, onImported }
                               <span style={{ color: 'var(--meta, #71717a)', minWidth: '96px' }}>{p.target === 'title_contact' ? 'Title contact' : PARTY_ROLE_LABEL[p.role] ?? p.role}</span>
                               <span style={{ fontWeight: 500 }}>{p.name || p.company || '—'}</span>
                               {p.company && p.company !== p.name ? <span style={{ color: 'var(--meta, #71717a)' }}>{p.company}</span> : null}
-                              {p.phone || p.email ? <span style={{ color: 'var(--subtle, #a1a1aa)', fontSize: '11.5px' }}>{[p.phone, p.email].filter(Boolean).join(' · ')}</span> : null}
+                              {p.phone || p.email ? <span style={{ color: 'var(--meta, #71717a)', fontSize: '11.5px' }}>{[p.phone, p.email].filter(Boolean).join(' · ')}</span> : null}
                               {p.target !== 'title_contact' ? <span style={badge(!!p.match)} title={p.match ? `Matches ${p.match.table}: ${p.match.label}` : undefined}>{p.match ? (p.match.table === 'team' ? 'Teammate' : 'Match') : p.role === 'tc' || p.role === 'acquisitions' || p.role === 'dispositions' ? 'Unmatched' : 'New'}</span> : null}
                             </div>
-                          )) : <span style={{ color: 'var(--subtle, #a1a1aa)' }}>No parties mapped</span>}
+                          )) : <span style={{ color: 'var(--meta, #71717a)' }}>No parties mapped</span>}
                         </td>
                       </tr>
                     ))}

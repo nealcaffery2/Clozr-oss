@@ -16,6 +16,46 @@ export const phoneKey = (v: string | null | undefined) => {
   return d.length >= 7 ? d.slice(-10) : null;
 };
 export const emailKey = (v: string | null | undefined) => (v ?? '').trim().toLowerCase() || null;
+
+/** Keys per `.in()` read: an in-list of every key at once would outgrow the URL. */
+const IN_CHUNK = 200;
+
+/**
+ * The workspace's buyers that carry one of these people's phones or emails,
+ * keyed the way matchBuyer keys them (ten digits, lowercased email). Looked
+ * up by key instead of reading every buyer: a bare select stops at PostgREST's
+ * 1,000 rows, so a buyer past them read as new and was inserted again on
+ * every import. Phones match buyers.phone_key (+1 and ten digits, set by
+ * trigger); emails match the stored spelling, so both the incoming and the
+ * lowercased form are asked for. Lowest id wins a key two buyers share.
+ */
+export async function buyerKeyMaps(
+  admin: { from: (table: string) => Any },
+  ws: number,
+  people: { phone?: string | null; email?: string | null }[],
+): Promise<{ byPhone: Map<string, number>; byEmail: Map<string, number> }> {
+  const uniq = (xs: (string | null | undefined)[]) => [...new Set(xs.filter((x): x is string => !!x))];
+  const phones = uniq(people.map((p) => phoneKey(p.phone)).map((k) => (k && k.length === 10 ? `+1${k}` : null)));
+  const emails = uniq(people.flatMap((p) => [(p.email ?? '').trim() || null, emailKey(p.email)]));
+  const rows: Any[] = [];
+  const read = async (col: 'phone_key' | 'email', keys: string[]) => {
+    for (let i = 0; i < keys.length; i += IN_CHUNK) {
+      const { data, error } = await admin.from('buyers').select('id, phone, phone_key, email').eq('workspace_id', ws).in(col, keys.slice(i, i + IN_CHUNK)).order('id');
+      if (error) throw new Error(error.message);
+      rows.push(...(data ?? []));
+    }
+  };
+  await read('phone_key', phones);
+  await read('email', emails);
+  rows.sort((a, b) => a.id - b.id);
+  const byPhone = new Map<string, number>();
+  const byEmail = new Map<string, number>();
+  for (const b of rows) {
+    for (const p of new Set([phoneKey(b.phone), phoneKey(b.phone_key)])) if (p && !byPhone.has(p)) byPhone.set(p, b.id);
+    const e = emailKey(b.email); if (e && !byEmail.has(e)) byEmail.set(e, b.id);
+  }
+  return { byPhone, byEmail };
+}
 /**
  * Number(null) and Number('') are both 0, which would turn "Dispo Genius does
  * not know the ARV" into "the ARV is zero" and overwrite a real CLOZR figure.

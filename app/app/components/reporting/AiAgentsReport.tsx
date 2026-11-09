@@ -13,13 +13,13 @@ import { AgentAvatar } from '@/app/components/ai-agent/AgentAvatar';
 import { AiaStyles } from '@/app/components/ai-agent/styles';
 
 const BAR = '#0A8560';
-const INK = '#18181b';
-const MUTED = '#71717a';
-const FAINT = '#a1a1aa';
+const INK = 'var(--ink, #18181b)';
+const MUTED = 'var(--meta, #71717a)';
+const FAINT = 'var(--subtle, #a1a1aa)';
 const GRID = '#eef0f3';
 const RANGES = [7, 30, 90] as const;
 
-const card: React.CSSProperties = { background: '#fff', border: '1px solid var(--edge, #e4e4e7)', borderRadius: 14, boxShadow: 'var(--elev-1, 0 1px 2px rgba(0,0,0,.04))' };
+const card: React.CSSProperties = { background: 'var(--surface, #fff)', border: '1px solid var(--edge, #e4e4e7)', borderRadius: 14, boxShadow: 'var(--elev-1, 0 1px 2px rgba(0,0,0,.04))' };
 
 export function AiAgentsReport({ workspaceId, isMobile }: { workspaceId: number | null; isMobile: boolean }) {
   const api = useMemo(() => (workspaceId ? aiAgentApi(workspaceId) : null), [workspaceId]);
@@ -59,18 +59,18 @@ export function AiAgentsReport({ workspaceId, isMobile }: { workspaceId: number 
         <div role="radiogroup" aria-label="Range" style={{ display: 'flex', gap: 4 }}>
           {RANGES.map((d) => (
             <button key={d} type="button" role="radio" aria-checked={days === d} onClick={() => setDays(d)}
-              style={{ height: 28, padding: '0 10px', borderRadius: 7, border: '1px solid #e4e4e7', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: days === d ? INK : '#fff', color: days === d ? '#fff' : '#52525b', fontFamily: 'inherit' }}>
+              style={{ height: 28, padding: '0 10px', borderRadius: 7, border: '1px solid var(--divider, #e4e4e7)', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: days === d ? INK : 'var(--surface, #fff)', color: days === d ? 'var(--surface, #fff)' : 'var(--muted, #52525b)', fontFamily: 'inherit' }}>
               {d} days
             </button>
           ))}
         </div>
         <button type="button" aria-pressed={table} onClick={() => setTable((t) => !t)}
-          style={{ height: 28, padding: '0 10px', borderRadius: 7, border: '1px solid #e4e4e7', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: table ? '#f4f4f5' : '#fff', color: '#52525b', display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'inherit' }}>
+          style={{ height: 28, padding: '0 10px', borderRadius: 7, border: '1px solid var(--divider, #e4e4e7)', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: table ? 'var(--surface-2, #f4f4f5)' : 'var(--surface, #fff)', color: 'var(--muted, #52525b)', display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'inherit' }}>
           <Table2 size={13} aria-hidden /> {table ? 'Cards' : 'Table'}
         </button>
       </div>
 
-      {error ? <div role="alert" style={{ ...card, padding: '12px 14px', color: '#991b1b', background: '#fef2f2', borderColor: '#fecaca', fontSize: 12.5 }}>{error}</div> : null}
+      {error ? <div role="alert" style={{ ...card, padding: '12px 14px', color: 'var(--tx-red-deep, #991b1b)', background: 'var(--tint-red, #fef2f2)', borderColor: 'var(--tint-red-2, #fecaca)', fontSize: 12.5 }}>{error}</div> : null}
       {!rows && !error ? <div style={{ ...card, padding: 18, fontSize: 12.5, color: MUTED }}>Loading the AI agents report…</div> : null}
       {rows && !rows.length ? (
         <div style={{ ...card, padding: 22, textAlign: 'center' }}>
@@ -151,7 +151,7 @@ function HBar({ value, max, tip }: { value: number; max: number; tip: string }) 
 }
 
 const tooltip: React.CSSProperties = {
-  position: 'absolute', left: 0, bottom: 'calc(100% + 6px)', zIndex: 5, padding: '6px 9px', borderRadius: 8, background: INK, color: '#fff', fontSize: 11.5, whiteSpace: 'nowrap', pointerEvents: 'none', boxShadow: '0 6px 18px -8px rgba(0,0,0,.4)',
+  position: 'absolute', left: 0, bottom: 'calc(100% + 6px)', zIndex: 5, padding: '6px 9px', borderRadius: 8, background: INK, color: 'var(--on-dark, #fff)', fontSize: 11.5, whiteSpace: 'nowrap', pointerEvents: 'none', boxShadow: '0 6px 18px -8px rgba(0,0,0,.4)',
 };
 
 function AgentCard({ r, rank, days }: { r: AgentReportRow; rank: number; days: number }) {
@@ -166,12 +166,12 @@ function AgentCard({ r, rank, days }: { r: AgentReportRow; rank: number; days: n
   const done = r.enrollments.total ? Math.round(((r.enrollments.done + r.enrollments.stopped) / r.enrollments.total) * 100) : 0;
   return (
     <article className="aia-rise" style={{ ...card, padding: 0, overflow: 'hidden' }}>
-      <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: rank === 1 && r.touches ? 'linear-gradient(120deg, #ecfdf5, #F0FAF5)' : 'var(--band, #f6f8fb)', borderBottom: '1px solid var(--band-line, #e3e8ef)' }}>
+      <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: rank === 1 && r.touches ? 'var(--tint-green, #ecfdf5)' : 'var(--band, #f6f8fb)', borderBottom: '1px solid var(--band-line, #e3e8ef)' }}>
         <AgentAvatar name={r.name} src={r.avatar_url} size={52} live={r.active > 0} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 15, fontWeight: 700, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
-            {rank === 1 && r.touches ? <span title="Most touches in this range" style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>#1</span> : null}
+            {rank === 1 && r.touches ? <span title="Most touches in this range" style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: 'var(--caution-soft, #fef3c7)', color: 'var(--tx-amber-deep, #92400e)', border: '1px solid var(--tint-amber-2, #fde68a)' }}>#1</span> : null}
           </div>
           <div style={{ fontSize: 12, color: MUTED, marginTop: 1 }}>{cap(r.role_label)} · works {r.audience === 'both' ? 'sellers and buyers' : r.audience}</div>
         </div>
@@ -252,16 +252,16 @@ function ReportTable({ rows }: { rows: AgentReportRow[] }) {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
         <caption className="aia-sr">AI agents, every number</caption>
         <thead>
-          <tr>{cols.map((c) => <th key={c} scope="col" style={{ textAlign: c === 'Agent' || c === 'Works' ? 'left' : 'right', padding: '10px 12px', fontSize: 11, color: MUTED, fontWeight: 600, borderBottom: '1px solid #e4e4e7', whiteSpace: 'nowrap' }}>{c}</th>)}</tr>
+          <tr>{cols.map((c) => <th key={c} scope="col" style={{ textAlign: c === 'Agent' || c === 'Works' ? 'left' : 'right', padding: '10px 12px', fontSize: 11, color: MUTED, fontWeight: 600, borderBottom: '1px solid var(--divider, #e4e4e7)', whiteSpace: 'nowrap' }}>{c}</th>)}</tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.agent_key}>
-              <th scope="row" style={{ textAlign: 'left', padding: '9px 12px', borderBottom: '1px solid #f4f4f5', fontWeight: 600, color: INK, whiteSpace: 'nowrap' }}>
+              <th scope="row" style={{ textAlign: 'left', padding: '9px 12px', borderBottom: '1px solid var(--surface-2, #f4f4f5)', fontWeight: 600, color: INK, whiteSpace: 'nowrap' }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><AgentAvatar name={r.name} src={r.avatar_url} size={22} />{r.name}</span>
               </th>
               {[r.audience, r.active, r.texts, r.emails, r.calls + r.voice_calls, r.replies, `${r.reply_rate}%`, r.booked + r.voice_booked, r.handoffs, r.dnc, r.failed].map((v, i) => (
-                <td key={i} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '9px 12px', borderBottom: '1px solid #f4f4f5', color: INK, fontVariantNumeric: 'tabular-nums' }}>{String(v)}</td>
+                <td key={i} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '9px 12px', borderBottom: '1px solid var(--surface-2, #f4f4f5)', color: INK, fontVariantNumeric: 'tabular-nums' }}>{String(v)}</td>
               ))}
             </tr>
           ))}
@@ -362,14 +362,14 @@ function FunnelCard({ f, days, isMobile }: { f: AiFunnel; days: number; isMobile
         <div style={{ marginTop: 14, overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
             <caption style={{ textAlign: 'left', fontSize: 12, fontWeight: 600, color: INK, paddingBottom: 6 }}>Speed-to-lead leads by when they came in</caption>
-            <thead><tr>{['When', 'Leads', 'Reached by AI', 'Booked'].map((c, i) => <th key={c} scope="col" style={{ textAlign: i ? 'right' : 'left', padding: '6px 10px', fontSize: 11, color: MUTED, fontWeight: 600, borderBottom: '1px solid #e4e4e7' }}>{c}</th>)}</tr></thead>
+            <thead><tr>{['When', 'Leads', 'Reached by AI', 'Booked'].map((c, i) => <th key={c} scope="col" style={{ textAlign: i ? 'right' : 'left', padding: '6px 10px', fontSize: 11, color: MUTED, fontWeight: 600, borderBottom: '1px solid var(--divider, #e4e4e7)' }}>{c}</th>)}</tr></thead>
             <tbody>
               {([['business', 'Business hours (weekdays 9 to 5)'], ['after_hours', 'After hours'], ['weekend', 'Weekends']] as const).map(([k, label]) => {
                 const b = f.by_time![k];
                 return (
                   <tr key={k}>
-                    <th scope="row" style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600, color: INK, borderBottom: '1px solid #f4f4f5' }}>{label}</th>
-                    {[b.leads, b.contacted, b.booked].map((v, i) => <td key={i} style={{ textAlign: 'right', padding: '6px 10px', color: INK, fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #f4f4f5' }}>{v.toLocaleString('en-US')}</td>)}
+                    <th scope="row" style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600, color: INK, borderBottom: '1px solid var(--surface-2, #f4f4f5)' }}>{label}</th>
+                    {[b.leads, b.contacted, b.booked].map((v, i) => <td key={i} style={{ textAlign: 'right', padding: '6px 10px', color: INK, fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid var(--surface-2, #f4f4f5)' }}>{v.toLocaleString('en-US')}</td>)}
                   </tr>
                 );
               })}

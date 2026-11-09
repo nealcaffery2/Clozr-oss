@@ -26,6 +26,8 @@ eq('a deal-only Dispo note opens its property', notifLink(row('Dispo', { deal_id
 eq('a contract on a deal opens that deal', notifLink(row('Contracts', { seller_id: 4, deal_id: 9 })), { screen: 'person', id: 's4', dealId: 'd9' });
 eq('a contract with no record opens Contracts', notifLink(row('Contracts')), { screen: 'contracts', id: '' });
 eq('number health opens the numbers', notifLink(row('Number health')), { screen: 'settings', id: '', tab: 'numbers' });
+eq('a paused mailbox opens Email deliverability', notifLink(row('send_failure', { title: 'm@x.com was auto-paused' })), { screen: 'settings', id: '', tab: 'email/deliverability' });
+eq('a failed dispo blast opens Dispo', notifLink(row('send_failure', { title: '3 dispo blast messages failed' })), { screen: 'dispo', id: '' });
 eq('floor rows open the leaderboard', notifLink(row('Wheel', { seller_id: 4 })), { screen: 'leaderboard', id: '' });
 eq('Lane opens on its file', notifLink(row('Lane', { seller_id: 4 })), { screen: 'lane', id: 's4' });
 eq('nothing to open', notifLink(row('Email')), { screen: 'home', id: '' });

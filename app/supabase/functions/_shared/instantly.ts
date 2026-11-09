@@ -174,6 +174,8 @@ export type InstantlyClient = {
   warmupAnalytics(emails: readonly string[], now?: Date): Promise<Map<string, WarmupAnalytics>>;
   /** POST /accounts/warmup/enable: turns warmup back on. Instantly runs it as a background job. */
   enableWarmup(emails: readonly string[]): Promise<void>;
+  /** PATCH /accounts/{email} { warmup: { limit } }: warmup mails a day for one inbox. */
+  setWarmupLimit?(email: string, limit: number): Promise<void>;
 };
 
 /** `key` is the plain Bearer token; the caller unseals cold_warmup_secrets.api_key first. */
@@ -207,6 +209,9 @@ export function instantlyClient(key: string, deps?: { fetchFn?: FetchLike; apiBa
     },
     async enableWarmup(emails) {
       if (emails.length) await call(fetchFn, key, apiBase, '/accounts/warmup/enable', { method: 'POST', body: { emails: [...emails] } });
+    },
+    async setWarmupLimit(email, limit) {
+      await call(fetchFn, key, apiBase, `/accounts/${encodeURIComponent(email)}`, { method: 'PATCH', body: { warmup: { limit: Math.max(1, Math.round(limit)) } } });
     },
   };
 }

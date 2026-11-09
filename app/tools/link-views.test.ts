@@ -1,6 +1,6 @@
 // lib/link-views.ts: which texts carry a CLOZR tracked link, and what "Viewed" says.
 // Run with:  npx tsx tools/link-views.test.ts
-import { emailOpenLabel, firstView, readListingClaim, trackedLinks, viewLabel, viewStamp, viewTitle, type LinkView } from '../lib/link-views';
+import { emailOpenLabel, emailReceiptView, firstView, readListingClaim, trackedLinks, viewLabel, viewStamp, viewTitle, type LinkView } from '../lib/link-views';
 import { firstViewNotice } from '../supabase/functions/_shared/esign-session';
 
 let failed = 0;
@@ -59,8 +59,15 @@ check('the tooltip explains texts have no read receipts', /no read receipts/.tes
 // ---- email receipts ----
 check('an untracked email says nothing', emailOpenLabel(undefined, now) === null);
 check('tracked, not opened', emailOpenLabel({ opens: 0, clicks: 0, first_opened_at: null }, now) === 'Not opened yet');
-const opened = emailOpenLabel({ opens: 4, clicks: 1, first_opened_at: '2026-10-14T19:14:00Z' }, now) ?? '';
-check('opened with time, opens and a click', /^Opened \d{1,2}:\d{2} [AP]M · 4 opens · 1 click$/.test(opened), opened);
+const opened = emailOpenLabel({ opens: 4, clicks: 0, first_opened_at: '2026-10-14T19:14:00Z' }, now) ?? '';
+check('opened with time and opens', /^Opened \d{1,2}:\d{2} [AP]M · 4 opens$/.test(opened), opened);
+const clicked = emailReceiptView({ opens: 4, clicks: 2, first_opened_at: '2026-10-14T19:14:00Z', last_clicked_at: '2026-10-14T19:20:00Z' }, now);
+check('a click leads: Clicked, its time and count', clicked?.level === 'clicked' && /^Clicked \d{1,2}:\d{2} [AP]M · 2 clicks$/.test(clicked.label), clicked);
+check('one click, no time on file', emailOpenLabel({ opens: 0, clicks: 1, first_opened_at: null }, now) === 'Clicked');
+const openView = emailReceiptView({ opens: 1, clicks: 0, first_opened_at: '2026-10-14T19:14:00Z' }, now);
+check('an open alone is the weaker level, and the tooltip says it may be the mail app', openView?.level === 'opened' && /may not mean they read it/.test(openView.title), openView);
+check('not opened is the sent level', emailReceiptView({ opens: 0, clicks: 0, first_opened_at: null }, now)?.level === 'sent');
+check('receipt copy has no em dash', [clicked, openView].every((v) => !!v && !v.label.includes('\u2014') && !v.title.includes('\u2014')));
 check('opened once, no clicks', /^Opened \d{1,2}:\d{2} [AP]M$/.test(emailOpenLabel({ opens: 1, clicks: 0, first_opened_at: '2026-10-14T19:14:00Z' }, now) ?? ''));
 
 // ---- the sender hears about the first open ----

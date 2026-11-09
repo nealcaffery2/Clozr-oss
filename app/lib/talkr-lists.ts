@@ -13,6 +13,7 @@ import type { CallDto, ConversationDto, HistoryItemDto } from './talkr';
 export type PhoneLists = {
   convs: ConversationDto[];
   unread: number;
+  unreadThreads: { id: string; phone: string; at: string | null }[];
   recent: CallDto[];
   history: HistoryItemDto[];
 };
@@ -35,8 +36,9 @@ export function sameRows<T>(a: readonly T[], b: readonly T[]): boolean {
 export function foldLists<T extends PhoneLists>(d: T, fresh: Partial<PhoneLists>): T {
   const convs = fresh.convs && !sameRows(d.convs, fresh.convs) ? fresh.convs : d.convs;
   const unread = fresh.unread ?? d.unread;
+  const unreadThreads = fresh.unreadThreads && !sameRows(d.unreadThreads, fresh.unreadThreads) ? fresh.unreadThreads : d.unreadThreads;
   const recent = fresh.recent && !sameRows(d.recent, fresh.recent) ? fresh.recent : d.recent;
   const history = fresh.history && !sameRows(d.history, fresh.history) ? fresh.history : d.history;
-  if (convs === d.convs && unread === d.unread && recent === d.recent && history === d.history) return d;
-  return { ...d, convs, unread, recent, history };
+  if (convs === d.convs && unread === d.unread && unreadThreads === d.unreadThreads && recent === d.recent && history === d.history) return d;
+  return { ...d, convs, unread, unreadThreads, recent, history };
 }

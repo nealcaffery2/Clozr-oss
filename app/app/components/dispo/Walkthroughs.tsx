@@ -5,7 +5,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Badge, btn, GREEN, HAIR, INK, INK_2, LINE, MUTED, RED } from '@/components/genius/parts';
+import { Badge, btn, GREEN, HAIR, INK, INK_2, LINE, MUTED, RED } from '@/components/kit/parts';
 import { confirmWalkthrough, loadDispoDeal } from '@/lib/dispo-sop';
 import { supabase } from '@/lib/supabase';
 import type { DeskBuyer } from './OfferDesk';

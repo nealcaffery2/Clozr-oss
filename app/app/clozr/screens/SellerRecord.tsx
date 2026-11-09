@@ -2,17 +2,16 @@
 // layouts: the classic three-column record (SellerRecordClassic.tsx, the
 // default) and the deal page below, which Settings › Try new design turns on.
 //
-// Desktop, the deal page: a header toolbar (AI agent, Deal sheet, TC, Call,
-// Text, Email, More); the seller's name; a strip of key numbers; then two
-// columns. The wide one is the record's tabs (record-tabs.ts): the activity
-// feeds (Activity, Calls, Texts, Email, Notes) with the composer pinned to the
-// bottom of the screen, then Automations, History, Details (the house, who
-// works the deal, What we know) and Submission when the record came in as
-// one. The narrow one has Deal info (stage, Next action, how the offer went),
-// the photo, COMPR, the underwriting and the offer, then files, the deal team
-// and contracts. Everything else lives behind More in the Record details
-// sheet. Text and Email in the header open the floating quick box. Phone: one
-// column, the same tabs, the composer docked above the tab bar.
+// Desktop, the deal page (DealPage.tsx): the back link; the house (photo,
+// address, facts, source) with the stage pill, COMPR, Call, Text and More;
+// then two columns. The wide one: Key Numbers, Property Details beside Deal
+// Info (seller, stage, deal type, who works it, next action), and a summary
+// feed (Activity, Notes, Tasks, Files) whose View all swaps in the record's
+// full tabs (record-tabs.ts) with the composer. The narrow one: Photos, Comps
+// & Valuation, Files & Documents, and under the fold how the offer went, the
+// underwriting and offer, the deal team, contracts, the AI agent and Archive.
+// Make offer, Email, Meeting and TC moved into More. Phone: one column, the
+// tabs, the composer docked above the tab bar.
 //
 // Single keys, only on this screen and never while typing or with a sheet,
 // menu or dialog up: C call, T text, E email, O make offer, S move stage.
@@ -30,9 +29,10 @@ import { useSession } from '@/lib/session';
 import { NextActionCard } from '@/app/components/record/NextActionCard';
 import { RecordHeader } from '@/app/components/record/RecordHeader';
 import { openMeetingInvite } from '@/app/components/meeting/MeetingInvite';
-import { EditableName, PropertyCard } from '@/app/components/record/PropertyCard';
-import { TypeChip } from '@/components/TypeChip';
-import { KeyNumbers } from '@/app/components/record/DealOverview';
+import { PropertyCard } from '@/app/components/record/PropertyCard';
+import { CompsCard, DealHero, DealInfoCard, FilesCard, KeyNumbersCard, PhotosCard, PropertyDetailsCard, SummaryFeed } from '@/app/components/record/DealPage';
+import { AiAgentToggle } from '@/app/components/ai-agent/AiAgentToggle';
+import { dbId } from '@/lib/crm';
 import { StageCard } from '@/app/components/record/StageCard';
 import { OutcomeBar } from '@/app/components/record/OutcomeBar';
 import { ActivityStream, RecordTabs } from '@/app/components/record/ActivityStream';
@@ -52,7 +52,7 @@ import { CenteredDialog } from '@/components/ContractsHub';
 import { shortcutAllowed } from '@/app/components/record/record-logic';
 import { isArchiveKey, isTypingTarget, peopleNavAction, recordNavBlocked } from '@/lib/people-keys';
 import '@/app/components/record/record.css';
-import { DEAL_SHEET_BTN } from '@/app/components/record/deal-sheet-style';
+import { buttonClass } from '@/components/ds/Button';
 
 /**
  * The seller record. Settings › Try new design picks the layout, per user:
@@ -75,6 +75,8 @@ function SellerRecordNew({ V }: { V: ClozrView }) {
   // false: closed; null: open, nothing picked; a number: open on that template (-1 for "other").
   const [contractsPop, setContractsPop] = useState<number | null | false>(false);
   const [pickingContract, setPickingContract] = useState(false);
+  // Desktop: the summary feed, or (View all) the full tabs with the composer.
+  const [full, setFull] = useState(false);
 
   // Pick a composer channel and put the cursor in it. Instant: used all day.
   const pick = useCallback((ch: 'Text' | 'Email' | 'Note') => {
@@ -184,7 +186,7 @@ function SellerRecordNew({ V }: { V: ClozrView }) {
       <span style={{ display: 'flex', gap: '6px', alignItems: 'center', flex: 'none', flexWrap: 'wrap' }}>
         {tab !== 'Submission' ? <button type="button" className="rec2-chip rec-press" onClick={() => pickTab('Submission')}>Submission details</button> : null}
         <button type="button" className="rec2-chip rec-press" onClick={sub.showAll}>All{sub.others ? ` (+${sub.others})` : ''}</button>
-        <button type="button" className="dc2 rec-press" onClick={sub.openDealSheet} style={{ ...DEAL_SHEET_BTN, height: '28px', padding: '0 10px', fontSize: '12px' }}>Deal sheet</button>
+        <button type="button" className={buttonClass('ghost', 28)} onClick={sub.openDealSheet}>Deal sheet</button>
         <button type="button" className="rec2-icon rec-press" aria-label="Close submission note" title="Close" onClick={() => setSubClosed(subKey)}>
           <Icon name="x" size={14} />
         </button>
@@ -277,58 +279,62 @@ function SellerRecordNew({ V }: { V: ClozrView }) {
   const listLabel = V.recordBack.fromList
     ? (V.recordListPos ? `${V.peopleList} · ${V.recordListPos}` : V.peopleList)
     : V.recordBack.label;
-  // The deal page: the header, the numbers across the top, then two columns.
-  // The wide one is the record's tabs, the activity first; the narrow one
-  // holds Deal info, the photos, COMPR and the underwriting, the deal team and
-  // the paperwork. Each column scrolls with the page.
+  // The deal page (DealPage.tsx): back link, the house and its toolbar, then
+  // two columns. The wide one: Key Numbers, Property Details beside Deal Info,
+  // the summary feed. The narrow one: Photos, Comps & Valuation, Files, and
+  // under the fold the offer, the deal team and the paperwork. View all swaps
+  // the summary feed for the full tabs and the composer.
+  const openFull = (k: RecordTabKey) => { pickTab(k); setFull(true); };
+  const deskMore: MoreItem[] = [
+    { key: 'makeOffer', label: 'Make offer', group: 'Deal', note: 'O', run: () => V.openOfferSheet(V.P.id) },
+    ...(V.can.tc ? [{ key: 'tc', label: 'Transaction coordination', group: 'Deal', run: () => V.openClosingFile() }] : []),
+    { key: 'email', label: 'Email', group: 'Contact', note: 'E', run: () => pick('Email') },
+    { key: 'meet', label: 'Meeting invite', group: 'Contact', run: meet },
+    ...moreItems,
+  ];
   return (
     <section data-screen-label="Seller record" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-      <div className="rec2">
-        <div className="rec2-head">{header}</div>
-        <div className="rec2-scroll" data-record-scroll>
-          <div className="rec2-top">
-            <span className="rec-head-back" data-testid="record-smart-list"><BackLink to={{ ...V.recordBack, label: listLabel }} /></span>
-            {subNote}
-            {/* Who this is, as the page's heading: avatar, click-to-rename name, type and market. */}
-            <div className="rec2-who">
-              <span aria-hidden className="rec2-initials">{V.P.initials}</span>
-              <div style={{ minWidth: 0 }}>
-                <EditableName V={V} style={{ margin: 0, fontSize: '18px', fontWeight: 700, letterSpacing: '-0.02em' }} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', fontSize: '12px', color: 'var(--meta, #71717a)' }}>
-                  <TypeChip kind="Seller" />
-                  {V.P.market}
-                </div>
+      <div className="rec3" data-record-scroll>
+        <div className="rec3-top">
+          <span data-testid="record-smart-list"><BackLink to={{ ...V.recordBack, label: listLabel }} /></span>
+        </div>
+        <DealHero V={V} moreItems={deskMore} onText={() => pick('Text')} stageRef={stageRef} />
+        <div className="rec3-body">
+          {subNote}
+          <div className="rec3-grid">
+            <div className="rec3-col">
+              <KeyNumbersCard V={V} onEdit={() => openFull('Details')} />
+              <div className="rec3-pair">
+                <PropertyDetailsCard V={V} onEdit={() => openFull('Details')} />
+                <DealInfoCard V={V} onEdit={() => openFull('Details')} />
               </div>
+              {full ? (
+                <section aria-label="Activity and record" className="rec2-card rec2-feed rec3-full">
+                  <div className="rec3-full-back">
+                    <button type="button" className="rec3-link rec-press" onClick={() => setFull(false)}>Back to summary</button>
+                  </div>
+                  {tabRow}
+                  <div {...panelProps} className={tabInfo.stream && tab !== 'Automations' && tab !== 'History' ? 'rec2-feed-scroll' : 'rec2-tab-body'}>
+                    {panel}
+                  </div>
+                  {tabInfo.composer ? <div className="rec2-composer"><Composer V={V} inputRef={inputRef} /></div> : null}
+                </section>
+              ) : <SummaryFeed V={V} onViewAll={() => setFull(true)} />}
             </div>
-          </div>
-          <KeyNumbers V={V} />
-          <div className="rec2-grid">
-            <div className="rec2-main">
-              <section aria-label="Activity and record" className="rec2-card rec2-feed">
-                {tabRow}
-                <div {...panelProps} className={tabInfo.stream && tab !== 'Automations' && tab !== 'History' ? 'rec2-feed-scroll' : 'rec2-tab-body'}>
-                  {panel}
-                </div>
-                {tabInfo.composer ? <div className="rec2-composer"><Composer V={V} inputRef={inputRef} /></div> : null}
-              </section>
-            </div>
-            <aside className="rec2-side" aria-label="Deal info, photos, underwriting and the deal team">
-              {/* What has to stay in view whichever tab is open: the stage, the next action, how the offer went. */}
-              <section aria-labelledby="rec2-deal-title" className="rec2-stack" data-testid="deal-info">
-                <div className="rec2-stack-head">
-                  <h2 id="rec2-deal-title" className="rec2-title">Deal info</h2>
-                  {tab !== 'Details' ? <button type="button" className="rec2-link rec-press" onClick={() => pickTab('Details')}>Who works it</button> : null}
-                </div>
-                <StageCard V={V} selectRef={stageRef} />
-                <NextActionCard V={V} compact />
-                <OutcomeBar V={V} />
-              </section>
-              <PropertyCard V={V} side />
-              <div className="rec2-card rec2-block"><FilesBlock V={V} compact /></div>
+            <aside className="rec3-col" aria-label="Photos, comps, files, the offer and the deal team">
+              <PhotosCard V={V} />
+              <CompsCard V={V} />
+              <FilesCard V={V} onViewAll={() => setDetails('files')} />
+              <OutcomeBar V={V} />
+              <PropertyCard V={V} side offerOnly />
               <div className="rec2-card rec2-block"><DealTeamBlock V={V} /></div>
               <div className="rec2-card rec2-block"><ContractsBlock V={V} /></div>
               <AiRecommended V={V} />
-              {archiveRow}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <AiAgentToggle workspaceId={V.liveIds?.workspaceId} kind="seller" recordId={V.liveIds && V.P.id ? dbId(V.P.id) : null}
+                  recordName={V.P.name} canWrite={!!V.liveIds?.canWrite} />
+                {archiveRow}
+              </div>
             </aside>
           </div>
         </div>

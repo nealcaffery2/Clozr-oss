@@ -93,7 +93,7 @@ select.cz-select option,
   color: var(--c-accent-2, #08694c);
 }
 .cz-tray:disabled {
-  opacity: 0.45;
+  opacity: .5;
   cursor: not-allowed;
 }
 .cz-tray:focus-visible {
@@ -144,7 +144,7 @@ select.cz-select option,
 }
 .cz-btn--dark:hover { background: var(--ink-2, #27272a); }
 .cz-btn:disabled {
-  opacity: 0.45;
+  opacity: .5;
   cursor: not-allowed;
 }
 .cz-btn:focus-visible {
@@ -557,7 +557,7 @@ select.cz-select option,
 .ds-inline[data-readonly] .ds-inline-text { cursor: default; }
 button.ds-inline-text[data-busy] { opacity: .6; }
 @media (hover: hover) and (pointer: fine) { button.ds-inline-text:hover { background: rgba(0, 0, 0, .04); box-shadow: inset 0 0 0 1px var(--edge, #dde2ea); } }
-.ds-inline-empty { color: var(--subtle, #a1a1aa); }
+.ds-inline-empty { color: var(--meta, #71717a); } /* "Add" is an action, not a placeholder: it must read (DESIGN.md §2) */
 .ds-inline-input {
   width: 100%; min-height: 28px; padding: 4px 6px; margin: 0 -6px; border: 0; border-radius: 8px; background: var(--surface, #fff);
   font: inherit; font-size: 13px; color: var(--ink, #18181b); font-variant-numeric: tabular-nums;
@@ -567,3 +567,46 @@ textarea.ds-inline-input { resize: vertical; min-height: 64px; line-height: 1.45
 .ds-inline-input[aria-invalid] { box-shadow: 0 0 0 1px #b91c1c, 0 0 0 3px var(--negative-soft, #fee2e2); }
 .ds-inline-error { font-size: 11.5px; font-weight: 500; color: var(--tx-red, #b91c1c); line-height: 1.35; white-space: normal; }
 @media (max-width: 640px) { .ds-inline-input, .ds-inline-text { font-size: 16px; } }
+/* A contract's name in ContractsCard: one line with an ellipsis (the full name is the title), and room to type while editing. */
+.cz-contract-name { min-width: 0; max-width: 100%; }
+.cz-contract-name:has(.ds-inline[data-editing]) { flex: 0 1 560px; }
+.cz-contract-name .ds-inline[data-editing] { width: 100%; max-width: 560px; }
+
+/* ---- Phone: the More sheet (ClozrShell.tsx) --------------------------------
+   The sections the bottom tabs leave out, grouped like the desk's side menu.
+   Rows are 48px so a thumb lands; the sheet scrolls when a role has more
+   than fits above the tabs. */
+.cz-more {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-sheet, 50);
+  display: flex; flex-direction: column;
+  max-height: min(82dvh, calc(100dvh - 56px - env(safe-area-inset-top, 0px)));
+  background: var(--surface, #fff);
+  border-top-left-radius: 16px; border-top-right-radius: 16px;
+  box-shadow: 0 -8px 40px -12px rgba(18, 22, 45, .3);
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  animation: clozrIn .22s cubic-bezier(.22, 1, .36, 1);
+}
+.cz-more-head { position: relative; flex: none; height: 36px; display: grid; place-items: center; }
+.cz-more-grip { width: 38px; height: 4px; border-radius: 99px; background: var(--divider, #e4e4e7); }
+.cz-more-close {
+  position: absolute; top: 4px; right: 8px; width: 32px; height: 32px;
+  display: grid; place-items: center; border: 0; border-radius: 8px; background: none;
+  color: var(--muted, #71717a); cursor: pointer;
+}
+.cz-more-close:focus-visible, .cz-more-row:focus-visible { outline: 2px solid var(--c-accent, #0a8560); outline-offset: 2px; }
+.cz-more-scroll { flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; padding: 0 12px 4px; }
+.cz-more-group + .cz-more-group { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--divider-2, #f0f0f1); }
+.cz-more-label { display: block; padding: 0 4px 6px; font: 500 11.5px/1 var(--font-sans, system-ui); color: var(--muted, #71717a); }
+.cz-more-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.cz-more-row {
+  display: flex; align-items: center; gap: 10px; min-width: 0; height: 48px; padding: 0 12px;
+  border: 1px solid var(--divider, #e4e4e7); border-radius: 11px; background: var(--surface, #fff);
+  color: var(--ink, #18181b); font: 500 13.5px/1 var(--font-sans, system-ui); text-align: left; cursor: pointer;
+  transition: transform 140ms cubic-bezier(.23, 1, .32, 1);
+}
+.cz-more-row:active { transform: scale(.97); }
+.cz-more-row[aria-current='page'] { border-color: var(--c-accent, #0a8560); background: var(--mint-dim, #e7f8f1); color: var(--tx-mint, #0a8560); font-weight: 600; }
+.cz-more-icon { flex: none; width: 18px; height: 18px; display: grid; place-items: center; color: var(--muted, #71717a); }
+.cz-more-row[aria-current='page'] .cz-more-icon { color: inherit; }
+.cz-more-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .cz-more { animation: none; } .cz-more-row:active { transform: none; } }

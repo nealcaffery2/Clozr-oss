@@ -18,6 +18,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { unseal } from './google.ts';
 import { instantlyClient, type FetchLike, type InstantlyClient } from './instantly.ts';
 import { coldDeliverability, warmupGate, warmupGateOn, warmupSpamPause, warmupSpamPct } from './cold-campaign.ts';
+import { alertPause } from './send-alert.ts';
 
 type Any = any;
 
@@ -25,6 +26,8 @@ export type WarmupReading = {
   email: string;
   /** True when Instantly is warming the inbox; null when Instantly does not list it. */
   warming: boolean | null;
+  /** Instantly's warmup mails a day for the inbox, when it reports one. */
+  warmupLimit?: number | null;
   score: number | null;
   sent14: number;
   spam14: number;
@@ -65,7 +68,7 @@ export async function readWarmupReadings(client: InstantlyClient, emails: readon
       const sent14 = stats?.sent ?? 0;
       const spam14 = stats?.spam ?? 0;
       readings.set(email, {
-        email, warming: account ? account.warming : null, score, sent14, spam14,
+        email, warming: account ? account.warming : null, warmupLimit: account?.warmupLimit ?? null, score, sent14, spam14,
         spam_pct: warmupSpamPct(sent14, spam14), checked_at: now.toISOString(),
       });
     }
@@ -88,6 +91,8 @@ export type WarmupSync = {
   rewarmed: string[];
   /** Auto-paused for Spam earlier, back under the limit, unpaused. */
   resumed: string[];
+  /** Warmup volume on Instantly set to the workspace's warmup a day (settings.deliverability.warmup_daily). */
+  relimited: string[];
   error: string | null;
 };
 
@@ -96,8 +101,9 @@ export async function syncWarmup(admin: SupabaseClient, ws: number, deps?: { fet
   const now = deps?.now ?? new Date();
   const { data: settings } = await admin.from('cold_workspace_settings').select('warmup_provider, warmup_api_base, deliverability').eq('workspace_id', ws).maybeSingle();
   const provider = String((settings as Any)?.warmup_provider ?? 'stub');
-  const minDays = coldDeliverability((settings as Any)?.deliverability).warmupGateDays;
-  const base: WarmupSync = { ok: true, provider, called: false, checked: 0, promoted: [], paused: [], unlisted: [], rewarmed: [], resumed: [], error: null };
+  const policy = coldDeliverability((settings as Any)?.deliverability);
+  const minDays = policy.warmupGateDays;
+  const base: WarmupSync = { ok: true, provider, called: false, checked: 0, promoted: [], paused: [], unlisted: [], rewarmed: [], resumed: [], relimited: [], error: null };
   if (!warmupGateOn(provider)) return { ...base, error: 'The warmup provider is not Instantly, so nothing was synced.' };
   const key = deps?.client ? null : await warmupKey(admin, ws);
   if (!deps?.client && !key) return { ...base, ok: false, error: 'No Instantly key is saved. Add it under Warmup.' };
@@ -120,6 +126,8 @@ export async function syncWarmup(admin: SupabaseClient, ws: number, deps?: { fet
     out.checked++;
     if (r.warming == null) out.unlisted.push(email);
     else if (!r.warming && !(row.paused && !row.paused_auto)) out.rewarmed.push(email);
+    // The warmup a day CLOZR budgets for is the one Instantly runs, so cold room and warmup add up to the ceiling.
+    if (r.warming && r.warmupLimit != null && r.warmupLimit !== policy.warmupDaily && policy.warmupDaily > 0) out.relimited.push(email);
     const startedAt: string | null = row.warmup_started_at ?? (r.warming ? now.toISOString() : null);
     const patch: Any = {
       warmup_score: r.score == null ? null : Math.round(r.score),
@@ -141,6 +149,7 @@ export async function syncWarmup(admin: SupabaseClient, ws: number, deps?: { fet
     }
     const { error } = await admin.from('cold_mailboxes').update(patch).eq('id', row.id).eq('workspace_id', ws);
     if (error) console.error('warmup sync', row.id, error.message);
+    else if (patch.paused) await alertPause(admin, ws, 'cold_mailbox', row.id, email, spamWhy!);
   }
   if (out.rewarmed.length) {
     try { await client.enableWarmup(out.rewarmed); } catch (err) {
@@ -148,6 +157,16 @@ export async function syncWarmup(admin: SupabaseClient, ws: number, deps?: { fet
       out.rewarmed = [];
     }
   }
-  await admin.from('cold_workspace_settings').update({ warmup_synced_at: now.toISOString(), warmup_sync_error: null }).eq('workspace_id', ws);
+  if (out.relimited.length && client.setWarmupLimit) {
+    const done: string[] = [];
+    for (const email of out.relimited) {
+      try { await client.setWarmupLimit(email, policy.warmupDaily); done.push(email); } catch (err) {
+        out.error = `Setting warmup to ${policy.warmupDaily} a day failed on ${email}: ${err instanceof Error ? err.message.slice(0, 160) : 'Instantly did not answer'}.`;
+        break;
+      }
+    }
+    out.relimited = done;
+  } else out.relimited = [];
+  await admin.from('cold_workspace_settings').update({ warmup_synced_at: now.toISOString(), warmup_sync_error: out.error }).eq('workspace_id', ws);
   return out;
 }

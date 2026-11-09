@@ -10,6 +10,8 @@ import { DataFlowDiagram } from './DataFlowDiagram';
 import { OrgChartDiagram } from './OrgChartDiagram';
 import { PipelineDiagram } from './PipelineDiagram';
 import { TimelineDiagram } from './TimelineDiagram';
+import { GoalsDiagram } from './GoalsDiagram';
+import { AvatarsDiagram } from './AvatarsDiagram';
 
 export function DiagramBlock({ b }: { b: Extract<Block, { kind: 'diagram' }> }) {
   const p = { title: b.title, caption: b.sub, empty: b.empty };
@@ -21,5 +23,7 @@ export function DiagramBlock({ b }: { b: Extract<Block, { kind: 'diagram' }> }) 
     case 'org': return <OrgChartDiagram d={d} {...p} />;
     case 'pipeline': return <PipelineDiagram d={d} {...p} />;
     case 'timeline': return <TimelineDiagram d={d} {...p} />;
+    case 'goals': return <GoalsDiagram d={d} {...p} />;
+    case 'avatars': return <AvatarsDiagram d={d} {...p} />;
   }
 }

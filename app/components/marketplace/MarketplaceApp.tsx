@@ -10,7 +10,7 @@ import { BuyerGate, type GateMode } from './BuyerGate';
 import { DealMap } from './DealMap';
 import { DealPage } from './DealPage';
 import { MARKET_CSS } from './styles';
-import { api, dealLink, saveAccess, streetPhoto, toggleSaved, useAccess, useDealParam, useSaved } from './store';
+import { api, dealLink, saveAccess, streetPhoto, takeLinkAccess, toggleSaved, useAccess, useDealParam, useSaved } from './store';
 
 type SortKey = 'latest' | 'price-asc' | 'price-desc' | 'margin';
 type Filters = { min: string; max: string; types: string[]; beds: number; status: 'all' | 'Available' | 'Sale Pending'; savedOnly: boolean };
@@ -137,6 +137,12 @@ export function MarketplaceApp() {
     afterGate.current = null;
     if (then) window.setTimeout(then, 600);
   };
+  // Opened from the sign-in link /access sent: keep the access it carries.
+  useEffect(() => {
+    const link = takeLinkAccess();
+    // Not cleared on unmount: a dev double-run has already taken the link off the URL.
+    if (link) window.setTimeout(() => say(link.name ? `You're in, ${link.name}. Full addresses, every photo, and the COMPR report are unlocked.` : 'You are in. Deals are unlocked.'), 0);
+  }, [say]);
   const save = (d: Listing) => {
     if (!access) return openGate('Join to save deals and get alerts when the price drops.');
     const on = toggleSaved(d.id);

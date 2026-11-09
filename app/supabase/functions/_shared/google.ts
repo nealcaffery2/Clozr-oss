@@ -24,13 +24,15 @@
  */
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { type DocType, DOC_LABEL, classifyDoc, isJunkAttachment, stageFromDoc } from './deal-docs.ts';
-import { type Book, type DealRef, type Link, type Route, addrKey, addressesOf as addressesOfHeader, conversationKey, dealRank, emptyLink, fillable, isLinked, mergeLink, refsOf, repFor, reroute, routeFor, streetKey, threadLink } from './gmail-match.ts';
+import { type Book, type DealRef, type Link, type Route, addrKey, addressesOf as addressesOfHeader, conversationKey, dealRank, emptyLink, fillable, isLinked, mergeLink, namesStreet, oneHouse, refsOf, repFor, reroute, routeFor, streetKey, threadLink } from './gmail-match.ts';
 import { AI_PER_RUN, aiKey, classifyDeal } from './gmail-ai.ts';
 import { googleSyncWorkspace } from './google-scope.ts';
 import { rateLimit } from './security.ts';
 import { type Lane, type Moved, HISTORY_PAGES, lendThreads, HISTORY_TYPES, MOVED_FULL_PER_RUN, MOVED_PER_RUN, MOVED_TRIES, STALL_S, addedMail, cmpHistory, firstPending, historyCut, movedIntoView, quickVerdict, stampPoint, upkeepDue, upkeepMark } from './gmail-lanes.ts';
 import { type Stranger, classifyStranger, namesOf, titleDomains } from './contact-suggest.ts';
 import { quietPatch } from './google-writes.ts';
+import { type DealMailInput, dealMailKind, wholesalerRows } from './deal-mail.ts';
+import { entityKey } from './podio-keys.ts';
 
 type Any = any;
 
@@ -68,6 +70,12 @@ export const SCOPE = {
    * (drive-photos `tree`). Read-only; not in DEFAULT_SCOPES.
    */
   driveRead: 'https://www.googleapis.com/auth/drive.readonly',
+  /**
+   * Optional, asked for on its own from Settings → Google ("Allow drafts"):
+   * leave a draft in the user's own mailbox (the portal submissions summary
+   * for Sam). gmail.send cannot create a draft. Not in DEFAULT_SCOPES.
+   */
+  gmailCompose: 'https://www.googleapis.com/auth/gmail.compose',
 } as const;
 
 export const DEFAULT_SCOPES = [...SCOPE.id, SCOPE.calendar, SCOPE.gmailSend, SCOPE.gmailRead];
@@ -81,6 +89,8 @@ export const redirectUri = () => env('GOOGLE_REDIRECT_URI') || `${env('SUPABASE_
 
 export type Account = {
   id: number; workspace_id: number; user_id: string; email: string; scopes: string[];
+  /** A mailbox linked for the workspace, not the member's own (migration 441). */
+  shared?: boolean;
   calendar_id: string | null; calendar_sync: boolean; gmail_send: boolean; gmail_read: boolean;
   status: string; sync_token: string | null;
   last_calendar_sync_at: string | null; last_gmail_sync_at: string | null;
@@ -477,6 +487,12 @@ export async function sendMail(accessToken: string, msg: Mail & { threadId?: str
     console.error('gmail send failed', String(err));
     return null;
   }
+}
+
+/** A draft in the account's own Drafts folder (gmail.compose). Nothing is sent. Throws when Gmail refused it. */
+export async function createDraft(accessToken: string, msg: Mail): Promise<{ id: string }> {
+  const d = await api(accessToken, `${GMAIL}/drafts`, { method: 'POST', body: JSON.stringify({ message: { raw: b64url(enc.encode(rawMessage(msg))) } }) });
+  return { id: String(d.id) };
 }
 
 /**
@@ -1084,12 +1100,16 @@ async function loadConversations(admin: SupabaseClient, ws: number, book: Book):
 type AiBudget = { key: string | null; left: number; routed: number };
 
 /** A route the rules left open, put to the AI fallback while the run's budget lasts. */
-async function aiFill(budget: AiBudget, route: Route, link: Link, msg: { subject: string; from: string; to: string[]; text: string }): Promise<Link | null> {
+async function aiFill(budget: AiBudget, route: Route, link: Link, msg: { subject: string; from: string; to: string[]; text: string }, onNone?: () => void): Promise<Link | null> {
   if (link.deal_id != null || route.candidates.length < 2 || !budget.key || budget.left <= 0) return null;
   budget.left--;
   const id = await classifyDeal(budget.key, msg, route.candidates);
   const d = id != null ? route.candidates.find((c) => c.id === id) : null;
-  if (!d) return null;
+  if (!d) {
+    // The model answered and picked none (not a failed call): tell the caller so it is not asked again.
+    if (id !== undefined) onNone?.();
+    return null;
+  }
   budget.routed++;
   return { ...link, deal_id: d.id, property_id: d.property_id };
 }
@@ -1149,6 +1169,17 @@ async function relinkEmail(admin: SupabaseClient, ws: number, book: Book, conver
     const { data: files } = await admin.from('email_attachments').select('communication_id, filename').in('communication_id', ids.slice(i, i + 200));
     for (const f of (files ?? []) as Any[]) names.set(f.communication_id, [...(names.get(f.communication_id) ?? []), String(f.filename)]);
   }
+  // Mail the AI already answered "none" for against the same candidate deals
+  // (migration 415). Without this the newest unfiled emails were put to the
+  // model again on every sync, every 5 minutes. A new or closed deal changes
+  // the candidates and earns the email another look.
+  const tried = new Map<number, string>();
+  let triedCol = true;
+  for (let i = 0; i < ids.length && triedCol; i += 200) {
+    const { data: rows, error: triedErr } = await admin.from('communications').select('id, deal_ai_tried').in('id', ids.slice(i, i + 200));
+    if (triedErr) { triedCol = false; break; }
+    for (const r of (rows ?? []) as Any[]) if (r.deal_ai_tried) tried.set(r.id, r.deal_ai_tried);
+  }
   await knowPeople(admin, ws, book, ((loose ?? []) as Any[]).flatMap(rowAddresses));
   let relinked = 0;
   for (const c of (loose ?? []) as Any[]) {
@@ -1161,19 +1192,22 @@ async function relinkEmail(admin: SupabaseClient, ws: number, book: Book, conver
       const conv = key ? conversations.get(key) : undefined;
       if (conv) found = mergeLink(found, conv);
     }
-    // A row filed on a seller by hand still reaches that seller's latest deal.
-    if (found.deal_id == null && c.seller_id != null) {
-      const d = book.dealsBySeller.get(c.seller_id)?.[0];
+    // A row filed on a seller by hand reaches that seller's deal when they have one house, and the subject names no other.
+    if (found.deal_id == null && c.seller_id != null && !namesStreet(subject)) {
+      const d = oneHouse(book.dealsBySeller.get(c.seller_id) ?? []);
       if (d) found = { ...found, deal_id: d.id, property_id: d.property_id };
     }
-    if (found.deal_id == null && c.deal_id == null) {
-      const ai = await aiFill(budget, route, found, { subject, from: c.from_email ?? '', to: addressesOf(`${c.to_email ?? ''},${c.cc_email ?? ''}`), text: String(c.summary ?? '') });
+    const askedFor = route.candidates.map((d) => d.id).sort((a, b) => a - b).join(',');
+    if (found.deal_id == null && c.deal_id == null && tried.get(c.id) !== askedFor) {
+      let none = false;
+      const ai = await aiFill(budget, route, found, { subject, from: c.from_email ?? '', to: addressesOf(`${c.to_email ?? ''},${c.cc_email ?? ''}`), text: String(c.summary ?? '') }, () => { none = true; });
       if (ai) { found = ai; by = 'ai'; }
+      if (none && triedCol) await admin.from('communications').update({ deal_ai_tried: askedFor }).eq('id', c.id);
     }
     const patch: Any = fillable(c, found);
     // A person took it off every deal: it stays off.
     if (c.deal_routed_by === 'manual') { delete patch.deal_id; delete patch.property_id; }
-    if (c.deal_id != null && reroute(book, { deal_id: c.deal_id, routed_by: c.deal_routed_by }, { ...route, link: found })) {
+    if (c.deal_id != null && reroute(book, { deal_id: c.deal_id, property_id: c.property_id, routed_by: c.deal_routed_by }, { ...route, link: found })) {
       patch.deal_id = found.deal_id;
       patch.property_id = found.property_id;
     }
@@ -1262,6 +1296,39 @@ async function noteStrangers(admin: SupabaseClient, ws: number, account: Pick<Ac
   const { error } = await admin.rpc('contact_suggestions_note', { p_ws: ws, p_rows: rows });
   // Before migration 259 there is nowhere to write; the mail itself is unaffected.
   if (error) console.error('contact_suggestions_note', error.message);
+}
+
+// ------------------------------------------------------------- deal mail
+/** A header-read message as the deal-mail rules read it: sender, subject, Gmail's snippet. */
+function dealInput(s: { m: Any; h: Map<string, string>; from: string; subject: string }, text?: string): DealMailInput & { at: string } {
+  const raw = s.h.get('from') ?? '';
+  const name = raw.includes('<') ? raw.split('<')[0].trim().replace(/^"|"$/g, '') : null;
+  return { from: s.from, fromName: name || null, subject: s.subject, text: text ?? String(s.m?.snippet ?? ''), at: new Date(Number(s.m?.internalDate) || Date.now()).toISOString() };
+}
+
+const isDealMail = (s: { m: Any; h: Map<string, string>; from: string; subject: string }) => dealMailKind(dealInput(s)) !== null;
+
+/**
+ * Wholesaler blasts and assignment mail into wholesaler_entities (source
+ * 'gmail', migration 441), so the end-buyer chase and Deal Machine know an
+ * LLC from its first blast. Stored rows are read in full (the signature is
+ * at the bottom); the rest by snippet. New names only: an LLC already on the
+ * list keeps what a deed or a person wrote there. Never throws: the mail is
+ * already safe.
+ */
+async function noteDealMail(admin: SupabaseClient, ws: number, account: Pick<Account, 'email'>, mail: (DealMailInput & { at?: string | null })[]): Promise<number> {
+  const ourHost = String(account.email).toLowerCase().split('@')[1] ?? '';
+  const theirs = mail.filter((x) => x.from && !String(x.from).toLowerCase().endsWith(`@${ourHost}`));
+  if (!theirs.length) return 0;
+  const { data: w } = await admin.from('workspaces').select('name').eq('id', ws).maybeSingle();
+  const ours = new Set([entityKey(String((w as Any)?.name ?? ''))].filter(Boolean) as string[]);
+  const rows = new Map<string, Any>();
+  for (const x of theirs) for (const r of wholesalerRows(ws, x, ours)) if (!rows.has(r.name_key)) rows.set(r.name_key, r);
+  if (!rows.size) return 0;
+  const { data, error } = await admin.from('wholesaler_entities')
+    .upsert([...rows.values()], { onConflict: 'workspace_id,name_key', ignoreDuplicates: true }).select('id');
+  if (error) { console.error('gmail wholesaler_entities', error.message); return 0; }
+  return data?.length ?? 0;
 }
 
 // ------------------------------------------------------------- attachments
@@ -1857,7 +1924,10 @@ async function newGmail(admin: SupabaseClient, account: Account, accessToken: st
   const merged = linkedAll.filter((x) => inWindow.has(x.m));
   // Agents, escrow officers and title reps on this mail who are not in CLOZR yet.
   await noteStrangers(admin, ws, account, book, merged).catch((err) => console.error('gmail contact suggestions failed', String(err)));
-  const wanted = merged.filter((s) => isLinked(s.link));
+  // A linked mailbox (deals@) also keeps its deal mail that no record matches
+  // yet: a competitor's blast is why it was linked. In order, so the
+  // FULL_PER_RUN cut below still finds the window edge.
+  const wanted = merged.filter((s) => isLinked(s.link) || (account.shared === true && isDealMail(s)));
   // HTML bodies are the expensive part. Stop after FULL_PER_RUN and leave
   // the window edge on the last one stored, so the next run continues there
   // instead of pretending the whole window was read.
@@ -1879,9 +1949,21 @@ async function newGmail(admin: SupabaseClient, account: Account, accessToken: st
   }
   // The files on these rows are listed in email_attachments by store(); the
   // slow lane's fileStoredAttachments saves them to the deal.
-  const s = await store(admin, ws, await rowsFor(r, wanted.slice(0, kept), fulls.slice(0, kept)), account);
+  const built = await rowsFor(r, wanted.slice(0, kept), fulls.slice(0, kept));
+  const s = await store(admin, ws, built, account);
   r.logged += s.logged;
   r.relinked += s.filled;
+  // Deal mail's LLCs: the stored rows by their whole body, the rest of the
+  // window by snippet (a rep's inbox gets blasts too, and none is stored).
+  const byGmailId = new Map(wanted.slice(0, kept).map((x) => [String(x.m.id), x]));
+  const dealMail = [
+    ...built.flatMap((row) => {
+      const x = byGmailId.get(String(row._gmail_id));
+      return x ? [dealInput(x, htmlToText(String(row.body ?? '')).slice(0, 20_000))] : [];
+    }),
+    ...merged.filter((x) => !byGmailId.has(String(x.m.id))).map((x) => dealInput(x)),
+  ];
+  await noteDealMail(admin, ws, account, dealMail).catch((err) => console.error('gmail deal mail failed', String(err)));
 
   if (cut) r.failed = true;
   if (upTo === queue.length && !cut) through = new Date(toMs).toISOString();

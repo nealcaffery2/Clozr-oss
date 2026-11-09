@@ -65,37 +65,56 @@ export function ZapierWebhooks({ workspaceId, admin, demo }: { workspaceId: numb
     return () => { live = false; };
   }, [workspaceId, admin, demo, nonce]);
 
+  /** A thrown error (offline, a failed fetch) reads as a note, and the card comes back. */
+  const failed = (e: unknown) => setNote({ ok: false, text: e instanceof Error && e.message ? e.message : 'That did not work.' });
+
   async function run(fn: () => Promise<{ ok: boolean; message?: string }>, done?: string) {
     setBusy(true);
-    const r = await fn();
-    setBusy(false);
-    setNote(r.ok ? (done ? { ok: true, text: done } : null) : { ok: false, text: r.message ?? 'That did not work.' });
-    refresh();
-    return r.ok;
+    try {
+      const r = await fn();
+      setNote(r.ok ? (done ? { ok: true, text: done } : null) : { ok: false, text: r.message ?? 'That did not work.' });
+      return r.ok;
+    } catch (e) {
+      failed(e);
+      return false;
+    } finally {
+      setBusy(false);
+      refresh();
+    }
   }
 
   async function mint(name: 'zapier' | 'jotform') {
     if (!workspaceId) return;
     setBusy(true);
-    const r = await issueKey(workspaceId, name, name === 'zapier' ? 'Zapier / Webhook' : 'Jotform');
-    setBusy(false);
-    if (!r.ok) setNote({ ok: false, text: r.message ?? 'Could not issue a key.' });
-    else { setMinted(r.key ?? null); setNote(null); }
-    refresh();
+    try {
+      const r = await issueKey(workspaceId, name, name === 'zapier' ? 'Zapier / Webhook' : 'Jotform');
+      if (!r.ok) setNote({ ok: false, text: r.message ?? 'Could not issue a key.' });
+      else { setMinted(r.key ?? null); setNote(null); }
+    } catch (e) {
+      failed(e);
+    } finally {
+      setBusy(false);
+      refresh();
+    }
   }
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
     if (!workspaceId) return;
     setBusy(true);
-    const r = await subscribe(workspaceId, url.trim(), events, desc.trim());
-    setBusy(false);
-    if (!r.ok) { setNote({ ok: false, text: r.message }); return; }
-    setSecret(r.data.secret);
-    setUrl('');
-    setDesc('');
-    setNote(null);
-    refresh();
+    try {
+      const r = await subscribe(workspaceId, url.trim(), events, desc.trim());
+      if (!r.ok) { setNote({ ok: false, text: r.message }); return; }
+      setSecret(r.data.secret);
+      setUrl('');
+      setDesc('');
+      setNote(null);
+      refresh();
+    } catch (err) {
+      failed(err);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -163,8 +182,8 @@ export function ZapierWebhooks({ workspaceId, admin, demo }: { workspaceId: numb
           {keys.filter((k) => k.name === 'zapier').map((k) => (
             <div key={k.id} style={{ margin: '8px 0', padding: '11px 13px', borderRadius: '10px', background: 'var(--canvas, #fafafa)', border: '1px solid var(--divider, #e4e4e7)' }}>
               <div style={{ ...row, borderTop: 0, padding: 0 }}>
-                <span style={{ fontSize: '12.5px', fontWeight: 600, flex: '1 1 160px', color: k.active ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)' }}>
-                  {k.label || 'Zapier / Webhook'} <span style={{ fontWeight: 400, color: 'var(--subtle, #a1a1aa)', fontFamily: 'ui-monospace, monospace' }}>{k.key_prefix}…</span>
+                <span style={{ fontSize: '12.5px', fontWeight: 600, flex: '1 1 160px', color: k.active ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)' }}>
+                  {k.label || 'Zapier / Webhook'} <span style={{ fontWeight: 400, color: 'var(--meta, #71717a)', fontFamily: 'ui-monospace, monospace' }}>{k.key_prefix}…</span>
                 </span>
                 <Creates k={k} busy={busy} run={run} />
               </div>
@@ -197,8 +216,8 @@ export function ZapierWebhooks({ workspaceId, admin, demo }: { workspaceId: numb
           {subs.map((s) => (
             <div key={s.id} style={row}>
               <span style={{ flex: '1 1 220px', minWidth: 0 }}>
-                <span style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, color: s.active ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.description || s.url}</span>
-                <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--subtle, #a1a1aa)' }}>
+                <span style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, color: s.active ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.description || s.url}</span>
+                <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>
                   {s.description ? `${s.url} · ` : ''}{s.events.join(', ')}
                 </span>
                 {s.last_status ? (
@@ -312,8 +331,8 @@ function JotformKey({ row: k, workspaceId, busy, run }: {
   return (
     <div style={{ margin: '8px 0', padding: '11px 13px', borderRadius: '10px', background: 'var(--canvas, #fafafa)', border: '1px solid var(--divider, #e4e4e7)' }}>
       <div style={{ ...row, borderTop: 0, padding: 0 }}>
-        <span style={{ fontSize: '12.5px', fontWeight: 600, flex: '1 1 160px', color: k.active ? 'var(--ink, #18181b)' : 'var(--subtle, #a1a1aa)' }}>
-          {k.label || 'Jotform'} <span style={{ fontWeight: 400, color: 'var(--subtle, #a1a1aa)', fontFamily: 'ui-monospace, monospace' }}>{k.key_prefix}…</span>
+        <span style={{ fontSize: '12.5px', fontWeight: 600, flex: '1 1 160px', color: k.active ? 'var(--ink, #18181b)' : 'var(--meta, #71717a)' }}>
+          {k.label || 'Jotform'} <span style={{ fontWeight: 400, color: 'var(--meta, #71717a)', fontFamily: 'ui-monospace, monospace' }}>{k.key_prefix}…</span>
         </span>
         <Creates k={k} busy={busy} run={run} />
       </div>

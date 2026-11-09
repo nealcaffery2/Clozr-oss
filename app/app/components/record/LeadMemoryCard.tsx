@@ -26,14 +26,14 @@ type State =
   | { at: 'ready'; memory: LeadMemory | null }
   | { at: 'error'; error: string };
 
-const card: React.CSSProperties = { border: '1px solid #e4e4e7', borderRadius: 12, background: '#fff', padding: '10px 12px' };
-const meta: React.CSSProperties = { fontSize: 11.5, fontWeight: 500, color: '#71717a' };
+const card: React.CSSProperties = { border: '1px solid var(--divider, #e4e4e7)', borderRadius: 12, background: 'var(--surface, #fff)', padding: '10px 12px' };
+const meta: React.CSSProperties = { fontSize: 11.5, fontWeight: 500, color: 'var(--meta, #71717a)' };
 const ghost: React.CSSProperties = {
-  height: 28, padding: '0 10px', borderRadius: 8, border: 0, background: '#fff', color: '#18181b', fontSize: 12.5, fontWeight: 500,
+  height: 28, padding: '0 10px', borderRadius: 8, border: 0, background: 'var(--surface, #fff)', color: 'var(--ink, #18181b)', fontSize: 12.5, fontWeight: 500,
   display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', flex: 'none',
   boxShadow: '0 0 0 1px rgba(0,0,0,.08), 0 1px 2px -1px rgba(0,0,0,.08), 0 2px 4px 0 rgba(0,0,0,.04)',
 };
-const row: React.CSSProperties = { display: 'grid', gridTemplateColumns: '92px minmax(0,1fr)', gap: 8, padding: '5px 0', borderTop: '1px solid #f0f0f1', fontSize: 12.5, alignItems: 'baseline', margin: 0 };
+const row: React.CSSProperties = { display: 'grid', gridTemplateColumns: '92px minmax(0,1fr)', gap: 8, padding: '5px 0', borderTop: '1px solid var(--divider-2, #f0f0f1)', fontSize: 12.5, alignItems: 'baseline', margin: 0 };
 
 function ago(iso: string, now: number): string {
   const t = Date.parse(iso);
@@ -51,13 +51,14 @@ const usd = (n: number | null) => (n == null ? null : '$' + n.toLocaleString('en
 function Fact({ label, children, tone }: { label: string; children: React.ReactNode; tone?: string }) {
   return (
     <div style={row}>
-      <dt style={{ color: '#71717a' }}>{label}</dt>
-      <dd style={{ margin: 0, minWidth: 0, color: tone ?? '#18181b', fontWeight: 500, overflowWrap: 'anywhere' }}>{children}</dd>
+      <dt style={{ color: 'var(--meta, #71717a)' }}>{label}</dt>
+      <dd style={{ margin: 0, minWidth: 0, color: tone ?? 'var(--ink, #18181b)', fontWeight: 500, overflowWrap: 'anywhere' }}>{children}</dd>
     </div>
   );
 }
 
-export function LeadMemoryCard({ kind, workspaceId, recordId, demo, title }: Props) {
+/** The memory's load and Refresh, shared by this card and the record's Smart Summary bar. */
+export function useLeadMemory(kind: RecordKind, workspaceId: number | null, recordId: number | null, demo?: LeadMemory | null) {
   const live = !demo && workspaceId != null && recordId != null;
   const [state, setState] = useState<State>(demo ? { at: 'ready', memory: demo } : live ? { at: 'loading' } : { at: 'offline' });
   const [busy, setBusy] = useState(false);
@@ -99,7 +100,11 @@ export function LeadMemoryCard({ kind, workspaceId, recordId, demo, title }: Pro
     setState({ at: 'ready', memory: r.memory });
     if (r.message) setNote(r.message);
   };
+  return { state, busy, note, now, refresh };
+}
 
+export function LeadMemoryCard({ kind, workspaceId, recordId, demo, title }: Props) {
+  const { state, busy, note, now, refresh } = useLeadMemory(kind, workspaceId, recordId, demo);
   const button = (
     <button type="button" className="lm-btn" style={{ ...ghost, opacity: busy ? 0.5 : 1, cursor: busy ? 'default' : 'pointer' }} disabled={busy} onClick={refresh}
       aria-label={busy ? 'Refreshing lead memory' : 'Refresh lead memory'} data-testid="lead-memory-refresh">
@@ -116,7 +121,7 @@ export function LeadMemoryCard({ kind, workspaceId, recordId, demo, title }: Pro
     <section aria-label="Lead memory" data-testid="lead-memory" style={card} aria-busy={state.at === 'loading' || busy}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 28 }}>
         <div style={{ minWidth: 0 }}>
-          {title ? <h2 style={{ margin: 0, fontSize: 13.5, fontWeight: 650, color: '#18181b' }}>{title}</h2> : null}
+          {title ? <h2 style={{ margin: 0, fontSize: 13.5, fontWeight: 650, color: 'var(--ink, #18181b)' }}>{title}</h2> : null}
           <div style={{ ...meta, fontVariantNumeric: 'tabular-nums' }}>
             {m ? `Brief · updated ${ago(m.updated_at, now)}${m.model === 'fallback' ? ' · latest touches' : ''}` : 'Brief'}
           </div>
@@ -129,12 +134,12 @@ export function LeadMemoryCard({ kind, workspaceId, recordId, demo, title }: Pro
       ) : state.at === 'offline' ? (
         <p style={{ ...meta, margin: '8px 0 2px' }}>The brief fills in from calls, texts and notes once you are signed in.</p>
       ) : state.at === 'error' ? (
-        <p role="alert" style={{ margin: '8px 0 2px', fontSize: 12.5, color: '#b91c1c' }}>{state.error}</p>
+        <p role="alert" style={{ margin: '8px 0 2px', fontSize: 12.5, color: 'var(--tx-red, #b91c1c)' }}>{state.error}</p>
       ) : !m || !m.brief.trim() ? (
         <p style={{ ...meta, margin: '8px 0 2px' }}>Nothing written yet. Refresh reads every call, text and note on this record and writes the brief.</p>
       ) : (
         <>
-          <p data-testid="lead-memory-brief" style={{ margin: '8px 0 6px', fontSize: 12.5, lineHeight: 1.5, color: '#3f3f46', overflowWrap: 'anywhere' }}>{m.brief}</p>
+          <p data-testid="lead-memory-brief" style={{ margin: '8px 0 6px', fontSize: 12.5, lineHeight: 1.5, color: 'var(--ink-3, #3f3f46)', overflowWrap: 'anywhere' }}>{m.brief}</p>
           <dl style={{ margin: 0 }}>
             {f?.motivation ? <Fact label={kind === 'buyer' ? 'Buys' : 'Motivation'}>{f.motivation}</Fact> : null}
             {price ? <Fact label="Price"><span style={{ fontVariantNumeric: 'tabular-nums' }}>{price}</span></Fact> : null}

@@ -76,3 +76,11 @@ test('the prompt rules carry the lists and use none of the slop themselves outsi
 });
 
 console.log(`no-ai-slop: ${passed} passed`);
+
+// cleanMechanicalSlop fixes the patterns a send would otherwise be held for.
+{
+  const { cleanMechanicalSlop } = await import('../supabase/functions/_shared/no-ai-slop');
+  const out = cleanMechanicalSlop('**Want to see it?** Fast \u2014 really 🚀 done');
+  if (out !== 'Want to see it? Fast, really done') { console.error('FAIL cleanMechanicalSlop', JSON.stringify(out)); process.exit(1); }
+  console.log('PASS  cleanMechanicalSlop drops bold, em dash and emoji');
+}

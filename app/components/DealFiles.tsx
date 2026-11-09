@@ -4,7 +4,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { DOC_LABEL, DOC_TYPES, FOLDER_HOST, IMAGE_URL, type DealFile, type DocType, addDealLinks, docLabelOf, fileUrl, listDealFiles, pullComprPhotos, pullDrivePhotos, removeDealFile, setDealFileCover, setDealFileNotary, setDealFileType, uploadDealFiles } from '@/lib/deal-files';
-import { InteractiveFolderGallery } from '@/components/ui/interactive-folder-gallery';
+import { PhotoStrip } from '@/components/ui/photo-strip';
 import { photoKey } from '@/lib/house-photos';
 import { PhotoOrderPanel } from '@/components/PhotoOrderPanel';
 
@@ -58,17 +58,23 @@ export function DealFiles({ workspaceId, dealId, canWrite, mode = 'files', onToa
   const root = useRef<HTMLDivElement>(null);
   const toast = onToast ?? (() => {});
 
+  /** The newest read; an older one's rows (another deal's, or a slower fan-out) are dropped. */
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
     if (!dealId) return;
+    const seq = ++loadSeq.current;
     const list = await listDealFiles(dealId);
+    if (seq !== loadSeq.current) return;
     setRows(list);
     // Photos need a src up front; files resolve on Open.
     const photos = list.filter((f) => f.kind === 'photo');
     const pairs = await Promise.all(photos.map(async (f) => [f.id, await fileUrl(f)] as const));
+    if (seq !== loadSeq.current) return;
     setUrls(Object.fromEntries(pairs.filter((p): p is readonly [number, string] => !!p[1])));
   }, [dealId]);
   // Load after paint; the async setState lands in a callback, not the effect body.
-  useEffect(() => { const t = setTimeout(() => void load(), 0); return () => clearTimeout(t); }, [load]);
+  // A new deal starts from Loading…, not the last deal's rows.
+  useEffect(() => { const t = setTimeout(() => { setRows(null); setUrls({}); void load(); }, 0); return () => clearTimeout(t); }, [load]);
 
   const readDrive = useCallback(async (force: boolean) => {
     if (!workspaceId || !dealId) return;
@@ -232,7 +238,7 @@ export function DealFiles({ workspaceId, dealId, canWrite, mode = 'files', onToa
             </button>
           ) : null}
           {mode === 'files' ? <button type="button" style={btn} onClick={() => setPaste(paste === 'link' ? null : 'link')}>Add links</button> : null}
-          <span style={{ fontSize: '11.5px', color: 'var(--subtle, #a1a1aa)' }}>or drop {mode === 'photos' ? 'photos' : 'files'} here · many at once</span>
+          <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>or drop {mode === 'photos' ? 'photos' : 'files'} here · many at once</span>
         </div>
       ) : null}
       <PhotoOrderPanel workspaceId={workspaceId} dealId={dealId} canWrite={canWrite} open={canWrite && ordering}
@@ -246,7 +252,7 @@ export function DealFiles({ workspaceId, dealId, canWrite, mode = 'files', onToa
         </div>
       ) : null}
 
-      {rows === null ? <div style={{ fontSize: '12px', color: 'var(--subtle, #a1a1aa)', marginTop: '10px' }}>Loading…</div> : null}
+      {rows === null ? <div style={{ fontSize: '12px', color: 'var(--meta, #71717a)', marginTop: '10px' }}>Loading…</div> : null}
       {rows !== null && shown.length === 0 && !fallback.length ? (
         <div style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)', marginTop: '10px' }}>{mode === 'photos' ? 'No photos on this deal yet.' : 'No files on this deal yet.'}{canWrite ? ' Order photos sends a Vuer to shoot the house.' : ''}</div>
       ) : null}
@@ -260,13 +266,11 @@ export function DealFiles({ workspaceId, dealId, canWrite, mode = 'files', onToa
             </span>
           </div>
           {gallery.length ? (
-            <div style={{ marginTop: '8px', padding: '6px 0', display: 'flex', justifyContent: 'center', background: 'transparent' }}>
-              <InteractiveFolderGallery
-                size="sm"
+            <div style={{ marginTop: '8px' }}>
+              <PhotoStrip
                 photos={gallery}
-                folderName={photos.length ? `${photos.length} photo${photos.length === 1 ? '' : 's'}` : folders.length ? folderLabel(folders[0].url) : 'Front of house'}
-                dragHintText="Tap a photo to view · drag down to close"
-                onPhotoClick={(i) => {
+                label="Property photos"
+                onOpen={(i) => {
                   // `gallery` drops photos with no URL yet, so look the tile up by id, not position.
                   const f = photos.length ? photos.find((p) => p.id === gallery[i]?.id) : undefined;
                   if (f) void open(f);
@@ -281,16 +285,16 @@ export function DealFiles({ workspaceId, dealId, canWrite, mode = 'files', onToa
                 <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', border: '1px solid var(--divider, #e4e4e7)', borderRadius: '10px', background: 'var(--canvas, #fafafa)' }}>
                   <span aria-hidden style={{ width: '30px', height: '24px', flex: '0 0 30px', position: 'relative' }}>
                     <span style={{ position: 'absolute', left: 0, top: 0, width: '13px', height: '6px', background: '#2a2a2a', borderRadius: '3px 3px 0 0' }} />
-                    <span style={{ position: 'absolute', left: 0, right: 0, top: '4px', bottom: 0, background: 'linear-gradient(#2a2a2a,#111)', borderRadius: '0 4px 4px 4px' }} />
+                    <span style={{ position: 'absolute', left: 0, right: 0, top: '4px', bottom: 0, background: '#1f1f1f', borderRadius: '0 4px 4px 4px' }} />
                   </span>
-                  <a href={f.url ?? '#'} target="_blank" rel="noopener noreferrer" style={{ flex: 1, minWidth: 0, textDecoration: 'none', color: 'var(--ink, #18181b)' }}>
+                  <a href={f.url ?? undefined} target="_blank" rel="noopener noreferrer" style={{ flex: 1, minWidth: 0, textDecoration: 'none', color: 'var(--ink, #18181b)' }}>
                     <div style={{ fontSize: '12.5px', fontWeight: 600 }}>{folderLabel(f.url)}</div>
                     <div style={{ fontSize: '11px', color: 'var(--meta, #71717a)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {f.source === 'podio' ? 'From Podio' : 'Photo link'} · {new Date(f.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </div>
                   </a>
-                  <a href={f.url ?? '#'} target="_blank" rel="noopener noreferrer" style={{ ...btn, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>Open ↗</a>
-                  {canWrite ? <button type="button" onClick={() => void remove(f)} title="Remove" style={{ border: 0, background: 'none', color: 'var(--subtle, #a1a1aa)', cursor: 'pointer' }}>✕</button> : null}
+                  {f.url ? <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ ...btn, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>Open link</a> : <span style={{ fontSize: '11.5px', color: 'var(--meta, #71717a)' }}>No link</span>}
+                  {canWrite ? <button type="button" onClick={() => void remove(f)} aria-label="Remove this link" title="Remove this link" style={{ border: 0, background: 'none', color: 'var(--meta, #71717a)', cursor: 'pointer', width: '32px', height: '32px', display: 'inline-grid', placeItems: 'center', borderRadius: '8px' }}><svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg></button> : null}
                 </div>
               ))}
             </div>
@@ -309,10 +313,10 @@ export function DealFiles({ workspaceId, dealId, canWrite, mode = 'files', onToa
               return (
                 <div key={f.id} style={{ flex: '0 0 112px', border: front ? '2px solid #0A8560' : '1px solid var(--divider, #e4e4e7)', borderRadius: '10px', overflow: 'hidden', background: 'var(--surface-2, #f4f4f5)' }}>
                   <button type="button" onClick={() => void open(f)} title={f.name}
-                    style={{ position: 'relative', display: 'block', width: '100%', height: '76px', border: 0, padding: 0, cursor: 'pointer', background: src ? `#e9ebf0 url("${src.replace(/"/g, '%22')}") center/cover no-repeat` : '#e9ebf0' }}>
+                    style={{ position: 'relative', display: 'block', width: '100%', height: '76px', border: 0, padding: 0, cursor: 'pointer', background: src ? `var(--photo-bg, #e9ebf0) url("${src.replace(/"/g, '%22')}") center/cover no-repeat` : '#e9ebf0' }}>
                     {front ? <span style={{ position: 'absolute', top: '5px', left: '5px', background: '#0A8560', color: '#fff', fontSize: '11px', fontWeight: 700, padding: '2px 6px', borderRadius: '999px' }}>Front</span> : null}
-                    {f.source === 'ivueit' ? <span style={{ position: 'absolute', bottom: '5px', right: '5px', background: 'rgba(12,14,18,.72)', color: '#fff', fontSize: '9.5px', fontWeight: 600, padding: '1px 5px', borderRadius: '5px' }}>iVueit</span> : null}
-                    {f.source === 'compr' ? <span style={{ position: 'absolute', bottom: '5px', right: '5px', background: 'rgba(12,14,18,.72)', color: '#fff', fontSize: '9.5px', fontWeight: 600, padding: '1px 5px', borderRadius: '5px' }}>COMPR</span> : null}
+                    {f.source === 'ivueit' ? <span style={{ position: 'absolute', bottom: '5px', right: '5px', background: 'rgba(12,14,18,.72)', color: '#fff', fontSize: '11px', fontWeight: 600, padding: '1px 5px', borderRadius: '5px' }}>iVueit</span> : null}
+                    {f.source === 'compr' ? <span style={{ position: 'absolute', bottom: '5px', right: '5px', background: 'rgba(12,14,18,.72)', color: '#fff', fontSize: '11px', fontWeight: 600, padding: '1px 5px', borderRadius: '5px' }}>COMPR</span> : null}
                     {!src || (f.url && f.source !== 'compr' && !IMAGE_URL.test(f.url)) ? <span style={{ fontSize: '11px', color: 'var(--muted, #52525b)', padding: '0 6px' }}>Photo link ↗</span> : null}
                   </button>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 6px', fontSize: '11px' }}>
@@ -322,7 +326,7 @@ export function DealFiles({ workspaceId, dealId, canWrite, mode = 'files', onToa
                       <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--muted, #52525b)' }}>{front ? 'Front of house' : f.name}</span>
                     )}
                     <span style={{ flex: 1 }} />
-                    {canWrite ? <button type="button" onClick={() => void remove(f)} title="Remove" style={{ border: 0, background: 'none', color: 'var(--subtle, #a1a1aa)', cursor: 'pointer' }}>✕</button> : null}
+                    {canWrite ? <button type="button" onClick={() => void remove(f)} title="Remove" style={{ border: 0, background: 'none', color: 'var(--meta, #71717a)', cursor: 'pointer' }}>✕</button> : null}
                   </div>
                 </div>
               );
@@ -371,7 +375,7 @@ export function DealFiles({ workspaceId, dealId, canWrite, mode = 'files', onToa
                         </button>
                       ) : null}
                       <span style={{ flex: 1 }} />
-                      {canWrite ? <button type="button" onClick={() => void remove(f)} title={`Remove ${f.name}`} aria-label={`Remove ${f.name}`} style={{ border: 0, background: 'none', color: 'var(--subtle, #a1a1aa)', cursor: 'pointer', fontSize: '13px' }}>✕</button> : null}
+                      {canWrite ? <button type="button" onClick={() => void remove(f)} title={`Remove ${f.name}`} aria-label={`Remove ${f.name}`} style={{ border: 0, background: 'none', color: 'var(--meta, #71717a)', cursor: 'pointer', fontSize: '13px' }}>✕</button> : null}
                     </div>
                   </div>
                 ))}

@@ -89,6 +89,17 @@ export function pickLocalNumber(pool: Pick<NumberRow, 'market' | 'state' | 'area
 }
 
 /**
+ * Calls a day one AI number may place. The owner wants volume over the slow
+ * two-week ramp (2026-10-20): every number gets the full cap from day one.
+ * Carriers may label a hot new number spam sooner; number-guard still pauses
+ * one whose hang-up or block rate crosses NUMBER_LIMITS.
+ */
+export const AI_CALLS_PER_NUMBER_DAY = 300;
+export function aiCallCap(_boughtAt?: string | null, _nowMs = Date.now()): number {
+  return AI_CALLS_PER_NUMBER_DAY;
+}
+
+/**
  * The state of the area codes our markets sit in and their neighbours, so a
  * lead with no state on file still gets an in-state number (a 979 lead is
  * called from a Texas number). Not every US area code: unknown ones fall

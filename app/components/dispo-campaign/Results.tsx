@@ -7,10 +7,10 @@
 // fallback for due texts. On /demo each one is a "(demo)" toast.
 
 import React, { useState } from 'react';
-import { type CampaignResults, markInterest, sendDueTexts, setCampaignStatus } from '@/lib/dispo-campaign';
+import { type CampaignResults, lineCounts, markInterest, sendDueTexts, setCampaignStatus } from '@/lib/dispo-campaign';
 import { formatPhone } from '@/lib/talkr';
 import { openReach } from '@/app/components/record/reach';
-import { addressRows, channelRows, funnel, pct, plural, repliedBuyers } from './logic';
+import { addressRows, channelRows, funnel, heldBuyers, pct, plural, repliedBuyers } from './logic';
 import { Avatar, Btn, C, Dialog, Disclosure, Eyebrow, Icon, Note, Status, Svg, type Tone } from './ui';
 import { PushReview, type ReviewSegment, type ReviewVariant } from './PushReview';
 import { pushRecordingUrl } from '@/lib/rvm-recording';
@@ -166,7 +166,7 @@ export function Results({ workspaceId, dealId, results, canWrite, isMobile, onTo
               <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', gridColumn: isMobile ? '2' : undefined }}>
                 <Btn size="sm" kind="talkr" disabled={!phone || !onCall} title={phone ? `Call ${who.name}` : 'No phone number on file'} onClick={() => phone && onCall?.(who.company ? `${who.name} · ${who.company}` : who.name, phone)}>Call</Btn>
                 <Btn size="sm" kind="talkr" disabled={!phone} title={phone ? `Text ${who.name}` : 'No phone number on file'} onClick={() => phone && openReach('text', { name: who.name, phone, buyerId: r.buyer_id, audience: 'buyer' })}>Text</Btn>
-                <Btn size="sm" kind="quiet" disabled={!onOpenBuyer} onClick={() => onOpenBuyer?.(r.buyer_id)}>Open buyer →</Btn>
+                <Btn size="sm" kind="quiet" disabled={!onOpenBuyer} onClick={() => onOpenBuyer?.(r.buyer_id)}>Open buyer</Btn>
               </div>
             </div>
           );
@@ -183,6 +183,9 @@ export function Results({ workspaceId, dealId, results, canWrite, isMobile, onTo
           const next = ms.filter((m) => m.status === 'queued').sort((a, b) => Date.parse(a.send_at) - Date.parse(b.send_at))[0];
           const [tone, label] = STATUS[c.status] ?? ['grey', c.status];
           const cf = funnel(results, 0, null, c.id);
+          const hb = c.status === 'running' || c.status === 'paused' ? heldBuyers(ms, c.created_at) : { held: 0, at: null };
+          const vipFirst = !!(c.settings as { vipFirst?: { on?: boolean } } | null)?.vipFirst?.on;
+          const lines = lineCounts(ms);
           return (
             <div key={c.id} style={{ borderBottom: `1px solid ${C.line2}` }} data-testid="campaign-row">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', flexWrap: 'wrap' }}>
@@ -195,6 +198,16 @@ export function Results({ workspaceId, dealId, results, canWrite, isMobile, onTo
                     {plural(rs.length, 'buyer')} · {done.toLocaleString('en-US')} of {plural(ms.length, 'message')} sent · {cf.replied} replied
                     {' · '}{next ? <>next send {when(next.send_at, c.timezone)}{next.last_error ? <span style={{ color: 'var(--tx-amber-deep, #92400e)' }}> · {next.last_error}</span> : null}</> : 'nothing queued'}
                   </div>
+                  {hb.held ? (
+                    <div className="mk-num" style={{ fontSize: '12px', color: C.ink2, marginTop: '3px' }} data-testid="campaign-held">
+                      <b>{plural(hb.held, 'buyer')}</b> held{vipFirst ? ' for the VIP and A-list head start' : ''}, starting {when(hb.at, c.timezone)}
+                    </div>
+                  ) : null}
+                  {lines.length ? (
+                    <div className="mk-num" style={{ fontSize: '12px', color: C.muted2, marginTop: '3px' }} data-testid="campaign-lines" title="Each buyer hears from one of these lines; replies come back to the inbox of the rep who owns it">
+                      Texting from {plural(lines.length, 'line')}: {lines.map((l) => `${formatPhone(l.phone)} (${l.sent})`).join(' · ')}
+                    </div>
+                  ) : null}
                   <div className="mk-bar" style={{ height: '4px', marginTop: '8px', maxWidth: '420px' }}><span style={{ transform: `scaleX(${ms.length ? done / ms.length : 0})` }} /></div>
                 </div>
                 {canWrite && c.status === 'running' ? <Btn disabled={busy} onClick={() => void act(() => setCampaignStatus(c.id, 'paused'), 'Campaign paused')}>Pause</Btn> : null}
@@ -202,7 +215,7 @@ export function Results({ workspaceId, dealId, results, canWrite, isMobile, onTo
                 {canWrite && (c.status === 'running' || c.status === 'paused') ? (
                   <Btn kind="danger" disabled={busy} onClick={() => setConfirm({
                     title: 'Stop this campaign?', label: 'Stop campaign', danger: true,
-                    body: `Every queued message is cancelled${next ? `, starting with the one due ${when(next.send_at, c.timezone)}` : ''}. Replies still come in. This cannot be undone; pause instead to hold it.`,
+                    body: `${plural(ms.filter((m) => m.status === 'queued').length, 'message')} not sent yet will never go out${next ? `, starting with the one due ${when(next.send_at, c.timezone)}` : ''}. Replies still come in. This cannot be undone; pause instead to hold it.`,
                     go: () => void act(() => setCampaignStatus(c.id, 'cancelled'), 'Campaign cancelled'),
                   })}>Stop</Btn>
                 ) : null}

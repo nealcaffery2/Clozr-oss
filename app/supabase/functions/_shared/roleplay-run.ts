@@ -15,6 +15,7 @@
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from './models.ts';
+import { recordUsage } from './ai-usage.ts';
 import { fence, UNTRUSTED_RULE } from './security.ts';
 import { firstName } from '../../../lib/call-coaching.ts';
 import {
@@ -48,6 +49,7 @@ export async function gradeRoleplay(apiKey: string, lines: RoleplayLine[], repNa
       tool_choice: { type: 'auto' },
       messages: [{ role: 'user', content: attempt === 0 ? user : user + `\n\nYour last scorecard was rejected: ${lastError} Send a clean one.` }],
     });
+    await recordUsage(null, { feature: 'roleplay_grade', model: res.model, usage: res.usage });
     const use = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     const built = buildRoleplayFeedback(use?.input, { repName, sellerName, lines });
     if (built.ok) return { ok: true as const, feedback: { ...built.feedback, model: CLAUDE_MODEL, source: 'ondemand' as const, scored_at: new Date().toISOString() } };

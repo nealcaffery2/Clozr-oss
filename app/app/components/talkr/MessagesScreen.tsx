@@ -28,12 +28,18 @@
  */
 
 import { lineText, useLineNames } from '@/lib/line-names';
+import { isAiLine } from '@/lib/caller-spin';
 import { fromLine, recordSentText, sentTextRow } from '@/lib/sms-record';
 import { UserAvatar } from '@/components/UserAvatar';
 import { everyWhileVisible } from '@/lib/visible-timer';
 import { useSession } from '@/lib/session';
+import { talkrTemplatesFor } from '@/lib/message-templates';
 import { replyLine, textsAsSelf } from '@/lib/thread-line';
 import { type InboxState, isCleared, pinnedFirst, smsKey } from '@/lib/inbox-state';
+import { type Folder, type FolderItem, closedBy, folderCounts, inFolder, leftCampaign, optedOutOf } from '@/lib/inbox-folders';
+import type { Scheduled, ScheduledRow } from '@/lib/use-scheduled';
+import { ScheduledBubble, SendLater } from '@/app/components/inbox/SendLater';
+import { slopFindings, slopReport } from '@/supabase/functions/_shared/no-ai-slop';
 import { draftFor, keepDraft } from '@/lib/compose-drafts';
 import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -62,8 +68,10 @@ import { TopBar } from './TopBar';
 import { Icon } from './Icon';
 import { Button, Eyebrow, FIELD, Select } from './ui';
 import { AddContactButton, useIsKnownNumber } from './AddContact';
-import { Bubble, TimeSeparator, TypingBubble, needsStamp } from './Bubble';
+import { NotHere, NotHereLink, ThreadName } from '@/app/components/inbox/Elsewhere';
+import { Bubble, SmsReceiptLine, TimeSeparator, TypingBubble, needsStamp } from './Bubble';
 import { MmsImage, type PendingAttachment, PendingAttachments, blobToBase64, shrinkImage } from './MmsAttachments';
+import { GifButton } from './GifPicker';
 import { MMS_ACCEPT, MMS_MAX_BYTES, MMS_MAX_FILES, kindFromType } from '@/lib/mms';
 import { SmsSuggestions } from '@/app/components/record/SmsSuggestions';
 import type { Recipient } from '@/lib/sms';
@@ -90,6 +98,7 @@ import {
   isActive,
   useMessagePreview,
 } from './MessageTemplates';
+import { SuggestedReplies } from '@/app/components/inbox/SuggestedReplies';
 import { MergeFieldHelp, MergeTextArea } from './MergeField';
 import { EmojiButton, insertAtCaret } from './EmojiPicker';
 import { formatPhone, toE164, tzTime, zoneForNumber } from '@/lib/talkr-web/time';
@@ -98,10 +107,15 @@ import { type InboxScope, loadOwnerConversations, scopeKey, viewingOther } from 
 import { useLinkViews } from '@/app/components/inbox/receipts';
 import { UNASSIGNED, eventTouches, linesFor } from '@/lib/inbox-owner';
 import { TalkrMark } from '@/app/components/brand/TalkrMark';
-import { smsPending, smsReceiptLabel } from '@/lib/sms-receipt';
+import { smsPending, smsReceipt } from '@/lib/sms-receipt';
 import { carrierCheck, carrierReport } from '@/lib/carrier-safe';
+import { type BlastTag, blastedAbout } from '@/lib/inbox-blast-tags';
+import { useBlastTags } from '@/lib/use-blast-tags';
+import { BlastChip, ProspectChip } from '@/app/components/inbox/BlastChips';
 
-// What the carrier reported (lib/sms-receipt). SMS has no read receipts, so there is no "Read".
+// What the carrier reported (lib/sms-receipt), drawn as iPhone does under the
+// last text sent. Plain SMS has no read receipts: "Read" shows only when Talkr
+// reports status `read` (iMessage, RCS).
 
 /** Still on its way: the bubble is drawn faded until the carrier takes it. */
 const PENDING_STATUSES = new Set(['queued', 'sending']);
@@ -281,6 +295,8 @@ function presetFor(f: Filters): RangePreset {
 export interface MessagesScreenProps {
   /** Talkr knows this rep — in CLOZR, the phone's status is `ok`. */
   authed: boolean;
+  /** The title bar's heading level: 2 when the inbox is drawn inside another screen. */
+  titleLevel?: 1 | 2;
   /** Dial an E.164 number; CLOZR routes it through its floating dialer. */
   placeCall: (e164: string) => void;
   /** The header's "New call" button; CLOZR opens the dialer. */
@@ -301,6 +317,8 @@ export interface MessagesScreenProps {
   conversation?: string | null;
   /** CLOZR: told which thread is open (and its number) whenever that changes, so the Inbox can remember it. */
   onOpen?: (id: string | null, theirNumber: string | null) => void;
+  /** CLOZR: the open thread's texts each time they are read, for the All tab's suggested label beside this thread. */
+  onThread?: (messages: MessageDto[]) => void;
   /**
    * CLOZR: the rep opened a thread to read it (a click, a hand-off from the
    * bell). Landing on the newest thread or coming back to the last one is not
@@ -331,6 +349,23 @@ export interface MessagesScreenProps {
    * ponytail: always false until RCS typing events exist; wire them here.
    */
   typing?: boolean;
+  /** CLOZR: the workspace's scheduled texts (lib/use-scheduled): Send later in the composer, pending bubbles in the thread. */
+  scheduled?: Scheduled | null;
+  /** CLOZR: the Inbox's folder rail on this tab (lib/inbox-folders): the folder in force, the rail to draw beside the threads, and the counts back up. */
+  folder?: Folder;
+  rail?: React.ReactNode;
+  /** One pane at a time (list, or the open thread) whatever the viewport: the inbox beside the dialer is half a column wide. */
+  onePane?: boolean;
+  /** The dialer: only the thread for `to` (no header, no list, no way back to one). Pass with `onePane`. */
+  threadOnly?: boolean;
+  railOne?: boolean;
+  onFolderCounts?: (counts: Record<Folder, number>) => void;
+  /**
+   * CLOZR: deal blast labels on each row (lib/use-blast-tags) and the Deal
+   * blasted filter: `deal` narrows the list (and the rail's counts) to people
+   * that deal's blast reached.
+   */
+  blast?: { workspace: number | null; demo: boolean; deal: number | null; dealName: string | null; onClear: () => void } | null;
   clozrTemplates?: (ctx: { record: ClozrRecord | null; name: string | null; phone: string | null; insert: (text: string) => void; close: () => void }) => ReactNode;
 }
 
@@ -350,7 +385,7 @@ export interface ClozrRecord {
   rep?: string | null;
 }
 
-export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = null, recordFor, headerSlot, live = null, typing = false, clozrTemplates, inbox, startNew = 0, conversation: initialConversation = null, onOpen, onRead, scope = null, receiptsWorkspace = null, titleSlot, senders, orgName = null }: MessagesScreenProps) {
+export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = null, recordFor, headerSlot, live = null, typing = false, scheduled = null, clozrTemplates, inbox, startNew = 0, conversation: initialConversation = null, onOpen, onThread, onRead, scope = null, receiptsWorkspace = null, titleSlot, senders, orgName = null, folder = 'all', rail = null, railOne = false, onePane = false, threadOnly = false, onFolderCounts, titleLevel = 1, blast = null }: MessagesScreenProps) {
   // On talkr.example.com the filters and the open thread ride in the URL so a
   // view survives a refresh and can be handed to a teammate. CLOZR is one
   // shell that does not route per screen, so the same query string lives in
@@ -386,7 +421,8 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
   const [fromId, setFromId] = useState('');
   // A phone shows the list or the thread, never both; a desk shows both and
   // ignores this. Opening a thread flips it, the back arrow flips it back.
-  const [listOpen, setListOpen] = useState(true);
+  const [listOpenState, setListOpen] = useState(!threadOnly);
+  const listOpen = listOpenState && !threadOnly;
   // Templates live in a third column on a wide screen; below that, a sheet
   // above the composer.
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -588,7 +624,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
     const current = selectedIdRef.current;
     // A delivery receipt (message.updated) can name only the message, not the
     // thread: one that names no other thread re-reads the open one, so
-    // "Sending…" moves on to Sent or Delivered.
+    // "Sending…" moves on to Sent, Delivered or Read.
     if (current && events.some((e) => {
       const id = eventFacts(e).conversationId;
       return id ? id === current : e.type === 'message.updated';
@@ -759,12 +795,17 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
   const onOpenRef = useRef(onOpen);
   onOpenRef.current = onOpen;
   useEffect(() => { onOpenRef.current?.(selectedId, selectedNumber); }, [selectedId, selectedNumber]);
+  const onThreadRef = useRef(onThread);
+  onThreadRef.current = onThread;
+  useEffect(() => { onThreadRef.current?.(messages); }, [messages]);
   const selectedTemplate = templates.find((t) => t.id === templateId) ?? null;
   const theirZone = selected ? zoneForNumber(selected.their_number) : null;
   const canManage = canManageTemplates(me?.role);
+  // Talkr's templates are acquisitions seller scripts: a TC or dispositions member is not offered them.
+  const talkrScripts = talkrTemplatesFor(useSession().workspace?.role);
   const pickerTemplates = useMemo(
-    () => (canManage ? templates : templates.filter(isActive)),
-    [templates, canManage],
+    () => (!talkrScripts ? [] : canManage ? templates : templates.filter(isActive)),
+    [templates, canManage, talkrScripts],
   );
 
   // The from-number follows the thread: whichever org line is already carrying
@@ -772,7 +813,10 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
   // texts on her own line (lib/thread-line). A manual pick stands until they
   // open a different thread.
   const ourNumber = selected?.our_number ?? null;
-  const asSelf = textsAsSelf(useSession().workspace?.role);
+  const sessionWs = useSession().workspace;
+  const asSelf = textsAsSelf(sessionWs?.role);
+  // The TC (Casey) asked for no AI reply or record suggestions on her threads.
+  const aiSuggest = sessionWs?.role !== 'tc';
   useEffect(() => {
     if (!me) return;
     setFromId(replyLine(me, ourNumber, asSelf) ?? '');
@@ -922,6 +966,45 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
     }
   }
 
+  // Send later: the draft is written to scheduled_messages and the tick sends
+  // it (supabase/functions/scheduled-send). Editing a pending row pulls its
+  // words back into the composer; Move it rewrites the row instead of adding one.
+  const [editingRow, setEditingRow] = useState<ScheduledRow | null>(null);
+  const threadNumber = selected?.their_number ?? (newNumber.trim() ? toE164(newNumber.trim()) : null);
+  const pendingRows = scheduled && threadNumber ? scheduled.byThread.get(smsKey(threadNumber)) ?? [] : [];
+  async function sendLater(at: Date): Promise<string | null> {
+    if (!scheduled) return 'Scheduling needs a signed-in workspace.';
+    if (!live?.canWrite) return 'Scheduled in the demo only: nothing is written.';
+    const to = threadNumber;
+    if (!to) return 'Pick a conversation or enter a number first.';
+    if (templateIntact && selectedTemplate) return 'Type the text out to schedule it; Talkr templates send now only.';
+    const body = draft.trim();
+    if (!body) return 'Write the text first.';
+    const slop = slopFindings(body);
+    if (slop.length) return `Reword it before scheduling: ${slopReport(slop)}.`;
+    const carrier = carrierCheck(body, { mode: 'reply' });
+    if (carrier.blocked) return `A carrier would block it. ${carrierReport(carrier)}.`;
+    const rec = recordFor?.(to) ?? null;
+    const err = editingRow
+      ? await scheduled.move(editingRow.id, at, body)
+      : await scheduled.schedule({
+          phone: to, body, sendAt: at, fromPhoneNumberId: fromId || null, media: attachments.map((a) => a.url),
+          sellerId: rec?.kind === 'seller' ? rec.id ?? null : null, buyerId: rec?.kind === 'buyer' ? rec.id ?? null : null,
+        });
+    if (err) return err;
+    setDraft('', draftKeyRef.current);
+    setTemplateId('');
+    setEditingRow(null);
+    clearAttachments();
+    live.toast(editingRow ? 'Moved' : 'Scheduled');
+    return null;
+  }
+  const editScheduled = (row: ScheduledRow) => { setEditingRow(row); setDraft(row.body, draftKeyRef.current); composerRef.current?.focus(); };
+  const cancelScheduled = async (row: ScheduledRow) => {
+    const e = await scheduled?.cancel(row.id);
+    if (e) setError(e); else live?.toast(row.status === 'error' ? 'Dismissed' : 'Cancelled');
+  };
+
   /** A text the carrier refused, sent again as it was. */
   async function retry(m: MessageDto) {
     if (!selectedId || sending) return;
@@ -1002,6 +1085,44 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
   const outBodies = useMemo(() => messages.filter((m) => m.direction === 'outbound').map((m) => m.body), [messages]);
   const linkViews = useLinkViews(outBodies, receiptsWorkspace);
 
+  // ponytail: filters the loaded page only; move server-side when Talkr's API takes an address param.
+  const needle = filters.address.toLowerCase();
+  const blastNumbers = useMemo(() => (blast ? conversations.map((c) => c.their_number) : []), [blast, conversations]);
+  const blastEmails = useMemo(() => (blast && recordFor ? conversations.map((c) => recordFor(c.their_number)?.recipient?.email ?? null) : []), [blast, recordFor, conversations]);
+  const blastTag = useBlastTags(blast?.workspace ?? null, blastNumbers, blastEmails, !!blast?.demo);
+  const blastOn = !!blast;
+  const tagFor = useCallback((c: ConversationDto): BlastTag | null => (blastOn ? blastTag(c.their_number, recordFor?.(c.their_number)?.recipient?.email ?? null) : null), [blastOn, blastTag, recordFor]);
+  const dealId = blast?.deal ?? null;
+  // Memoised: a new array each render would send new counts up to the rail every render.
+  const matched = useMemo(() => {
+    const byAddress = needle
+      ? conversations.filter((c) =>
+          [recordFor?.(c.their_number)?.address, c.lead_city, c.lead_state].some((v) => v?.toLowerCase().includes(needle)),
+        )
+      : conversations;
+    // Deal blasted: only the threads that deal's blast reached, before the folders and their counts.
+    return dealId == null ? byAddress : byAddress.filter((c) => blastedAbout(tagFor(c), dealId));
+  }, [needle, conversations, recordFor, dealId, tagFor]);
+  // CLOZR: the rail's folder (lib/inbox-folders) on this tab: a cleared thread
+  // stays off the list until a newer message (and is what Archived holds);
+  // pinned ones lead. The counts go up to the rail.
+  const folderItem = (c: ConversationDto): FolderItem => ({
+    kind: 'sms', unread: c.unread_count > 0, missed: false, theyLast: c.last_message?.direction === 'inbound',
+    optedOut: optedOutOf(c.contact_status, c.tags, c.last_message?.direction === 'inbound' ? c.last_message.body : null), archived: inbox ? isCleared(c.last_message_at, inbox.state.get(smsKey(c.their_number))) : false,
+    closed: closedBy(inbox?.state.get(smsKey(c.their_number))?.labels) || (c.last_message?.direction === 'outbound' && leftCampaign(c.last_message.body)),
+    scheduled: !!scheduled?.byThread.has(smsKey(c.their_number)),
+  });
+  const inboxState = inbox?.state, pendingByThread = scheduled?.byThread;
+  const railCounts = useMemo(() => folderCounts(matched.map((c): FolderItem => ({
+    kind: 'sms', unread: c.unread_count > 0, missed: false, theyLast: c.last_message?.direction === 'inbound',
+    optedOut: optedOutOf(c.contact_status, c.tags, c.last_message?.direction === 'inbound' ? c.last_message.body : null), archived: inboxState ? isCleared(c.last_message_at, inboxState.get(smsKey(c.their_number))) : false,
+    closed: closedBy(inboxState?.get(smsKey(c.their_number))?.labels) || (c.last_message?.direction === 'outbound' && leftCampaign(c.last_message.body)),
+    scheduled: !!pendingByThread?.has(smsKey(c.their_number)),
+  })), 'sms'), [matched, inboxState, pendingByThread]);
+  useEffect(() => { onFolderCounts?.(railCounts); }, [railCounts, onFolderCounts]);
+  const shown = inbox
+    ? pinnedFirst(matched.filter((c) => c.id === selectedId || inFolder(folderItem(c), folder)), (c) => smsKey(c.their_number), inbox.state)
+    : matched;
   if (!authed) {
     // Talkr's page says "Not signed in — open Account"; in CLOZR the sign-in
     // is the rep's own, and what can be missing is Talkr recognising it.
@@ -1021,17 +1142,6 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
   // buckets leave out threads with no contact behind them, so summing them
   // would quietly disagree with the list underneath.
   const allCount = filters.type ? undefined : total;
-  // ponytail: filters the loaded page only; move server-side when Talkr's API takes an address param.
-  const needle = filters.address.toLowerCase();
-  const matched = needle
-    ? conversations.filter((c) =>
-        [recordFor?.(c.their_number)?.address, c.lead_city, c.lead_state].some((v) => v?.toLowerCase().includes(needle)),
-      )
-    : conversations;
-  // CLOZR: a cleared thread stays off the list until a newer message; pinned ones lead.
-  const shown = inbox
-    ? pinnedFirst(matched.filter((c) => c.id === selectedId || !isCleared(c.last_message_at, inbox.state.get(smsKey(c.their_number)))), (c) => smsKey(c.their_number), inbox.state)
-    : matched;
   const selectedPinned = !!(inbox && selected && inbox.state.get(smsKey(selected.their_number))?.pinned_at);
   const selectedRecord = selected && recordFor ? recordFor(selected.their_number) : null;
   const lastOutbound = messages.map((m) => m.direction).lastIndexOf('outbound');
@@ -1041,7 +1151,19 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
     setParams({ q: null, type: null, temp: null, status: null, tag: null, address: null, user: null, line: null, unread: null, from: null, until: null, sort: null });
   };
 
+  // Suggested replies for this thread and stage (reply-suggest) sit above the saved templates.
+  const putInDraft = (body: string, id: string | null) => {
+    if (id) setTemplateId(id);
+    setDraft(body);
+    setTemplatesOpen(false);
+    requestAnimationFrame(() => composerRef.current?.focus());
+  };
   const templatePanel = (
+    <>
+    {aiSuggest && <SuggestedReplies workspaceId={sessionWs?.id ?? null} threadKey={selectedId || null} messages={messages}
+      templates={pickerTemplates.filter(isActive).map((t) => ({ id: t.id, name: t.name, body: t.body }))}
+      lead={selectedRecord ? { kind: selectedRecord.kind, stage: selectedRecord.stage, name: selectedRecord.name } : null}
+      onUse={putInDraft} />}
     <TemplateManager
       templates={pickerTemplates}
       loading={templatesLoading}
@@ -1049,30 +1171,29 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
       reload={reloadTemplates}
       selectedId={templateId || null}
       target={selectedId ? { conversation_id: selectedId } : undefined}
-      onUse={(t) => {
-        setTemplateId(t.id);
-        setDraft(t.body);
-        setTemplatesOpen(false);
-        requestAnimationFrame(() => composerRef.current?.focus());
-      }}
+      onUse={(t) => putInDraft(t.body, t.id)}
     />
+    </>
   );
 
   return (
     <>
-      <TopBar
+      {!threadOnly && <TopBar
+        level={titleLevel}
         title="Messages"
         subtitle={`${scope ? `${scope.title} · ` : ''}${total.toLocaleString()} conversation${total === 1 ? '' : 's'}${active ? ' matching' : ''}${unreadTotal ? ` · ${unreadTotal} unread` : ''}`}
         onNewCall={onNewCall}
         titleSlot={titleSlot}
       >
         {headerSlot}
-      </TopBar>
+      </TopBar>}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[320px_1fr] xl:grid-cols-[340px_1fr_320px]">
+      <div className={rail ? 'ax-desk' : 'contents'} data-one={(rail && railOne) || undefined}>
+      {rail}
+      <div className={`${rail ? 'ax-tabcell ' : ''}grid min-h-0 flex-1 grid-cols-1 ${onePane ? '' : 'md:grid-cols-[320px_1fr] xl:grid-cols-[340px_1fr_320px]'}`}>
         {/* ── Threads ───────────────────────────────────────────────────── */}
         <div
-          className={`msg-list ${listOpen ? 'flex' : 'hidden'} min-h-0 flex-col md:flex md:border-r md:border-[var(--line)]`}
+          className={`msg-list ${listOpen ? 'flex' : 'hidden'} min-h-0 flex-col ${onePane ? '' : 'md:flex md:border-r md:border-[var(--line)]'}`}
           style={{ background: 'var(--panel)' }}
         >
           <div className="flex flex-col gap-2 px-3 py-3" style={{ borderBottom: '1px solid var(--line)' }}>
@@ -1092,6 +1213,14 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                 New
               </Button>}
             </div>
+
+            {dealId != null && blast && (
+              <p className="inbox-owner-note" role="status" data-testid="inbox-blast-note">
+                <Icon name="msg" size={13} />
+                <span>Only people the {blast.dealName ?? 'deal'} blast reached, from the threads loaded here.{' '}
+                  <button type="button" onClick={blast.onClear} style={{ color: 'var(--accent)', fontWeight: 600, cursor: 'pointer' }}>Show every thread</button></span>
+              </p>
+            )}
 
             {otherInbox && scope && (
               <p className="inbox-owner-note" role="note">
@@ -1329,6 +1458,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                 key={c.id}
                 c={c}
                 record={recordFor ? recordFor(c.their_number) : undefined}
+                blast={tagFor(c)}
                 now={now}
                 name={contactNameFor(c)}
                 active={c.id === selectedId}
@@ -1356,22 +1486,23 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
         {/* ── Thread ────────────────────────────────────────────────────── */}
         {/* One scroller: the glass header and composer are sticky inside it, so
             the thread scrolls under both the way it does on an iPhone. */}
-        <div className={`msg-thread ${listOpen ? 'hidden' : 'flex'} min-h-0 flex-col md:flex`} style={{ background: 'var(--thread, var(--panel))' }}>
+        <div className={`msg-thread ${listOpen ? 'hidden' : 'flex'} min-h-0 flex-col ${onePane ? '' : 'md:flex'}`} style={{ background: 'var(--thread, var(--panel))' }}>
           <div className="flex min-h-0 flex-1 flex-col overflow-auto">
           <div className="glass-bar sticky top-0 z-10 flex flex-col gap-1.5 px-3 pb-2 pt-2 md:px-5">
-            <div className="flex items-center gap-2">
+            {/* The dialer names the person and has its own call button: only the From line here. */}
+            <div className={`${threadOnly ? 'hidden' : 'flex'} items-center gap-2`}>
               <button
                 type="button"
                 aria-label="Back to conversations"
                 onClick={() => setListOpen(true)}
-                className="-ml-1 inline-flex h-8 w-8 shrink-0 items-center justify-center md:hidden"
+                className={`-ml-1 ${threadOnly ? 'hidden' : 'inline-flex'} h-8 w-8 shrink-0 items-center justify-center ${onePane ? '' : 'md:hidden'}`}
                 style={{ color: 'var(--accent)', cursor: 'pointer' }}
               >
                 <Icon name="chevron-left" size={22} strokeWidth={2.4} />
               </button>
               {selected ? (
                 <>
-                  <span className="hidden h-9 w-9 shrink-0 md:block" aria-hidden />
+                  <span className={`hidden h-9 w-9 shrink-0 ${onePane ? '' : 'md:block'}`} aria-hidden />
                   <div className="flex min-w-0 flex-1 flex-col items-center gap-0.5">
                     <button
                       type="button"
@@ -1381,7 +1512,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                       className="inline-flex max-w-full items-center gap-0.5"
                       style={{ font: '500 12.5px/1.2 var(--sans)', color: 'var(--text)', cursor: selectedRecord ? 'pointer' : 'default' }}
                     >
-                      <span className="truncate">{selectedName ?? selectedRecord?.name ?? formatPhone(selected.their_number)}</span>
+                      <span className="truncate"><ThreadName name={selectedName ?? selectedRecord?.name} phone={selected.their_number} /></span>
                       {selectedRecord && <Icon name="chevron-right" size={11} style={{ color: 'var(--muted-2)' }} />}
                     </button>
                     <div className="flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-0.5">
@@ -1393,7 +1524,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                         {formatPhone(selected.their_number)}
                         {theirZone && now !== null ? ` · ${tzTime(theirZone, now)} local` : ''}
                         {selected.assigned_user_name ? <> · {selected.assigned_user_name}</> : ''}
-                        {!selectedRecord && recordFor ? ' · Not in CLOZR' : ''}
+                        {!selectedRecord && recordFor ? <> · <NotHereLink phone={selected.their_number} /></> : ''}
                       </span>
                     </div>
                   </div>
@@ -1432,6 +1563,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                   <input
                     value={newNumber}
                     onChange={(e) => setNewNumber(e.target.value)}
+                    readOnly={threadOnly}
                     placeholder="+15125550134"
                     inputMode="tel"
                     autoComplete="tel"
@@ -1460,11 +1592,11 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                     borderRadius: 14,
                     padding: '4px 8px',
                     font: '500 11.5px/1 var(--sans)',
-                    background: 'rgba(255,255,255,.6)',
+                    background: 'var(--glass-field, rgba(255,255,255,.6))',
                     maxWidth: '100%',
                   }}
                 >
-                  {me.org_numbers.map((n) => (
+                  {me.org_numbers.filter((n) => !isAiLine(n)).map((n) => (
                     <option key={n.id} value={n.id}>
                       {lineText(n, me.id)}
                       {ourNumber === n.phone_e164 ? ' · this thread' : ''}
@@ -1502,6 +1634,8 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
               const last = mine && i === lastOutbound;
               const pending = mine && smsPending(m.status, at);
               const failed = mine && FAILED_STATUSES.has(m.status);
+              // The CLOZR link inside it was opened: its own quiet line under the receipt (SMS has no read receipts).
+              const view = mine ? linkViews.label(m.body) : null;
               const stamp = needsStamp(prev ? prev.sent_at ?? prev.created_at : null, at);
               // Who sent this run and from which line: over the first bubble of
               // every outbound run, and again when the sender or the line changes
@@ -1524,15 +1658,12 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                     tail={tail}
                     faded={pending}
                     receipt={
-                      last ? (
-                        failed ? (
-                          <button type="button" onClick={() => void retry(m)} disabled={sending} style={{ color: 'var(--red)', cursor: 'pointer', font: 'inherit' }}>
-                            Not delivered · Tap to retry
-                          </button>
-                        ) : (
-                          [smsReceiptLabel(m.status, at), linkViews.label(m.body)].filter(Boolean).join(' · ')
-                        )
-                      ) : (mine ? linkViews.label(m.body) ?? undefined : undefined)
+                      mine && (last || failed || view) ? (
+                        <>
+                          {(last || failed) && <SmsReceiptLine receipt={smsReceipt(m.status, at, m.read_at)} onRetry={failed ? () => void retry(m) : undefined} retrying={sending} />}
+                          {view && <span style={{ fontWeight: 400 }} title={linkViews.title(m.body) || undefined}>{view}</span>}
+                        </>
+                      ) : undefined
                     }
                   >
                     {m.media_urls.length > 0 && (
@@ -1547,6 +1678,9 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                 </Fragment>
               );
             })}
+            {pendingRows.map((r) => (
+              <ScheduledBubble key={`sched:${r.id}`} row={r} onEdit={() => editScheduled(r)} onCancel={() => void cancelScheduled(r)} />
+            ))}
             {/* No typing signal exists on SMS: the dots hold the outbound side
                 only while a send of ours is in flight. */}
             {typing && <TypingBubble inbound />}
@@ -1563,7 +1697,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
 
           {templatesOpen && (
             <div
-              className="flex max-h-64 flex-col overflow-auto px-3 py-3 xl:hidden"
+              className={`flex max-h-64 flex-col overflow-auto px-3 py-3 ${onePane ? '' : 'xl:hidden'}`}
               style={{ borderTop: '1px solid var(--line)', background: 'var(--bg)' }}
             >
               <div className="flex justify-end">
@@ -1592,7 +1726,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
             close: () => setClozrPickerOpen(false),
           })}
 
-          {live && selectedRecord?.kind === 'seller' && selectedRecord.id && messages.length > 0 && (
+          {aiSuggest && live && selectedRecord?.kind === 'seller' && selectedRecord.id && messages.length > 0 && (
             <SmsSuggestions
               workspaceId={live.workspaceId}
               sellerId={selectedRecord.id}
@@ -1654,42 +1788,50 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
               }}
             />
 
-            {/* Behind the "+": attach, emoji, merge fields, CLOZR's templates and Talkr's. */}
+            {/* Behind the "+": merge fields, CLOZR's templates and Talkr's. Attach, GIF and emoji sit beside it, one tap each. */}
             {trayOpen && (
               <div className="flex flex-wrap items-center gap-2 px-3 pt-2 md:px-6">
-                <button
-                  type="button"
-                  aria-label="Attach photo or file"
-                  title="Attach photo, video or file (MMS)"
-                  disabled={uploading || attachments.length >= MMS_MAX_FILES}
-                  onClick={() => fileInputRef.current?.click()}
-                  className="tray-btn"
-                  aria-pressed={attachments.length > 0}
-                >
-                  <Icon name="camera" size={15} /> Photo
-                </button>
-                <EmojiButton onPick={insertIntoDraft} />
                 {clozrTemplates && (
                   <button type="button" className="tray-btn" aria-pressed={clozrPickerOpen} onClick={() => setClozrPickerOpen((v) => !v)}>
                     <Icon name="template" size={15} /> Templates
                   </button>
                 )}
-                <button type="button" className="tray-btn xl:hidden" aria-pressed={templatesOpen} onClick={() => setTemplatesOpen((v) => !v)}>
-                  <TalkrMark size={15} /> Talkr templates
-                </button>
+                {talkrScripts ? (
+                  <button type="button" className={`tray-btn ${onePane ? '' : 'xl:hidden'}`} aria-pressed={templatesOpen} onClick={() => setTemplatesOpen((v) => !v)}>
+                    <TalkrMark size={15} /> Talkr templates
+                  </button>
+                ) : null}
               </div>
             )}
 
-            <div className="flex items-end gap-2 px-3 pb-3 pt-2 md:gap-2.5 md:px-6 md:pb-4">
+            {/* flex-wrap so the GIF grid (flex-basis 100%, order 99) takes its own row under the composer. */}
+            <div className="flex flex-wrap items-end gap-2 px-3 pb-3 pt-2 md:gap-2.5 md:px-6 md:pb-4">
               <button
                 type="button"
-                aria-label={trayOpen ? 'Hide attachments, emoji and templates' : 'Attachments, emoji and templates'}
+                aria-label={trayOpen ? 'Hide templates' : 'Templates'}
                 aria-expanded={trayOpen}
                 onClick={() => setTrayOpen((v) => !v)}
                 className="plus-btn"
               >
                 <Icon name="plus" size={18} strokeWidth={2.4} style={{ transform: trayOpen ? 'rotate(45deg)' : 'none', transition: 'transform .15s ease' }} />
               </button>
+              <button
+                type="button"
+                aria-label="Attach photo or file"
+                title="Attach photo, video or file (MMS)"
+                disabled={uploading || attachments.length >= MMS_MAX_FILES}
+                onClick={() => fileInputRef.current?.click()}
+                className="plus-btn disabled:cursor-not-allowed disabled:opacity-50"
+                aria-pressed={attachments.length > 0}
+              >
+                <Icon name="paperclip" size={17} />
+              </button>
+              <GifButton
+                className="plus-btn disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={attachments.length >= MMS_MAX_FILES}
+                onPick={(g) => setAttachments((cur) => cur.some((a) => a.url === g.url) ? cur : [...cur, { url: g.url, previewUrl: g.preview, name: 'GIF', kind: 'image' }])}
+              />
+              <EmojiButton onPick={insertIntoDraft} />
 
               <div className="composer-pill flex flex-1 items-end gap-2">
                 {/* MergeTextArea, not a bare textarea: `/` at a word boundary
@@ -1702,7 +1844,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                   <MergeTextArea
                     textareaRef={composerRef}
                     value={draft}
-                    rows={1}
+                    rows={onePane ? 3 : 1}
                     onChange={(next) => {
                       setDraft(next);
                       if (selectedTemplate && next !== selectedTemplate.body) setTemplateId('');
@@ -1726,6 +1868,8 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                       background: 'transparent',
                       font: '400 16px/1.3 var(--sans)',
                       lineHeight: 1.3,
+                      // One pane wide (beside the dialer) the single line was a slot; three lines read like a message box.
+                      minHeight: onePane ? 72 : undefined,
                       resize: 'none',
                       maxHeight: 120,
                       padding: '5px 0',
@@ -1755,6 +1899,10 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
                   <Icon name="send" size={15} strokeWidth={2.6} />
                 </button>
               </div>
+              {scheduled && (
+                <SendLater key={editingRow?.id ?? 'new'} disabled={!canSend || sending} editing={!!editingRow} initial={editingRow ? new Date(editingRow.send_at) : null}
+                  onPick={sendLater} onCancelEdit={() => { setEditingRow(null); setDraft('', draftKeyRef.current); }} />
+              )}
             </div>
           </div>
           </div>
@@ -1763,11 +1911,12 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
 
         {/* ── Templates ─────────────────────────────────────────────────── */}
         <div
-          className="msg-side hidden min-h-0 flex-col gap-4 overflow-auto p-4 xl:flex xl:border-l xl:border-[var(--line)]"
+          className={`msg-side hidden min-h-0 flex-col gap-4 overflow-auto p-4 ${onePane ? '' : 'xl:flex xl:border-l xl:border-[var(--line)]'}`}
           style={{ background: 'var(--panel)' }}
         >
           {templatePanel}
         </div>
+      </div>
       </div>
     </>
   );
@@ -1784,6 +1933,7 @@ export function MessagesScreen({ authed, placeCall, onNewCall, to: initialTo = n
 function ConversationRow({
   c,
   record,
+  blast = null,
   now,
   name,
   active,
@@ -1793,6 +1943,8 @@ function ConversationRow({
   c: ConversationDto;
   /** undefined outside CLOZR; null when no CLOZR record has this number. */
   record?: ClozrRecord | null;
+  /** CLOZR: the deal blasts that reached them (lib/inbox-blast-tags). */
+  blast?: BlastTag | null;
   now: number | null;
   name: string | null;
   active: boolean;
@@ -1823,7 +1975,7 @@ function ConversationRow({
           <span className="flex items-center gap-1.5">
             <span className="mr-auto truncate" style={{ font: '600 15px/1.25 var(--sans)', color: 'var(--text)' }}>
               {/* Talkr's contact name, else the CLOZR record's: most threads have no Talkr contact. */}
-              {name ?? record?.name ?? formatPhone(c.their_number)}
+              <ThreadName name={name ?? record?.name} phone={c.their_number} />
             </span>
             <span style={{ font: '400 13px/1 var(--sans)', color: 'var(--muted-2)', whiteSpace: 'nowrap' }}>{timeShort(c.last_message_at)}</span>
             <Icon name="chevron-right" size={13} style={{ color: '#c7c7cc' }} />
@@ -1849,7 +2001,7 @@ function ConversationRow({
                 ))}
               {status && <StatusMark status={status} />}
               {failed && (
-                <span className="inline-flex items-center gap-1" style={{ font: '700 8.5px/1 var(--sans)', color: 'var(--red)' }}>
+                <span className="inline-flex items-center gap-1" style={{ font: '700 11px/1 var(--sans)', color: 'var(--red)' }}>
                   <Icon name="x" size={10} strokeWidth={2.6} />
                   Not delivered
                 </span>
@@ -1857,9 +2009,16 @@ function ConversationRow({
             </span>
           )}
 
+          {blast ? (
+            <span className="ax-blast-line">
+              <ProspectChip tag={blast} />
+              <BlastChip tag={blast} />
+            </span>
+          ) : null}
+
           {record !== undefined && (
             <span className="truncate" style={{ font: '600 11px/1.3 var(--sans)', color: record ? (record.kind === 'seller' ? '#15803d' : '#1d4ed8') : 'var(--muted-2)' }}>
-              {record ? [record.kind === 'seller' ? 'Seller' : 'Buyer', record.name, record.address].filter(Boolean).join(' · ') : 'Not in CLOZR'}
+              {record ? [record.kind === 'seller' ? 'Seller' : 'Buyer', record.name, record.address].filter(Boolean).join(' · ') : <NotHere phone={c.their_number} />}
             </span>
           )}
 

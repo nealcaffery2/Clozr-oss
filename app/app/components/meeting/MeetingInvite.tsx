@@ -14,7 +14,7 @@ import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } fro
 import { useFocusTrap } from '@/app/components/record/useModal';
 import { supabase } from '@/lib/supabase';
 import { openReach } from '@/app/components/record/reach';
-import { GX_CSS, ICON, INK, INK_2, Icon, LINE, MUTED, HAIR, RED, SHADOW, Field, Pill, Toggle, btn, input } from '@/components/genius/parts';
+import { GX_CSS, ICON, INK, INK_2, Icon, LINE, MUTED, HAIR, RED, SHADOW, Field, Pill, Toggle, btn, input } from '@/components/kit/parts';
 import {
   DEFAULT_MEETING_TYPES, type InviteRequest, type InviteResult, type MeetingType, browserZone, formatWhen, fromInputs, inviteSms,
   bookingMessage, bookingUrlFor, loadMeetingTypes, quickSlots, sendMeetingInvite, toInputs, zoneForPhone,

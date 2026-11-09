@@ -60,11 +60,31 @@ export function uwTriageBucket(
   return 'review';
 }
 
-export const UW_TRIAGE_LABEL: Record<UwTriageBucket, string> = {
+export const UW_TRIAGE_LABEL = {
   green: 'Top 25% green',
   decline: 'Decline bucket',
   review: 'Review',
-};
+  // Finer cuts of the decline bucket, for the Submissions views (lib/submission-views.ts).
+  tooFar: 'Too far apart',
+  unqualified: "Didn't qualify",
+} as const satisfies Record<UwTriageBucket | 'tooFar' | 'unqualified', string>;
+
+/**
+ * Why a submission does not make the cut: the price gap (UW high 75% or more
+ * below their ask), or it never qualified (no photos from the submitter, or
+ * no ask and no UW number to judge). Null when it is in play.
+ */
+export function declineReason(
+  ask: number | null | undefined,
+  high: number | null | undefined,
+  deal: SubmitterPhotoDeal,
+  person?: SubmitterPhotoPerson | null,
+): 'tooFar' | 'unqualified' | null {
+  if (!hasSubmitterPhotos(deal, person)) return 'unqualified';
+  const shortfall = askShortfallPct(ask, high);
+  if (shortfall != null && shortfall >= 0.75) return 'tooFar';
+  return positive(ask) && positive(high) ? null : 'unqualified';
+}
 
 export type DealUwTriageInput = SubmitterPhotoDeal & {
   asking?: number | null;

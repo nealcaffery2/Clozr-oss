@@ -48,8 +48,8 @@ type Form = {
 
 const ROLE_LABEL: Record<NonNullable<Attendee['role']>, string> = { seller: 'Seller', buyer: 'Buyer', vendor: 'Vendor', rep: 'Rep', other: 'Guest' };
 const ANSWER: Record<NonNullable<Attendee['status']>, { text: string; color: string }> = {
-  accepted: { text: 'Yes', color: '#16a34a' }, declined: { text: 'No', color: 'var(--tx-red, #b91c1c)' },
-  tentative: { text: 'Maybe', color: '#d97706' }, needsAction: { text: 'Invited', color: 'var(--subtle, #a1a1aa)' },
+  accepted: { text: 'Yes', color: 'var(--tx-green, #15803d)' }, declined: { text: 'No', color: 'var(--tx-red, #b91c1c)' },
+  tentative: { text: 'Maybe', color: 'var(--tx-amber, #b45309)' }, needsAction: { text: 'Invited', color: 'var(--meta, #71717a)' },
 };
 
 function formFrom(ev: CalEvent | null, d: PanelDraft | null | undefined, userId: string | null): Form {
@@ -240,9 +240,9 @@ export function EventPanel(p: EventPanelProps) {
                 </span>
                 <span style={{ fontSize: '11px', color: MUTED }}>{ROLE_LABEL[a.role ?? 'other']}</span>
                 <span style={{ fontSize: '11px', fontWeight: 600, color: ANSWER[a.status ?? 'needsAction'].color }}>{ANSWER[a.status ?? 'needsAction'].text}</span>
-                {mayEdit ? <button type="button" onClick={() => set('attendees', form.attendees.filter((x) => x.email !== a.email))} aria-label="Remove" style={{ background: 'none', border: 0, color: 'var(--subtle, #a1a1aa)', cursor: 'pointer', padding: '0 2px', fontSize: '14px', lineHeight: 1 }}>×</button> : null}
+                {mayEdit ? <button type="button" onClick={() => set('attendees', form.attendees.filter((x) => x.email !== a.email))} aria-label="Remove" style={{ background: 'none', border: 0, color: 'var(--meta, #71717a)', cursor: 'pointer', padding: '0 2px', fontSize: '14px', lineHeight: 1 }}>×</button> : null}
               </div>
-            )) : <p style={{ margin: '0 0 6px', fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>Nobody yet. Add the seller, a buyer or a vendor by email.</p>}
+            )) : <p style={{ margin: '0 0 6px', fontSize: '12px', color: 'var(--meta, #71717a)' }}>Nobody yet. Add the seller, a buyer or a vendor by email.</p>}
             {draft?.suggest?.filter((s) => !form.attendees.some((a) => a.email === s.email)).map((s) => (
               <button key={s.email} type="button" className="dc2" onClick={() => addAttendee(s)} style={{ ...ghost, height: '26px', fontSize: '12px', marginRight: '6px', marginTop: '4px' }}>+ {s.name ?? s.email}</button>
             ))}
@@ -257,7 +257,7 @@ export function EventPanel(p: EventPanelProps) {
                 {busy === 'invite' ? 'Saving…' : 'Send invite'}
               </button>
             ) : null}
-            <p style={{ margin: '8px 0 0', fontSize: '11.5px', color: 'var(--subtle, #a1a1aa)', lineHeight: 1.45 }}>Invitations come from your Google Calendar, with Yes / No / Maybe; answers show here.</p>
+            <p style={{ margin: '8px 0 0', fontSize: '11.5px', color: 'var(--meta, #71717a)', lineHeight: 1.45 }}>Invitations come from your Google Calendar, with Yes / No / Maybe; answers show here.</p>
           </div>
         ) : null}
 

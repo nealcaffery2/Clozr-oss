@@ -36,20 +36,44 @@ export async function recordPhoneKey(admin: SupabaseClient, ws: number, kind: 's
   return pk;
 }
 
-/** Every seller and buyer on the number, with what the DNC check needs. */
-export async function loadCandidates(admin: SupabaseClient, ws: number, theirs: string): Promise<Candidate[]> {
+/**
+ * The rep who last called or texted this number from the line the caller
+ * dialled (communications.rep_id, 30 days). A rep who dials a lead from an AI
+ * agent's line gets the callback on that line: the agent then transfers to
+ * them, not to the owner, and books on their calendar. Null when nobody did.
+ */
+export async function lastRepOnLine(admin: SupabaseClient, ws: number, ours: string | null | undefined, theirs: string): Promise<string | null> {
+  const o = phoneKey(ours);
+  const t = phoneKey(theirs);
+  if (!o || !t) return null;
+  try {
+    const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    const { data } = await admin.from('communications').select('rep_id').eq('workspace_id', ws).eq('direction', 'outbound').not('rep_id', 'is', null)
+      .like('from_phone', `%${o}`).like('to_phone', `%${t}`).gt('occurred_at', since).order('occurred_at', { ascending: false }).limit(1);
+    const rep = (data as Any[] | null)?.[0]?.rep_id;
+    return rep ? String(rep) : null;
+  } catch { return null; }
+}
+
+/**
+ * Every seller and buyer on the number, with what the DNC check needs. With
+ * `ours` (the line they dialled), a record nobody works falls to the rep who
+ * last reached the number from that line (lastRepOnLine).
+ */
+export async function loadCandidates(admin: SupabaseClient, ws: number, theirs: string, ours?: string | null): Promise<Candidate[]> {
   const keys = phoneKeyVariants(theirs);
-  const [s, b, bp] = await Promise.all([
+  const [s, b, bp, lineRep] = await Promise.all([
     admin.from('sellers').select('id, name, tags, archived_at, assigned_to, property_address, phone, phone_key').eq('workspace_id', ws).in('phone_key', keys).limit(20),
     admin.from('buyers').select('id, name, tags, blacklisted_at, phone, phone_key, assigned_to, owner_id').eq('workspace_id', ws).in('phone_key', keys).limit(20),
     admin.from('buyer_phones').select('buyer_id, is_dnc, phone, phone_key').eq('workspace_id', ws).in('phone_key', keys).limit(20),
+    ours ? lastRepOnLine(admin, ws, ours, theirs) : Promise.resolve(null),
   ]);
   const out: Candidate[] = [];
   const sellers = ((s.data ?? []) as Any[]).filter((r) => phoneKey(r.phone_key ?? r.phone) === theirs);
   // The rep who switched the AI agent on for the seller works the call (transfer, booking), else the assigned rep.
   const starters = await agentStarters(admin, ws, 'seller', sellers.map((r) => Number(r.id)));
   for (const r of sellers) {
-    out.push({ kind: 'seller', id: r.id, name: r.name, tags: r.tags, archived_at: r.archived_at, assigned_to: starters.get(Number(r.id)) ?? r.assigned_to, property_address: r.property_address });
+    out.push({ kind: 'seller', id: r.id, name: r.name, tags: r.tags, archived_at: r.archived_at, assigned_to: starters.get(Number(r.id)) ?? r.assigned_to ?? lineRep, property_address: r.property_address });
   }
   const buyerDnc = new Map<number, boolean>();
   for (const r of (bp.data ?? []) as Any[]) {
@@ -66,7 +90,7 @@ export async function loadCandidates(admin: SupabaseClient, ws: number, theirs: 
   for (const r of buyers) {
     out.push({
       kind: 'buyer', id: Number(r.id), name: r.name, tags: r.tags, blacklisted_at: r.blacklisted_at, number_dnc: buyerDnc.get(Number(r.id)) ?? false,
-      assigned_to: dispo.get(Number(r.id)) ?? r.assigned_to ?? r.owner_id ?? null,
+      assigned_to: dispo.get(Number(r.id)) ?? r.assigned_to ?? r.owner_id ?? lineRep,
     });
   }
   return out;
@@ -116,14 +140,17 @@ export function e164(raw: string | null | undefined): string | null {
 
 /**
  * A member's own line from rep_phone_numbers (migration 153: their smrtPhone
- * number), for when their profile has no phone. A "Main" line wins, a "test"
- * line loses. Null when they have none (or the table is not there).
+ * number), for when their profile has no phone. A "Main" line wins, then
+ * their caller ID line, a "test" line loses; ties go to the oldest line, so a
+ * rep with many lines is always rung on the same one. Null when they have none
+ * (or the table is not there).
  */
 export async function loadRepLine(admin: SupabaseClient, ws: number, userId: string): Promise<string | null> {
-  const { data, error } = await admin.from('rep_phone_numbers').select('phone_e164, label').eq('workspace_id', ws).eq('user_id', userId).limit(10);
+  const { data, error } = await admin.from('rep_phone_numbers').select('phone_e164, label, is_caller_id, created_at').eq('workspace_id', ws).eq('user_id', userId).limit(50);
   if (error) { if (!missingRelation(error.message)) console.error('voice-agent rep line', error.message); return null; }
-  const rank = (l: unknown) => (/\bmain\b/i.test(String(l ?? '')) ? 0 : /\btest\b/i.test(String(l ?? '')) ? 2 : 1);
-  const best = ((data ?? []) as Any[]).filter((r) => r.phone_e164).sort((a, b) => rank(a.label) - rank(b.label))[0];
+  const rank = (r: Any) => (/\bmain\b/i.test(String(r.label ?? '')) ? 0 : /\btest\b/i.test(String(r.label ?? '')) ? 3 : r.is_caller_id ? 1 : 2);
+  const best = ((data ?? []) as Any[]).filter((r) => r.phone_e164)
+    .sort((a, b) => rank(a) - rank(b) || String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')))[0];
   return best ? String(best.phone_e164) : null;
 }
 
@@ -188,15 +215,19 @@ const fmtMoney = (n: unknown) => { const x = Number(n); return Number.isFinite(x
  */
 export async function initiationFor(
   admin: SupabaseClient, ws: number, res: Resolution, leg: CallLeg | null, persona: Omit<Persona, 'repName'>, agent: AgentSettings | null = null,
-  callGoal = '',
+  callGoal = '', coveringFor: string | null = null,
 ): Promise<InitiationData> {
   let mem: MemoryForCall = null;
   let extras: CallExtras = NO_EXTRAS;
   let repName: string | null = null;
+  // Picking up for a rep who did not answer (Talkr overflow): the caller rang them, so they are the rep on this
+  // call whatever the record says, and the transfer and the booking go back to them.
+  const cover = coveringFor ? await loadRep(admin, coveringFor) : { name: null, phone: null };
   if (res.status === 'one') {
     const c = res.match;
+    const repId = coveringFor ?? c.assigned_to;
     const [m, rep, target, mao, src] = await Promise.all([
-      loadMemory(admin, ws, c), loadRep(admin, c.assigned_to), loadTransferTarget(admin, ws, c.assigned_to),
+      loadMemory(admin, ws, c), loadRep(admin, repId), loadTransferTarget(admin, ws, repId),
       agent && agent.offer_authority.mode !== 'none' && c.kind === 'seller' ? loadDealMao(admin, ws, c.id) : Promise.resolve(null),
       c.kind === 'seller' ? admin.from('sellers').select('lead_source').eq('id', c.id).maybeSingle() : Promise.resolve({ data: null }),
     ]);
@@ -211,7 +242,28 @@ export async function initiationFor(
       seller_asking_price: fmtMoney(facts?.asking_price),
       ...(agent ? offerRange(agent.offer_authority, mao) : { offer_low: '', offer_high: '' }),
       call_goal: callGoal.replace(/\s+/g, ' ').trim().slice(0, 400),
+      covering_for: cover.name ?? '',
     };
+  } else if (agent && res.status !== 'blocked') {
+    // An unknown number (or one several records share) can still ask for a
+    // person. Without a rep_phone the prompt skips the transfer and books, so
+    // hand them to the rep who last reached them from this line, else the
+    // workspace's booking rep (Compr: Alex), else the owner.
+    const lineRep = coveringFor ?? (leg ? await lastRepOnLine(admin, ws, leg.ours, leg.theirs) : null);
+    const { data: cs } = lineRep ? { data: null } : await admin.from('compr_agent_settings').select('booking_user_id').eq('workspace_id', ws).maybeSingle();
+    const target = await loadTransferTarget(admin, ws, lineRep ?? (((cs as Any)?.booking_user_id ?? null) as string | null));
+    if (target) {
+      repName = coveringFor ? cover.name : repName;
+      extras = {
+        ...NO_EXTRAS,
+        rep_phone: target.phone,
+        rep_available: await repFreeNow(admin, ws, target.userId) ? 'yes' : 'no',
+        call_goal: callGoal.replace(/\s+/g, ' ').trim().slice(0, 400),
+        covering_for: cover.name ?? '',
+      };
+    } else if (cover.name) {
+      extras = { ...NO_EXTRAS, covering_for: cover.name };
+    }
   }
   return buildInitiation(res, leg, mem, { ...persona, repName, casual: persona.casual ?? (!!agent && agent.personality.formality <= 2) }, extras);
 }

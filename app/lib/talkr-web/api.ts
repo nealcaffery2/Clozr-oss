@@ -7,6 +7,7 @@ import type { VoiceTokenDto } from '@/lib/softphone-engine';
 import { talkrToken, talkrUrl } from '@/lib/talkr';
 import { isReadOnly, isTalkrWrite, readOnlyResponse } from '@/lib/read-only';
 import { withoutElsewhereConversations } from '@/lib/talkr-elsewhere';
+import { quietOptOuts } from '@/lib/inbox-folders';
 export interface CallDto {
   id: string;
   correlation_id: string;
@@ -1073,7 +1074,7 @@ export const api = {
     request<{ ok: boolean }>('/v1/presence', { method: 'POST', body: JSON.stringify({ status }) }),
   lookupPhone: (number: string) =>
     request<PhoneLookupDto>(`/v1/lookup/phone?number=${encodeURIComponent(number)}`),
-  createCall: (input: { to_number?: string; lead_id?: string; contact_id?: string; from_phone_number_id?: string }) =>
+  createCall: (input: { to_number?: string; lead_id?: string; contact_id?: string; from_phone_number_id?: string; amd?: boolean }) =>
     request<{ call: CallDto }>('/v1/calls', { method: 'POST', body: JSON.stringify(input) }),
   listCalls: () => request<{ calls: CallDto[] }>('/v1/calls'),
   getCall: (id: string) =>
@@ -1146,8 +1147,14 @@ export const api = {
     request<{ affected: number }>('/v1/contacts/bulk', { method: 'POST', body: JSON.stringify(input) }),
   bulkMessageContacts: (input: ContactBulkMessageInput) =>
     request<ContactBulkMessageDto>('/v1/contacts/bulk/message', { method: 'POST', body: JSON.stringify(input) }),
-  bulkDialList: (input: { ids: string[]; name?: string }) =>
+  bulkDialList: (input: { ids: string[]; name?: string; mode?: 'power' | 'parallel'; settings?: CampaignSettingsDto }) =>
     request<ContactDialListDto>('/v1/contacts/bulk/dial-list', { method: 'POST', body: JSON.stringify(input) }),
+  /** CLOZR people into Talkr contacts, keyed by CLOZR id; ids come back in request order. */
+  upsertContacts: (input: { source?: string; contacts: Array<{ external_id: string; name: string; phones: string[]; timezone?: string }> }) =>
+    request<{ results: Array<{ external_id: string; contact_id: string | null; status: 'created' | 'merged' | 'skipped'; reason?: string }> }>(
+      '/v1/contacts/upsert',
+      { method: 'POST', body: JSON.stringify(input) },
+    ),
   importContacts: (input: ContactImportInput) =>
     request<ContactImportResultDto>('/v1/contacts/import', { method: 'POST', body: JSON.stringify(input) }),
   exportContactsCsv: (query?: ContactListQuery) => requestBlob(`/v1/contacts/export.csv${contactsQuery(query)}`),
@@ -1237,7 +1244,7 @@ export const api = {
   // SMS (Phase 4 — docs/sms.md)
   /** Without the threads another workspace on this org owns (lib/talkr-elsewhere): the Inbox, every owner's view, the dialer. */
   listConversations: (query?: ConversationListQuery) =>
-    request<ConversationListDto>(`/v1/conversations${conversationsQuery(query)}`).then(withoutElsewhereConversations),
+    request<ConversationListDto>(`/v1/conversations${conversationsQuery(query)}`).then(withoutElsewhereConversations).then(quietOptOuts),
   listConversationMessages: (id: string) =>
     request<{ conversation_id: string; messages: MessageDto[] }>(`/v1/conversations/${id}/messages`),
   markConversationRead: (id: string) =>
@@ -1318,6 +1325,8 @@ export const api = {
       body: JSON.stringify(input),
     }),
   campaignStats: (id: string) => request<CampaignStatsDto>(`/v1/campaigns/${id}/stats`),
+  /** Who a session rings next, in order (a preview: suppression and the calling window apply when a line is picked). */
+  campaignQueue: (id: string, limit = 12) => request<{ leads: CampaignQueueLeadDto[] }>(`/v1/campaigns/${id}/queue?limit=${limit}`),
   startDialSession: (campaignId: string) =>
     request<{ session: DialSessionDto }>('/v1/dial-sessions', {
       method: 'POST',
@@ -1609,6 +1618,11 @@ export interface MessageDto {
   sent_at: string | null;
   delivered_at: string | null;
   failed_at: string | null;
+  /**
+   * When the recipient read it, with status `read`. Only iMessage and RCS
+   * report reads; plain SMS never does. Absent from a Talkr without read receipts.
+   */
+  read_at?: string | null;
   /** The Talkr user who sent it (outbound, by a person); null for inbound and auto-replies. */
   created_by?: string | null;
   /** The thread's numbers, as this message saw them. Absent from a Talkr older than the from_number release. */
@@ -1711,6 +1725,8 @@ export interface CampaignSettingsDto {
   amdEnabled?: boolean;
   amdAction?: 'hangup' | 'voicemail_drop';
   amdVoicemailText?: string;
+  /** The rep's recording (a signed URL): played on a machine, and to a second person who answers while the rep is bridged. */
+  amdVoicemailUrl?: string;
 }
 
 export interface CampaignDto {
@@ -1782,6 +1798,20 @@ export interface DialNextDto {
   reason?: string;
   batch_id?: string | null;
   lines?: Array<{ call: DialSessionCallDto; campaign_lead_id: string; card: LeadCardDto | null }>;
+}
+
+/** One lead a session will ring soon (GET /v1/campaigns/:id/queue). */
+export interface CampaignQueueLeadDto {
+  campaign_lead_id: string;
+  lead_id: string;
+  name: string | null;
+  phone: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  attempts: number;
+  next_attempt_at: string | null;
+  priority: number;
 }
 
 export interface CampaignStatsDto {

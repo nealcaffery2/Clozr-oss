@@ -214,6 +214,33 @@ const raw: LeaderboardRaw = {
   assert.equal(p.executiveSummary.cashConversionDays, null);
 }
 
+// ---- grouped comms (leaderboard_comms, migration 391) ------------------------------------------
+// The SQL hands the engine one row per rep, line owner, seller rep, local day, channel and
+// direction with n / talk_s / convos and the latest time, plus first outbound contact per seller.
+// The board must not change.
+{
+  const dayOf = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
+  const sellerRep = new Map(raw.sellers.map((s) => [s.id, s.assigned_to]));
+  // Two more of nat's seller-1 calls on the same day, so a group carries more than one row.
+  const rows: LeaderboardRaw = { ...raw, comms: [...raw.comms, { ...raw.comms[1]!, duration_s: 90, occurred_at: ago(2, 2) }, { ...raw.comms[1]!, duration_s: 300, occurred_at: ago(2, 1) }] };
+  const groups = new Map<string, LeaderboardRaw['comms'][number]>();
+  const firstTouch: Record<string, string> = {};
+  for (const c of rows.comms) {
+    const seller_rep = c.seller_id != null ? sellerRep.get(c.seller_id) ?? null : null;
+    const key = [c.rep_id ?? '', seller_rep ?? '', dayOf(c.occurred_at), c.channel, c.direction ?? ''].join('|');
+    const g = groups.get(key) ?? { seller_id: null, rep_id: c.rep_id ?? null, line_rep: null, seller_rep, channel: c.channel, direction: c.direction, occurred_at: c.occurred_at, duration_s: null, status: null, n: 0, talk_s: 0, convos: 0 };
+    g.n! += 1; g.talk_s! += c.duration_s ?? 0; g.convos! += (c.duration_s ?? 0) >= 120 ? 1 : 0;
+    if (c.occurred_at > g.occurred_at) g.occurred_at = c.occurred_at;
+    groups.set(key, g);
+    if (c.direction !== 'inbound' && c.seller_id != null && (!firstTouch[c.seller_id] || c.occurred_at < firstTouch[c.seller_id])) firstTouch[c.seller_id] = c.occurred_at;
+  }
+  const grouped: LeaderboardRaw = { ...rows, comms: [...groups.values()], firstTouch };
+  assert.equal(grouped.comms.length, rows.comms.length - 2, 'the three same-day calls are one group');
+  for (const period of ['last-30-days', 'this-week', 'this-year'] as const) {
+    assert.deepEqual(buildLeaderboard(grouped, period, { now: NOW, tz: TZ }), buildLeaderboard(rows, period, { now: NOW, tz: TZ }), `grouped comms give the same ${period} board`);
+  }
+}
+
 // ---- the mirror -------------------------------------------------------------------------------
 {
   const lib = readFileSync(new URL('../lib/leaderboard.ts', import.meta.url), 'utf8');

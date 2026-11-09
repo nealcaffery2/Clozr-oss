@@ -75,7 +75,7 @@ export function LaneHeard({ transactionId, workspaceId, me, canWrite, onChanged,
           <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ink, #18181b)', textDecoration: u.status === 'undone' ? 'line-through' : 'none' }}>{u.summary}</span>
         </span>
         {u.evidence ? <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--meta, #71717a)', marginTop: '2px', lineHeight: 1.45 }}>“{u.evidence}”</span> : null}
-        <span style={{ display: 'block', fontSize: '10.5px', color: 'var(--subtle, #a1a1aa)', marginTop: '2px' }}>
+        <span style={{ display: 'block', fontSize: '10.5px', color: 'var(--meta, #71717a)', marginTop: '2px' }}>
           {ago(u.created_at)}{u.status === 'applied' && !u.decided_by ? ' · applied by Lane' : u.status === 'applied' ? ' · accepted' : u.status === 'undone' ? ' · undone' : u.confidence === 'medium' ? ' · check this one' : ''}
         </span>
       </span>

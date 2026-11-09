@@ -2,7 +2,7 @@
 // what is worth a round trip, how a snippet's matches split out, and the row title.
 // Run: npx tsx tools/comm-search.test.ts
 import assert from 'node:assert/strict';
-import { hitTitle, searchable, snippetParts } from '../lib/comm-search';
+import { hitTitle, searchable, snippetParts, strangerHit } from '../lib/comm-search';
 
 let passed = 0;
 const test = (name: string, fn: () => void) => {
@@ -36,6 +36,15 @@ test('the title says what it was and with whom', () => {
   assert.equal(hitTitle({ channel: 'email', direction: 'outbound', recordName: 'Harbor Capital' }), 'Email to Harbor Capital');
   assert.equal(hitTitle({ channel: 'voicemail', direction: 'outbound', recordName: null }), 'Voicemail');
   assert.equal(hitTitle({ channel: 'fax', direction: null, recordName: ' ' }), 'Message');
+});
+
+test('a hit on nobody opens that number in the Inbox', () => {
+  const base = { channel: 'sms', direction: 'inbound', recordName: null, sellerId: null, buyerId: null, dealId: null };
+  assert.deepEqual(strangerHit({ ...base, phone: '+14045557297' }), { phone: '+14045557297', title: 'Text from (404) 555-7297' });
+  assert.deepEqual(strangerHit({ ...base, channel: 'call', direction: 'outbound', phone: '14705554268' }), { phone: '+14705554268', title: 'Call with (470) 555-4268' });
+  assert.equal(strangerHit({ ...base, sellerId: 7, phone: '+14045557297' }), null);
+  assert.equal(strangerHit({ ...base, dealId: 3, phone: '+14045557297' }), null);
+  assert.equal(strangerHit({ ...base, phone: null }), null);
 });
 
 console.log(`comm-search: ${passed} passed`);

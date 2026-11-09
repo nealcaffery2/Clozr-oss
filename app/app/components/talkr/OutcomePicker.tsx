@@ -16,6 +16,10 @@
  * notes, Esc in the notes comes back here. It stands down for the shell's own
  * chords (a Quick Add Q then 1 is a new seller, never an outcome), inside any
  * field, and while search, Quick Add, a create dialog, Ask or Lane is open.
+ *
+ * Mid-call (`canPick` without `armed`) only 1-8 act, under the same
+ * stand-down rules: the pick is held (`onPick`) and the wrap-up's picker
+ * starts from it (`initial`), so Enter there saves it.
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -23,7 +27,6 @@ import type { ClozrView } from '@/app/clozr/view';
 import type { OutcomeLedger, WrapKey } from '@/app/clozr/useClozr';
 import { OFFER_OUTCOMES, OUTCOMES, type OutcomeDef, type OutcomeKey } from '@/lib/call-outcomes';
 import { firstName } from '@/lib/call-coaching';
-import { advancesAfterSave } from '@/lib/dial-engine';
 import { CoachingReviewCard } from './CoachingReviewCard';
 import { WrapFieldsCard } from './DialerParts';
 import { useMinuteTick } from './ProspectTime';
@@ -35,7 +38,7 @@ type Variant = 'rail' | 'card' | 'phone' | 'sheet';
 const INK = 'var(--ink, #18181b)';
 const MUTED = 'var(--muted, #52525b)';
 const MINT = '#0A8560';
-const MINT_TEXT = '#08694C';
+const MINT_TEXT = 'var(--tx-mint-deep, #08694c)';
 const MINT_TINT = 'var(--mint-dim, #e7f8f1)';
 const LINE = 'var(--divider, #e4e4e7)';
 const CONTROL = 'var(--line, #d4d4d8)';
@@ -58,7 +61,7 @@ function Check() {
 
 export function OutcomePicker({
   V, target, variant, armed, canPick = armed, saveLabel, counter, facts, onFocusNotes, onSkip, onSaved, onCancel, heading = 'How did it go?',
-  children, below, offer, plans, keysInside = false,
+  children, below, offer, plans, keysInside = false, initial = null, onPick,
 }: {
   V: ClozrView;
   target: OutcomeTarget;
@@ -93,9 +96,14 @@ export function OutcomePicker({
    * ⌘ Enter sends from the composer and the arrows walk the list.
    */
   keysInside?: boolean;
+  /** The outcome picked mid-call, so the wrap-up starts from it. */
+  initial?: OutcomeKey | null;
+  /** Mid-call: the host holds the pick for the wrap-up. */
+  onPick?: (k: OutcomeKey | null) => void;
 }) {
   const { notes, setNotes } = useSoftphone();
-  const [sel, setSel] = useState<OutcomeKey | null>(null);
+  const [sel, setSel] = useState<OutcomeKey | null>(initial);
+  useEffect(() => { onPick?.(sel); }, [sel, onPick]);
   const [chip, setChip] = useState<string | null>(null);
   const [textOn, setTextOn] = useState<boolean | null>(null);
   const [pickAt, setPickAt] = useState('');
@@ -151,7 +159,7 @@ export function OutcomePicker({
   });
 
   useEffect(() => {
-    if (!armed) return;
+    if (!armed && !canPick) return;
     const onKey = (e: KeyboardEvent) => {
       const { V: v, plan: p, save: doSave, pick: doPick, onFocusNotes: notesFocus } = live.current;
       if (e.defaultPrevented || e.repeat) return;
@@ -160,6 +168,15 @@ export function OutcomePicker({
       if (keysInside && !(el && rootRef.current?.contains(el))) return;
       const tag = el?.tagName ?? '';
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!el?.isContentEditable;
+      if (!armed) {
+        // Mid-call: a plain 1-8 outside a field picks; nothing else acts yet.
+        if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+        if (/^[1-8]$/.test(e.key) && offer !== 'only') {
+          e.preventDefault();
+          doPick(OUTCOMES[Number(e.key) - 1]!.key);
+        }
+        return;
+      }
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.altKey) {
         e.preventDefault();
         void doSave();
@@ -205,7 +222,7 @@ export function OutcomePicker({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [armed, offer, keysInside]);
+  }, [armed, canPick, offer, keysInside]);
 
   // Entering wrap-up puts focus on the heading, unless the rep is mid-sentence in a field.
   useEffect(() => {
@@ -486,18 +503,24 @@ export function OutcomePicker({
     );
   }
 
-  // card (the desk wrap-up) and sheet (the phone's Log outcome)
+  // card (the desk wrap-up, and the desk's live call) and sheet (the phone's Log outcome)
   return (
     <div ref={rootRef} data-testid="outcome-picker" style={{ display: 'flex', flexDirection: 'column' }}>
       {header}
       {outcomeButtons}
       {willBox}
       {children}
-      <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
-        {onSkip && quiet('Skip', onSkip, 'outcome-skip', touch ? { flex: 1 } : { border: 0, color: MUTED })}
-        {onCancel && quiet('Cancel', onCancel, 'outcome-cancel', touch ? { flex: 1 } : { border: 0, color: MUTED })}
-        {saveButton('outcome-save', touch ? { flex: 2 } : { padding: '0 16px', height: 36 })}
-      </div>
+      {!armed && canPick ? (
+        <p data-testid="outcome-live-hint" style={{ margin: '12px 0 0', fontSize: 12, fontWeight: 500, lineHeight: 1.4, color: MUTED }}>
+          Pick it while you talk. Saves when the call ends.
+        </p>
+      ) : (
+        <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+          {onSkip && quiet('Skip', onSkip, 'outcome-skip', touch ? { flex: 1 } : { border: 0, color: MUTED })}
+          {onCancel && quiet('Cancel', onCancel, 'outcome-cancel', touch ? { flex: 1 } : { border: 0, color: MUTED })}
+          {saveButton('outcome-save', touch ? { flex: 2 } : { padding: '0 16px', height: 36 })}
+        </div>
+      )}
       {below}
     </div>
   );
@@ -514,12 +537,14 @@ const stepWord = (step: string) => ({
  * coaching card still there. Buyers and unknown numbers keep the grid.
  */
 export function SellerWrapUp({
-  V, target, mobile = false, onOpenRecord,
+  V, target, mobile = false, onOpenRecord, initial,
 }: {
   V: ClozrView;
   target: OutcomeTarget;
   mobile?: boolean;
   onOpenRecord?: () => void;
+  /** The outcome picked while the call was live. */
+  initial?: OutcomeKey | null;
 }) {
   const { notes, setNotes, authed, me } = useSoftphone();
   const noteRef = useRef<HTMLTextAreaElement>(null);
@@ -527,9 +552,8 @@ export function SellerWrapUp({
   const call = V.talkrPhone.sp.call;
   const callId = authed && call && call.id !== 'unknown' ? call.id : null;
   const noAnswer = V.wrapNoAnswer;
-  const session = V.talkrPhone.session.session;
-  // Match saveOutcome: CLOZR queue always advances; a Talkr campaign does in power and the self-advancing modes.
-  const sessionOn = !!V.queueSession || (!!session && session.state !== 'paused' && advancesAfterSave(V.talkrPhone.session.campaign?.mode ?? session.mode));
+  // Match saveOutcome: only a self-advancing session dials on after Save; power waits for Next.
+  const sessionOn = V.sessionAutoDials;
 
   const facts = Object.fromEntries(V.wrapFields.map((f) => [f.key, edits[f.key] ?? f.v])) as Partial<Record<WrapKey, string>>;
   const transcriptText = V.transcript.map((l) => `${l.who}: ${l.text}`).join('\n');
@@ -597,6 +621,7 @@ export function SellerWrapUp({
             target={target}
             variant={mobile ? 'phone' : 'card'}
             armed
+            initial={initial}
             saveLabel={mobile ? (sessionOn ? 'Save & next call' : 'Save') : sessionOn ? 'Save and call next' : 'Save'}
             facts={facts}
             onFocusNotes={() => noteRef.current?.focus()}

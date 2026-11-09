@@ -10,7 +10,7 @@
 
 import React, { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import type { ClozrView } from '@/app/clozr/view';
-import { requestSettingsTab } from '@/app/clozr/screens/settingsTab';
+import { openSettings } from '@/lib/settings-sections';
 import {
   dialerReadiness, hostReadinessPrompt, needsAttention, publishReadiness, readinessFacts, readinessRev,
   reviewDialerReadiness, subscribeReadiness, type DialMode, type ReadinessFacts, type ReadinessFix, type ReadinessItem,
@@ -105,8 +105,7 @@ export function useReadinessFix(V: ClozrView, recheckMic: () => void, leave: () 
         if (action === 'record_voicemail') openVoicemailRecorder();
         else {
           if (V.isMobile) V.minimisePhone();
-          requestSettingsTab({ main: 'talkr', tab: action === 'open_numbers' ? 'numbers' : 'account' });
-          V.goSettings();
+          openSettings(action === 'open_numbers' ? 'dialer/numbers' : 'dialer/connection');
         }
       }
     } finally {
@@ -163,8 +162,8 @@ export function DialerReadinessHost({ V }: { V: ClozrView }) {
 
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="dialer-ready-title" onClick={() => close(false)} style={{ position: 'fixed', inset: 0, zIndex: 140, background: 'rgba(28,29,31,.5)', display: 'grid', placeItems: 'center', padding: '16px' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(460px, 100%)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', background: '#fdfcfa', color: '#1c1d1f', borderRadius: '18px', padding: '20px 18px 16px', boxShadow: '0 30px 80px rgba(28,29,31,.35)' }}>
-        <div style={{ fontSize: '11px', fontWeight: 800, color: open.some((i) => i.state === 'missing') ? '#b91c1c' : open.length ? '#b45309' : '#0e7a57' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(460px, 100%)', maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto', background: 'var(--warm-card, #fdfcfa)', color: 'var(--ink-deep, #1c1d1f)', borderRadius: '18px', padding: '20px 18px 16px', boxShadow: '0 30px 80px rgba(28,29,31,.35)' }}>
+        <div style={{ fontSize: '11px', fontWeight: 800, color: open.some((i) => i.state === 'missing') ? 'var(--tx-red, #b91c1c)' : open.length ? 'var(--tx-amber, #b45309)' : 'var(--tx-green-2, #0e7a57)' }}>
           {starting ? `Before your ${modeLabel} session` : 'Dialer setup'}
         </div>
         <div id="dialer-ready-title" style={{ fontSize: '20px', fontWeight: 800, letterSpacing: '-0.02em', marginTop: '4px' }}>
@@ -189,10 +188,10 @@ export function DialerReadinessHost({ V }: { V: ClozrView }) {
 }
 
 export function Row({ item, busy, onFix }: { item: ReadinessItem; busy: boolean; onFix: (a: ReadinessFix) => void }) {
-  const tone = item.state === 'missing' ? '#b91c1c' : item.state === 'warn' ? '#b45309' : '#0e7a57';
+  const tone = item.state === 'missing' ? 'var(--tx-red, #b91c1c)' : item.state === 'warn' ? 'var(--tx-amber, #b45309)' : 'var(--tx-green-2, #0e7a57)';
   const mark = item.state === 'ok' ? '✓' : '!';
   return (
-    <li style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', border: '1px solid #e6e3da', borderRadius: '12px', padding: '10px 12px', background: 'var(--surface, #fff)' }}>
+    <li style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', border: '1px solid var(--warm-line, #e6e3da)', borderRadius: '12px', padding: '10px 12px', background: 'var(--surface, #fff)' }}>
       <span aria-hidden style={{ flex: 'none', width: '20px', height: '20px', borderRadius: '999px', display: 'grid', placeItems: 'center', background: tone, color: 'var(--on-dark, #fff)', fontSize: '12px', fontWeight: 800, marginTop: '1px' }}>{mark}</span>
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: 'block', fontSize: '13.5px', fontWeight: 700 }}>
@@ -218,7 +217,7 @@ export function DialerSetupFlag({ style }: { style?: React.CSSProperties }) {
   const open = needsAttention(dialerReadiness(facts));
   if (!open.length) return null;
   const missing = open.some((i) => i.state === 'missing');
-  const color = missing ? 'var(--tx-red, #b91c1c)' : '#b45309';
+  const color = missing ? 'var(--tx-red, #b91c1c)' : 'var(--tx-amber, #b45309)';
   return (
     <button
       type="button"
@@ -240,4 +239,4 @@ export function DialerSetupFlag({ style }: { style?: React.CSSProperties }) {
 }
 
 const primary: React.CSSProperties = { height: '36px', padding: '0 14px', borderRadius: '10px', border: '1px solid var(--ink-deep, #1c1d1f)', background: 'var(--ink-deep, #1c1d1f)', color: 'var(--surface, #fff)', fontWeight: 700, cursor: 'pointer' };
-const ghost: React.CSSProperties = { height: '36px', padding: '0 12px', borderRadius: '10px', border: '1px solid #ddd9ce', background: 'var(--surface, #fff)', color: 'var(--ink-deep, #1c1d1f)', fontWeight: 650, cursor: 'pointer' };
+const ghost: React.CSSProperties = { height: '36px', padding: '0 12px', borderRadius: '10px', border: '1px solid var(--warm-line-2, #ddd9ce)', background: 'var(--surface, #fff)', color: 'var(--ink-deep, #1c1d1f)', fontWeight: 650, cursor: 'pointer' };

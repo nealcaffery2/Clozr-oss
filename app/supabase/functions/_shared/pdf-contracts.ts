@@ -9,19 +9,24 @@
  * and by completeContract in docs.ts.
  */
 import { prepareForFlatten } from './parity/flatten-prep.ts';
-import { PDFDocument, PDFImage, StandardFonts, degrees, rgb } from 'npm:pdf-lib@1.17.1';
+import { PDFDict, PDFDocument, PDFImage, PDFName, type PDFFont, StandardFonts, degrees, rgb } from 'npm:pdf-lib@1.17.1';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import {
-  type Any, type Company, type SignerRow, applySent, completeContract, emailSigners, ensureTcCc, loadParties, logEvent, queueNotary, workspaceTcCopies,
-  sha256Hex, signUrl, storePdf, toPdf, varsFor,
+  type Any, type Company, type SignerRow, applySent, completeContract, emailSigners, loadParties, logEvent, queueNotary, workspaceTcCopies,
+  sha256Hex, signingSender, signUrl, storePdf, toPdf, varsFor,
 } from './docs.ts';
+import { deliverLinks, loadRecipients } from './docs-flow.ts';
+import { signingResendEnv } from './workspace-email.ts';
 import {
-  type ContractField, type FieldDef, type PageBox, bindToSigners, effectiveReadOnly, missingRequired, normalizeField, planFlatten, signingDay, validateValue,
+  type ContractField, type FieldDef, type PageBox, type PdfFont, detectDocFont, bindToSigners, effectiveReadOnly, missingRequired, normalizeField, planFlatten, signingDay, validateValue,
 } from './pdf-fields.ts';
 import { allSigned, appendTcCc, pending, sendTo, turn, type OrderMode, type ReminderPolicy } from './signing-order.ts';
+import { everyRow } from './every-row.ts';
+import { defaultContractName } from '../../../lib/contract-name.ts';
+import { type SwapClient, swapRows } from './swap-rows.ts';
 
 /** Columns the signing page and the editor get for a field (never who filled it from where). */
-const FIELD_COLS = 'id, signer_id, type, page, x, y, w, h, required, read_only, label, default_value, variable_key, options, validation, value, filled_at, sort, field_key, group_key, conditions, formula, placeholder, font_size, attachment_id';
+const FIELD_COLS = 'id, signer_id, type, page, x, y, w, h, required, read_only, label, default_value, variable_key, options, validation, value, filled_at, sort, field_key, group_key, conditions, formula, placeholder, font_size, font_family, attachment_id';
 
 async function download(admin: SupabaseClient, bucket: string, path: string): Promise<Uint8Array> {
   const { data, error } = await admin.storage.from(bucket).download(path);
@@ -81,7 +86,7 @@ export async function createPdfContract(admin: SupabaseClient, i: PdfCreateInput
   const ref = `CLZ-${Date.now().toString(36).toUpperCase().slice(-6)}`;
   const address = String(i.parties.prop?.line1 || i.parties.seller?.property_address || '').trim();
   const base = i.template ? String(i.template.name) : 'Uploaded PDF';
-  const name = String(i.name || `${base} - ${address || i.parties.buyer?.name || 'contract'}`).slice(0, 200);
+  const name = String(i.name || defaultContractName({ kind: i.kind, templateName: base, address, party: i.parties.buyer?.name ?? null })).slice(0, 200);
   const signers = i.signers.filter((s) => s.role).map((s, idx) => ({ ...s, sort: idx + 1 }));
   const tcs = await workspaceTcCopies(admin, i.ws);
   const active = appendTcCc(signers.filter((s) => !s.optional || s.name || s.email), tcs)
@@ -97,7 +102,7 @@ export async function createPdfContract(admin: SupabaseClient, i: PdfCreateInput
     template_id: i.template?.id ? String(i.template.id) : null, template_key: i.template?.key ?? null, template_name: i.template?.name ?? 'Uploaded PDF',
     ref_number: ref, signing_order_mode: i.orderMode === 'sequential' ? 'sequential' : 'parallel',
     ...(i.reminders ? { reminder_policy: i.reminders } : {}),
-    name, status: i.send ? 'sent' : 'draft', body_md: null, tokens: [],
+    name, name_auto: !i.name, status: i.send ? 'sent' : 'draft', body_md: null, tokens: [],
     recipients: active.map((s) => ({ email: s.email ?? null, name: s.name ?? null, role: s.role })),
     message: i.message ?? null, expires_at: expires, sent_at: i.send ? now.toISOString() : null, created_by: i.userId,
     needs_notary: !!i.notary?.needs, notary_mode: notaryMode, notary_status: notaryStatus, notary_vendor: i.notary?.vendor ?? null,
@@ -146,7 +151,11 @@ export async function createPdfContract(admin: SupabaseClient, i: PdfCreateInput
 
   const links = (signerRows ?? []).map((s) => ({ id: s.id, role: s.role, label: s.label, name: s.name, email: s.email, phone: s.phone, status: s.status, recipient_type: s.recipient_type, sort: s.sort, url: signUrl(i.origin, s.token) }));
   let emailed = 0;
-  if (i.send && i.email !== false) emailed = await emailSigners(i.company, name, i.message ?? null, sendTo(links, row.signing_order_mode), { expiresAt: expires, cc: tcs.map((t) => t.email), contractId: row.id });
+  if (i.send && i.email !== false) {
+    // The workspace's own sender (Acme Homes mails from its domain) with the rep's name on it, same as a later send.
+    const [mailEnv, sender] = await Promise.all([signingResendEnv(admin, i.ws), signingSender(admin, i.userId)]);
+    emailed = await emailSigners(i.company, name, i.message ?? null, sendTo(links, row.signing_order_mode), { expiresAt: expires, cc: tcs.map((t) => t.email), contractId: row.id, env: mailEnv, sender });
+  }
   if (i.notary?.needs && (notaryMode === 'wet' || notaryMode === 'vendor' || i.send)) {
     try { await queueNotary(admin, { ...row, notary_mode: notaryMode, notary_vendor: i.notary.vendor ?? null }, i.origin); } catch (e) { console.error('notary', (e as Error).message); }
   }
@@ -208,8 +217,10 @@ export async function saveDraftFields(admin: SupabaseClient, row: Record<string,
   const bound = bindToSigners(defs, (signers ?? []) as Any[], varsFor(parties, company, row.ref_number));
   if (bound.skipped.length) throw new Error(`Some fields have nobody to fill them: ${bound.skipped.map((s) => `${s.type} for ${s.role} (${s.reason})`).join('; ')}`);
   // Keep what the sender already typed into a field that did not move roles.
-  const { data: before } = await admin.from('contract_fields').select('id, signer_id, value, template_field_id').eq('contract_id', row.id);
-  const keep = new Map((before ?? []).map((f) => [String(f.id), f]));
+  // Every page: these ids are also the rows deleted once the new ones are in.
+  const before = await everyRow<{ id: number; signer_id: number | null; value: string | null; template_field_id: number | null }>(
+    () => admin.from('contract_fields').select('id, signer_id, value, template_field_id').eq('contract_id', row.id).order('id'));
+  const keep = new Map(before.map((f) => [String(f.id), f]));
   const rows = bound.rows.map((r, idx) => {
     const prior = defs[idx].id != null ? keep.get(String(defs[idx].id)) : undefined;
     return {
@@ -218,12 +229,9 @@ export async function saveDraftFields(admin: SupabaseClient, row: Record<string,
       workspace_id: row.workspace_id, contract_id: row.id,
     };
   }).map((r) => (r.value === CLEARED ? { ...r, value: null } : r));
-  const { error: dErr } = await admin.from('contract_fields').delete().eq('contract_id', row.id);
-  if (dErr) throw new Error(dErr.message);
-  if (rows.length) {
-    const { error } = await admin.from('contract_fields').insert(rows);
-    if (error) throw new Error(error.message);
-  }
+  // New fields in first, then the old ones out: a failed insert used to leave the draft with none.
+  const swap = await swapRows(admin as unknown as SwapClient, 'contract_fields', before.map((f) => f.id), rows);
+  if (swap) throw new Error(swap.error.message);
   await logEvent(admin, row, 'fields_edited', { fields: rows.length, missing: bound.unresolved }, { actor_type: 'user', actor_id: who.actor_id });
   return { fields: rows.length, missing: bound.unresolved };
 }
@@ -248,6 +256,7 @@ export async function signerFields(admin: SupabaseClient, row: Record<string, An
       value: f.value, filled_at: f.filled_at, mine,
       // PandaDoc parity: the signing page evaluates groups, conditions and formulas with these.
       field_key: f.field_key ?? null, group_key: f.group_key ?? null, conditions: f.conditions ?? null, formula: f.formula ?? null, placeholder: f.placeholder ?? null,
+      font_size: f.font_size ?? null, font_family: f.font_family ?? null,
       color: Math.max(0, order.indexOf(f.signer_id)), who: who.get(f.signer_id) ?? null,
     }];
   });
@@ -323,11 +332,12 @@ export async function afterTurn(admin: SupabaseClient, row: Record<string, Any>,
     return { completed: true, pdf_url: u?.signedUrl ?? null, waiting_on: 0 };
   }
   if (row.signing_order_mode === 'sequential' && origin) {
-    const nextUp = turn(all, 'sequential').filter((s: Any) => s.email);
+    // Each by the channel they chose (docs-flow deliverLinks: email, text or both), as esign's sign path does.
+    const nextUp = turn(await loadRecipients(admin, row.id), 'sequential').filter((s: Any) => s.email || s.phone);
     if (nextUp.length) {
       try {
-        const cc = await ensureTcCc(admin, row);
-        await emailSigners(company, row.name, row.message ?? null, nextUp.map((s: Any) => ({ ...s, url: signUrl(origin, s.token) })), { expiresAt: row.expires_at, cc, contractId: row.id });
+        const d = await deliverLinks(admin, row, nextUp, { company, origin, who: {}, senderId: row.created_by ?? null });
+        if (d.failed.length) await logEvent(admin, row, 'delivery_failed', { failed: d.failed });
         await admin.from('contract_signers').update({ last_reminded_at: null }).in('id', nextUp.map((s: Any) => s.id));
         await logEvent(admin, row, 'turn', { next: nextUp.map((s: Any) => s.label || s.role) });
       } catch (e) { console.error('next signer', (e as Error).message); }
@@ -346,19 +356,36 @@ const pngBytes = (dataUrl: string) => Uint8Array.from(atob(dataUrl.split(',')[1]
  * was (text, checks, signature and initials images, dates signed), then the
  * signature certificate. What the signers saw is what gets printed.
  */
+/** The BaseFont names of every font the PDF carries ("ArialMT", "ABCDEF+TimesNewRomanPSMT"). */
+function docFontNames(doc: PDFDocument): string[] {
+  const out: string[] = [];
+  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+    if (!(obj instanceof PDFDict) || obj.get(PDFName.of('Type')) !== PDFName.of('Font')) continue;
+    const base = obj.get(PDFName.of('BaseFont'));
+    if (base instanceof PDFName) out.push(base.toString().replace(/^\//, ''));
+  }
+  return out;
+}
+
 export async function flattenPdfContract(admin: SupabaseClient, row: Record<string, Any>, company: Company, signers: SignerRow[]): Promise<Uint8Array> {
   const src = String(row.source_pdf_path || row.pdf_path || '');
   if (!src) throw new Error('This PDF contract has no source file.');
   const doc = await PDFDocument.load(await download(admin, 'contracts', src), { ignoreEncryption: true, updateMetadata: false });
   doc.setProducer('CLOZR'); doc.setCreator('CLOZR');
-  const font = await doc.embedFont(StandardFonts.Helvetica);
+  // "Auto" fields draw in the standard font nearest the document's own (read before ours are embedded).
+  const autoFont = detectDocFont(docFontNames(doc));
+  const fonts: Record<PdfFont, PDFFont> = {
+    helvetica: await doc.embedFont(StandardFonts.Helvetica),
+    times: await doc.embedFont(StandardFonts.TimesRoman),
+    courier: await doc.embedFont(StandardFonts.Courier),
+  };
   const pages = doc.getPages();
   const boxes: PageBox[] = pages.map((p) => { const c = p.getCropBox(); return { x0: c.x, y0: c.y, width: c.width, height: c.height, rotation: p.getRotation().angle }; });
 
-  const { data } = await admin.from('contract_fields').select('id, type, page, x, y, w, h, value, label, field_key, group_key, conditions, formula, signer_id').eq('contract_id', row.id).order('page').order('sort');
+  const { data } = await admin.from('contract_fields').select('id, type, page, x, y, w, h, value, label, field_key, group_key, conditions, formula, signer_id, font_size, font_family').eq('contract_id', row.id).order('page').order('sort');
   // PandaDoc parity: new types mapped to drawable ones, hidden conditional fields blanked, formulas current.
   const { data: atts } = await admin.from('contract_attachments').select('id, label').eq('contract_id', row.id);
-  const fields = prepareForFlatten((data ?? []) as Any[], new Map((atts ?? []).map((a) => [a.id, a.label ?? 'file']))) as Array<Pick<ContractField, 'type' | 'page' | 'x' | 'y' | 'w' | 'h' | 'value'>>;
+  const fields = prepareForFlatten((data ?? []) as Any[], new Map((atts ?? []).map((a) => [a.id, a.label ?? 'file']))) as Array<Pick<ContractField, 'type' | 'page' | 'x' | 'y' | 'w' | 'h' | 'value' | 'font_size' | 'font_family'>>;
   const images = new Map<string, PDFImage>();
   for (const f of fields) {
     const v = (f.value ?? '').trim();
@@ -369,13 +396,14 @@ export async function flattenPdfContract(admin: SupabaseClient, row: Record<stri
   const ops = planFlatten(
     fields.map((f) => { const img = images.get((f.value ?? '').trim()); return { ...f, value: f.type === 'signature' || f.type === 'initials' ? (img ? f.value : null) : clean(f.value ?? ''), imageSize: img ? { width: img.width, height: img.height } : null }; }),
     boxes,
-    (t, size) => font.widthOfTextAtSize(clean(t), size),
+    (t, size, f) => fonts[f].widthOfTextAtSize(clean(t), size),
+    autoFont,
   );
   const ink = rgb(0.06, 0.09, 0.3);
   for (const o of ops) {
     const page = pages[o.page - 1];
     if (!page) continue;
-    if (o.op === 'text') page.drawText(clean(o.text), { x: o.x, y: o.y, size: o.size, font, color: ink, rotate: degrees(o.rotate) });
+    if (o.op === 'text') page.drawText(clean(o.text), { x: o.x, y: o.y, size: o.size, font: fonts[o.font], color: ink, rotate: degrees(o.rotate) });
     else if (o.op === 'image') { const img = images.get(o.png); if (img) page.drawImage(img, { x: o.x, y: o.y, width: o.width, height: o.height, rotate: degrees(o.rotate) }); }
     else page.drawLine({ start: o.start, end: o.end, thickness: o.thickness, color: ink });
   }

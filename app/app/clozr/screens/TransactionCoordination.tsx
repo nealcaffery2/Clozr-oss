@@ -2,8 +2,11 @@
 // Inline styles are carried over verbatim; hover/focus styles live in clozr.css.
 'use client';
 
+import { textTone } from '@/lib/text-tone';
 import React, { useEffect, useState } from 'react';
 import { BackLink } from '@/components/ds/BackLink';
+import { ScreenHeader } from '@/components/ds/Screen';
+import { SectionLabel } from '@/components/ds/Text';
 import type { ClozrView } from '@/app/clozr/view';
 import { AiButton } from '@/components/AiButton';
 import { DealTeam } from '@/components/DealTeam';
@@ -13,6 +16,8 @@ import { Mark } from '@/components/ds/mark';
 import { ScheduleC } from '@/components/ScheduleC';
 import { isTypingTarget } from '@/lib/people-keys';
 import { useComposerText } from '@/app/clozr/composerStore';
+import { DealSmartSummary } from '@/app/components/record/DealSmartSummary';
+import { demoDealMemory } from '@/lib/deal-memory';
 
 const arrowBtn = (on: boolean): React.CSSProperties => ({
   width: '32px', height: '32px', borderRadius: '8px', border: '1px solid var(--c-btn-line)',
@@ -20,6 +25,9 @@ const arrowBtn = (on: boolean): React.CSSProperties => ({
   cursor: on ? 'pointer' : 'default', display: 'grid', placeItems: 'center', padding: 0, flex: 'none',
 });
 
+
+/** Levels arrive in capitals ("CRITICAL", "yellow"); they read in sentence case (DESIGN.md §1). */
+const sentence = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s);
 export function TransactionCoordination({ V }: { V: ClozrView }) {
   // The note line's contents (composerStore): a keystroke used to rebuild the whole view model.
   const composerText = useComposerText();
@@ -41,25 +49,13 @@ export function TransactionCoordination({ V }: { V: ClozrView }) {
   }, [V]);
 
   const nav = V.tcNav;
+  // /demo: the sample summary, with the TC's question (double close or assignment, $7,500 or $5,000) in it.
+  const [demoTc] = useState(() => demoDealMemory({ dealId: 0, address: V.TP.addr }));
   const place = nav ? `${nav.index + 1} of ${nav.count} · ${nav.stage}` : V.TP.addr;
   return (
     <section data-screen-label="Transaction coordination" style={{flex: "1", minWidth: "0", display: "flex", flexDirection: "column"}}>
-      <div style={{background: "var(--surface, #fff)", borderBottom: "1px solid var(--divider, #e4e4e7)", padding: "12px 20px 14px"}}>
-        <div style={{display: "flex", alignItems: "center", gap: "8px", fontSize: "12.5px", color: "var(--meta, #71717a)"}}>
-          <span data-testid="tc-back"><BackLink to={V.tcBackLink} /></span>
-          <span style={{color: "var(--line, #d4d4d8)"}}>
-            /
-          </span>
-          <span>
-            Transaction coordination
-          </span>
-          <span style={{color: "var(--line, #d4d4d8)"}}>
-            /
-          </span>
-          <span style={{color: "var(--ink, #18181b)", fontWeight: "600"}}>
-            {V.TP.addr}
-          </span>
-          <div style={{flex: "1"}}></div>
+      {/* The address is the title, once; the old breadcrumb and the hero both repeated it. */}
+      <ScreenHeader before={<span data-testid="tc-back" style={{flex: "none"}}><BackLink to={V.tcBackLink} /></span>} title={V.TP.addr} meta="Transaction coordination" actions={<>
           <div role="group" aria-label="Move between deals" style={{display: "inline-flex", alignItems: "center", gap: "4px"}}>
             <button type="button" data-testid="tc-prev-stage" aria-label="Previous stage" disabled={!nav?.canPrevStage} onClick={() => V.stepTc('stage', -1)} style={arrowBtn(!!nav?.canPrevStage)}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
@@ -78,28 +74,27 @@ export function TransactionCoordination({ V }: { V: ClozrView }) {
           {V.tcFile?.dealId && V.tcFile.canWrite ? (
           <button type="button" data-testid="header-order-photos" onClick={() => setOrderReq((n) => n + 1)}
             title="Order iVueit photos of this house. A local Vuer shoots it and the photos land under Files & photos."
-            style={{ height: '28px', padding: '0 10px', borderRadius: '8px', border: '1px solid var(--divider, #e4e4e7)', background: 'var(--surface, #fff)', fontSize: '12px', fontWeight: 600, color: 'var(--ink, #18181b)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            style={{ height: '28px', padding: '0 11px', borderRadius: '8px', border: '1px solid #0A8560', background: '#0A8560', fontSize: '12px', fontWeight: 600, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" /><circle cx="12" cy="13" r="3" /></svg>
             Order photos
           </button>
         ) : null}
           <AiButton kind="lane" onClick={V.laneTc} />
-        </div>
-        <div style={{display: "flex", alignItems: "center", gap: "18px", marginTop: "8px", flexWrap: "wrap"}}>
+      </>} />
+      <div style={{background: "var(--surface, #fff)", borderBottom: "1px solid var(--divider, #e4e4e7)", padding: "12px var(--gutter) 14px"}}>
+        <div style={{display: "flex", alignItems: "center", gap: "18px", flexWrap: "wrap"}}>
           <div style={{position: "relative", width: "64px", height: "64px", borderRadius: "50%", background: V.tcRing, display: "grid", placeItems: "center", flex: "none"}}>
             <div style={{width: "52px", height: "52px", borderRadius: "50%", background: "var(--surface, #fff)", display: "grid", placeItems: "center", fontSize: "13px", fontWeight: "700"}}>
               {V.tcPct}
             </div>
           </div>
           <div style={{minWidth: "0"}}>
-            <h1 style={{margin: "0", fontSize: "22px", fontWeight: "700", letterSpacing: "-0.03em"}}>
-              {V.TP.addr}
-            </h1>
-            <div style={{fontSize: "12.5px", color: "var(--meta, #71717a)", marginTop: "2px"}}>
-              {V.TP.cityLine} · seller 
+            <div style={{fontSize: "12.5px", color: "var(--muted, #52525b)"}}>
+              {V.TP.cityLine} · seller{' '}
               <button onClick={V.TP.open} style={{background: "none", border: "0", padding: "0", color: "var(--tx-mint, #0a8560)", cursor: "pointer", fontSize: "12.5px"}}>
                 {V.TP.seller}
               </button>
-               · buyer {V.TP.buyer} · title {V.TP.title}
+              {' '}· buyer {V.TP.buyer} · title {V.TP.title}
             </div>
             <div style={{fontSize: "12.5px", color: "var(--muted, #52525b)", marginTop: "4px"}}>
               {V.tcDoneCount} of {V.tcTotal} items complete
@@ -108,60 +103,56 @@ export function TransactionCoordination({ V }: { V: ClozrView }) {
           <div style={{flex: "1"}}></div>
           <div style={{display: "flex", gap: V.isMobile ? "16px" : "24px", flexWrap: "wrap", minWidth: V.isMobile ? "100%" : "0"}}>
             <div>
-              <div style={{fontSize: "10.5px", letterSpacing: ".1em", textTransform: "uppercase", color: "var(--meta, #71717a)", fontWeight: "600"}}>
-                Closing
-              </div>
-              <div style={{fontSize: "18px", fontWeight: "700", letterSpacing: "-0.03em", marginTop: "3px"}}>
+              <SectionLabel>Closing</SectionLabel>
+              <div style={FIGURE}>
                 {V.TP.close}
               </div>
             </div>
             <div>
-              <div style={{fontSize: "10.5px", letterSpacing: ".1em", textTransform: "uppercase", color: "var(--meta, #71717a)", fontWeight: "600"}}>
-                Countdown
-              </div>
-              <div style={{fontSize: "18px", fontWeight: "700", letterSpacing: "-0.03em", marginTop: "3px", color: "#d97706"}}>
+              <SectionLabel>Countdown</SectionLabel>
+              <div style={{...FIGURE, color: "var(--tx-amber, #b45309)"}}>
                 {V.TP.daysLeft}
               </div>
             </div>
             <div>
-              <div style={{fontSize: "10.5px", letterSpacing: ".1em", textTransform: "uppercase", color: "var(--meta, #71717a)", fontWeight: "600"}}>
-                A → B
-              </div>
-              <div style={{fontSize: "18px", fontWeight: "700", letterSpacing: "-0.03em", marginTop: "3px"}}>
+              <SectionLabel>A to B</SectionLabel>
+              <div style={FIGURE}>
                 {V.TP.contract}
               </div>
             </div>
             <div>
-              <div style={{fontSize: "10.5px", letterSpacing: ".1em", textTransform: "uppercase", color: "var(--meta, #71717a)", fontWeight: "600"}}>
-                B → C
-              </div>
-              <div style={{fontSize: "18px", fontWeight: "700", letterSpacing: "-0.03em", marginTop: "3px"}}>
+              <SectionLabel>B to C</SectionLabel>
+              <div style={FIGURE}>
                 {V.TP.buyerPrice}
               </div>
             </div>
             <div>
-              <div style={{fontSize: "10.5px", letterSpacing: ".1em", textTransform: "uppercase", color: "var(--meta, #71717a)", fontWeight: "600"}}>
-                Assignment fee
-              </div>
-              <div style={{fontSize: "18px", fontWeight: "700", letterSpacing: "-0.03em", marginTop: "3px", color: "#16a34a"}}>
+              <SectionLabel>Assignment fee</SectionLabel>
+              <div style={{...FIGURE, color: "var(--tx-green, #15803d)"}}>
                 {V.TP.assignment}
               </div>
             </div>
           </div>
         </div>
       </div>
-      <div style={{flex: "1", minHeight: "0", overflow: "auto", padding: "16px 20px 40px"}}>
+      <div style={{flex: "1", minHeight: "0", overflow: "auto", padding: "16px var(--gutter) 40px"}}>
         {/* The file A to Z, the order a transaction runs in: what stands in the way,
             today's moves, the contract-to-close checklist, who is on it and what
             they owe, then the documents and everything said on the deal. */}
+        {/* The deal's Smart Summary: what the contracts, the deal sheet and the mail disagree on, before the checklist. */}
+        {V.tcFile?.dealId ? (
+          <DealSmartSummary key={V.tcFile.dealId} workspaceId={V.tcFile.workspaceId} dealId={V.tcFile.dealId} />
+        ) : !V.isLiveData ? (
+          <DealSmartSummary key="demo" workspaceId={null} dealId={null} demo={demoTc} />
+        ) : null}
         <TcStep n={1} title="Where it stands" note="Anything blocking the close comes first.">
         <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "1fr" : "repeat(3,minmax(0,1fr))", gap: "10px"}}>
           {(V.tcBlockers || []).map((b, b__i) => (
             <React.Fragment key={b__i}>
             <div style={{display: "grid", gridTemplateColumns: "auto 1fr", gap: "12px", alignItems: "start", padding: "12px 14px", borderRadius: "10px", background: b.bg}}>
-              <span style={{display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "10.5px", fontWeight: "700", letterSpacing: ".1em", textTransform: "uppercase", color: b.color, marginTop: "2px"}}>
+              <span style={{display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11.5px", fontWeight: "600", color: textTone(b.color), marginTop: "2px"}}>
                 <Mark label={b.level} />
-                {b.level}
+                {sentence(b.level)}
               </span>
               <span>
                 <span style={{display: "block", fontWeight: "600", fontSize: "13px", color: "var(--ink, #18181b)"}}>
@@ -186,10 +177,10 @@ export function TransactionCoordination({ V }: { V: ClozrView }) {
         {(V.tcDrive) ? (
           <div style={{background: "var(--surface, #fff)", border: "1px solid var(--divider, #e4e4e7)", borderRadius: "12px", padding: "14px 16px", marginBottom: "14px"}}>
             <div style={{display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap"}}>
-              <span style={{width: "7px", height: "7px", borderRadius: "999px", background: "var(--c-lane)", animation: "clozrPulseLane 2.4s infinite"}}></span>
-              <span style={{fontWeight: "700", fontSize: "14px", color: "var(--c-lane)"}}>Lane · today</span>
-              <span style={{fontSize: "11px", fontWeight: "700", letterSpacing: ".1em", textTransform: "uppercase", padding: "3px 8px", borderRadius: "6px", color: V.tcDrive.color, background: V.tcDrive.bg}}>
-                {V.tcDrive.statusLabel}
+              <span aria-hidden style={{display: "inline-flex", color: "var(--c-lane)"}}><Mark label="Lane" size={14} /></span>
+              <span className="t-title">Lane today</span>
+              <span style={{fontSize: "11px", fontWeight: "600", padding: "3px 8px", borderRadius: "6px", color: textTone(V.tcDrive.color), background: V.tcDrive.bg}}>
+                {sentence(V.tcDrive.statusLabel)}
               </span>
               <span style={{fontSize: "12.5px", color: "var(--muted, #52525b)"}}>
                 {V.tcDrive.track} · <b style={{color: "var(--ink, #18181b)"}}>{V.tcDrive.dayMarker}</b>
@@ -208,14 +199,14 @@ export function TransactionCoordination({ V }: { V: ClozrView }) {
               <div style={{display: "grid", gap: "6px", marginTop: "12px"}}>
                 {(V.tcDrive.triggers || []).map((t, t__i) => (
                   <div key={t__i} style={{display: "grid", gridTemplateColumns: "auto 1fr", gap: "10px", alignItems: "start", padding: "9px 12px", borderRadius: "9px", background: t.bg}}>
-                    <span style={{display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "10.5px", fontWeight: "700", letterSpacing: ".1em", textTransform: "uppercase", color: t.color, marginTop: "2px"}}>
+                    <span style={{display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11.5px", fontWeight: "600", color: textTone(t.color), marginTop: "2px"}}>
                       <Mark label={t.level} />
-                      {t.level}
+                      {sentence(t.level)}
                     </span>
                     <span>
                       <span style={{display: "block", fontWeight: "600", fontSize: "13px", color: "var(--ink, #18181b)"}}>{t.signal}</span>
                       <span style={{display: "block", fontSize: "12px", color: "var(--muted, #52525b)", marginTop: "2px"}}>{t.action}{t.escalate ? ` Escalate: ${t.escalate}.` : ''}</span>
-                      <span style={{display: "block", fontSize: "10.5px", color: "var(--subtle, #a1a1aa)", marginTop: "3px"}}>{t.ref}</span>
+                      <span style={{display: "block", fontSize: "10.5px", color: "var(--meta, #71717a)", marginTop: "3px"}}>{t.ref}</span>
                     </span>
                   </div>
                 ))}
@@ -223,31 +214,31 @@ export function TransactionCoordination({ V }: { V: ClozrView }) {
             ) : null}
             <div style={{display: "grid", gridTemplateColumns: V.isMobile ? "1fr" : "repeat(3, minmax(0,1fr))", gap: "14px", marginTop: "12px"}}>
               <div>
-                <div style={{fontSize: "10.5px", letterSpacing: ".1em", textTransform: "uppercase", color: "var(--meta, #71717a)", fontWeight: "600"}}>Past its day</div>
+                <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600"}}>Past its day</div>
                 {(V.tcDrive.hasOverdue) ? (V.tcDrive.overdue || []).map((t, t__i) => (
                   <div key={t__i} style={{fontSize: "12.5px", marginTop: "6px", display: "flex", gap: "8px"}}>
-                    <span style={{color: t.critical ? "#ff7a45" : "var(--meta, #71717a)", fontWeight: "600", flex: "none", width: "44px"}}>{t.day}</span>
-                    <span style={{color: "var(--ink, #18181b)"}}>{t.task} <span style={{color: "var(--subtle, #a1a1aa)"}}>· {t.owner}</span></span>
+                    <span style={{color: t.critical ? "var(--tx-orange, #c2410c)" : "var(--meta, #71717a)", fontWeight: "600", flex: "none", width: "44px"}}>{t.day}</span>
+                    <span style={{color: "var(--ink, #18181b)"}}>{t.task} <span style={{color: "var(--meta, #71717a)"}}>· {t.owner}</span></span>
                   </div>
-                )) : <div style={{fontSize: "12.5px", color: "var(--subtle, #a1a1aa)", marginTop: "6px"}}>Nothing slipped.</div>}
+                )) : <div style={{fontSize: "12.5px", color: "var(--meta, #71717a)", marginTop: "6px"}}>Nothing slipped.</div>}
               </div>
               <div>
-                <div style={{fontSize: "10.5px", letterSpacing: ".1em", textTransform: "uppercase", color: "var(--meta, #71717a)", fontWeight: "600"}}>Due today</div>
+                <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600"}}>Due today</div>
                 {(V.tcDrive.hasDueToday) ? (V.tcDrive.dueToday || []).map((t, t__i) => (
                   <div key={t__i} style={{fontSize: "12.5px", marginTop: "6px", display: "flex", gap: "8px"}}>
-                    <span style={{color: t.critical ? "#ff7a45" : "var(--meta, #71717a)", fontWeight: "600", flex: "none", width: "44px"}}>{t.day}</span>
-                    <span style={{color: "var(--ink, #18181b)"}}>{t.task} <span style={{color: "var(--subtle, #a1a1aa)"}}>· {t.owner}</span></span>
+                    <span style={{color: t.critical ? "var(--tx-orange, #c2410c)" : "var(--meta, #71717a)", fontWeight: "600", flex: "none", width: "44px"}}>{t.day}</span>
+                    <span style={{color: "var(--ink, #18181b)"}}>{t.task} <span style={{color: "var(--meta, #71717a)"}}>· {t.owner}</span></span>
                   </div>
-                )) : <div style={{fontSize: "12.5px", color: "var(--subtle, #a1a1aa)", marginTop: "6px"}}>Cadence only.</div>}
+                )) : <div style={{fontSize: "12.5px", color: "var(--meta, #71717a)", marginTop: "6px"}}>Cadence only.</div>}
               </div>
               <div>
-                <div style={{fontSize: "10.5px", letterSpacing: ".1em", textTransform: "uppercase", color: "var(--meta, #71717a)", fontWeight: "600"}}>Clocks running</div>
+                <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600"}}>Clocks running</div>
                 {(V.tcDrive.hasSlas) ? (V.tcDrive.slas || []).map((s, s__i) => (
                   <div key={s__i} style={{fontSize: "12.5px", marginTop: "6px"}}>
                     <span style={{fontWeight: "600", color: "var(--ink, #18181b)"}}>{s.item}</span>
                     <span style={{display: "block", fontSize: "11.5px", color: "var(--meta, #71717a)"}}>{s.clock}</span>
                   </div>
-                )) : <div style={{fontSize: "12.5px", color: "var(--subtle, #a1a1aa)", marginTop: "6px"}}>No vendor clock open.</div>}
+                )) : <div style={{fontSize: "12.5px", color: "var(--meta, #71717a)", marginTop: "6px"}}>No vendor clock open.</div>}
               </div>
             </div>
           </div>
@@ -277,7 +268,7 @@ export function TransactionCoordination({ V }: { V: ClozrView }) {
                     <span style={{display: "block", fontSize: "13px", fontWeight: "500", color: it.textColor, textDecoration: it.deco}}>
                       {it.k}
                     </span>
-                    <span style={{display: "block", fontSize: "11px", color: "var(--subtle, #a1a1aa)"}}>
+                    <span style={{display: "block", fontSize: "11px", color: "var(--meta, #71717a)"}}>
                       {it.owner}
                     </span>
                   </span>
@@ -309,7 +300,7 @@ export function TransactionCoordination({ V }: { V: ClozrView }) {
                 <DealTeam bare dealId={V.tcFile.dealId} onCall={V.callParty} onOpenSeller={(id) => V.openPerson('s' + id)} onOpenBuyer={(id) => V.openBuyerRecord('b' + id)} onOpenVendor={V.openVendorContact} onChanged={V.reloadCrm} />
               ) : (
                 <>
-                <div style={{fontSize: "10.5px", letterSpacing: ".1em", textTransform: "uppercase", color: "var(--meta, #71717a)", fontWeight: "600"}}>
+                <div style={{fontSize: "11.5px", color: "var(--meta, #71717a)", fontWeight: "600"}}>
                   Parties
                 </div>
                 {(V.tcParties || []).map((p, p__i) => (
@@ -331,11 +322,11 @@ export function TransactionCoordination({ V }: { V: ClozrView }) {
               {(V.tcTasks || []).map((t) => (
                 <label key={t.id} style={{display: "grid", gridTemplateColumns: "16px 1fr auto", gap: "8px", padding: "8px 0", borderBottom: "1px solid var(--divider-2, #f0f0f1)", cursor: "pointer", alignItems: "start"}}>
                   <input type="checkbox" checked={!!t.done} onChange={t.toggle} style={{width: "14px", height: "14px", accentColor: "var(--tx-mint, #0a8560)", marginTop: "2px"}} />
-                  <span style={{fontSize: "12.5px", fontWeight: "500", color: t.done ? "var(--subtle, #a1a1aa)" : "var(--ink, #18181b)", textDecoration: t.done ? "line-through" : "none"}}>{t.title}</span>
+                  <span style={{fontSize: "12.5px", fontWeight: "500", color: t.done ? "var(--meta, #71717a)" : "var(--ink, #18181b)", textDecoration: t.done ? "line-through" : "none"}}>{t.title}</span>
                   <span style={{fontSize: "11.5px", color: "var(--meta, #71717a)", whiteSpace: "nowrap"}}>{t.due}</span>
                 </label>
               ))}
-              {(V.tcTasks || []).length ? null : <div style={{fontSize: "12.5px", color: "var(--subtle, #a1a1aa)", padding: "8px 0"}}>No open tasks on this file.</div>}
+              {(V.tcTasks || []).length ? null : <div style={{fontSize: "12.5px", color: "var(--meta, #71717a)", padding: "8px 0"}}>No open tasks on this file.</div>}
             </div>
         </TcStep>
         </div>
@@ -361,7 +352,7 @@ export function TransactionCoordination({ V }: { V: ClozrView }) {
                   <div style={{display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "8px"}}>
                     {V.tcFeedFilters.map((f) => (
                       <button key={f.label} onClick={f.go} style={{height: "24px", padding: "0 8px", borderRadius: "999px", border: `1px solid ${f.on ? "#0A8560" : "var(--divider, #e4e4e7)"}`, background: f.on ? "var(--mint-dim, #e7f8f1)" : "var(--surface, #fff)", color: f.on ? "var(--tx-mint, #0a8560)" : "var(--muted, #52525b)", fontSize: "11.5px", fontWeight: f.on ? "600" : "500", cursor: "pointer"}}>
-                        {f.label} <span style={{color: "var(--subtle, #a1a1aa)"}}>{f.count}</span>
+                        {f.label} <span style={{color: "var(--meta, #71717a)"}}>{f.count}</span>
                       </button>
                     ))}
                   </div>
@@ -370,7 +361,7 @@ export function TransactionCoordination({ V }: { V: ClozrView }) {
               {(V.tcFeed || []).map((f, f__i) => (
                 <React.Fragment key={f__i}>
                 <div style={{display: "grid", gridTemplateColumns: "28px 1fr", gap: "10px", padding: "10px 16px", borderBottom: "1px solid var(--divider-2, #f0f0f1)"}}>
-                  <span style={{width: "28px", height: "28px", borderRadius: "7px", background: "var(--surface-2, #f4f4f5)", display: "grid", placeItems: "center", fontSize: "10px", fontWeight: "700", color: "var(--muted, #52525b)"}}>
+                  <span style={{width: "28px", height: "28px", borderRadius: "7px", background: "var(--surface-2, #f4f4f5)", display: "grid", placeItems: "center", fontSize: "11px", fontWeight: "700", color: "var(--muted, #52525b)"}}>
                     {f.initials}
                   </span>
                   <span style={{minWidth: "0"}}>
@@ -378,11 +369,11 @@ export function TransactionCoordination({ V }: { V: ClozrView }) {
                       <span style={{fontWeight: "600", fontSize: "12.5px"}}>
                         {f.who}
                       </span>
-                      <span style={{fontSize: "10px", fontWeight: "700", letterSpacing: ".08em", textTransform: "uppercase", color: f.roleColor}}>
+                      <span style={{fontSize: "11.5px", fontWeight: "600", color: textTone(f.roleColor)}}>
                         {f.role}
                       </span>
                       <span style={{flex: "1"}}></span>
-                      <span style={{fontSize: "11px", color: "var(--subtle, #a1a1aa)", whiteSpace: "nowrap"}}>
+                      <span style={{fontSize: "11px", color: "var(--meta, #71717a)", whiteSpace: "nowrap"}}>
                         {f.time}
                       </span>
                     </span>
@@ -393,7 +384,7 @@ export function TransactionCoordination({ V }: { V: ClozrView }) {
                 </div>
                 </React.Fragment>
               ))}
-              {V.tcFeed.length ? null : <div style={{padding: "14px 16px", fontSize: "12.5px", color: "var(--subtle, #a1a1aa)", borderBottom: "1px solid var(--divider-2, #f0f0f1)"}}>No transaction activity yet.</div>}
+              {V.tcFeed.length ? null : <div style={{padding: "14px 16px", fontSize: "12.5px", color: "var(--meta, #71717a)", borderBottom: "1px solid var(--divider-2, #f0f0f1)"}}>No transaction activity yet.</div>}
               <div style={{padding: "10px 16px", display: "flex", gap: "6px", alignItems: "flex-end"}}>
                 <label style={{flex: "1", display: "flex", flexDirection: "column", gap: "4px", minWidth: 0}}>
                   <span style={{fontSize: "11.5px", fontWeight: 500, color: "var(--meta, #71717a)"}}>Note on this deal&rsquo;s file</span>
@@ -423,3 +414,6 @@ function TcStep({ n, title, note, children }: { n: number; title: string; note?:
     </section>
   );
 }
+
+/** The deal's headline numbers: the figure role (DESIGN.md §3). */
+const FIGURE: React.CSSProperties = { fontSize: 'var(--fs-figure)', fontWeight: 650, letterSpacing: '-0.02em', lineHeight: 1.15, marginTop: '3px', fontVariantNumeric: 'tabular-nums' };

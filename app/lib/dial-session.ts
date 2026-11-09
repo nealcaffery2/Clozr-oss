@@ -11,7 +11,7 @@
 // tools/dial-session.test.ts.
 
 import { OUTCOMES, outcomeByKey, type OutcomeKey } from './call-outcomes';
-import type { DialMode } from './dial-engine';
+import { STARTING_LINES, clampLines, type DialMode } from './power-dialer';
 import type { ReadinessFacts } from './dialer-readiness';
 import { walkKey, type QueueDepth, type WalkRow } from './seller-phones';
 
@@ -211,8 +211,8 @@ export function setupCheck(facts: ReadinessFacts | null, list: ListFacts | null,
 
 // ---- remembered choices -------------------------------------------------------
 
-export type SetupPrefs = { mode: DialMode; depth: QueueDepth; vmClipId: number | null };
-export const DEFAULT_PREFS: SetupPrefs = { mode: 'power', depth: 1, vmClipId: null };
+export type SetupPrefs = { mode: DialMode; depth: QueueDepth; vmClipId: number | null; /** Predictive: how many people ring at once, 1..10. */ lines: number };
+export const DEFAULT_PREFS: SetupPrefs = { mode: 'power', depth: 1, vmClipId: null, lines: STARTING_LINES };
 
 export const prefsKey = (ws: string | number | null, uid: string | null) => `clozr.dialSetup.${ws ?? 'demo'}.${uid ?? 'me'}`;
 export const runKey = (ws: string | number | null, uid: string | null) => `clozr.dialRun.${ws ?? 'demo'}.${uid ?? 'me'}`;
@@ -228,6 +228,7 @@ export function parsePrefs(raw: string | null | undefined): Partial<SetupPrefs> 
     if (isMode(o.mode)) out.mode = o.mode;
     if (isDepth(o.depth)) out.depth = o.depth;
     if (o.vmClipId === null || (typeof o.vmClipId === 'number' && Number.isFinite(o.vmClipId))) out.vmClipId = o.vmClipId as number | null;
+    if (typeof o.lines === 'number') out.lines = clampLines(o.lines);
     return out;
   } catch {
     return {};
@@ -352,6 +353,25 @@ export function firstRows<T extends SavedRow>(list: readonly T[]): T[] {
   return out;
 }
 
+/**
+ * Today people the call queue has already dialed, kept in the browser for the
+ * day (`calledKey`), so stopping the queue and starting it again picks up past
+ * them instead of at the top. `day` is the caller's local date; another day's
+ * set, or anything unreadable, is empty.
+ */
+export const calledKey = (ws: string | number | null, uid: string | null) => `clozr.queueCalled.${ws ?? 'demo'}.${uid ?? 'me'}`;
+export function parseCalled(raw: string | null | undefined, day: string): Record<string, boolean> {
+  try {
+    const o = JSON.parse(raw ?? '') as { day?: unknown; ids?: unknown };
+    if (o?.day !== day || !Array.isArray(o.ids)) return {};
+    return Object.fromEntries(o.ids.filter((x): x is string => typeof x === 'string').map((id) => [id, true]));
+  } catch { return {}; }
+}
+/** The queue's suggested rows still to call: not done, not dialed already today. */
+export function uncalled<T extends { done?: unknown; target: { personId?: string | null } }>(rows: readonly T[], called: Record<string, boolean>): T[] {
+  return rows.filter((r) => !r.done && !(r.target.personId && called[r.target.personId]));
+}
+
 /** "Resume session (23 of 140, started 2:14pm)". The clock is formatted by the caller. */
 export function resumeLabel(saved: Pick<SavedRun, 'list' | 'pos' | 'at' | 'dialed' | 'reached' | 'tally'>, startedClock: string): string {
   const p = sessionProgress(saved, saved.tally);
@@ -392,47 +412,4 @@ export function runAgainCounts(origin: readonly SavedRow[], tally: SessionTally,
     not_reached: runAgainList(origin, tally, reached, 'not_reached').length,
     no_answer: runAgainList(origin, tally, reached, 'no_answer').length,
   };
-}
-
-// ---- the hand-off to the setup sheet on screen ------------------------------
-
-export type SetupListOption = {
-  id: string;
-  title: string;
-  /** Null for a Talkr campaign: the server picks who to call. */
-  facts: ListFacts | null;
-  /** Whether Numbers per lead means anything (the list has sellers or buyers on it). */
-  hasRecords: boolean;
-};
-
-export type SetupRequest = {
-  /** A CLOZR list walked in the browser, or a Talkr campaign walked on the server. */
-  kind: 'list' | 'campaign';
-  lists: SetupListOption[];
-  listId: string;
-  /** Where the start came from asked for this mode; null takes the rep's last. */
-  mode: DialMode | null;
-  depth: QueueDepth | null;
-};
-
-export type SetupChoice = { listId: string; mode: DialMode; depth: QueueDepth; vmClipId: number | null };
-
-type SetupPrompt = SetupRequest & { resolve: (c: SetupChoice | null) => void };
-let setupHost: ((p: SetupPrompt) => void) | null = null;
-
-/** The setup sheet on screen takes requests. One host at a time. */
-export function hostSessionSetup(fn: (p: SetupPrompt) => void): () => void {
-  setupHost = fn;
-  return () => { if (setupHost === fn) setupHost = null; };
-}
-
-/**
- * Every session start asks here first. The rep's answer (null when they
- * cancel), or null straight away with `false` when nothing on screen can ask,
- * in which case the caller starts with what it has.
- */
-export function requestSessionSetup(req: SetupRequest): Promise<SetupChoice | null> | false {
-  const show = setupHost;
-  if (!show) return false;
-  return new Promise<SetupChoice | null>((resolve) => show({ ...req, resolve }));
 }

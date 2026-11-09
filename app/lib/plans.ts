@@ -9,10 +9,12 @@
 // older readers in lib/crm.ts.
 
 import type { Json } from './database.types';
+import { everyRow } from './every-row';
 import { pauseEnrollment, resumeEnrollment } from './crm-write';
 import { supabase } from './supabase';
 import { ACTION_PLAN_CATALOG } from './action-plan-catalog';
 import { pinnedGroup } from './rvm-pick';
+import { replacePlanSteps, type StepPayload } from './plan-step-save';
 import { CAPABILITIES, CAPABILITY_LABEL, cleanAllowed, type Capability } from '../supabase/functions/_shared/plan-agent-rules';
 
 export { CAPABILITIES, CAPABILITY_LABEL, type Capability };
@@ -25,17 +27,17 @@ export type TriggerType = 'manual' | 'stage' | 'tag' | 'new_lead' | 'form';
 export type Priority = 'low' | 'normal' | 'high';
 
 export const STEP_TYPES: { v: StepType; label: string; color: string; bg: string; hint: string }[] = [
-  { v: 'sms', label: 'Text', color: '#e6142e', bg: '#ffe9ec', hint: 'A text the rep sends from the record' },
-  { v: 'email', label: 'Email', color: '#2563eb', bg: '#eff6ff', hint: 'An email with a subject line' },
+  { v: 'sms', label: 'Text', color: '#e6142e', bg: 'var(--c-talkr-soft, #ffe9ec)', hint: 'A text the rep sends from the record' },
+  { v: 'email', label: 'Email', color: 'var(--tx-cold, #2563eb)', bg: 'var(--tint-blue, #eff6ff)', hint: 'An email with a subject line' },
   { v: 'call', label: 'Call', color: '#7c3aed', bg: '#f5f3ff', hint: 'Talking points for a call' },
-  { v: 'task', label: 'Task', color: '#b45309', bg: '#fffbeb', hint: 'Something for the rep to do' },
-  { v: 'wait', label: 'Wait', color: '#71717a', bg: '#f4f4f5', hint: 'Nothing happens until the delay passes' },
+  { v: 'task', label: 'Task', color: 'var(--tx-amber, #b45309)', bg: 'var(--tint-amber, #fffbeb)', hint: 'Something for the rep to do' },
+  { v: 'wait', label: 'Wait', color: 'var(--meta, #71717a)', bg: 'var(--surface-2, #f4f4f5)', hint: 'Nothing happens until the delay passes' },
   { v: 'stage', label: 'Stage', color: '#0e7490', bg: '#ecfeff', hint: 'Move the seller to a stage' },
-  { v: 'tag', label: 'Tag', color: '#be185d', bg: '#fdf2f8', hint: 'Add a tag to the seller' },
+  { v: 'tag', label: 'Tag', color: '#be185d', bg: 'var(--c-lane-soft, #fdf2f8)', hint: 'Add a tag to the seller' },
   { v: 'assign', label: 'Assign', color: '#4d7c0f', bg: '#f7fee7', hint: 'Hand the seller to a teammate' },
   { v: 'compr_report', label: 'Compr report', color: '#4338ca', bg: '#eef2ff', hint: 'Sends the Compr Seller or Compr Buyer report link' },
-  { v: 'rvm', label: 'RVM', color: '#b45309', bg: '#fff7ed', hint: 'Leaves a ringless voicemail. Skips do-not-call, a recent conversation, and hours outside 8am–8pm their time.' },
-  { v: 'ai_agent', label: 'AI agent', color: '#0f766e', bg: '#f0fdfa', hint: 'Give the AI a goal. When the lead reaches this step it reads their history and sends one text, adds one task or changes the status — or does nothing — and says why.' },
+  { v: 'rvm', label: 'RVM', color: 'var(--tx-amber, #b45309)', bg: 'var(--tint-orange, #fff7ed)', hint: 'Leaves a ringless voicemail. Skips do-not-call, a recent conversation, and hours outside 8am–8pm their time.' },
+  { v: 'ai_agent', label: 'AI agent', color: 'var(--tx-teal, #0f766e)', bg: '#f0fdfa', hint: 'Give the AI a goal. When the lead reaches this step it reads their history and sends one text, adds one task or changes the status — or does nothing — and says why.' },
 ];
 export const stepMeta = (t: string) => STEP_TYPES.find((s) => s.v === t) ?? STEP_TYPES[3];
 
@@ -154,6 +156,8 @@ export type PlanSettings = {
   skip_tags?: string[];
   /** A Compr campaign plan: the Suggested bucket on the Compr Buyers screen it starts for (migration 271). */
   compr_bucket?: string;
+  /** How many people start the plan per day; the rest wait their turn (migration 377). Unset is no cap. */
+  daily_cap?: number;
 };
 
 export type PlanDraft = {
@@ -218,7 +222,7 @@ export function blankPlan(): PlanDraft {
 }
 
 export function triggerLabel(type: TriggerType, value: string): string {
-  if (type === 'stage') return value ? `Stage → ${value}` : 'Stage enters…';
+  if (type === 'stage') return value ? `Enters ${value}` : 'Stage enters…';
   if (type === 'tag') return value ? `Tag "${value}" added` : 'Tag added…';
   return TRIGGERS.find((t) => t.v === type)?.label ?? 'Manual enrollment';
 }
@@ -319,6 +323,7 @@ export function parseSettings(j: Json | null | undefined): PlanSettings {
     ...(typeof o.audience === 'string' && o.audience ? { audience: o.audience } : {}),
     ...(Array.isArray(o.skip_tags) ? { skip_tags: o.skip_tags.filter((t): t is string => typeof t === 'string' && t.length > 0) } : {}),
     ...(typeof o.compr_bucket === 'string' && o.compr_bucket ? { compr_bucket: o.compr_bucket } : {}),
+    ...(typeof o.daily_cap === 'number' && o.daily_cap > 0 ? { daily_cap: Math.floor(o.daily_cap) } : {}),
   };
 }
 
@@ -486,20 +491,21 @@ export async function listPlans(workspaceId: number): Promise<{ ok: boolean; pla
     const r = await supabase!.from('action_plans').select(PLAN_COLS).eq('workspace_id', workspaceId).order('updated_at', { ascending: false });
     return before142(r.error) ? supabase!.from('action_plans').select(PLAN_COLS_139).eq('workspace_id', workspaceId).order('updated_at', { ascending: false }) : r;
   };
-  const [{ data: plans, error }, { data: steps }, { data: enrolled }] = await Promise.all([
+  const [{ data: plans, error }, { data: steps }] = await Promise.all([
     readPlans(),
     supabase.from('action_plan_steps').select('plan_id').eq('workspace_id', workspaceId),
-    supabase.from('enrollments').select('plan_id').eq('workspace_id', workspaceId).in('status', ['active', 'paused']),
   ]);
   if (error) return { ok: false, plans: [], message: error.message };
-  const count = (rows: { plan_id: number }[] | null) => {
-    const m = new Map<number, number>();
-    for (const r of rows ?? []) m.set(r.plan_id, (m.get(r.plan_id) ?? 0) + 1);
-    return m;
-  };
-  const sc = count(steps);
-  const ec = count(enrolled);
-  return { ok: true, plans: (plans ?? []).map((p) => summaryFromRow(p as PlanRow, sc.get(p.id) ?? 0, ec.get(p.id) ?? 0)) };
+  const sc = new Map<number, number>();
+  for (const r of steps ?? []) sc.set(r.plan_id, (sc.get(r.plan_id) ?? 0) + 1);
+  // One exact count per plan: reading the rows stopped at the API's 1,000-row
+  // page, so big plans showed a share of 1,000 instead of their real count.
+  const ec = await Promise.all((plans ?? []).map(async (p) => {
+    const { count } = await supabase!.from('enrollments').select('id', { count: 'exact', head: true })
+      .eq('workspace_id', workspaceId).eq('plan_id', p.id).in('status', ['active', 'paused']);
+    return count ?? 0;
+  }));
+  return { ok: true, plans: (plans ?? []).map((p, i) => summaryFromRow(p as PlanRow, sc.get(p.id) ?? 0, ec[i])) };
 }
 
 export async function loadPlan(planId: number): Promise<{ ok: boolean; plan?: PlanDraft; message?: string }> {
@@ -553,9 +559,10 @@ export async function listEnrolled(planId: number): Promise<EnrolledRow[]> {
   const ids = rows.map((e) => e.id);
   if (ids.length) {
     const { data: runs, error } = await supabase.from('plan_agent_runs')
-      .select('enrollment_id,status,reason,actions,created_at,finished_at').in('enrollment_id', ids).order('created_at', { ascending: true }).limit(1000);
+      .select('enrollment_id,status,reason,actions,created_at,finished_at').in('enrollment_id', ids).order('created_at', { ascending: false }).limit(1000);
     if (!error) {
-      for (const run of runs ?? []) {
+      // Newest first off the wire (the cap keeps the latest), oldest first on screen.
+      for (const run of [...(runs ?? [])].reverse()) {
         if (run.enrollment_id == null) continue;
         const acts = (Array.isArray(run.actions) ? run.actions : []) as { kind?: unknown; ok?: unknown; detail?: unknown }[];
         const list = notes.get(run.enrollment_id) ?? [];
@@ -587,9 +594,10 @@ export type SellerPick = { id: number; name: string; addr: string; stage: string
 
 export async function listSellerPicks(workspaceId: number): Promise<SellerPick[]> {
   if (!supabase) return [];
-  const { data } = await supabase.from('sellers').select('id,name,property_address,lead_stage,tags')
-    .eq('workspace_id', workspaceId).is('archived_at', null).order('name').limit(2000);
-  return (data ?? []).map((s) => ({ id: s.id, name: s.name, addr: s.property_address ?? '', stage: s.lead_stage, tags: s.tags ?? [] }));
+  // Every page: the picker stopped at the first 1,000 names and could not reach the rest.
+  const data = await everyRow<{ id: number; name: string; property_address: string | null; lead_stage: string; tags: string[] | null }>(() => supabase!.from('sellers').select('id,name,property_address,lead_stage,tags')
+    .eq('workspace_id', workspaceId).is('archived_at', null).order('name').order('id')).catch(() => []);
+  return data.map((s) => ({ id: s.id, name: s.name, addr: s.property_address ?? '', stage: s.lead_stage, tags: s.tags ?? [] }));
 }
 
 export type Teammate = { id: string; name: string };
@@ -605,10 +613,40 @@ export async function listTeammates(workspaceId: number): Promise<Teammate[]> {
 export type SaveResult = { ok: boolean; id?: number; message?: string };
 
 /**
- * Create or replace a plan and its steps. Steps are replaced wholesale — a
- * plan is edited as one thing, and diffing rows buys nothing but the chance
- * to leave a stale one behind. Queued tasks keep their plan_step_id only
- * through ON DELETE SET NULL; the task itself stays.
+ * A draft's steps as plan_replace_steps takes them (lib/plan-step-save.ts):
+ * the row for each step, its position being its index.
+ */
+export function draftStepRows(steps: PlanStepDraft[]): StepPayload[] {
+  let cumulative = 0;
+  return steps.map((st) => {
+    const mins = stepMinutes(st);
+    cumulative += mins;
+    const config: Record<string, Json> = {};
+    if (st.type === 'task' || st.type === 'call' || st.type === 'sms' || st.type === 'email') config.priority = st.priority;
+    if (st.assignee) config.assignee = st.assignee;
+    if (st.type === 'stage') config.stage = st.stage;
+    if (st.type === 'tag') config.tag = st.tag;
+    if (st.type === 'compr_report') { config.audience = st.audience ?? 'seller'; config.via = st.via ?? 'sms'; }
+    // A picked recording pins the step to it (lib/rvm-pick.ts); otherwise the group rotates.
+    if (st.type === 'rvm' && st.libraryId) { config.library_id = st.libraryId; config.variant_group = pinnedGroup(st.libraryId); }
+    else if (st.type === 'rvm') config.variant_group = st.variantGroup?.trim() || 'default';
+    if (st.type === 'ai_agent') config.goal = st.goal?.trim() ?? '';
+    if (st.type === 'ai_agent' && st.allowed) config.allowed = cleanAllowed(st.allowed);
+    if (st.type === 'ai_agent' && !st.allowed && st.channels) config.channels = cleanChannels(st.channels);
+    return {
+      channel: st.type, delay_minutes: mins, delay_hours: Math.round(cumulative / 60),
+      title: st.title.trim() || null, body: st.body.trim() || null,
+      subject: st.type === 'email' || (st.type === 'compr_report' && st.via === 'email') ? st.subject.trim() || null : null,
+      config: config as Json,
+    };
+  });
+}
+
+/**
+ * Create or replace a plan and its steps. The steps are saved as one list in
+ * one transaction (plan_replace_steps, migration 436): the step at each
+ * position keeps its id, so the queued tasks and drops of people already on
+ * the plan keep pointing at it, and a failed save leaves the old steps.
  */
 export async function savePlanDraft(workspaceId: number, plan: PlanDraft, userId: string | null): Promise<SaveResult> {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
@@ -632,8 +670,6 @@ export async function savePlanDraft(workspaceId: number, plan: PlanDraft, userId
     let { error } = await supabase.from('action_plans').update({ ...withRoute, updated_at: stamp }).eq('id', planId);
     if (before142(error)) ({ error } = await supabase.from('action_plans').update({ ...head, updated_at: stamp }).eq('id', planId));
     if (error) return { ok: false, message: error.message };
-    const { error: delErr } = await supabase.from('action_plan_steps').delete().eq('plan_id', planId);
-    if (delErr) return { ok: false, message: delErr.message };
   } else {
     let made = await supabase.from('action_plans')
       .insert({ workspace_id: workspaceId, created_by: userId, ...withRoute }).select('id').single();
@@ -641,32 +677,9 @@ export async function savePlanDraft(workspaceId: number, plan: PlanDraft, userId
     if (made.error) return { ok: false, message: made.error.message };
     planId = made.data.id;
   }
-  if (plan.steps.length) {
-    let cumulative = 0;
-    const rows = plan.steps.map((st, i) => {
-      const mins = stepMinutes(st);
-      cumulative += mins;
-      const config: Record<string, Json> = {};
-      if (st.type === 'task' || st.type === 'call' || st.type === 'sms' || st.type === 'email') config.priority = st.priority;
-      if (st.assignee) config.assignee = st.assignee;
-      if (st.type === 'stage') config.stage = st.stage;
-      if (st.type === 'tag') config.tag = st.tag;
-      if (st.type === 'compr_report') { config.audience = st.audience ?? 'seller'; config.via = st.via ?? 'sms'; }
-      // A picked recording pins the step to it (lib/rvm-pick.ts); otherwise the group rotates.
-      if (st.type === 'rvm' && st.libraryId) { config.library_id = st.libraryId; config.variant_group = pinnedGroup(st.libraryId); }
-      else if (st.type === 'rvm') config.variant_group = st.variantGroup?.trim() || 'default';
-      if (st.type === 'ai_agent') config.goal = st.goal?.trim() ?? '';
-      if (st.type === 'ai_agent' && st.allowed) config.allowed = cleanAllowed(st.allowed);
-      if (st.type === 'ai_agent' && !st.allowed && st.channels) config.channels = cleanChannels(st.channels);
-      return {
-        workspace_id: workspaceId, plan_id: planId!, position: i,
-        channel: st.type, delay_minutes: mins, delay_hours: Math.round(cumulative / 60),
-        title: st.title.trim() || null, body: st.body.trim() || null,
-        subject: st.type === 'email' || (st.type === 'compr_report' && st.via === 'email') ? st.subject.trim() || null : null,
-        config: config as Json,
-      };
-    });
-    const { error } = await supabase.from('action_plan_steps').insert(rows);
+  // A saved plan always rewrites its list (an emptied plan loses its steps); a new one only when it has some.
+  if (plan.id || plan.steps.length) {
+    const { error } = await replacePlanSteps(workspaceId, planId!, draftStepRows(plan.steps));
     if (error) return { ok: false, message: error.message };
   }
   return { ok: true, id: planId! };
@@ -687,24 +700,13 @@ export async function deletePlanById(planId: number): Promise<SaveResult> {
  */
 export async function setPlanActive(planId: number, active: boolean): Promise<SaveResult & { held?: number }> {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
-  const { error } = await supabase.from('action_plans').update({ active, updated_at: new Date().toISOString() }).eq('id', planId);
+  // One statement for the plan and every enrolment (migration 394). Reading
+  // the enrolments here stopped at 1,000 rows and paused them one at a time,
+  // so a big plan stayed mostly active after a pause and kept sending.
+  // The RPC is newer than the generated types.
+  const { data, error } = await supabase.rpc('plan_set_active' as never, { p_plan: planId, p_active: active } as never);
   if (error) return { ok: false, message: error.message };
-  if (!active) {
-    const { data } = await supabase.from('enrollments').select('id').eq('plan_id', planId).eq('status', 'active');
-    const ids = (data ?? []).map((r) => r.id);
-    for (const id of ids) {
-      const r = await pauseEnrollment(id, 'plan_paused');
-      if (!r.ok) return { ok: false, message: r.message, held: ids.length };
-    }
-    return { ok: true, held: ids.length };
-  }
-  const { data } = await supabase.from('enrollments').select('id').eq('plan_id', planId).eq('status', 'paused').eq('stopped_reason', 'plan_paused');
-  let held = 0;
-  for (const row of data ?? []) {
-    const r = await resumeEnrollment(row.id);
-    if (!r.ok) return { ok: false, message: r.message, held };
-    held += 1;
-  }
+  const held = Number((data as { held?: number } | null)?.held ?? 0);
   return { ok: true, held };
 }
 

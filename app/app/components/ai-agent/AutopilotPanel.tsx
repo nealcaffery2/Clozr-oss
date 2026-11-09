@@ -19,6 +19,9 @@ import { Badge, Banner, Field, GREEN, INK, MUTED, Section, SettingRow, Switch, V
 
 type Load = { at: 'loading' } | { at: 'ready'; view: AutopilotView } | { at: 'error'; error: string };
 
+/** An emptied number field keeps its last value: Number('') is 0, under every field's minimum. */
+const numOr = (v: string, prev: number) => (v === '' ? prev : Number(v));
+
 const CHANNELS: Channel[] = ['call', 'rvm', 'sms', 'email'];
 const WEEK: [string, string][] = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -154,7 +157,7 @@ export function AutopilotPanel({ isMobile }: { isMobile: boolean }) {
             <Switch on={draft.speed.after_hours_text} disabled={!edit} onChange={(v) => set((d) => { d.speed.after_hours_text = v; return d; })} label="Text after hours" />
           </SettingRow>
           <SettingRow title="Text if the call is not answered after" help="Minutes.">
-            <input type="number" min={1} max={30} style={{ ...input, width: 80 }} disabled={!edit} value={draft.speed.fallback_minutes} onChange={(e) => set((d) => { d.speed.fallback_minutes = Number(e.target.value); return d; })} aria-label="Fallback minutes" />
+            <input type="number" min={1} max={30} style={{ ...input, width: 80 }} disabled={!edit} value={draft.speed.fallback_minutes} onChange={(e) => set((d) => { d.speed.fallback_minutes = numOr(e.target.value, d.speed.fallback_minutes); return d; })} aria-label="Fallback minutes" />
           </SettingRow>
           {edit ? (
             <SettingRow title="Call me now" help="Hear it for yourself: the speed-to-lead agent calls your phone as if you were a new lead named Alex. No record is touched.">
@@ -175,7 +178,7 @@ export function AutopilotPanel({ isMobile }: { isMobile: boolean }) {
               <input id="ap-fu-cadence" style={input} disabled={!edit} value={cadence} onChange={(e) => setCadence(e.target.value)} />
             </Field>
             <Field label="Most touches" htmlFor="ap-fu-max">
-              <input id="ap-fu-max" type="number" min={2} max={60} style={input} disabled={!edit} value={draft.followup.max_touches} onChange={(e) => set((d) => { d.followup.max_touches = Number(e.target.value); return d; })} />
+              <input id="ap-fu-max" type="number" min={2} max={60} style={input} disabled={!edit} value={draft.followup.max_touches} onChange={(e) => set((d) => { d.followup.max_touches = numOr(e.target.value, d.followup.max_touches); return d; })} />
             </Field>
           </div>
           <SettingRow title="Channels" help={`Voicemail drops one ringless voicemail on the second cadence day, after the first call or text, and never two within a week. ${RVM_HELP}`}>
@@ -198,10 +201,10 @@ export function AutopilotPanel({ isMobile }: { isMobile: boolean }) {
           <div style={{ ...grid(140), marginTop: 12 }}>
             <AgentSelect id="ap-re-agent" label="Agent" view={view} value={draft.reactivation.agent_key} fallback={view.defaults.reactivation} disabled={!edit} onChange={(k) => set((d) => { d.reactivation.agent_key = k; return d; })} />
             <Field label="No contact for (days)" htmlFor="ap-re-idle">
-              <input id="ap-re-idle" type="number" min={30} max={3650} style={input} disabled={!edit} value={draft.reactivation.idle_days} onChange={(e) => set((d) => { d.reactivation.idle_days = Number(e.target.value); return d; })} />
+              <input id="ap-re-idle" type="number" min={30} max={3650} style={input} disabled={!edit} value={draft.reactivation.idle_days} onChange={(e) => set((d) => { d.reactivation.idle_days = numOr(e.target.value, d.reactivation.idle_days); return d; })} />
             </Field>
             <Field label="Per day, at most" htmlFor="ap-re-cap">
-              <input id="ap-re-cap" type="number" min={1} max={500} style={input} disabled={!edit} value={draft.reactivation.daily_cap} onChange={(e) => set((d) => { d.reactivation.daily_cap = Number(e.target.value); return d; })} />
+              <input id="ap-re-cap" type="number" min={1} max={500} style={input} disabled={!edit} value={draft.reactivation.daily_cap} onChange={(e) => set((d) => { d.reactivation.daily_cap = numOr(e.target.value, d.reactivation.daily_cap); return d; })} />
             </Field>
           </div>
           <Field label="Only these sources (none picked: any)" htmlFor="ap-re-sources">
@@ -219,15 +222,15 @@ export function AutopilotPanel({ isMobile }: { isMobile: boolean }) {
       </div>
 
       <section style={card} aria-labelledby="autopilot-limits">
-        <SettingRow first id="autopilot-limits" title="Daily spending limit" help="A ceiling for all AI agents together, from midnight Central: every program, bulk starts and a rep's own switch. Past it nothing runs until 9am tomorrow, so no Claude turns and no texts are spent. 0 stops them all for the day.">
+        <SettingRow first id="autopilot-limits" title="Daily spending limit" help="A ceiling for all AI agents together, from midnight in the agents' time zone: every program, bulk starts and a rep's own switch. Past it nothing runs until 9am tomorrow, so no Claude turns and no texts are spent. 0 stops them all for the day.">
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <Field label="Texts, emails and calls a day" htmlFor="ap-lim-touches">
               <input id="ap-lim-touches" type="number" min={0} max={5000} style={{ ...input, width: 120 }} disabled={!edit} value={draft.limits?.daily_touches ?? 150}
-                onChange={(e) => set((d) => { d.limits = { daily_touches: Number(e.target.value), daily_steps: d.limits?.daily_steps ?? 500 }; return d; })} />
+                onChange={(e) => set((d) => { d.limits = { daily_touches: numOr(e.target.value, d.limits?.daily_touches ?? 150), daily_steps: d.limits?.daily_steps ?? 500 }; return d; })} />
             </Field>
             <Field label="AI steps a day" htmlFor="ap-lim-steps">
               <input id="ap-lim-steps" type="number" min={0} max={20000} style={{ ...input, width: 120 }} disabled={!edit} value={draft.limits?.daily_steps ?? 500}
-                onChange={(e) => set((d) => { d.limits = { daily_touches: d.limits?.daily_touches ?? 150, daily_steps: Number(e.target.value) }; return d; })} />
+                onChange={(e) => set((d) => { d.limits = { daily_touches: d.limits?.daily_touches ?? 150, daily_steps: numOr(e.target.value, d.limits?.daily_steps ?? 500) }; return d; })} />
             </Field>
           </div>
         </SettingRow>

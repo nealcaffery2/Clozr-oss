@@ -1,6 +1,6 @@
 // Unsubscribe tokens, and the verification gate on a send.
 // Run:  deno run --allow-env supabase/functions/_shared/mailguard.test.ts
-import { blockUnverified, emailSafety, guardSend, guardSendMany, guardSendResend, readUnsubscribeToken, unsubscribeToken, verificationBlock, type GuardOptions } from './mailguard.ts';
+import { blockUnverified, emailSafety, guardSend, guardSendMany, guardSendResend, readUnsubscribeToken, unsubscribeToken, verificationBlock, verifyDeps, type GuardOptions } from './mailguard.ts';
 import type { SendKind } from './deliverability-rules.ts';
 
 Deno.env.set('UNSUBSCRIBE_SECRET', 'test-secret');
@@ -16,6 +16,8 @@ if (await readUnsubscribeToken(t)) throw new Error('a token signed with another 
 console.log('mailguard tokens: ok');
 
 // ---------------------------------------------------------------- gate
+// No DNS or Reoon unless a test says so: DNS cannot answer, so verify-at-send leaves addresses unverified.
+verifyDeps.resolveDns = () => Promise.reject(new Error('offline'));
 let failed = 0;
 function eq(name: string, got: unknown, want: unknown) {
   const g = JSON.stringify(got);
@@ -57,11 +59,11 @@ function fakeAdmin(tables: Record<string, TableSpec>, settings: Record<string, u
   const from = (name: string) => {
     seen.push(name);
     const q: {
-      select: () => typeof q; eq: () => typeof q; in: () => typeof q; or: () => typeof q; upsert: () => typeof q;
+      select: () => typeof q; eq: () => typeof q; in: () => typeof q; or: () => typeof q; upsert: () => typeof q; update: () => typeof q;
       maybeSingle: () => Promise<{ data: unknown; error: { message: string } | null }>;
       then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise<unknown>;
     } = {
-      select: () => q, eq: () => q, in: () => q, or: () => q, upsert: () => q,
+      select: () => q, eq: () => q, in: () => q, or: () => q, upsert: () => q, update: () => q,
       maybeSingle: () => Promise.resolve(finish()),
       then: (res, rej) => Promise.resolve(finish()).then(res, rej),
     };
@@ -183,6 +185,44 @@ async function send(kind: SendKind, tables: Record<string, TableSpec>, opts: Gua
   const admin = fakeAdmin({ email_suppressions: { error: 'timeout' } });
   const guard = await guardSendResend(admin as never, { id: 4, workspace_id: 7 } as never, ['ok@example.com'], 'bulk');
   eq('resend guard holds on a failed suppression read', [guard.ok, !guard.ok && guard.code, admin.claims()], [false, 'check_failed', 0]);
+}
+
+// ------------------------------------------------- verify at send
+{
+  verifyDeps.resolveDns = () => Promise.reject(new Deno.errors.NotFound('nxdomain'));
+  const { guard, admin } = await send('bulk', {}, {}, {}, 'sam@deadco-nowhere.com');
+  eq('a domain with no mail server is refused before the first send and cached', [guard.ok, !guard.ok && guard.code, admin.claims(), admin.seen.includes('email_verifications')], [false, 'unverified_unsafe', 0, true]);
+}
+{
+  verifyDeps.resolveDns = (_n, type) => Promise.resolve(type === 'MX' ? [{ preference: 0, exchange: '.' }] : []);
+  const { guard } = await send('one_to_one', {}, {}, {}, 'sam@nullmx.com');
+  eq('a null MX (RFC 7505) is refused on a one-to-one too', [guard.ok, !guard.ok && guard.code], [false, 'unverified_unsafe']);
+}
+{
+  verifyDeps.resolveDns = () => Promise.resolve([{ preference: 10, exchange: 'mx.ok.com' }]);
+  verifyDeps.reoon = { env: { get: () => 'k' }, fetch: (() => Promise.resolve(new Response(JSON.stringify({ email: 'gone@yahoo.com', status: 'invalid' })))) as typeof fetch };
+  const { guard, admin } = await send('bulk', {}, {}, {}, 'gone@yahoo.com');
+  eq('Reoon invalid refuses the send and writes the verdict', [guard.ok, !guard.ok && guard.code, admin.claims(), admin.seen.includes('email_verifications')], [false, 'unverified_unsafe', 0, true]);
+}
+{
+  verifyDeps.reoon = { env: { get: () => 'k' }, fetch: (() => Promise.resolve(new Response(JSON.stringify({ email: 'real@yahoo.com', status: 'safe' })))) as typeof fetch };
+  const { guard, admin } = await send('bulk', {}, {}, {}, 'real@yahoo.com');
+  eq('Reoon safe sends', [guard.ok, admin.claims()], [true, 1]);
+}
+{
+  let calls = 0;
+  verifyDeps.reoon = { env: { get: () => 'k' }, fetch: (() => { calls++; return Promise.resolve(new Response('{}')); }) as typeof fetch };
+  const { guard } = await send('bulk', { email_safety_flags: [{ email: 'known@yahoo.com', safe: true }] }, {}, {}, 'known@yahoo.com');
+  eq('an address with a verdict is not verified again', [guard.ok, calls], [true, 0]);
+}
+{
+  verifyDeps.reoon = { env: { get: () => 'k' }, fetch: (() => Promise.reject(new Error('down'))) as typeof fetch };
+  const { guard, admin } = await send('bulk', {}, {}, {}, 'maybe@yahoo.com');
+  eq('Reoon down leaves the address unverified and it still sends', [guard.ok, admin.claims()], [true, 1]);
+}
+{
+  const { guard, admin } = await send('transactional', {}, {}, {}, 'sam@deadco-nowhere.com');
+  eq('transactional mail is never verified at send', [guard.ok, admin.seen.includes('email_verifications')], [true, false]);
 }
 
 if (failed) { console.log(`\n${failed} FAILED`); Deno.exit(1); }

@@ -25,9 +25,11 @@ export const shortTime = (iso: string) => {
     : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
 
-export function CallsList({ calls, voicemailOnly, authed, recordFor, placeCall, openId }: {
+export function CallsList({ calls, voicemailOnly, authed, recordFor, placeCall, openId, onSeen }: {
   calls: ReturnType<typeof useCalls>; voicemailOnly: boolean; authed: boolean;
   recordFor?: RecordFor; placeCall: (e164: string) => void; openId?: string | null;
+  /** A call opened here: handled, so it leaves Missed and the bell. */
+  onSeen?: (h: HistoryItemDto) => void;
 }) {
   // The All tab remounts this (keyed) to open a call, so the prop only seeds the state.
   const [open, setOpen] = useState<string | null>(openId ?? null);
@@ -66,10 +68,11 @@ export function CallsList({ calls, voicemailOnly, authed, recordFor, placeCall, 
                 time={shortTime(h.at)}
                 preview={callLine(h)}
                 record={rec}
+                phone={number}
                 unread={missed}
                 icon={<Icon name={isVoicemail(h) ? 'voicemail' : 'phone'} size={12} style={{ color: missed ? 'var(--red)' : '#8e8e93', marginRight: 5, verticalAlign: -1 }} />}
                 active={open === h.id}
-                onOpen={() => setOpen(open === h.id ? null : h.id)}
+                onOpen={() => { if (open !== h.id) onSeen?.(h); setOpen(open === h.id ? null : h.id); }}
                 trailing={
                   <button type="button" aria-label={`Call ${formatPhone(number)}`} onClick={() => placeCall(number)} className="mr-3 self-center inline-flex h-9 w-9 items-center justify-center rounded-full" style={{ background: 'var(--accent-soft)', color: 'var(--accent)', cursor: 'pointer' }}>
                     <Icon name="phone" size={16} />

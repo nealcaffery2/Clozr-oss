@@ -120,7 +120,7 @@ export default function Landing() {
       <footer style={{ borderTop: '1px solid var(--divider, #e4e4e7)' }}>
         <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '26px 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px' }}>
           <ClozrMark size={16} />
-          <span style={{ fontSize: '12.5px', color: 'var(--subtle, #a1a1aa)' }}>© {new Date().getFullYear()} Acme Homes</span>
+          <span style={{ fontSize: '12.5px', color: 'var(--meta, #71717a)' }}>© {new Date().getFullYear()} Acme Homes</span>
           <div style={{ flex: 1 }} />
           <a href="/login" style={{ fontSize: '12.5px', color: 'var(--muted, #52525b)', textDecoration: 'none' }}>Sign in</a>
         </div>

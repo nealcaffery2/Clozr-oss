@@ -135,6 +135,37 @@ function callRow(item: HistoryItemDto, who: Who, workspaceId: number): Row {
   };
 }
 
+/** A row already in communications for one of these Talkr ids. */
+type Have = { source_id: string; seller_id: number | null; buyer_id: number | null };
+
+/**
+ * The rows this workspace already has for these source ids, read 200 ids a
+ * request (a longer `in` list used to be cut at 200 and the rest went
+ * unchecked). Null when a read failed.
+ */
+async function haveRows(workspaceId: number, sourceIds: string[]): Promise<Have[] | null> {
+  if (!supabase) return [];
+  const out: Have[] = [];
+  for (let i = 0; i < sourceIds.length; i += 200) {
+    const { data, error } = await supabase.from('communications').select('source_id, seller_id, buyer_id')
+      .eq('workspace_id', workspaceId).eq('source', 'talkr').in('source_id', sourceIds.slice(i, i + 200));
+    if (error) return null;
+    out.push(...((data ?? []) as Have[]));
+  }
+  return out;
+}
+
+/**
+ * Which of a pass's messages are updated in place rather than inserted: any
+ * the cursor has seen (its status moved), and any first seen that already has
+ * a row (`have` holds the source ids found, `msg:` prefixed). Direction does
+ * not decide it: an outbound first seen with no row was once put here and
+ * never inserted, so a text sent from Talkr's own UI never reached the record.
+ */
+export function movedMessages(cursor: Readonly<Record<string, string>>, ids: readonly string[], have: ReadonlySet<string>): string[] {
+  return ids.filter((id) => cursor[id] !== undefined || have.has('msg:' + id));
+}
+
 /**
  * The sellers whose rows were written. `fresh` rows (never seen by the
  * cursor) are inserted only where absent; `moved` rows (seen, status changed)
@@ -240,6 +271,8 @@ export async function syncTalkrToRecords(
   let rows: Row[] = [];
   /** Rows the cursor had seen with another status: these are updated, the rest only inserted. */
   const moved = new Set<string>();
+  /** Every message written this pass, so the ones new to the cursor can be checked for a row. */
+  const msgIds: string[] = [];
 
   // Calls, from what is already in hand: only ones new to the cursor or whose status moved.
   for (const item of history) {
@@ -264,11 +297,7 @@ export async function syncTalkrToRecords(
       const changed = messages.filter((m) => cursor.msgs[m.id] !== (m.status || ''));
       rows.push(...messageRows(conv, who, workspaceId, changed, extra.reps));
       for (const m of changed) {
-        // A text sent from CLOZR already has its row (lib/sms.ts writes it on
-        // send, as queued), so its first pass is an update, not an insert the
-        // database would ignore. That includes queued to sending: skipping it
-        // left the row at queued for good when Talkr's status moved no further.
-        if (cursor.msgs[m.id] !== undefined || m.direction === 'outbound') moved.add('msg:' + m.id);
+        msgIds.push(m.id);
         seen.msgs[m.id] = m.status || '';
       }
       if (conv.last_message_at) seen.convs[conv.id] = threadMark(conv);
@@ -287,15 +316,25 @@ export async function syncTalkrToRecords(
   if (away.sources.size) rows = rows.filter((r) => !away.sources.has(r.source_id));
   if (!rows.length) { saveCursor(workspaceId, seen); return []; }
 
+  // A text new to the cursor may already have its row: one sent from CLOZR
+  // (lib/sms-record writes it as queued on send), whose first pass must be an
+  // update, not an insert the database ignores; left at queued it stayed there
+  // for good once Talkr's status moved no further. One with no row yet (typed
+  // in Talkr's own app or the Chrome extension, or a Talkr auto-reply) is
+  // inserted, or the record never shows it. A failed lookup writes nothing and
+  // keeps the cursor, so the next pass asks again.
+  const unseen = msgIds.filter((id) => cursor.msgs[id] === undefined).map((id) => 'msg:' + id);
+  const haveMsgs = unseen.length ? await haveRows(workspaceId, unseen) : [];
+  if (!haveMsgs) return null;
+  for (const id of movedMessages(cursor.msgs, msgIds, new Set(haveMsgs.map((r) => r.source_id)))) moved.add('msg:' + id);
+
   // A call already filed on a record stays where it was filed: the dialer puts
   // it on the record the rep dialled, which a number match can get wrong (a
   // buyer who shares a seller's number). call-sync keeps its status current.
   const callIds = rows.filter((r) => r.source_id.startsWith('call:')).map((r) => r.source_id);
   if (callIds.length) {
-    const { data: have } = await supabase.from('communications').select('source_id, seller_id, buyer_id')
-      .eq('workspace_id', workspaceId).eq('source', 'talkr').in('source_id', callIds.slice(0, 200));
-    const filed = new Set(((have ?? []) as { source_id: string; seller_id: number | null; buyer_id: number | null }[])
-      .filter((r) => r.seller_id !== null || r.buyer_id !== null).map((r) => r.source_id));
+    const have = (await haveRows(workspaceId, callIds)) ?? [];
+    const filed = new Set(have.filter((r) => r.seller_id !== null || r.buyer_id !== null).map((r) => r.source_id));
     const keep = rows.filter((r) => !filed.has(r.source_id));
     const out = await write(workspaceId, keep.filter((r) => !moved.has(r.source_id)), keep.filter((r) => moved.has(r.source_id)));
     if (out) saveCursor(workspaceId, seen);

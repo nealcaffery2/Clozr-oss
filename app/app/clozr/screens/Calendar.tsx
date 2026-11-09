@@ -21,8 +21,11 @@ import { WeekView } from '@/app/components/calendar/WeekView';
 import { MiniMonth } from '@/app/components/calendar/MiniMonth';
 import { Avatar, Chip, INK, LINE, MINT, MUTED, SOFT, ago, ghost } from '@/app/components/calendar/ui';
 import { Chevron, CZ, darkBtn, ghostBtn, seg, segWrap } from '@/components/ds/chrome';
+import { ScreenHeader } from '@/components/ds/Screen';
 
 type View = 'month' | 'week' | 'day';
+
+const isMessageTask = (kind: string | null | undefined) => /^(e-?mail|sms|text)/i.test(kind ?? '');
 
 export function Calendar({ V }: { V: ClozrView }) {
   const s = useSession();
@@ -30,7 +33,8 @@ export function Calendar({ V }: { V: ClozrView }) {
   const userId = s.user?.id ?? null;
   const canWrite = V.liveIds?.canWrite ?? !s.demo;
 
-  const [view, setView] = useState<View>('week');
+  // A phone lands on the day: a week is one column at 375px, and the rest sat off screen.
+  const [view, setView] = useState<View>(() => (typeof window !== 'undefined' && window.matchMedia('(max-width: 820px)').matches ? 'day' : 'week'));
   const [cursor, setCursor] = useState<Date>(() => startOfDay(new Date()));
   const [reps, setReps] = useState<Set<string> | null>(null); // null = everyone
   const [types, setTypes] = useState<Set<EventType>>(() => new Set(EVENT_TYPES.map((t) => t.key)));
@@ -52,7 +56,11 @@ export function Calendar({ V }: { V: ClozrView }) {
     return { from: startOfDay(cursor), to: addDays(startOfDay(cursor), 1) };
   }, [view, cursor]);
 
-  const cal = useCalendar(workspaceId, range.from, range.to);
+  const loaded = useCalendar(workspaceId, range.from, range.to);
+  // Compr: an email or text task is on Alex's calendar only when a person made it by hand. Ones a plan,
+  // a blast or an automation queued send on their own and would bury the day (owner, 2026-10-18).
+  const compr = V.buyerListProfile === 'compr';
+  const cal = useMemo(() => (compr ? { ...loaded, events: loaded.events.filter((e) => !(e.source === 'task' && e.auto && isMessageTask(e.kind))) } : loaded), [loaded, compr]);
   const team = useTeam(workspaceId, userId);
 
   // The connection: who is connected, when it last synced.
@@ -122,39 +130,29 @@ export function Calendar({ V }: { V: ClozrView }) {
 
   return (
     <section data-screen-label="Calendar" className="clozr-cal" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--surface, #fff)' }}>
-      {/* Google Calendar–style top bar */}
-      <div data-head style={{
-        display: 'flex', alignItems: 'center', gap: V.isMobile ? 6 : 10,
-        padding: V.isMobile ? '8px 12px' : '8px 16px 8px 12px',
-        background: 'var(--surface, #fff)', borderBottom: `1px solid ${LINE}`, flexWrap: 'wrap', minHeight: 64,
-      }}>
-        <h1 style={{ margin: 0, font: '400 22px/1.2 var(--font-sans)', letterSpacing: 0, color: 'var(--ink-4, #3c4043)', paddingLeft: V.isMobile ? 0 : 4 }}>
-          Calendar
-        </h1>
-
-        <button type="button" className="dc2 cz-btn" onClick={() => setCursor(startOfDay(new Date()))} style={{ ...ghostBtn, height: 36, borderRadius: 18, borderColor: LINE, fontWeight: 500, marginLeft: 4 }}>
+      {/* The shared screen header: the title, then today / back / forward and the period beside it. */}
+      <ScreenHeader title="Calendar" after={<>
+        <button type="button" className="dc2 cz-btn" onClick={() => setCursor(startOfDay(new Date()))} style={{ ...ghostBtn, height: 32, borderRadius: 8, borderColor: LINE, fontWeight: 500, marginLeft: 4, flex: 'none' }}>
           Today
         </button>
 
         <div style={{ display: 'inline-flex', alignItems: 'center' }}>
           <button type="button" className="cz-icon-btn" onClick={() => step(-1)} aria-label="Previous">
-            <Chevron dir="left" size={18} color="var(--ink-4, #3c4043)" />
+            <Chevron dir="left" size={18} color="var(--muted, #52525b)" />
           </button>
           <button type="button" className="cz-icon-btn" onClick={() => step(1)} aria-label="Next">
-            <Chevron dir="right" size={18} color="var(--ink-4, #3c4043)" />
+            <Chevron dir="right" size={18} color="var(--muted, #52525b)" />
           </button>
         </div>
 
-        <span style={{ font: '400 22px/1.2 var(--font-sans)', color: 'var(--ink-4, #3c4043)', letterSpacing: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ font: '650 13.5px/1.2 var(--font-sans)', color: 'var(--ink, #18181b)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {title}
         </span>
 
-        <span style={{ font: '400 12px/1 var(--font-sans)', color: MUTED, display: V.isMobile ? 'none' : 'inline' }}>
+        <span style={{ font: '500 12px/1 var(--font-sans)', color: MUTED, display: V.isMobile ? 'none' : 'inline', whiteSpace: 'nowrap' }}>
           {cal.loading ? 'Loading…' : `${shown.length} on view`}
         </span>
-
-        <div style={{ flex: 1 }} />
-
+      </>} actions={<>
         {!s.demo && workspaceId ? (
           account ? (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, font: '500 12px/1 var(--font-sans)', color: MUTED }}>
@@ -181,10 +179,11 @@ export function Calendar({ V }: { V: ClozrView }) {
           ))}
         </div>
 
-        <button type="button" className="dc10" onClick={addNow} style={{ ...darkBtn, height: 36, borderRadius: 18, padding: '0 16px' }}>
-          + Create
+        <button type="button" className="dc10" onClick={addNow} style={{ ...darkBtn, height: 32, borderRadius: 8, padding: '0 12px', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          Create
         </button>
-      </div>
+      </>} />
 
       {syncNote ? (
         <div style={{ padding: '6px 16px', font: '500 12px/1.3 var(--font-sans)', color: syncNote.startsWith('Synced') || syncNote === 'Up to date' ? MINT : '#b45309', background: 'var(--surface, #fff)', borderBottom: `1px solid ${SOFT}` }}>
@@ -201,10 +200,6 @@ export function Calendar({ V }: { V: ClozrView }) {
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         {!V.isMobile ? (
           <aside style={{ width: 256, flex: 'none', background: 'var(--surface, #fff)', borderRight: `1px solid ${LINE}`, padding: '12px 14px', overflow: 'auto' }}>
-            <button type="button" className="dc10" onClick={addNow} style={{ ...darkBtn, width: '100%', height: 48, borderRadius: 24, marginBottom: 12, boxShadow: '0 1px 2px rgba(60,64,67,.3), 0 1px 3px 1px rgba(60,64,67,.15)', justifyContent: 'flex-start', padding: '0 18px', gap: 12 }}>
-              <span style={{ fontSize: 22, fontWeight: 300, lineHeight: 1 }}>+</span> Create
-            </button>
-
             <MiniMonth month={startOfMonth(cursor)} selected={cursor} busyDays={busyDays} onPick={(d) => { setCursor(d); if (view === 'month') setView('day'); }} onMonth={(m) => setCursor(m)} />
 
             <div style={{ marginTop: 18, paddingTop: 12, borderTop: `1px solid ${SOFT}` }}>
@@ -233,7 +228,7 @@ export function Calendar({ V }: { V: ClozrView }) {
                   <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {t.user_id === userId ? 'My calendar' : t.full_name}
                   </span>
-                  <Avatar initials={t.initials} color={repOn(t.user_id) ? t.color : 'var(--line-2, #dadce0)'} size={20} />
+                  <Avatar initials={t.initials} color={repOn(t.user_id) ? t.color : 'var(--line, #d4d4d8)'} size={20} />
                 </button>
               )) : (
                 <p style={{ margin: 0, font: '400 12px/1.4 var(--font-sans)', color: CZ.faint }}>
@@ -269,8 +264,8 @@ export function Calendar({ V }: { V: ClozrView }) {
             <WeekView start={view === 'week' ? startOfWeek(cursor) : startOfDay(cursor)} days={view === 'week' && !V.isMobile ? 7 : 1} events={shown} reps={team} selectedId={open?.event?.id ?? null} onOpen={openEvent} onCreate={create} />
           )}
           {!cal.loading && cal.ok && cal.events.length === 0 && !s.demo ? (
-            <p style={{ margin: '10px 0 0', font: '400 12px/1.4 var(--font-sans)', color: CZ.faint, textAlign: 'center' }}>
-              Nothing in this {view}. Drag across a time on the grid, or press <strong>+ Create</strong>. Dated tasks show here too.
+            <p style={{ margin: '10px 0 0', padding: '0 var(--gutter)', font: '400 12px/1.4 var(--font-sans)', color: CZ.muted, textAlign: 'center' }}>
+              Nothing in this {view}. Drag across a time on the grid, or press <strong>Create</strong>. Dated tasks show here too.
             </p>
           ) : null}
         </div>

@@ -13,14 +13,17 @@ import { dbId } from './crm';
 import { notificationDbIds } from './notif-dismiss';
 import type { Seller } from './database.types';
 import { supabase } from './supabase';
+import { everyRowResult } from './every-row';
 import { type BuyBox, buyerTypeCode, normalizeBuyBox, summarizeBuyBox } from './buyer-profile';
 import { buyerContactProblem } from './buyer-contact';
 import { isDealStage } from './stages';
 import { parseDollars } from './money';
 import { toE164 } from './talkr';
+import { dbPhoneKey } from './import-dedupe';
 import { addSellerPhones } from './seller-phones';
 import { nudgeGoogle } from './google';
 import { remainingStepSchedule } from './plan-hold';
+import { replacePlanSteps, type StepPayload } from './plan-step-save';
 import { renderMerge } from './sms';
 import { BLACKLIST_MESSAGE, blockReason, loadBlocked, type BlacklistDb, type BlockReason } from './blacklist';
 import { checklistIdForTitle, checklistItemById, normTcTitle } from './tc-sync';
@@ -97,25 +100,38 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
  * null rather than guessed at — a task with no due date is honest; one due on a
  * date nobody chose is not.
  */
+/** The local calendar day of a typed due or close date (YYYY-MM-DD), not the UTC day of its instant. */
+export function dueDateOf(raw: string | undefined, now = new Date()): string | null {
+  const iso = parseDue(raw, now);
+  if (!iso) return null;
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export function parseDue(raw: string | undefined, now = new Date()): string | null {
   const t = (raw || '').trim();
   if (!t) return null;
 
   // "Today 1:30 PM", "tomorrow 10am", "Fri 2pm", "Sep 30 9:15 am", "9/30 3pm".
-  // The time is optional and comes off first; the rest names a day.
-  const tm = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i.exec(t) ?? /\b(\d{1,2}):(\d{2})\b/.exec(t);
+  // The time is optional and comes off first; the rest names a day. Seconds
+  // ("2019-03-14 10:22:05", an import's Created column) come off with it.
+  const tm = /(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*(am|pm)\b/i.exec(t) ?? /\b(\d{1,2}):(\d{2})(?::\d{2})?\b/.exec(t);
   let hours = 9, minutes = 0;
   if (tm) {
-    hours = Number(tm[1]) % 12;
+    // With am/pm the hour is on a 12-hour clock; without it, 24-hour ("12:30" is half past noon).
+    hours = tm[3] ? Number(tm[1]) % 12 + (/pm/i.test(tm[3]) ? 12 : 0) : Number(tm[1]);
     minutes = Number(tm[2] ?? 0);
-    if (/pm/i.test(tm[3] ?? '')) hours += 12;
-    else if (!tm[3] && Number(tm[1]) > 12) hours = Number(tm[1]);
   }
   const dayText = t.replace(tm?.[0] ?? '', '').replace(/\b(at|@)\b/gi, '').trim();
 
   const at = (d: Date) => { d.setHours(hours, minutes, 0, 0); return d.toISOString(); };
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const days = (n: number) => new Date(startOfToday.getTime() + n * 86_400_000);
+  // Calendar days, not 24-hour spans: on the clock-change day "tomorrow" came out as today.
+  const days = (n: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() + n);
+  // An ISO date is that day. Date.parse read it as UTC midnight: the evening before, in Chicago.
+  const isoDay = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayText);
+  if (isoDay) return at(new Date(Number(isoDay[1]), Number(isoDay[2]) - 1, Number(isoDay[3])));
 
   if (!dayText || /^(today|now|asap)$/i.test(dayText)) return at(days(0));
   if (/^tomorrow$/i.test(dayText)) return at(days(1));
@@ -133,12 +149,14 @@ export function parseDue(raw: string | undefined, now = new Date()): string | nu
   // Date.parse is lenient enough to read "nonsense 2026" as New Year's Day;
   // only try it on something that names a month or carries a digit.
   if (!/\d|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(dayText)) return null;
-  const withYear = /\d{4}/.test(dayText) ? dayText : `${dayText} ${now.getFullYear()}`;
+  // A year is four digits, or the third part of "3/14/19".
+  const hasYear = /\d{4}/.test(dayText) || /^\d{1,2}\/\d{1,2}\/\d{2}$/.test(dayText);
+  const withYear = hasYear ? dayText : `${dayText} ${now.getFullYear()}`;
   const parsed = Date.parse(withYear);
   if (Number.isNaN(parsed)) return null;
   const d = new Date(parsed);
   // "Jan 5" typed in December means next January, not eleven months ago.
-  if (!/\d{4}/.test(dayText) && d.getTime() < startOfToday.getTime() - 30 * 86_400_000) d.setFullYear(d.getFullYear() + 1);
+  if (!hasYear && d.getTime() < startOfToday.getTime() - 30 * 86_400_000) d.setFullYear(d.getFullYear() + 1);
   return at(d);
 }
 
@@ -316,10 +334,12 @@ export async function createProperty(
   }
 
   if (!f.name?.trim()) return { ok: true, id: propertyId };
+  const phone = phoneOf(f.phone);
+  if (phone.error) return { ok: false, message: phone.error };
   const { data, error } = await supabase.from('sellers').insert({
     workspace_id: workspaceId,
     name: f.name.trim(),
-    phone: f.phone || null,
+    phone: phone.value,
     email: f.email || null,
     property_address: joinAddress(f),
     property_id: propertyId,
@@ -342,10 +362,12 @@ export async function createCoSeller(
 ): Promise<WriteResult> {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
   if (!f.name?.trim()) return { ok: false, message: 'A name is required.' };
+  const phone = phoneOf(f.phone);
+  if (phone.error) return { ok: false, message: phone.error };
   const { data, error } = await supabase.from('sellers').insert({
     workspace_id: workspaceId,
     name: f.name.trim(),
-    phone: f.phone || null,
+    phone: phone.value,
     email: f.email || null,
     property_id: hostPropertyId,
     property_address: hostAddress,
@@ -368,6 +390,10 @@ export type BuyerProfileInput = {
   buyer_type?: string | null; entity_type?: string | null; website?: string | null; pof_url?: string | null; pof_verified?: boolean;
   preferred_channel?: string; wants_calls?: boolean; wants_follow_ups?: boolean; wants_sold_alerts?: boolean;
   vetted?: boolean; vip?: boolean; blacklisted?: boolean; active?: boolean; tags?: string[]; notes?: string | null; source?: string | null;
+  /** Where the owner gets mail, and a property they own: what skip trace looks them up by (migration 395). */
+  mailing_address?: string | null; property_address?: string | null;
+  /** Job title at their company (migration 397). */
+  title?: string | null;
   /** Prospect keeps a discovered buyer off the real list and off deal matching. */
   status?: string | null;
   criteria?: unknown;
@@ -424,6 +450,9 @@ export function buyerRow(p: BuyerProfileInput, before?: BuyerBefore | null, now:
   }
   if (Array.isArray(p.tags)) row.tags = p.tags.map((t) => t.trim()).filter(Boolean);
   if ('notes' in p) row.notes = p.notes || null;
+  if ('title' in p) row.title = p.title?.trim() || null;
+  if ('mailing_address' in p) row.mailing_address = p.mailing_address?.trim() || null;
+  if ('property_address' in p) row.property_address = p.property_address?.trim() || null;
   if (p.source) row.source = p.source;
   return row;
 }
@@ -447,6 +476,7 @@ export function quickBuyerProfile(f: Record<string, string>): BuyerProfileInput 
   };
   return {
     name: f.name, company: f.company, phone: f.phone, email: f.email, buyer_type: buyerTypeCode(f.type),
+    ...(f.title?.trim() ? { title: f.title.trim() } : {}),
     criteria: { location_prefs: markets.map(pref), price: vals.length ? { min: vals.length > 1 ? Math.min(...vals) : null, max: Math.max(...vals) } : {} },
     // The form's Note (filled from a call when the dialer opened it): what has no field of its own here.
     ...(f.note?.trim() ? { notes: f.note.trim() } : {}),
@@ -461,17 +491,39 @@ export async function createBuyer(
   const profile: BuyerProfileInput = 'criteria' in f || 'buyer_type' in f ? (f as BuyerProfileInput) : quickBuyerProfile(f as Record<string, string>);
   if (!profile.name?.trim()) return { ok: false, message: 'Buyer name is required.' };
   const status = /prospect/i.test(profile.status ?? '') ? 'Prospect' : 'Active';
-  // A buyer added by hand (Quick Add, the profile form) needs a phone and an
-  // email. Prospects come from Genius and Buyr with whatever the trace found,
-  // often only one, and wait on a list until someone fills them in.
-  const contact = status === 'Prospect' ? null : buyerContactProblem(profile);
+  // A buyer added by hand needs a way to reach them: a phone or an email (a
+  // contact at a buying company often comes with only an email). Prospects
+  // come from Genius and Buyr with whatever the trace found.
+  const contact = status === 'Prospect' ? null : buyerContactProblem(profile, false);
   if (contact) return { ok: false, message: contact };
   const row: Record<string, unknown> = { name: (profile.name ?? '').trim(), company: null, phone: null, email: null, ...buyerRow({ criteria: {}, ...profile }) };
-  // Dedupe on email, then phone, inside the workspace.
-  const email = row.email as string | null; const phone = row.phone as string | null;
+  // Stored as E.164, like a seller's, so the inbox and the dialer find the
+  // buyer by number. A prospect keeps whatever the trace found when it does not parse.
+  const ph = phoneOf(row.phone as string | null);
+  if (ph.error && status !== 'Prospect') return { ok: false, message: ph.error };
+  if (ph.value) row.phone = ph.value;
+  // A new contact at a company already on file (Quick Add's "Add at <company>"):
+  // the company's name, type and buy box carry over where nothing was typed.
+  const colleagueOf = Number((f as Record<string, string>).colleagueOf);
+  if (Number.isFinite(colleagueOf) && colleagueOf > 0) {
+    const { data: peer } = await supabase.from('buyers')
+      .select('company, buyer_type, entity_type, criteria, markets, min_purchase_price, max_purchase_price, buy_box, assigned_to')
+      .eq('id', colleagueOf).eq('workspace_id', workspaceId).maybeSingle();
+    if (peer) {
+      const typedBox = !!(f as Record<string, string>).markets?.trim() || !!(f as Record<string, string>).price?.trim();
+      if (!row.company && peer.company) row.company = peer.company;
+      if (!row.buyer_type && peer.buyer_type) row.buyer_type = peer.buyer_type;
+      if (!row.entity_type && peer.entity_type) row.entity_type = peer.entity_type;
+      if (!typedBox) Object.assign(row, { criteria: peer.criteria, markets: peer.markets, min_purchase_price: peer.min_purchase_price, max_purchase_price: peer.max_purchase_price, buy_box: peer.buy_box });
+      if (!(f as Record<string, string>).assignTo && peer.assigned_to) row.assigned_to = peer.assigned_to;
+    }
+  }
+  // Dedupe on email, then phone (as the database keys it, so "(210) 555-0100"
+  // finds the import's +12105550100), inside the workspace.
+  const email = row.email as string | null; const phoneKey = dbPhoneKey(row.phone as string | null);
   const dupe = email
     ? await supabase.from('buyers').select('id').eq('workspace_id', workspaceId).eq('email', email).limit(1).maybeSingle()
-    : phone ? await supabase.from('buyers').select('id').eq('workspace_id', workspaceId).eq('phone', phone).limit(1).maybeSingle() : { data: null };
+    : phoneKey ? await supabase.from('buyers').select('id').eq('workspace_id', workspaceId).eq('phone_key', phoneKey).limit(1).maybeSingle() : { data: null };
   if (dupe.data) return { ok: false, message: 'A buyer with that email or phone already exists.', id: dupe.data.id };
   const { data, error } = await supabase.from('buyers').insert({
     workspace_id: workspaceId, created_by: userId, ...row, status,
@@ -507,7 +559,7 @@ export async function updateBuyer(workspaceId: number, buyerId: number, p: Buyer
 }
 
 /** A buyer field the record edits in place (components/buyer/BuyerProfileFields). */
-export type BuyerFieldKey = 'name' | 'company' | 'buyer_type' | 'entity_type' | 'vip' | 'vetted' | 'pof_url' | 'pof_verified' | 'website' | 'notes' | 'markets' | 'price_min' | 'price_max';
+export type BuyerFieldKey = 'name' | 'company' | 'buyer_type' | 'entity_type' | 'vip' | 'vetted' | 'pof_url' | 'pof_verified' | 'website' | 'notes' | 'title' | 'mailing_address' | 'property_address' | 'markets' | 'price_min' | 'price_max';
 
 /**
  * Save one buyer field and return the row. Flags stamp their date only when
@@ -571,6 +623,9 @@ export async function rematchWorkspace(workspaceId: number): Promise<WriteResult
   return error ? fail(error) : { ok: true, count: typeof data === 'number' ? data : 0 };
 }
 
+/** The rolodex's service types: Quick Add's vendor form and the dialer's Add contact pick from the same list. */
+export const VENDOR_KINDS = ['Title Company', 'Contractor', 'Lender', 'Insurance', 'Survey', 'Notary', 'Photography', 'Attorney', 'Wholesaler', 'Institutional seller', 'Realtor'] as const;
+
 export async function createVendor(
   workspaceId: number, f: Record<string, string>, userId: string | null,
 ): Promise<WriteResult> {
@@ -612,14 +667,14 @@ export async function createDeal(
     arv: money(f.arv),
     rehab: money(f.rehab),
     assignment_fee: money(f.assignment),
-    close_date: parseDue(f.close)?.slice(0, 10) ?? null,
+    close_date: dueDateOf(f.close),
     owner_id: pickedUser(f.assignTo) ?? userId,
     tc_rep_id: pickedUser(f.tc) ?? null,
     created_by: userId,
   }).select('id').single();
   if (error) return fail(error);
   // A Friday close the person kept on purpose: the reason they typed goes on the deal (lib/deal-close).
-  const closeIso = parseDue(f.close)?.slice(0, 10) ?? null;
+  const closeIso = dueDateOf(f.close);
   if (closeIso && f.fridayReason?.trim()) {
     void logActivity(workspaceId, 'deal', data.id, 'tc', 'Friday close kept', fridayOverrideNote(closeIso, f.fridayReason.trim(), 'new deal'), userId).catch(() => {});
   }
@@ -1245,6 +1300,69 @@ export async function setTaskDue(taskId: string, dueAt: string): Promise<WriteRe
   return fail(error);
 }
 
+/** What a task's Edit sheet can change. Keys left out are left alone. */
+export type TaskPatch = {
+  title?: string; type?: string; priority?: string; dueAt?: string | null; assignedTo?: string | null; notes?: string | null;
+};
+/** Edit a task's own fields (title, type, priority, due, assignee, note). */
+export async function updateTask(taskId: string, patch: TaskPatch): Promise<WriteResult> {
+  if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
+  const id = dbId(taskId);
+  if (!Number.isFinite(id)) return { ok: false, message: 'Unknown task.' };
+  const row: { title?: string; task_type?: string; priority?: string; due_at?: string | null; assigned_to?: string | null; notes?: string | null } = {};
+  if (patch.title !== undefined) {
+    const title = patch.title.trim();
+    if (!title) return { ok: false, message: 'A task needs a title.' };
+    row.title = title;
+  }
+  if (patch.type !== undefined) row.task_type = patch.type;
+  if (patch.priority !== undefined) row.priority = patch.priority;
+  if (patch.dueAt !== undefined) row.due_at = patch.dueAt;
+  if (patch.assignedTo !== undefined) row.assigned_to = patch.assignedTo;
+  if (patch.notes !== undefined) row.notes = patch.notes?.trim() || null;
+  if (!Object.keys(row).length) return { ok: true };
+  const { error } = await supabase.from('tasks').update(row).eq('id', id);
+  return fail(error);
+}
+/** Delete a task for good (an action plan's queued step included; the plan carries on). */
+export async function deleteTask(taskId: string): Promise<WriteResult> {
+  if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
+  const id = dbId(taskId);
+  if (!Number.isFinite(id)) return { ok: false, message: 'Unknown task.' };
+  const { error } = await supabase.from('tasks').delete().eq('id', id);
+  return fail(error);
+}
+/** Change the words of a note written in CLOZR (a `communications` row on channel note). */
+export async function updateNote(commId: number, body: string): Promise<WriteResult> {
+  if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
+  const text = body.trim();
+  if (!text) return { ok: false, message: 'A note needs some words; delete it instead.' };
+  const { error } = await supabase.from('communications').update({ body: text }).eq('id', commId).eq('channel', 'note');
+  return fail(error);
+}
+/** Delete a note written in CLOZR. Only notes: texts, emails and calls are history and stay. */
+export async function deleteNote(commId: number): Promise<WriteResult> {
+  if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
+  const { error } = await supabase.from('communications').delete().eq('id', commId).eq('channel', 'note');
+  return fail(error);
+}
+/**
+ * Delete a call the rep logged by hand: a `communications` row on channel call
+ * with no recording and no transcript. A call Talkr carried is history and
+ * stays, even when the feed asked.
+ */
+export async function deleteCallLog(commId: number): Promise<WriteResult> {
+  if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
+  const { data, error: readErr } = await supabase.from('communications')
+    .select('channel, recording_url, transcript').eq('id', commId).maybeSingle();
+  if (readErr) return fail(readErr);
+  const row = data as { channel: string; recording_url: string | null; transcript: string | null } | null;
+  if (!row) return { ok: false, message: 'That call is already gone.' };
+  if (row.channel !== 'call') return { ok: false, message: 'Only a call log can be deleted here.' };
+  if (row.recording_url || row.transcript) return { ok: false, message: 'This call has a recording or transcript, so it stays.' };
+  const { error } = await supabase.from('communications').delete().eq('id', commId).eq('channel', 'call');
+  return fail(error);
+}
 export async function setTaskDone(taskId: string, done: boolean, actorId?: string | null): Promise<WriteResult> {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
   const id = dbId(taskId);
@@ -1401,6 +1519,7 @@ export async function enrollMany(
     for (const r of data ?? []) { const k = keyOf(r); if (k != null && !on.has(k)) on.set(k, r.id); }
     return { on, error };
   };
+  const nextStart = await dripSlots(db, plan, todo.length);
   let stopped: { message: string } | null = null;
   for (let at = 0; at < todo.length; at += 200) {
     const chunk = todo.slice(at, at + 200);
@@ -1421,14 +1540,19 @@ export async function enrollMany(
     }
     if (!fresh.length) continue;
 
-    const row = (i: number) => ({ workspace_id: workspaceId, plan_id: plan, [column]: jobs[i]!.key, ...jobs[i]!.extra, created_by: userId });
+    // A capped plan (settings.daily_cap, migration 377) starts each new person on the first day with room.
+    const startOf = new Map<number, number | null>(fresh.map((i) => [i, nextStart()]));
+    const row = (i: number) => {
+      const start = startOf.get(i) ?? null;
+      return { workspace_id: workspaceId, plan_id: plan, [column]: jobs[i]!.key, ...jobs[i]!.extra, created_by: userId, ...(start ? { starts_at: new Date(start).toISOString() } : {}) };
+    };
     const made = new Map<number, number>();
     const ins = await db.from('enrollments').insert(fresh.map(row) as never).select('id, seller_id, buyer_id');
     if (!ins.error) {
       const byKey = new Map<number | null, number>((ins.data ?? []).map((r) => [keyOf(r), r.id]));
       for (const i of fresh) {
         const id = byKey.get(jobs[i]!.key);
-        if (id != null) made.set(i, id); else out[i] = { queued: 0, error: { message: 'The enrolment was not saved.' } };
+        if (id != null) made.set(i, id); else out[i] = { queued: 0, error: { message: 'Not enrolled: they are marked Not interested, or the plan refused them.' } };
       }
     } else {
       // Read again before going one by one: an answer lost on the way back may
@@ -1449,7 +1573,7 @@ export async function enrollMany(
     // a no-op on the queue (tasks are keyed to the enrolment and the step).
     const now = Date.now();
     const rows = new Map<number, Row[]>();
-    for (const [i, id] of made) { out[i] = { id, queued: 0 }; rows.set(i, jobs[i]!.tasks(id, now)); }
+    for (const [i, id] of made) { out[i] = { id, queued: 0 }; rows.set(i, jobs[i]!.tasks(id, startOf.get(i) ?? now)); }
     const upsert = (r: Row[]) => db.from('tasks').upsert(r as never, { onConflict: 'enrollment_id,plan_step_id', ignoreDuplicates: true });
     const all = [...rows.values()].flat();
     const { error: batchError } = all.length ? await upsert(all) : { error: null };
@@ -1458,7 +1582,7 @@ export async function enrollMany(
       const error = batchError ? (await upsert(r)).error : null;
       if (error) out[i]!.tasksError = error; else out[i]!.queued = r.length;
     }
-    const drops = [...made].flatMap(([i, id]) => (out[i]!.queued ? jobs[i]!.drops(id, now) : []));
+    const drops = [...made].flatMap(([i, id]) => (out[i]!.queued ? jobs[i]!.drops(id, startOf.get(i) ?? now) : []));
     if (drops.length) await db.from('rvm_drops').insert(drops as never);
   }
   jobs.forEach((j, i) => {
@@ -1466,6 +1590,46 @@ export async function enrollMany(
     if (f != null && f !== i) out[i] = out[f]!.error ? { ...out[f]! } : { id: out[f]!.id, already: true, queued: 0 };
   });
   return out;
+}
+
+/**
+ * The drip for a plan with settings.daily_cap: a function that hands each new
+ * enrolment its start time, today (null, meaning now) while today has room,
+ * else the same time of day on the first later day with room. Days are the
+ * browser's local days; already-queued enrolments (starts_at) and today's
+ * starts count against the cap. No cap, or a failed read, starts everyone now.
+ * ponytail: reads every queued start on the plan, fine to tens of thousands; a per-day count RPC if plans grow past that.
+ */
+async function dripSlots(db: NonNullable<typeof supabase>, plan: number, wanted: number): Promise<() => number | null> {
+  const none = () => null;
+  if (!wanted) return none;
+  const { data: p, error } = await db.from('action_plans').select('settings').eq('id', plan).maybeSingle();
+  const cap = Math.floor(Number(((p as { settings?: { daily_cap?: unknown } } | null)?.settings ?? {}).daily_cap) || 0);
+  if (error || cap <= 0) return none;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const dayOf = (t: number) => { const d = new Date(t); return Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - today) / 86_400_000); };
+  const used = new Map<number, number>();
+  const iso = new Date(today).toISOString();
+  for (let from = 0; ; from += 1000) {
+    const { data, error: e } = await db.from('enrollments').select('enrolled_at, starts_at').eq('plan_id', plan)
+      .or(`starts_at.gte.${iso},enrolled_at.gte.${iso}`).order('id').range(from, from + 999);
+    if (e) return none;
+    for (const r of (data ?? []) as { enrolled_at: string; starts_at: string | null }[]) {
+      const d = Math.max(0, dayOf(Date.parse(r.starts_at ?? r.enrolled_at)));
+      used.set(d, (used.get(d) ?? 0) + 1);
+    }
+    if ((data ?? []).length < 1000) break;
+  }
+  let day = 0;
+  return () => {
+    while ((used.get(day) ?? 0) >= cap) day += 1;
+    used.set(day, (used.get(day) ?? 0) + 1);
+    if (day === 0) return null;
+    const t = new Date(now);
+    t.setDate(t.getDate() + day);
+    return t.getTime();
+  };
 }
 
 /**
@@ -2246,6 +2410,54 @@ const PROPERTY_FIELDS = new Set(['beds', 'baths', 'sqft', 'year', 'type']);
 /** Reads `{ ok, row }` and `{ ok, message }` as a WriteResult. */
 const fromPatch = (r: { ok: boolean; message?: string }): WriteResult => (r.ok ? { ok: true } : { ok: false, message: r.message });
 
+type PropertyPatch = { property_type?: string | null; beds?: number | null; baths?: number | null; sqft?: number | null; year_built?: number | null };
+
+/**
+ * One property fact ("property.beds" …) as the properties-row patch, checked
+ * the same way wherever it is typed: the record's Property details and the
+ * composers' quick fill for a blank merge field.
+ */
+export function propertyFactPatch(field: string, value: FieldValue):
+  { ok: true; patch: PropertyPatch; intakeKey: string; mirror: string | number | null } | { ok: false; message: string } {
+  const key = field.slice('property.'.length);
+  if (!field.startsWith('property.') || !PROPERTY_FIELDS.has(key)) return { ok: false, message: `Unknown field "${field}".` };
+  const text = asText(value).replace(/\s+/g, ' ').trim();
+  const intakeKey = key === 'type' ? 'property_type' : key === 'year' ? 'year_built' : key;
+  const patch: PropertyPatch = {};
+  if (key === 'type') { patch.property_type = text || null; return { ok: true, patch, intakeKey, mirror: text || null }; }
+  const n = typeof value === 'number' ? value : text ? Number(text.replace(/[^0-9.]/g, '')) : null;
+  if (text && (n == null || !Number.isFinite(n))) return { ok: false, message: 'That needs a number.' };
+  if (key === 'beds') {
+    if (n != null && (n < 0.5 || n > 20)) return { ok: false, message: 'Bedrooms should be between 1 and 20.' };
+    patch.beds = n == null ? null : Math.trunc(n);
+  } else if (key === 'baths') {
+    if (n != null && (n < 0.5 || n > 20)) return { ok: false, message: 'Bathrooms should be between 1 and 20.' };
+    patch.baths = n;
+  } else if (key === 'sqft') {
+    if (n != null && (n < 200 || n > 50000)) return { ok: false, message: 'Square footage looks off.' };
+    patch.sqft = n == null ? null : Math.round(n);
+  } else {
+    const yearNow = new Date().getFullYear() + 1;
+    if (n != null && (n < 1800 || n > yearNow)) return { ok: false, message: 'Year built looks off.' };
+    patch.year_built = n == null ? null : Math.round(n);
+  }
+  const mirror = (key === 'beds' ? patch.beds : key === 'baths' ? patch.baths : key === 'sqft' ? patch.sqft : patch.year_built) ?? null;
+  return { ok: true, patch, intakeKey, mirror };
+}
+
+/**
+ * A property fact typed into a composer's blank-field notice, saved on the
+ * deal's own house (deals.property_id). Not mirrored into the seller's
+ * intake: a partner contact's seller row carries many houses.
+ */
+export async function saveDealPropertyFact(workspaceId: number, propertyId: number, field: string, value: FieldValue): Promise<WriteResult> {
+  if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
+  const fact = propertyFactPatch(field, value);
+  if (!fact.ok) return fact;
+  const { error } = await supabase.from('properties').update(fact.patch).eq('workspace_id', workspaceId).eq('id', propertyId);
+  return fail(error);
+}
+
 /**
  * Save one What we know row. Seller columns, the disposition intake bag and
  * property facts all go through here so a typed edit and a Jotform
@@ -2282,37 +2494,9 @@ export async function saveWhatWeKnow(
   }
 
   if (field.startsWith('property.')) {
-    const key = field.slice('property.'.length);
-    if (!PROPERTY_FIELDS.has(key)) return { ok: false, message: `Unknown field "${field}".` };
-    const intakeKey = key === 'type' ? 'property_type' : key === 'year' ? 'year_built' : key;
-    const patch: {
-      property_type?: string | null;
-      beds?: number | null;
-      baths?: number | null;
-      sqft?: number | null;
-      year_built?: number | null;
-    } = {};
-    let mirror: string | number | null = text || null;
-    if (key === 'type') patch.property_type = text || null;
-    else {
-      const n = typeof value === 'number' ? value : text ? Number(text.replace(/[^0-9.]/g, '')) : null;
-      if (text && (n == null || !Number.isFinite(n))) return { ok: false, message: 'That needs a number.' };
-      if (key === 'beds') {
-        if (n != null && (n < 0.5 || n > 20)) return { ok: false, message: 'Bedrooms should be between 1 and 20.' };
-        patch.beds = n == null ? null : Math.trunc(n);
-      } else if (key === 'baths') {
-        if (n != null && (n < 0.5 || n > 20)) return { ok: false, message: 'Bathrooms should be between 1 and 20.' };
-        patch.baths = n;
-      } else if (key === 'sqft') {
-        if (n != null && (n < 200 || n > 50000)) return { ok: false, message: 'Square footage looks off.' };
-        patch.sqft = n == null ? null : Math.round(n);
-      } else {
-        const yearNow = new Date().getFullYear() + 1;
-        if (n != null && (n < 1800 || n > yearNow)) return { ok: false, message: 'Year built looks off.' };
-        patch.year_built = n == null ? null : Math.round(n);
-      }
-      mirror = (key === 'beds' ? patch.beds : key === 'baths' ? patch.baths : key === 'sqft' ? patch.sqft : patch.year_built) ?? null;
-    }
+    const fact = propertyFactPatch(field, value);
+    if (!fact.ok) return fact;
+    const { patch, intakeKey, mirror } = fact;
     const mirrored = await patchJsonKey('sellers', sellerId, 'intake', intakeKey, mirror === '' ? null : mirror);
     if (!mirrored.ok) return fromPatch(mirrored);
     if (!propertyId) return { ok: true };
@@ -2466,6 +2650,9 @@ export async function archiveBuyers(buyerIds: string[], archive = true): Promise
       if (/archived_at/.test(error.message)) return { ok: false, message: 'Buyer archiving is not set up yet: migration 131 has not run on this database.' };
       return fail(error);
     }
+    // Their deal matches follow (migration 404): archived buyers' untouched matches go; one brought back is rescored.
+    if (archive) await supabase.from('deal_buyer_matches').delete().in('buyer_id', b).eq('status', 'matched');
+    else for (const id of b) await supabase.rpc('match_buyer', { p_buyer_id: id });
   }
   return { ok: true };
 }
@@ -2480,6 +2667,16 @@ export async function archiveVendors(vendorIds: string[]): Promise<WriteResult> 
   return { ok: true };
 }
 
+/** Put archived vendors back on every list (Settings, Archive). */
+export async function restoreVendors(vendorIds: string[]): Promise<WriteResult> {
+  if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
+  for (const b of batches(vendorIds)) {
+    const { error } = await supabase.from('vendors').update({ status: 'active' }).in('id', b);
+    if (error) return fail(error);
+  }
+  return { ok: true };
+}
+
 /**
  * Star a vendor as their company's main contact in their state (migration 80).
  * The database un-stars whoever held it, so there is one per company and state.
@@ -2487,6 +2684,35 @@ export async function archiveVendors(vendorIds: string[]): Promise<WriteResult> 
 export async function setVendorMainPoc(vendorDbId: number, on: boolean): Promise<WriteResult> {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
   const { error } = await supabase.rpc('vendor_set_main_poc', { p_vendor: vendorDbId, p_on: on });
+  return error ? fail(error) : { ok: true };
+}
+
+/** A vendor contact's job title (migration 398); empty clears it. */
+export async function setVendorTitle(vendorDbId: number, title: string | null): Promise<WriteResult> {
+  if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
+  const { error } = await supabase.from('vendors').update({ title: title?.trim() || null } as never).eq('id', vendorDbId);
+  return error ? fail(error) : { ok: true };
+}
+
+/**
+ * One field on the vendor record. Text clears to null; the phone is stored
+ * E.164 like the rest; markets and tags take a comma list.
+ */
+export type VendorField = 'business_name' | 'contact_name' | 'title' | 'phone' | 'email' | 'service_type' | 'notes' | 'status' | 'markets' | 'tags';
+export async function setVendorField(vendorDbId: number, field: VendorField, raw: string): Promise<WriteResult> {
+  if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
+  const v = raw.trim();
+  if (field === 'business_name' && !v) return { ok: false, message: 'A vendor needs a company name.' };
+  if (field === 'email' && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return { ok: false, message: 'That email does not look right.' };
+  let value: string | string[] | null = v || null;
+  if (field === 'phone' && v) {
+    value = toE164(v);
+    if (!value) return { ok: false, message: 'Use a 10-digit phone number.' };
+  }
+  if (field === 'markets') value = normalizeMarkets(splitMarketCell(v));
+  if (field === 'tags') value = Array.from(new Set(v.split(',').map((t) => t.trim()).filter(Boolean)));
+  if (field === 'status') value = v || 'active';
+  const { error } = await supabase.from('vendors').update({ [field]: value, updated_at: new Date().toISOString() } as never).eq('id', vendorDbId);
   return error ? fail(error) : { ok: true };
 }
 
@@ -2504,7 +2730,7 @@ export async function setVendorLocation(vendorDbId: number, city: string | null,
 
 export type PlanStepInput = { channel: string; delay: string; title: string; content: string };
 
-/** "Immediately" / "2 hours" / "Day 3" / "1 week" → hours. */
+/** "Immediately" / "2 hours" / "Day 3" / "1 week" → hours; "15 minutes" is a fraction of one, so savePlan's delay_minutes stays exact. */
 export function delayToHours(delay: string): number {
   const d = delay.trim().toLowerCase();
   if (!d || /^(immediately|now|0)$/.test(d)) return 0;
@@ -2512,7 +2738,7 @@ export function delayToHours(delay: string): number {
   if (!m) return 0;
   const n = Number(m[1]);
   const unit = m[2] ?? 'day';
-  if (/min/.test(unit)) return Math.round(n / 60);
+  if (/min/.test(unit)) return n / 60;
   if (/h/.test(unit)) return n;
   if (/w/.test(unit)) return n * 24 * 7;
   // "Day 3" is two days after enrolment, the way GoHighLevel counts it.
@@ -2520,9 +2746,30 @@ export function delayToHours(delay: string): number {
 }
 
 /**
- * Create or replace a plan and its steps. Steps are replaced wholesale — a
- * plan is edited as one thing in the builder, and diffing steps buys nothing
- * but the chance to leave a stale one behind.
+ * The builder's steps as plan_replace_steps takes them (lib/plan-step-save.ts).
+ * delay_hours is cumulative since enrolment (a whole number for the column);
+ * delay_minutes (migration 34) is the wait after the previous step, so it is
+ * the difference, taken from the exact hours. These steps carry no subject or
+ * config, as the insert they replace did not.
+ */
+export function inputStepRows(steps: PlanStepInput[]): StepPayload[] {
+  let last = 0;
+  return steps.map((st) => {
+    const hours = delayToHours(st.delay);
+    const minutes = Math.round(Math.max(0, hours - last) * 60);
+    last = Math.max(last, hours);
+    return {
+      channel: st.channel, delay_hours: Math.round(hours), delay_minutes: minutes, title: st.title || null, body: st.content || null,
+      subject: null, config: {},
+    };
+  });
+}
+
+/**
+ * Create or replace a plan and its steps. The steps are saved as one list in
+ * one transaction (plan_replace_steps, migration 436): the step at each
+ * position keeps its id, so running enrolments' queued tasks keep their step,
+ * and a failed save leaves the old steps.
  */
 export async function savePlan(
   workspaceId: number, plan: { id: string | null; name: string; trigger: string; active: boolean; steps: PlanStepInput[] },
@@ -2535,7 +2782,6 @@ export async function savePlan(
       .update({ name: plan.name, trigger_event: plan.trigger, active: plan.active, updated_at: new Date().toISOString() })
       .eq('id', planId);
     if (error) return fail(error);
-    await supabase.from('action_plan_steps').delete().eq('plan_id', planId);
   } else {
     const { data, error } = await supabase.from('action_plans')
       .insert({ workspace_id: workspaceId, name: plan.name, trigger_event: plan.trigger, active: plan.active, created_by: userId })
@@ -2543,19 +2789,8 @@ export async function savePlan(
     if (error) return fail(error);
     planId = data.id;
   }
-  if (plan.steps.length) {
-    // delay_hours is cumulative since enrolment; delay_minutes (migration 34)
-    // is the wait after the previous step, so it is the difference.
-    let last = 0;
-    const { error } = await supabase.from('action_plan_steps').insert(plan.steps.map((st, i) => {
-      const hours = delayToHours(st.delay);
-      const minutes = Math.max(0, hours - last) * 60;
-      last = Math.max(last, hours);
-      return {
-        workspace_id: workspaceId, plan_id: planId!, position: i,
-        channel: st.channel, delay_hours: hours, delay_minutes: minutes, title: st.title || null, body: st.content || null,
-      };
-    }));
+  if (plan.id || plan.steps.length) {
+    const { error } = await replacePlanSteps(workspaceId, planId!, inputStepRows(plan.steps));
     if (error) return fail(error);
   }
   return { ok: true, id: planId! };
@@ -2610,11 +2845,13 @@ export async function deleteBuyers(buyerIds: string[]): Promise<WriteResult & { 
   let deactivated = 0;
   let refused = 0;
   for (const b of batches(buyerIds)) {
+    // Every page: a bare select stops at 1,000 rows, so a buyer named only
+    // past the first 1,000 references in a batch was hard-deleted.
     const refs = await Promise.all((['deals', 'offers', 'deal_parties', 'transactions', 'contracts'] as const)
-      .map((t) => db.from(t).select('buyer_id').in('buyer_id', b)));
+      .map((t) => everyRowResult<{ buyer_id: number | null }>(() => db.from(t).select('buyer_id').in('buyer_id', b).order('id'))));
     const bad = refs.find((r) => r.error);
     if (bad?.error) return fail(bad.error);
-    const named = new Set(refs.flatMap((r) => ((r.data ?? []) as { buyer_id: number | null }[]).map((x) => x.buyer_id)));
+    const named = new Set(refs.flatMap((r) => (r.data ?? []).map((x) => x.buyer_id)));
     const keep = b.filter((id) => named.has(id));
     const drop = b.filter((id) => !named.has(id));
     if (keep.length) {
@@ -2648,6 +2885,22 @@ export async function setBuyerStage(buyerIds: string[], stage: string): Promise<
     if (error) return fail(error);
   }
   return { ok: true };
+}
+
+/**
+ * Compr workspace: back to Not contacted (migration 422). Ends their plans,
+ * stops their AI agent and takes them off every call queue, so the next touch
+ * is the first one again.
+ */
+export async function backToNotContacted(buyerIds: string[]): Promise<WriteResult & { moved?: number }> {
+  if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
+  let moved = 0;
+  for (const b of batches(buyerIds)) {
+    const { data, error } = await supabase.rpc('compr_back_to_not_contacted', { p_ids: b });
+    if (error) return fail(error);
+    moved += Number(data ?? 0);
+  }
+  return { ok: true, moved };
 }
 
 /** Who these buyers are assigned to (migration 128); null clears it. */

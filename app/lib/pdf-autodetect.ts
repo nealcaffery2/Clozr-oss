@@ -611,10 +611,15 @@ export function assignRoles(found: Found[], roles: TemplateRole[], side: Side): 
     // No second seller on the template: their boxes go to the seller, who can hand them on.
     ?? (w === 'seller2' ? byParty(partyOf('seller', side)) : undefined);
   const preparer = byParty('company') ?? roles[0];
+  // Roles that say which party they are (Seller, Buyer...), not just "Signer 1".
+  const named = roles.some((r) => (r.party && r.party !== 'other') || whoIn(`${r.role} ${r.label ?? ''}`.replace(/_/g, ' ')));
   const out: FieldDef[] = [];
   for (const f of found) {
     const signs = f.type === 'signature' || f.type === 'initials' || f.type === 'date_signed';
     let r = f.who ? forWho(f.who) : undefined;
+    // A party nobody on this contract signs for (the seller's boxes on a buyer-only send) is left off,
+    // never handed to whoever is listed first.
+    if (!r && f.who && signs && named) continue;
     if (!r) r = f.variable_key ? preparer : signs ? signers[0] ?? roles[0] : preparer;
     if (signs && r.recipient_type === 'filler') r = signers[0] ?? r;
     let variable = f.variable_key ?? null;

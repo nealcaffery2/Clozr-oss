@@ -6,13 +6,31 @@ import {
   COACHING_SYSTEM, COACHING_TOOL, buildReview, type CallCoachingReview, type CoachingSource,
 } from '../../../lib/call-coaching.ts';
 import { fence, UNTRUSTED_RULE } from './security.ts';
-import { CLAUDE_MODEL, CLAUDE_THINKING, toolRule } from './models.ts';
+import { CLAUDE_MODEL, CLAUDE_THINKING, cachedSystem, toolRule } from './models.ts';
+import { recordUsage } from './ai-usage.ts';
+import { COMPR_SALE_PROMPT } from '../../../lib/sales-framework.ts';
 
 const MODEL = CLAUDE_MODEL;
 
 function anthropicHeaders(): { defaultHeaders?: Record<string, string> } {
   const ws = Deno.env.get('ANTHROPIC_WORKSPACE_ID');
   return ws ? { defaultHeaders: { 'anthropic-workspace-id': ws } } : {};
+}
+
+/**
+ * The call type a workspace's calls are graded as when nobody picked one: a
+ * Compr sales call in the Compr workspace (settings.buyer_profile = 'compr'),
+ * else none (the seller or buyer scorecard). Cached per workspace per run.
+ */
+const comprWs = new Map<number, boolean>();
+// deno-lint-ignore no-explicit-any
+export async function workspaceCallType(admin: { from: (t: string) => any }, workspaceId: number | null | undefined): Promise<{ callTypePrompt: string | null; sellerCall?: false }> {
+  if (workspaceId == null) return { callTypePrompt: null };
+  if (!comprWs.has(workspaceId)) {
+    const { data } = await admin.from('workspaces').select('buyer_profile:settings->>buyer_profile').eq('id', workspaceId).maybeSingle();
+    comprWs.set(workspaceId, (data as { buyer_profile?: unknown } | null)?.buyer_profile === 'compr');
+  }
+  return comprWs.get(workspaceId) ? { callTypePrompt: COMPR_SALE_PROMPT, sellerCall: false } : { callTypePrompt: null };
 }
 
 export async function coachTranscript(opts: {
@@ -30,6 +48,8 @@ export async function coachTranscript(opts: {
   sellerCall?: boolean;
   /** "Submit a call for review": what kind of call this is (lib/sales-framework.ts CALL_TYPES), one line for the prompt. */
   callTypePrompt?: string | null;
+  /** The workspace the call belongs to, for the usage log. */
+  ws?: number | null;
 }): Promise<CallCoachingReview> {
   const client = new Anthropic({ apiKey: opts.apiKey, ...anthropicHeaders() });
   const split = opts.talk
@@ -42,11 +62,12 @@ export async function coachTranscript(opts: {
     const res = await client.messages.create({
       model: MODEL, thinking: CLAUDE_THINKING,
       max_tokens: 4000,
-      system: toolRule('scorecard') + COACHING_SYSTEM + UNTRUSTED_RULE + WRITING_RULE,
+      system: cachedSystem(toolRule('scorecard') + COACHING_SYSTEM + UNTRUSTED_RULE + WRITING_RULE),
       tools: [COACHING_TOOL as unknown as Anthropic.Tool],
       tool_choice: { type: 'auto' },
       messages: [{ role: 'user', content: attempt === 0 ? user : user + `\n\nYour last scorecard was rejected: ${lastError} Send a clean one.` }],
     });
+    await recordUsage(null, { ws: opts.ws, feature: 'call_coach', model: res.model, usage: res.usage });
     const call = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     const built = buildReview(call?.input, {
       repName: opts.repName,

@@ -2,15 +2,17 @@
 // buyer, title company or lender on several deals writing without naming a
 // street. The model picks one of those deals or none; anything else it says
 // is discarded (pickFromAi). Without ANTHROPIC_API_KEY, or on any failure,
-// this answers null and the rules' result stands, so the sync never waits on
-// or breaks because of it.
+// this answers undefined and the rules' result stands, so the sync never waits
+// on or breaks because of it. null is the model's own "none of these", which
+// relinkEmail remembers so the same email is not asked again every run.
 import { WRITING_RULE } from './no-ai-slop.ts';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import { type DealRef, pickFromAi } from './gmail-match.ts';
 import { fence, UNTRUSTED_RULE } from './security.ts';
-import { CLAUDE_MODEL } from './models.ts';
+import { CLAUDE_HAIKU_MODEL, cachedSystem } from './models.ts';
+import { recordUsage } from './ai-usage.ts';
 
-const MODEL = CLAUDE_MODEL;
+const MODEL = CLAUDE_HAIKU_MODEL;
 /** Per sync run: the mail that needs it is rare, and a backlog drains over the next runs. */
 export const AI_PER_RUN = 10;
 
@@ -31,8 +33,8 @@ export function aiKey(): string | null {
   return Deno.env.get('ANTHROPIC_API_KEY') || null;
 }
 
-export async function classifyDeal(apiKey: string | null, msg: AiMessage, candidates: DealRef[]): Promise<number | null> {
-  if (!apiKey || candidates.length < 2) return null;
+export async function classifyDeal(apiKey: string | null, msg: AiMessage, candidates: DealRef[]): Promise<number | null | undefined> {
+  if (!apiKey || candidates.length < 2) return undefined;
   try {
     const ws = Deno.env.get('ANTHROPIC_WORKSPACE_ID');
     const client = new Anthropic({ apiKey, ...(ws ? { defaultHeaders: { 'anthropic-workspace-id': ws } } : {}) });
@@ -40,18 +42,19 @@ export async function classifyDeal(apiKey: string | null, msg: AiMessage, candid
     const res = await client.messages.create({
       model: MODEL,
       max_tokens: 1024,
-      system: SYSTEM + UNTRUSTED_RULE + WRITING_RULE,
+      system: cachedSystem(SYSTEM + UNTRUSTED_RULE + WRITING_RULE),
       output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
       messages: [{
         role: 'user',
         content: `Deals (id: property):\n${list}\n\nEmail:\n${fence('email', `From: ${msg.from}\nTo: ${msg.to.join(', ')}\nSubject: ${msg.subject}\n\n${msg.text}`, 6000)}`,
       }],
     } as Anthropic.MessageCreateParamsNonStreaming);
+    await recordUsage(null, { feature: 'gmail_filing', model: res.model, usage: res.usage });
     if (res.stop_reason === 'refusal') return null;
     const text = res.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text ?? '';
     return pickFromAi(text, candidates);
   } catch (err) {
     console.error('gmail ai route failed', String(err));
-    return null;
+    return undefined;
   }
 }

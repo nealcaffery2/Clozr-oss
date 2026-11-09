@@ -122,7 +122,7 @@ export function SearchSelectMenu({
             </button>
           ))}
           {shown.length <= pinned && terms.length ? (
-            <div style={{ padding: '8px 10px', fontSize: '12px', color: 'var(--subtle, #a1a1aa)' }}>No match for “{text.trim()}”</div>
+            <div style={{ padding: '8px 10px', fontSize: '12px', color: 'var(--meta, #71717a)' }}>No match for “{text.trim()}”</div>
           ) : null}
         </div>
       </div>
