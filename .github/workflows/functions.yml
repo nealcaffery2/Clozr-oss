@@ -57,7 +57,7 @@ jobs:
       run:
         working-directory: app
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Not supabase/setup-cli: that action asks the GitHub releases API which
       # version is newest, unauthenticated, and that call is rate limited per
